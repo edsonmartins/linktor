@@ -56,6 +56,8 @@ node_modules/
 # Web build
 web/dist/
 web/build/
+web/admin/.next/
+web/admin/out/
 
 # Test
 coverage/
