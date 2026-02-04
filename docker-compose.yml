@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: linktor-postgres
+    environment:
+      POSTGRES_USER: linktor
+      POSTGRES_PASSWORD: linktor
+      POSTGRES_DB: linktor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U linktor -d linktor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linktor-network
+
+  # Redis Cache & Rate Limiting
+  redis:
+    image: redis:7-alpine
+    container_name: linktor-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linktor-network
+
+  # NATS JetStream Message Broker
+  nats:
+    image: nats:2.10-alpine
+    container_name: linktor-nats
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"   # Client connections
+      - "8222:8222"   # HTTP monitoring
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "nats-server", "--help"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linktor-network
+
+  # MinIO - S3 Compatible Storage for Media
+  minio:
+    image: minio/minio:latest
+    container_name: linktor-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: linktor
+      MINIO_ROOT_PASSWORD: linktor123
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linktor-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  nats_data:
+  minio_data:
+
+networks:
+  linktor-network:
+    driver: bridge

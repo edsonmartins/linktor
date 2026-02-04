@@ -1,0 +1,214 @@
+syntax = "proto3";
+
+package linktor.tenant;
+
+option go_package = "github.com/msgfy/linktor/internal/grpc/gen/tenant";
+
+import "google/protobuf/timestamp.proto";
+import "common/common.proto";
+
+// Subscription plan
+enum Plan {
+  PLAN_UNSPECIFIED = 0;
+  PLAN_FREE = 1;
+  PLAN_STARTER = 2;
+  PLAN_PROFESSIONAL = 3;
+  PLAN_ENTERPRISE = 4;
+}
+
+// Tenant status
+enum TenantStatus {
+  TENANT_STATUS_UNSPECIFIED = 0;
+  TENANT_STATUS_ACTIVE = 1;
+  TENANT_STATUS_SUSPENDED = 2;
+  TENANT_STATUS_CANCELLED = 3;
+}
+
+// User role
+enum UserRole {
+  USER_ROLE_UNSPECIFIED = 0;
+  USER_ROLE_AGENT = 1;
+  USER_ROLE_SUPERVISOR = 2;
+  USER_ROLE_ADMIN = 3;
+  USER_ROLE_OWNER = 4;
+}
+
+// User status
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_INACTIVE = 2;
+  USER_STATUS_SUSPENDED = 3;
+}
+
+// Tenant limits
+message TenantLimits {
+  int32 max_users = 1;
+  int32 max_channels = 2;
+  int32 max_contacts = 3;
+  int64 max_messages_per_month = 4;
+}
+
+// Tenant entity
+message Tenant {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  Plan plan = 4;
+  TenantStatus status = 5;
+  map<string, string> settings = 6;
+  TenantLimits limits = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+// User entity
+message User {
+  string id = 1;
+  string tenant_id = 2;
+  string email = 3;
+  string name = 4;
+  UserRole role = 5;
+  string avatar_url = 6;
+  UserStatus status = 7;
+  google.protobuf.Timestamp last_login_at = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// Create tenant request
+message CreateTenantRequest {
+  string name = 1;
+  string slug = 2;
+  Plan plan = 3;
+}
+
+// Create tenant response
+message CreateTenantResponse {
+  Tenant tenant = 1;
+}
+
+// Get tenant request
+message GetTenantRequest {
+  string id = 1;
+}
+
+// Get tenant response
+message GetTenantResponse {
+  Tenant tenant = 1;
+}
+
+// Update tenant request
+message UpdateTenantRequest {
+  string id = 1;
+  optional string name = 2;
+  optional Plan plan = 3;
+  optional TenantStatus status = 4;
+  map<string, string> settings = 5;
+}
+
+// Update tenant response
+message UpdateTenantResponse {
+  Tenant tenant = 1;
+}
+
+// Create user request
+message CreateUserRequest {
+  string email = 1;
+  string password = 2;
+  string name = 3;
+  UserRole role = 4;
+  string avatar_url = 5;
+}
+
+// Create user response
+message CreateUserResponse {
+  User user = 1;
+}
+
+// Get user request
+message GetUserRequest {
+  string id = 1;
+}
+
+// Get user response
+message GetUserResponse {
+  User user = 1;
+}
+
+// List users request
+message ListUsersRequest {
+  UserRole role = 1;
+  UserStatus status = 2;
+  linktor.common.PaginationRequest pagination = 3;
+}
+
+// List users response
+message ListUsersResponse {
+  repeated User users = 1;
+  linktor.common.PaginationResponse pagination = 2;
+}
+
+// Update user request
+message UpdateUserRequest {
+  string id = 1;
+  optional string name = 2;
+  optional UserRole role = 3;
+  optional string avatar_url = 4;
+  optional UserStatus status = 5;
+}
+
+// Update user response
+message UpdateUserResponse {
+  User user = 1;
+}
+
+// Delete user request
+message DeleteUserRequest {
+  string id = 1;
+}
+
+// Delete user response
+message DeleteUserResponse {
+  bool success = 1;
+}
+
+// Login request
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+// Login response
+message LoginResponse {
+  User user = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  int64 expires_in = 4;
+}
+
+// Refresh token request
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+// Refresh token response
+message RefreshTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+}
+
+// Tenant service
+service TenantService {
+  rpc CreateTenant(CreateTenantRequest) returns (CreateTenantResponse);
+  rpc GetTenant(GetTenantRequest) returns (GetTenantResponse);
+  rpc UpdateTenant(UpdateTenantRequest) returns (UpdateTenantResponse);
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+}

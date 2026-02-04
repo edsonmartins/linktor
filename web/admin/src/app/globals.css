@@ -1,0 +1,168 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Terminal Dark Theme */
+    --background: 180 3% 10%;
+    --foreground: 180 5% 90%;
+
+    --card: 180 3% 14%;
+    --card-foreground: 180 5% 90%;
+
+    --popover: 180 3% 12%;
+    --popover-foreground: 180 5% 90%;
+
+    /* Terminal Green as primary */
+    --primary: 150 70% 55%;
+    --primary-foreground: 180 3% 10%;
+
+    --secondary: 180 3% 18%;
+    --secondary-foreground: 180 5% 85%;
+
+    --muted: 180 3% 20%;
+    --muted-foreground: 180 5% 60%;
+
+    --accent: 180 70% 55%;
+    --accent-foreground: 180 3% 10%;
+
+    /* Coral for destructive */
+    --destructive: 5 80% 65%;
+    --destructive-foreground: 180 5% 98%;
+
+    /* Yellow for warnings */
+    --warning: 45 90% 60%;
+    --warning-foreground: 180 3% 10%;
+
+    --border: 180 3% 22%;
+    --input: 180 3% 18%;
+    --ring: 150 70% 55%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-mono antialiased;
+  }
+
+  /* Custom scrollbar for terminal feel */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+
+  /* Selection color */
+  ::selection {
+    @apply bg-primary/30 text-foreground;
+  }
+}
+
+@layer components {
+  /* Terminal prompt style */
+  .terminal-prompt {
+    @apply text-primary font-mono;
+  }
+
+  .terminal-prompt::before {
+    content: '> ';
+    @apply text-primary;
+  }
+
+  /* Cursor blink effect */
+  .cursor-blink {
+    @apply inline-block w-2 h-5 bg-primary ml-1 animate-blink;
+  }
+
+  /* Card with terminal border */
+  .terminal-card {
+    @apply bg-card border border-border rounded-lg;
+    box-shadow: 0 0 0 1px hsl(var(--border));
+  }
+
+  /* Glow effect for primary elements */
+  .glow-primary {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.3);
+  }
+
+  /* Status indicators */
+  .status-online {
+    @apply w-2 h-2 rounded-full bg-terminal-green animate-pulse;
+  }
+
+  .status-offline {
+    @apply w-2 h-2 rounded-full bg-muted-foreground;
+  }
+
+  .status-busy {
+    @apply w-2 h-2 rounded-full bg-terminal-yellow;
+  }
+
+  /* Message bubbles */
+  .message-incoming {
+    @apply bg-secondary rounded-lg rounded-bl-none;
+  }
+
+  .message-outgoing {
+    @apply bg-primary/20 rounded-lg rounded-br-none border border-primary/30;
+  }
+
+  /* Code block style */
+  .code-block {
+    @apply bg-background border border-border rounded-md p-4 font-mono text-sm overflow-x-auto;
+  }
+
+  /* Badge styles */
+  .badge-success {
+    @apply bg-terminal-green/20 text-terminal-green border border-terminal-green/30;
+  }
+
+  .badge-warning {
+    @apply bg-terminal-yellow/20 text-terminal-yellow border border-terminal-yellow/30;
+  }
+
+  .badge-error {
+    @apply bg-terminal-coral/20 text-terminal-coral border border-terminal-coral/30;
+  }
+
+  .badge-info {
+    @apply bg-terminal-cyan/20 text-terminal-cyan border border-terminal-cyan/30;
+  }
+}
+
+@layer utilities {
+  /* Text gradient for headings */
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
+  }
+
+  /* Hover glow effect */
+  .hover-glow:hover {
+    box-shadow: 0 0 15px hsl(var(--primary) / 0.2);
+  }
+
+  /* Focus ring terminal style */
+  .focus-terminal {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background;
+  }
+}

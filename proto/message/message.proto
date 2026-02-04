@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package linktor.message;
+
+option go_package = "github.com/msgfy/linktor/internal/grpc/gen/message";
+
+import "google/protobuf/timestamp.proto";
+import "common/common.proto";
+
+// Message status
+enum MessageStatus {
+  MESSAGE_STATUS_UNSPECIFIED = 0;
+  MESSAGE_STATUS_PENDING = 1;
+  MESSAGE_STATUS_SENT = 2;
+  MESSAGE_STATUS_DELIVERED = 3;
+  MESSAGE_STATUS_READ = 4;
+  MESSAGE_STATUS_FAILED = 5;
+}
+
+// Message content type
+enum ContentType {
+  CONTENT_TYPE_UNSPECIFIED = 0;
+  CONTENT_TYPE_TEXT = 1;
+  CONTENT_TYPE_IMAGE = 2;
+  CONTENT_TYPE_VIDEO = 3;
+  CONTENT_TYPE_AUDIO = 4;
+  CONTENT_TYPE_DOCUMENT = 5;
+  CONTENT_TYPE_LOCATION = 6;
+  CONTENT_TYPE_CONTACT = 7;
+  CONTENT_TYPE_TEMPLATE = 8;
+  CONTENT_TYPE_INTERACTIVE = 9;
+}
+
+// Sender type
+enum SenderType {
+  SENDER_TYPE_UNSPECIFIED = 0;
+  SENDER_TYPE_CONTACT = 1;
+  SENDER_TYPE_USER = 2;
+  SENDER_TYPE_SYSTEM = 3;
+}
+
+// Message attachment
+message Attachment {
+  string id = 1;
+  string type = 2;
+  string filename = 3;
+  string mime_type = 4;
+  int64 size_bytes = 5;
+  string url = 6;
+  string thumbnail_url = 7;
+  map<string, string> metadata = 8;
+}
+
+// Message entity
+message Message {
+  string id = 1;
+  string conversation_id = 2;
+  SenderType sender_type = 3;
+  string sender_id = 4;
+  ContentType content_type = 5;
+  string content = 6;
+  map<string, string> metadata = 7;
+  MessageStatus status = 8;
+  string external_id = 9;
+  string error_message = 10;
+  repeated Attachment attachments = 11;
+  google.protobuf.Timestamp sent_at = 12;
+  google.protobuf.Timestamp delivered_at = 13;
+  google.protobuf.Timestamp read_at = 14;
+  google.protobuf.Timestamp created_at = 15;
+}
+
+// Send message request
+message SendMessageRequest {
+  string conversation_id = 1;
+  ContentType content_type = 2;
+  string content = 3;
+  map<string, string> metadata = 4;
+  repeated Attachment attachments = 5;
+}
+
+// Send message response
+message SendMessageResponse {
+  Message message = 1;
+}
+
+// Get message request
+message GetMessageRequest {
+  string id = 1;
+}
+
+// Get message response
+message GetMessageResponse {
+  Message message = 1;
+}
+
+// List messages request
+message ListMessagesRequest {
+  string conversation_id = 1;
+  linktor.common.PaginationRequest pagination = 2;
+}
+
+// List messages response
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  linktor.common.PaginationResponse pagination = 2;
+}
+
+// Update message status request
+message UpdateMessageStatusRequest {
+  string id = 1;
+  MessageStatus status = 2;
+  string error_message = 3;
+}
+
+// Update message status response
+message UpdateMessageStatusResponse {
+  Message message = 1;
+}
+
+// Message service
+service MessageService {
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc GetMessage(GetMessageRequest) returns (GetMessageResponse);
+  rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
+  rpc UpdateMessageStatus(UpdateMessageStatusRequest) returns (UpdateMessageStatusResponse);
+}

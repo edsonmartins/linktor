@@ -1,0 +1,40 @@
+# Linktor Configuration
+# Override with environment variables: LINKTOR_<SECTION>_<KEY>
+
+server:
+  port: 8081
+  host: "0.0.0.0"
+  mode: "debug"  # debug, release, test
+  shutdown_timeout: 30
+
+database:
+  host: "192.168.1.110"
+  port: 5444
+  user: "admin"
+  password: "Rapidex@727204"
+  database: "linktor"
+  ssl_mode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+  max_lifetime: 5  # minutes
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+
+nats:
+  url: "nats://localhost:4222"
+  cluster_id: "linktor-cluster"
+  client_id: "linktor-server"
+
+jwt:
+  secret: "change-me-in-production-use-strong-secret"
+  access_token_ttl: 15    # minutes
+  refresh_token_ttl: 168  # hours (7 days)
+  issuer: "linktor"
+
+log:
+  level: "debug"   # debug, info, warn, error
+  format: "console"  # json, console

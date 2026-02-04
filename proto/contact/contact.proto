@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package linktor.contact;
+
+option go_package = "github.com/msgfy/linktor/internal/grpc/gen/contact";
+
+import "google/protobuf/timestamp.proto";
+import "common/common.proto";
+
+// Contact identity (multi-channel)
+message ContactIdentity {
+  string id = 1;
+  string channel_type = 2;  // whatsapp, telegram, sms, etc.
+  string identifier = 3;    // phone, username, email, etc.
+  map<string, string> metadata = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// Contact entity
+message Contact {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string email = 4;
+  string phone = 5;
+  string avatar_url = 6;
+  map<string, string> custom_fields = 7;
+  repeated string tags = 8;
+  repeated ContactIdentity identities = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+// Create contact request
+message CreateContactRequest {
+  string name = 1;
+  string email = 2;
+  string phone = 3;
+  string avatar_url = 4;
+  map<string, string> custom_fields = 5;
+  repeated string tags = 6;
+}
+
+// Create contact response
+message CreateContactResponse {
+  Contact contact = 1;
+}
+
+// Get contact request
+message GetContactRequest {
+  string id = 1;
+}
+
+// Get contact response
+message GetContactResponse {
+  Contact contact = 1;
+}
+
+// Get contact by identity request
+message GetContactByIdentityRequest {
+  string channel_type = 1;
+  string identifier = 2;
+}
+
+// Get contact by identity response
+message GetContactByIdentityResponse {
+  Contact contact = 1;
+}
+
+// List contacts request
+message ListContactsRequest {
+  string search = 1;  // search by name, email, phone
+  repeated string tags = 2;
+  linktor.common.PaginationRequest pagination = 3;
+}
+
+// List contacts response
+message ListContactsResponse {
+  repeated Contact contacts = 1;
+  linktor.common.PaginationResponse pagination = 2;
+}
+
+// Update contact request
+message UpdateContactRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string email = 3;
+  optional string phone = 4;
+  optional string avatar_url = 5;
+  map<string, string> custom_fields = 6;
+  repeated string tags = 7;
+}
+
+// Update contact response
+message UpdateContactResponse {
+  Contact contact = 1;
+}
+
+// Delete contact request
+message DeleteContactRequest {
+  string id = 1;
+}
+
+// Delete contact response
+message DeleteContactResponse {
+  bool success = 1;
+}
+
+// Add identity request
+message AddIdentityRequest {
+  string contact_id = 1;
+  string channel_type = 2;
+  string identifier = 3;
+  map<string, string> metadata = 4;
+}
+
+// Add identity response
+message AddIdentityResponse {
+  Contact contact = 1;
+}
+
+// Remove identity request
+message RemoveIdentityRequest {
+  string contact_id = 1;
+  string identity_id = 2;
+}
+
+// Remove identity response
+message RemoveIdentityResponse {
+  Contact contact = 1;
+}
+
+// Contact service
+service ContactService {
+  rpc CreateContact(CreateContactRequest) returns (CreateContactResponse);
+  rpc GetContact(GetContactRequest) returns (GetContactResponse);
+  rpc GetContactByIdentity(GetContactByIdentityRequest) returns (GetContactByIdentityResponse);
+  rpc ListContacts(ListContactsRequest) returns (ListContactsResponse);
+  rpc UpdateContact(UpdateContactRequest) returns (UpdateContactResponse);
+  rpc DeleteContact(DeleteContactRequest) returns (DeleteContactResponse);
+  rpc AddIdentity(AddIdentityRequest) returns (AddIdentityResponse);
+  rpc RemoveIdentity(RemoveIdentityRequest) returns (RemoveIdentityResponse);
+}

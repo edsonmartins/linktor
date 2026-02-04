@@ -1,0 +1,17 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/msgfy/linktor/internal/grpc/gen
+plugins:
+  # Go protobuf
+  - remote: buf.build/protocolbuffers/go
+    out: internal/grpc/gen
+    opt:
+      - paths=source_relative
+  # Go gRPC
+  - remote: buf.build/grpc/go
+    out: internal/grpc/gen
+    opt:
+      - paths=source_relative

@@ -1,0 +1,72 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Generated files
+internal/grpc/gen/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Build
+dist/
+build/
+
+# Node modules (for web/)
+node_modules/
+
+# Web build
+web/dist/
+web/build/
+
+# Test
+coverage/
+
+# Local config
+config.local.yaml
+
+# Secrets
+*.pem
+*.key
+credentials.json
+
+# References (cloned repos for study)
+references/

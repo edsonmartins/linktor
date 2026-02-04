@@ -1,0 +1,139 @@
+syntax = "proto3";
+
+package linktor.channel;
+
+option go_package = "github.com/msgfy/linktor/internal/grpc/gen/channel";
+
+import "google/protobuf/timestamp.proto";
+import "common/common.proto";
+
+// Channel type
+enum ChannelType {
+  CHANNEL_TYPE_UNSPECIFIED = 0;
+  CHANNEL_TYPE_WEBCHAT = 1;
+  CHANNEL_TYPE_WHATSAPP = 2;
+  CHANNEL_TYPE_WHATSAPP_UNOFFICIAL = 3;
+  CHANNEL_TYPE_TELEGRAM = 4;
+  CHANNEL_TYPE_SMS = 5;
+  CHANNEL_TYPE_RCS = 6;
+  CHANNEL_TYPE_INSTAGRAM = 7;
+  CHANNEL_TYPE_FACEBOOK = 8;
+  CHANNEL_TYPE_EMAIL = 9;
+  CHANNEL_TYPE_VOICE = 10;
+}
+
+// Channel status
+enum ChannelStatus {
+  CHANNEL_STATUS_UNSPECIFIED = 0;
+  CHANNEL_STATUS_INACTIVE = 1;
+  CHANNEL_STATUS_ACTIVE = 2;
+  CHANNEL_STATUS_ERROR = 3;
+  CHANNEL_STATUS_DISCONNECTED = 4;
+}
+
+// Channel entity
+message Channel {
+  string id = 1;
+  string tenant_id = 2;
+  ChannelType type = 3;
+  string name = 4;
+  string identifier = 5;  // phone number, bot username, etc.
+  ChannelStatus status = 6;
+  map<string, string> config = 7;
+  string webhook_url = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// Create channel request
+message CreateChannelRequest {
+  ChannelType type = 1;
+  string name = 2;
+  string identifier = 3;
+  map<string, string> config = 4;
+  map<string, string> credentials = 5;
+}
+
+// Create channel response
+message CreateChannelResponse {
+  Channel channel = 1;
+}
+
+// Get channel request
+message GetChannelRequest {
+  string id = 1;
+}
+
+// Get channel response
+message GetChannelResponse {
+  Channel channel = 1;
+}
+
+// List channels request
+message ListChannelsRequest {
+  ChannelType type = 1;
+  ChannelStatus status = 2;
+  linktor.common.PaginationRequest pagination = 3;
+}
+
+// List channels response
+message ListChannelsResponse {
+  repeated Channel channels = 1;
+  linktor.common.PaginationResponse pagination = 2;
+}
+
+// Update channel request
+message UpdateChannelRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string identifier = 3;
+  map<string, string> config = 4;
+  map<string, string> credentials = 5;
+}
+
+// Update channel response
+message UpdateChannelResponse {
+  Channel channel = 1;
+}
+
+// Delete channel request
+message DeleteChannelRequest {
+  string id = 1;
+}
+
+// Delete channel response
+message DeleteChannelResponse {
+  bool success = 1;
+}
+
+// Connect channel request
+message ConnectChannelRequest {
+  string id = 1;
+}
+
+// Connect channel response
+message ConnectChannelResponse {
+  Channel channel = 1;
+  string qr_code = 2;  // For WhatsApp unofficial
+}
+
+// Disconnect channel request
+message DisconnectChannelRequest {
+  string id = 1;
+}
+
+// Disconnect channel response
+message DisconnectChannelResponse {
+  Channel channel = 1;
+}
+
+// Channel service
+service ChannelService {
+  rpc CreateChannel(CreateChannelRequest) returns (CreateChannelResponse);
+  rpc GetChannel(GetChannelRequest) returns (GetChannelResponse);
+  rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
+  rpc UpdateChannel(UpdateChannelRequest) returns (UpdateChannelResponse);
+  rpc DeleteChannel(DeleteChannelRequest) returns (DeleteChannelResponse);
+  rpc ConnectChannel(ConnectChannelRequest) returns (ConnectChannelResponse);
+  rpc DisconnectChannel(DisconnectChannelRequest) returns (DisconnectChannelResponse);
+}

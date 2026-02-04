@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package linktor.common;
+
+option go_package = "github.com/msgfy/linktor/internal/grpc/gen/common";
+
+import "google/protobuf/timestamp.proto";
+
+// Pagination request
+message PaginationRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string sort_by = 3;
+  string sort_order = 4; // asc, desc
+}
+
+// Pagination response
+message PaginationResponse {
+  int32 page = 1;
+  int32 page_size = 2;
+  int32 total_pages = 3;
+  int64 total_items = 4;
+  bool has_next = 5;
+  bool has_previous = 6;
+}
+
+// Generic error
+message Error {
+  string code = 1;
+  string message = 2;
+  map<string, string> details = 3;
+}
+
+// Tenant context
+message TenantContext {
+  string tenant_id = 1;
+  string user_id = 2;
+  string role = 3;
+}

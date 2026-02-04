@@ -1,0 +1,16 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/page": "app/page.js",
+  "/(auth)/login/page": "app/(auth)/login/page.js",
+  "/(dashboard)/analytics/page": "app/(dashboard)/analytics/page.js",
+  "/(dashboard)/flows/[flowId]/page": "app/(dashboard)/flows/[flowId]/page.js",
+  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js",
+  "/(dashboard)/channels/page": "app/(dashboard)/channels/page.js",
+  "/(dashboard)/conversations/page": "app/(dashboard)/conversations/page.js",
+  "/(dashboard)/flows/page": "app/(dashboard)/flows/page.js",
+  "/(dashboard)/knowledge-base/page": "app/(dashboard)/knowledge-base/page.js",
+  "/(dashboard)/settings/page": "app/(dashboard)/settings/page.js",
+  "/(dashboard)/knowledge-base/[id]/page": "app/(dashboard)/knowledge-base/[id]/page.js",
+  "/(dashboard)/knowledge-base/[id]/search/page": "app/(dashboard)/knowledge-base/[id]/search/page.js",
+  "/(dashboard)/contacts/page": "app/(dashboard)/contacts/page.js"
+}

@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package linktor.conversation;
+
+option go_package = "github.com/msgfy/linktor/internal/grpc/gen/conversation";
+
+import "google/protobuf/timestamp.proto";
+import "common/common.proto";
+
+// Conversation status
+enum ConversationStatus {
+  CONVERSATION_STATUS_UNSPECIFIED = 0;
+  CONVERSATION_STATUS_OPEN = 1;
+  CONVERSATION_STATUS_PENDING = 2;
+  CONVERSATION_STATUS_RESOLVED = 3;
+  CONVERSATION_STATUS_CLOSED = 4;
+}
+
+// Conversation priority
+enum ConversationPriority {
+  CONVERSATION_PRIORITY_UNSPECIFIED = 0;
+  CONVERSATION_PRIORITY_LOW = 1;
+  CONVERSATION_PRIORITY_NORMAL = 2;
+  CONVERSATION_PRIORITY_HIGH = 3;
+  CONVERSATION_PRIORITY_URGENT = 4;
+}
+
+// Conversation entity
+message Conversation {
+  string id = 1;
+  string tenant_id = 2;
+  string contact_id = 3;
+  string channel_id = 4;
+  string assigned_user_id = 5;
+  ConversationStatus status = 6;
+  ConversationPriority priority = 7;
+  string subject = 8;
+  repeated string tags = 9;
+  map<string, string> metadata = 10;
+  int32 unread_count = 11;
+  google.protobuf.Timestamp last_message_at = 12;
+  google.protobuf.Timestamp first_reply_at = 13;
+  google.protobuf.Timestamp resolved_at = 14;
+  google.protobuf.Timestamp created_at = 15;
+  google.protobuf.Timestamp updated_at = 16;
+}
+
+// Create conversation request
+message CreateConversationRequest {
+  string contact_id = 1;
+  string channel_id = 2;
+  string subject = 3;
+  ConversationPriority priority = 4;
+  repeated string tags = 5;
+  map<string, string> metadata = 6;
+}
+
+// Create conversation response
+message CreateConversationResponse {
+  Conversation conversation = 1;
+}
+
+// Get conversation request
+message GetConversationRequest {
+  string id = 1;
+}
+
+// Get conversation response
+message GetConversationResponse {
+  Conversation conversation = 1;
+}
+
+// List conversations request
+message ListConversationsRequest {
+  ConversationStatus status = 1;
+  string assigned_user_id = 2;
+  string channel_id = 3;
+  repeated string tags = 4;
+  linktor.common.PaginationRequest pagination = 5;
+}
+
+// List conversations response
+message ListConversationsResponse {
+  repeated Conversation conversations = 1;
+  linktor.common.PaginationResponse pagination = 2;
+}
+
+// Update conversation request
+message UpdateConversationRequest {
+  string id = 1;
+  optional ConversationStatus status = 2;
+  optional ConversationPriority priority = 3;
+  optional string assigned_user_id = 4;
+  optional string subject = 5;
+  repeated string tags = 6;
+}
+
+// Update conversation response
+message UpdateConversationResponse {
+  Conversation conversation = 1;
+}
+
+// Assign conversation request
+message AssignConversationRequest {
+  string id = 1;
+  string user_id = 2;
+}
+
+// Assign conversation response
+message AssignConversationResponse {
+  Conversation conversation = 1;
+}
+
+// Conversation service
+service ConversationService {
+  rpc CreateConversation(CreateConversationRequest) returns (CreateConversationResponse);
+  rpc GetConversation(GetConversationRequest) returns (GetConversationResponse);
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+  rpc UpdateConversation(UpdateConversationRequest) returns (UpdateConversationResponse);
+  rpc AssignConversation(AssignConversationRequest) returns (AssignConversationResponse);
+}
