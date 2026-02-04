@@ -157,41 +157,12 @@ msgfy (GitHub org: msgfy)
 
 ## Arquitetura
 
+
 ### Visão Geral
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                            EXTERNAL CLIENTS                              │
-│  (Admin Dashboard, Mobile Apps, Embeddable Widget, External Systems)     │
-└─────────────────────────────────┬───────────────────────────────────────┘
-                                  │
-                    ┌─────────────▼─────────────┐
-                    │      API Gateway          │
-                    │   (Gin HTTP + WebSocket)  │
-                    │   Auth │ Rate Limiting    │
-                    └─────────────┬─────────────┘
-                                  │
-        ┌─────────────────────────┼─────────────────────────┐
-        │                         │                         │
-┌───────▼───────┐       ┌────────▼────────┐       ┌────────▼────────┐
-│  Application  │       │    Domain       │       │   Adapters      │
-│    Layer      │       │    Layer        │       │                 │
-│               │       │                 │       │ • WhatsApp      │
-│ • Services    │◄─────►│ • Entities      │◄─────►│ • Telegram      │
-│ • Use Cases   │       │ • Repositories  │       │ • WebChat       │
-│ • Handlers    │       │ • Value Objects │       │ • SMS           │
-└───────────────┘       └─────────────────┘       │ • OpenAI        │
-                                                  │ • Anthropic     │
-                                                  │ • Ollama        │
-                                                  └─────────────────┘
-                                  │
-        ┌─────────────────────────┼─────────────────────────┐
-        │                         │                         │
-┌───────▼───────┐       ┌────────▼────────┐       ┌────────▼────────┐
-│  PostgreSQL   │       │     Redis       │       │ NATS JetStream  │
-│  + pgvector   │       │     Cache       │       │  Message Broker │
-└───────────────┘       └─────────────────┘       └─────────────────┘
-```
+<p align="center">
+  <img src="docs/assets/architecture.svg" alt="Linktor Architecture" width="100%"/>
+</p>
 
 ### Padrão Arquitetural: Hexagonal (Ports & Adapters)
 
