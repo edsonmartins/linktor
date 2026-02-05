@@ -98,6 +98,13 @@ const channelConfigs: Record<
     color: 'text-orange-500',
     bgColor: 'bg-orange-500/10',
   },
+  email: {
+    label: 'Email',
+    description: 'Multi-provider email integration',
+    icon: <MessageSquare className="h-6 w-6" />,
+    color: 'text-amber-500',
+    bgColor: 'bg-amber-500/10',
+  },
 }
 
 /**
@@ -320,12 +327,13 @@ export default function ChannelsPage() {
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <AvailableChannelCard type="webchat" />
             <AvailableChannelCard type="whatsapp_official" />
-            <AvailableChannelCard type="whatsapp" disabled />
-            <AvailableChannelCard type="telegram" disabled />
-            <AvailableChannelCard type="sms" disabled />
-            <AvailableChannelCard type="instagram" disabled />
-            <AvailableChannelCard type="facebook" disabled />
-            <AvailableChannelCard type="rcs" disabled />
+            <AvailableChannelCard type="telegram" />
+            <AvailableChannelCard type="sms" />
+            <AvailableChannelCard type="facebook" />
+            <AvailableChannelCard type="instagram" />
+            <AvailableChannelCard type="email" />
+            <AvailableChannelCard type="whatsapp" />
+            <AvailableChannelCard type="rcs" />
           </div>
         </section>
       </div>

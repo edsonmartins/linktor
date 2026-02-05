@@ -220,8 +220,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       }
 
       wsRef.current.onerror = (error) => {
-        console.error('[WebSocket] Error:', error)
-        onError?.(error)
+        // Only log error if we have a token (user is authenticated)
+        const token = tokenStorage.getAccessToken()
+        if (token) {
+          console.warn('[WebSocket] Connection error')
+          onError?.(error)
+        }
       }
     } catch (err) {
       console.error('[WebSocket] Failed to connect:', err)
@@ -245,10 +249,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     setConnectionState('disconnected')
   }, [reconnectAttempts])
 
-  // Auto connect on mount
+  // Auto connect on mount (only if token exists)
   useEffect(() => {
     if (autoConnect) {
-      connect()
+      const token = tokenStorage.getAccessToken()
+      if (token) {
+        connect()
+      }
     }
 
     return () => {

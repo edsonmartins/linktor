@@ -8,10 +8,10 @@ server:
   shutdown_timeout: 30
 
 database:
-  host: "192.168.1.110"
-  port: 5444
-  user: "admin"
-  password: "Rapidex@727204"
+  host: "localhost"
+  port: 5432
+  user: "linktor"
+  password: "linktor"
   database: "linktor"
   ssl_mode: "disable"
   max_open_conns: 25

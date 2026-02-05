@@ -1,20 +1,33 @@
 package handlers
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"time"
+
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/msgfy/linktor/internal/adapters/sms"
+	"github.com/msgfy/linktor/internal/adapters/telegram"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
+	"github.com/msgfy/linktor/internal/infrastructure/nats"
 )
 
 // ChannelHandler handles channel endpoints
 type ChannelHandler struct {
 	channelService *service.ChannelService
+	producer       *nats.Producer
 }
 
 // NewChannelHandler creates a new channel handler
-func NewChannelHandler(channelService *service.ChannelService) *ChannelHandler {
+func NewChannelHandler(channelService *service.ChannelService, producer *nats.Producer) *ChannelHandler {
 	return &ChannelHandler{
 		channelService: channelService,
+		producer:       producer,
 	}
 }
 
@@ -187,13 +200,284 @@ func (h *ChannelHandler) WhatsAppVerify(c *gin.Context) {
 // TelegramWebhook handles Telegram webhooks
 func (h *ChannelHandler) TelegramWebhook(c *gin.Context) {
 	channelID := c.Param("channelId")
-	// TODO: Implement Telegram webhook handling
-	RespondSuccess(c, gin.H{"channel_id": channelID, "status": "received"})
+
+	// Get channel
+	channel, err := h.channelService.GetByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	// Read body
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	// Parse webhook
+	update, err := telegram.ParseWebhook(body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+
+	// Extract message
+	incoming := telegram.ExtractIncomingMessage(update)
+	if incoming == nil {
+		// Not a message we handle (e.g., channel post, group message)
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		return
+	}
+
+	// Build metadata
+	metadata := map[string]string{
+		"from_user_id": fmt.Sprintf("%d", incoming.FromUserID),
+		"username":     incoming.FromUsername,
+		"first_name":   incoming.FromFirstName,
+		"last_name":    incoming.FromLastName,
+		"chat_id":      fmt.Sprintf("%d", incoming.ChatID),
+	}
+
+	// Determine content type
+	contentType := "text"
+	content := incoming.Text
+	var attachments []nats.AttachmentData
+
+	switch incoming.MessageType {
+	case telegram.MessageTypePhoto:
+		contentType = "image"
+		content = incoming.Caption
+		if incoming.MediaFileID != "" {
+			attachments = append(attachments, nats.AttachmentData{
+				Type: "image",
+				URL:  incoming.MediaFileID,
+				Metadata: map[string]string{
+					"file_id": incoming.MediaFileID,
+				},
+			})
+		}
+	case telegram.MessageTypeVideo:
+		contentType = "video"
+		content = incoming.Caption
+		if incoming.MediaFileID != "" {
+			attachments = append(attachments, nats.AttachmentData{
+				Type:     "video",
+				URL:      incoming.MediaFileID,
+				MimeType: incoming.MediaMimeType,
+				Metadata: map[string]string{
+					"file_id": incoming.MediaFileID,
+				},
+			})
+		}
+	case telegram.MessageTypeAudio, telegram.MessageTypeVoice:
+		contentType = "audio"
+		if incoming.MediaFileID != "" {
+			attachments = append(attachments, nats.AttachmentData{
+				Type:     "audio",
+				URL:      incoming.MediaFileID,
+				MimeType: incoming.MediaMimeType,
+				Metadata: map[string]string{
+					"file_id": incoming.MediaFileID,
+				},
+			})
+		}
+	case telegram.MessageTypeDocument:
+		contentType = "document"
+		content = incoming.Caption
+		if incoming.MediaFileID != "" {
+			attachments = append(attachments, nats.AttachmentData{
+				Type:     "document",
+				URL:      incoming.MediaFileID,
+				Filename: incoming.MediaFileName,
+				MimeType: incoming.MediaMimeType,
+				Metadata: map[string]string{
+					"file_id": incoming.MediaFileID,
+				},
+			})
+		}
+	case telegram.MessageTypeLocation:
+		contentType = "location"
+		if incoming.Location != nil {
+			content = fmt.Sprintf("%f,%f", incoming.Location.Latitude, incoming.Location.Longitude)
+			metadata["latitude"] = fmt.Sprintf("%f", incoming.Location.Latitude)
+			metadata["longitude"] = fmt.Sprintf("%f", incoming.Location.Longitude)
+		}
+	case telegram.MessageTypeContact:
+		contentType = "contact"
+		if incoming.Contact != nil {
+			contactData, _ := json.Marshal(incoming.Contact)
+			content = string(contactData)
+		}
+	}
+
+	// Handle reply
+	if incoming.ReplyToMsgID != nil {
+		metadata["reply_to_id"] = fmt.Sprintf("%d", *incoming.ReplyToMsgID)
+	}
+
+	// Create sender name
+	senderName := incoming.FromFirstName
+	if incoming.FromLastName != "" {
+		senderName += " " + incoming.FromLastName
+	}
+
+	// Publish to NATS
+	inbound := &nats.InboundMessage{
+		ID:          uuid.New().String(),
+		TenantID:    channel.TenantID,
+		ChannelID:   channel.ID,
+		ChannelType: "telegram",
+		ExternalID:  fmt.Sprintf("%d", incoming.MessageID),
+		ContentType: contentType,
+		Content:     content,
+		Metadata:    metadata,
+		Attachments: attachments,
+		Timestamp:   time.Now(),
+	}
+	inbound.Metadata["sender_id"] = fmt.Sprintf("%d", incoming.ChatID)
+	inbound.Metadata["sender_name"] = senderName
+
+	if h.producer != nil {
+		if err := h.producer.PublishInbound(c.Request.Context(), inbound); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process message"})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-// TwilioWebhook handles Twilio webhooks
+// TwilioWebhook handles Twilio SMS/MMS webhooks
 func (h *ChannelHandler) TwilioWebhook(c *gin.Context) {
 	channelID := c.Param("channelId")
-	// TODO: Implement Twilio webhook handling
-	RespondSuccess(c, gin.H{"channel_id": channelID, "status": "received"})
+
+	// Get channel
+	channel, err := h.channelService.GetByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	// Read body (form-encoded)
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	// Parse webhook
+	payload, webhookType, err := sms.ParseWebhook(body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+
+	switch webhookType {
+	case sms.WebhookTypeIncoming:
+		// Handle incoming SMS/MMS
+		contentType := "text"
+		content := payload.Body
+		var attachments []nats.AttachmentData
+
+		// Check for MMS media
+		numMedia := 0
+		if payload.NumMedia != "" {
+			fmt.Sscanf(payload.NumMedia, "%d", &numMedia)
+		}
+
+		if numMedia > 0 {
+			contentType = "image"
+			// Extract media URLs from form data
+			values, _ := url.ParseQuery(string(body))
+			for i := 0; i < numMedia; i++ {
+				mediaURL := values.Get(fmt.Sprintf("MediaUrl%d", i))
+				mediaType := values.Get(fmt.Sprintf("MediaContentType%d", i))
+				if mediaURL != "" {
+					attachments = append(attachments, nats.AttachmentData{
+						Type:     "image",
+						URL:      mediaURL,
+						MimeType: mediaType,
+					})
+				}
+			}
+		}
+
+		// Build metadata
+		metadata := map[string]string{
+			"sender_id":    payload.From,
+			"from":         payload.From,
+			"to":           payload.To,
+			"account_sid":  payload.AccountSID,
+			"from_city":    payload.FromCity,
+			"from_state":   payload.FromState,
+			"from_zip":     payload.FromZip,
+			"from_country": payload.FromCountry,
+		}
+
+		// Publish to NATS
+		inbound := &nats.InboundMessage{
+			ID:          uuid.New().String(),
+			TenantID:    channel.TenantID,
+			ChannelID:   channel.ID,
+			ChannelType: "sms",
+			ExternalID:  payload.MessageSID,
+			ContentType: contentType,
+			Content:     content,
+			Metadata:    metadata,
+			Attachments: attachments,
+			Timestamp:   time.Now(),
+		}
+
+		if h.producer != nil {
+			if err := h.producer.PublishInbound(c.Request.Context(), inbound); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process message"})
+				return
+			}
+		}
+
+		// Return TwiML response (empty response)
+		c.Header("Content-Type", "text/xml")
+		c.String(http.StatusOK, sms.EmptyTwiMLResponse())
+
+	case sms.WebhookTypeStatus:
+		// Handle status callback
+		twilioStatus := payload.MessageStatus
+		if twilioStatus == "" {
+			twilioStatus = payload.SmsStatus
+		}
+
+		// Map Twilio status
+		var status string
+		switch sms.ParseMessageStatus(twilioStatus) {
+		case sms.StatusDelivered:
+			status = "delivered"
+		case sms.StatusRead:
+			status = "read"
+		case sms.StatusFailed, sms.StatusUndelivered:
+			status = "failed"
+		case sms.StatusSent:
+			status = "sent"
+		default:
+			status = "pending"
+		}
+
+		// Publish status update
+		if h.producer != nil {
+			statusUpdate := &nats.StatusUpdate{
+				ExternalID:   payload.MessageSID,
+				ChannelType:  "sms",
+				Status:       status,
+				ErrorMessage: payload.ErrorMessage,
+				Timestamp:    time.Now(),
+			}
+			h.producer.PublishStatusUpdate(c.Request.Context(), statusUpdate)
+		}
+
+		c.Header("Content-Type", "text/xml")
+		c.String(http.StatusOK, sms.EmptyTwiMLResponse())
+
+	default:
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	}
 }

@@ -9,10 +9,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/msgfy/linktor/internal/adapters/email"
+	"github.com/msgfy/linktor/internal/adapters/facebook"
+	"github.com/msgfy/linktor/internal/adapters/instagram"
+	"github.com/msgfy/linktor/internal/adapters/rcs"
+	"github.com/msgfy/linktor/internal/adapters/sms"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
@@ -152,6 +158,259 @@ func (h *WebhookHandler) GenericWebhook(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "message_id": inbound.ID})
+}
+
+// TwilioWebhook handles Twilio SMS/MMS webhooks
+func (h *WebhookHandler) TwilioWebhook(c *gin.Context) {
+	channelID := c.Param("channelId")
+
+	// Get channel
+	channel, err := h.channelRepo.FindByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	// Read body (form-encoded)
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	// Parse webhook
+	payload, webhookType, err := sms.ParseWebhook(body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+
+	switch webhookType {
+	case sms.WebhookTypeIncoming:
+		// Handle incoming SMS/MMS
+		contentType := "text"
+		content := payload.Body
+		var attachments []nats.AttachmentData
+
+		// Check for MMS media
+		numMedia := 0
+		if payload.NumMedia != "" {
+			fmt.Sscanf(payload.NumMedia, "%d", &numMedia)
+		}
+
+		if numMedia > 0 {
+			contentType = "image"
+			// Extract media URLs from form data
+			values, _ := url.ParseQuery(string(body))
+			for i := 0; i < numMedia; i++ {
+				mediaURL := values.Get(fmt.Sprintf("MediaUrl%d", i))
+				mediaType := values.Get(fmt.Sprintf("MediaContentType%d", i))
+				if mediaURL != "" {
+					attachments = append(attachments, nats.AttachmentData{
+						Type:     "image",
+						URL:      mediaURL,
+						MimeType: mediaType,
+					})
+				}
+			}
+		}
+
+		// Build metadata
+		metadata := map[string]string{
+			"sender_id":    payload.From,
+			"from":         payload.From,
+			"to":           payload.To,
+			"account_sid":  payload.AccountSID,
+			"from_city":    payload.FromCity,
+			"from_state":   payload.FromState,
+			"from_zip":     payload.FromZip,
+			"from_country": payload.FromCountry,
+		}
+
+		// Publish to NATS
+		inbound := &nats.InboundMessage{
+			ID:          uuid.New().String(),
+			TenantID:    channel.TenantID,
+			ChannelID:   channel.ID,
+			ChannelType: "sms",
+			ExternalID:  payload.MessageSID,
+			ContentType: contentType,
+			Content:     content,
+			Metadata:    metadata,
+			Attachments: attachments,
+			Timestamp:   time.Now(),
+		}
+
+		if err := h.producer.PublishInbound(c.Request.Context(), inbound); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process message"})
+			return
+		}
+
+		// Return TwiML response (empty response)
+		c.Header("Content-Type", "text/xml")
+		c.String(http.StatusOK, sms.EmptyTwiMLResponse())
+
+	case sms.WebhookTypeStatus:
+		// Handle status callback
+		twilioStatus := payload.MessageStatus
+		if twilioStatus == "" {
+			twilioStatus = payload.SmsStatus
+		}
+
+		// Map Twilio status
+		var status string
+		switch sms.ParseMessageStatus(twilioStatus) {
+		case sms.StatusDelivered:
+			status = "delivered"
+		case sms.StatusRead:
+			status = "read"
+		case sms.StatusFailed, sms.StatusUndelivered:
+			status = "failed"
+		case sms.StatusSent:
+			status = "sent"
+		default:
+			status = "pending"
+		}
+
+		// Publish status update
+		statusUpdate := &nats.StatusUpdate{
+			ExternalID:   payload.MessageSID,
+			ChannelType:  "sms",
+			Status:       status,
+			ErrorMessage: payload.ErrorMessage,
+			Timestamp:    time.Now(),
+		}
+		h.producer.PublishStatusUpdate(c.Request.Context(), statusUpdate)
+
+		c.Header("Content-Type", "text/xml")
+		c.String(http.StatusOK, sms.EmptyTwiMLResponse())
+
+	default:
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	}
+}
+
+// FacebookWebhook handles Facebook Messenger webhooks
+func (h *WebhookHandler) FacebookWebhook(c *gin.Context) {
+	channelID := c.Param("channelId")
+
+	// Get channel
+	channel, err := h.channelRepo.FindByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	// Handle verification challenge (GET request)
+	if c.Request.Method == http.MethodGet {
+		h.handleFacebookVerification(c, channel)
+		return
+	}
+
+	// Get app secret from credentials
+	appSecret := channel.Credentials["app_secret"]
+	verifyToken := channel.Credentials["verify_token"]
+
+	// Create webhook handler
+	webhookHandler := facebook.NewWebhookHandler(appSecret, verifyToken)
+
+	// Parse webhook payload
+	payload, err := webhookHandler.ParseWebhook(c.Request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check if it's a Messenger webhook
+	if !facebook.IsMessengerWebhook(payload) {
+		c.JSON(http.StatusOK, gin.H{"status": "ignored"})
+		return
+	}
+
+	// Extract and process messages
+	messages := facebook.ExtractMessages(payload)
+	for _, msg := range messages {
+		// Skip echo messages
+		if msg.IsEcho {
+			continue
+		}
+
+		if err := h.processFacebookMessage(c.Request.Context(), channel, msg); err != nil {
+			// Log error but continue
+		}
+	}
+
+	// Process delivery statuses
+	deliveryStatuses := facebook.ExtractDeliveryStatuses(payload)
+	for _, status := range deliveryStatuses {
+		h.processFacebookDeliveryStatus(c.Request.Context(), channel, status)
+	}
+
+	// Process read statuses
+	readStatuses := facebook.ExtractReadStatuses(payload)
+	for _, status := range readStatuses {
+		h.processFacebookReadStatus(c.Request.Context(), channel, status)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// InstagramWebhook handles Instagram DM webhooks
+func (h *WebhookHandler) InstagramWebhook(c *gin.Context) {
+	channelID := c.Param("channelId")
+
+	// Get channel
+	channel, err := h.channelRepo.FindByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	// Handle verification challenge (GET request)
+	if c.Request.Method == http.MethodGet {
+		h.handleInstagramVerification(c, channel)
+		return
+	}
+
+	// Get app secret from credentials
+	appSecret := channel.Credentials["app_secret"]
+	verifyToken := channel.Credentials["verify_token"]
+
+	// Create webhook handler
+	webhookHandler := instagram.NewWebhookHandler(appSecret, verifyToken)
+
+	// Parse webhook payload
+	payload, err := webhookHandler.ParseWebhook(c.Request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check if it's an Instagram webhook
+	if !instagram.IsInstagramWebhook(payload) && !instagram.IsInstagramViaPageWebhook(payload) {
+		c.JSON(http.StatusOK, gin.H{"status": "ignored"})
+		return
+	}
+
+	// Extract and process messages
+	messages := instagram.ExtractMessages(payload)
+	for _, msg := range messages {
+		// Skip echo messages
+		if msg.IsEcho {
+			continue
+		}
+
+		// Skip deleted messages
+		if msg.IsDeleted {
+			continue
+		}
+
+		if err := h.processInstagramMessage(c.Request.Context(), channel, msg); err != nil {
+			// Log error but continue
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // StatusCallback handles message status callbacks
@@ -485,6 +744,134 @@ func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *en
 	return h.producer.PublishInbound(ctx, inbound)
 }
 
+func (h *WebhookHandler) handleFacebookVerification(c *gin.Context, channel *entity.Channel) {
+	mode := c.Query("hub.mode")
+	token := c.Query("hub.verify_token")
+	challenge := c.Query("hub.challenge")
+
+	verifyToken := channel.Credentials["verify_token"]
+
+	if mode == "subscribe" && token == verifyToken {
+		c.String(http.StatusOK, challenge)
+		return
+	}
+
+	c.JSON(http.StatusForbidden, gin.H{"error": "verification failed"})
+}
+
+func (h *WebhookHandler) handleInstagramVerification(c *gin.Context, channel *entity.Channel) {
+	mode := c.Query("hub.mode")
+	token := c.Query("hub.verify_token")
+	challenge := c.Query("hub.challenge")
+
+	verifyToken := channel.Credentials["verify_token"]
+
+	if mode == "subscribe" && token == verifyToken {
+		c.String(http.StatusOK, challenge)
+		return
+	}
+
+	c.JSON(http.StatusForbidden, gin.H{"error": "verification failed"})
+}
+
+func (h *WebhookHandler) processFacebookMessage(ctx context.Context, channel *entity.Channel, msg *facebook.IncomingMessage) error {
+	contentType := "text"
+	content := msg.Text
+	var attachments []nats.AttachmentData
+
+	// Handle attachments
+	if len(msg.Attachments) > 0 {
+		att := msg.Attachments[0]
+		contentType = facebook.GetAttachmentType(att.Type)
+		attachments = append(attachments, nats.AttachmentData{
+			Type: att.Type,
+			URL:  att.URL,
+		})
+
+		// Handle location
+		if att.Type == "location" {
+			contentType = "location"
+		}
+	}
+
+	metadata := map[string]string{
+		"sender_id": msg.SenderID,
+		"page_id":   msg.PageID,
+	}
+
+	if msg.QuickReply != "" {
+		metadata["quick_reply"] = msg.QuickReply
+	}
+
+	inbound := &nats.InboundMessage{
+		ID:          uuid.New().String(),
+		TenantID:    channel.TenantID,
+		ChannelID:   channel.ID,
+		ChannelType: "facebook",
+		ExternalID:  msg.ExternalID,
+		ContentType: contentType,
+		Content:     content,
+		Metadata:    metadata,
+		Attachments: attachments,
+		Timestamp:   msg.Timestamp,
+	}
+
+	return h.producer.PublishInbound(ctx, inbound)
+}
+
+func (h *WebhookHandler) processFacebookDeliveryStatus(ctx context.Context, channel *entity.Channel, status *facebook.DeliveryStatus) {
+	for _, msgID := range status.MessageIDs {
+		update := &nats.StatusUpdate{
+			ExternalID:  msgID,
+			ChannelType: "facebook",
+			Status:      "delivered",
+			Timestamp:   status.Watermark,
+		}
+		h.producer.PublishStatusUpdate(ctx, update)
+	}
+}
+
+func (h *WebhookHandler) processFacebookReadStatus(ctx context.Context, channel *entity.Channel, status *facebook.ReadStatus) {
+	// Facebook read status doesn't include specific message IDs, just watermark
+	// We can't update specific messages, but we can use the watermark for context
+}
+
+func (h *WebhookHandler) processInstagramMessage(ctx context.Context, channel *entity.Channel, msg *instagram.IncomingMessage) error {
+	contentType := "text"
+	content := msg.Text
+	var attachments []nats.AttachmentData
+
+	// Handle attachments
+	if len(msg.Attachments) > 0 {
+		att := msg.Attachments[0]
+		contentType = instagram.GetAttachmentType(att.Type)
+		attachments = append(attachments, nats.AttachmentData{
+			Type: att.Type,
+			URL:  att.URL,
+		})
+	}
+
+	metadata := map[string]string{
+		"sender_id":    msg.SenderID,
+		"instagram_id": msg.InstagramID,
+	}
+
+	inbound := &nats.InboundMessage{
+		ID:          uuid.New().String(),
+		TenantID:    channel.TenantID,
+		ChannelID:   channel.ID,
+		ChannelType: "instagram",
+		ExternalID:  msg.ExternalID,
+		ContentType: contentType,
+		Content:     content,
+		Metadata:    metadata,
+		Attachments: attachments,
+		Timestamp:   msg.Timestamp,
+	}
+
+	return h.producer.PublishInbound(ctx, inbound)
+}
+
 // Payload types
 
 type bodyReader struct {
@@ -499,6 +886,365 @@ func (b *bodyReader) Read(p []byte) (n int, err error) {
 	n = copy(p, b.data[b.pos:])
 	b.pos += n
 	return n, nil
+}
+
+// RCSWebhook handles RCS Business Messaging webhooks
+func (h *WebhookHandler) RCSWebhook(c *gin.Context) {
+	channelID := c.Param("channelId")
+
+	// Get channel
+	channel, err := h.channelRepo.FindByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	// Read body
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	// Create RCS client for validation
+	rcsConfig := &rcs.Config{
+		Provider:      rcs.Provider(channel.Config["provider"]),
+		AgentID:       channel.Config["agent_id"],
+		APIKey:        channel.Credentials["api_key"],
+		WebhookSecret: channel.Credentials["webhook_secret"],
+	}
+	client, err := rcs.NewClient(rcsConfig)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create client"})
+		return
+	}
+
+	// Verify signature if secret is configured
+	if rcsConfig.WebhookSecret != "" {
+		signature := c.GetHeader("X-Signature")
+		if signature == "" {
+			signature = c.GetHeader("X-Hub-Signature-256")
+		}
+		if !client.ValidateWebhook(signature, body) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+			return
+		}
+	}
+
+	// Parse webhook payload
+	payload, err := client.ParseWebhook(body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+
+	// Process based on type
+	switch payload.Type {
+	case "message":
+		if payload.Message != nil {
+			if err := h.processRCSMessage(c.Request.Context(), channel, payload.Message); err != nil {
+				// Log error but continue
+			}
+		}
+	case "status":
+		if payload.Status != nil {
+			h.processRCSStatus(c.Request.Context(), channel, payload.Status)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// processRCSMessage processes an incoming RCS message
+func (h *WebhookHandler) processRCSMessage(ctx context.Context, channel *entity.Channel, msg *rcs.IncomingMessage) error {
+	contentType := "text"
+	content := msg.Text
+	var attachments []nats.AttachmentData
+
+	// Determine content type and handle media
+	if msg.MediaURL != "" {
+		switch {
+		case len(msg.MediaType) >= 6 && msg.MediaType[:6] == "image/":
+			contentType = "image"
+		case len(msg.MediaType) >= 6 && msg.MediaType[:6] == "video/":
+			contentType = "video"
+		case len(msg.MediaType) >= 6 && msg.MediaType[:6] == "audio/":
+			contentType = "audio"
+		default:
+			contentType = "document"
+		}
+		attachments = append(attachments, nats.AttachmentData{
+			Type:     contentType,
+			URL:      msg.MediaURL,
+			MimeType: msg.MediaType,
+		})
+	} else if msg.Location != nil {
+		contentType = "location"
+		content = fmt.Sprintf("%s: %.6f,%.6f", msg.Location.Label, msg.Location.Latitude, msg.Location.Longitude)
+	}
+
+	// Build metadata
+	metadata := map[string]string{
+		"sender_phone": msg.SenderPhone,
+		"agent_id":     msg.AgentID,
+	}
+
+	// Add suggestion/postback data
+	if msg.Suggestion != nil {
+		metadata["postback_data"] = msg.Suggestion.PostbackData
+	}
+
+	// Publish inbound message
+	if h.producer != nil {
+		inboundMsg := &nats.InboundMessage{
+			ID:          uuid.New().String(),
+			TenantID:    channel.TenantID,
+			ChannelID:   channel.ID,
+			ChannelType: "rcs",
+			ExternalID:  msg.ExternalID,
+			ContentType: contentType,
+			Content:     content,
+			Metadata:    metadata,
+			Attachments: attachments,
+			Timestamp:   msg.Timestamp,
+		}
+
+		return h.producer.PublishInbound(ctx, inboundMsg)
+	}
+
+	return nil
+}
+
+// processRCSStatus processes an RCS delivery status update
+func (h *WebhookHandler) processRCSStatus(ctx context.Context, channel *entity.Channel, report *rcs.DeliveryReport) {
+	var status string
+	switch report.Status {
+	case rcs.StatusSent:
+		status = "sent"
+	case rcs.StatusDelivered:
+		status = "delivered"
+	case rcs.StatusRead:
+		status = "read"
+	case rcs.StatusFailed:
+		status = "failed"
+	default:
+		status = "pending"
+	}
+
+	if h.producer != nil {
+		h.producer.PublishStatusUpdate(ctx, &nats.StatusUpdate{
+			ExternalID:   report.MessageID,
+			ChannelType:  "rcs",
+			Status:       status,
+			ErrorMessage: report.Error,
+			Timestamp:    report.Timestamp,
+		})
+	}
+}
+
+// EmailWebhook handles Email webhooks from various providers (SendGrid, Mailgun, SES, Postmark)
+func (h *WebhookHandler) EmailWebhook(c *gin.Context) {
+	channelID := c.Param("channelId")
+
+	// Get channel
+	channel, err := h.channelRepo.FindByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	// Read body
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	// Determine provider from config or URL
+	provider := email.Provider(channel.Config["provider"])
+	if provider == "" {
+		// Try to determine from URL path
+		path := c.Request.URL.Path
+		switch {
+		case contains(path, "sendgrid"):
+			provider = email.ProviderSendGrid
+		case contains(path, "mailgun"):
+			provider = email.ProviderMailgun
+		case contains(path, "ses"):
+			provider = email.ProviderSES
+		case contains(path, "postmark"):
+			provider = email.ProviderPostmark
+		default:
+			provider = email.ProviderSMTP
+		}
+	}
+
+	// Build headers map
+	headers := make(map[string]string)
+	for key := range c.Request.Header {
+		headers[key] = c.Request.Header.Get(key)
+	}
+
+	// Parse webhook payload
+	payload, err := email.ParseWebhook(provider, body, headers)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload: " + err.Error()})
+		return
+	}
+
+	// Process based on type
+	switch payload.Type {
+	case "inbound":
+		if payload.IncomingEmail != nil {
+			if err := h.processEmailMessage(c.Request.Context(), channel, payload.IncomingEmail); err != nil {
+				// Log error but continue
+			}
+		}
+	case "status":
+		if payload.StatusCallback != nil {
+			h.processEmailStatus(c.Request.Context(), channel, payload.StatusCallback)
+		}
+	case "subscription_confirmation":
+		// SES subscription confirmation - return 200 to acknowledge
+		c.JSON(http.StatusOK, gin.H{"status": "confirmed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// processEmailMessage processes an incoming email message
+func (h *WebhookHandler) processEmailMessage(ctx context.Context, channel *entity.Channel, msg *email.IncomingEmail) error {
+	contentType := "text"
+	content := msg.TextBody
+	var attachments []nats.AttachmentData
+
+	// Prefer text body, but use HTML if no text
+	if content == "" && msg.HTMLBody != "" {
+		content = msg.HTMLBody
+		contentType = "text" // Still text, but HTML
+	}
+
+	// Handle attachments
+	for _, att := range msg.Attachments {
+		attType := "document"
+		if len(att.ContentType) >= 6 {
+			switch att.ContentType[:6] {
+			case "image/":
+				attType = "image"
+			case "video/":
+				attType = "video"
+			case "audio/":
+				attType = "audio"
+			}
+		}
+
+		attachments = append(attachments, nats.AttachmentData{
+			Type:      attType,
+			URL:       att.URL,
+			Filename:  att.Filename,
+			MimeType:  att.ContentType,
+			SizeBytes: att.Size,
+		})
+	}
+
+	// Build metadata
+	metadata := map[string]string{
+		"sender_id":   msg.From,
+		"sender_name": msg.FromName,
+		"subject":     msg.Subject,
+		"message_id":  msg.MessageID,
+	}
+
+	if len(msg.To) > 0 {
+		metadata["to"] = joinStrings(msg.To, ",")
+	}
+	if len(msg.CC) > 0 {
+		metadata["cc"] = joinStrings(msg.CC, ",")
+	}
+	if msg.InReplyTo != "" {
+		metadata["in_reply_to"] = msg.InReplyTo
+	}
+	if msg.References != "" {
+		metadata["references"] = msg.References
+	}
+	if msg.SpamScore > 0 {
+		metadata["spam_score"] = fmt.Sprintf("%.2f", msg.SpamScore)
+	}
+
+	// Publish inbound message
+	if h.producer != nil {
+		inboundMsg := &nats.InboundMessage{
+			ID:          uuid.New().String(),
+			TenantID:    channel.TenantID,
+			ChannelID:   channel.ID,
+			ChannelType: "email",
+			ExternalID:  msg.MessageID,
+			ContentType: contentType,
+			Content:     content,
+			Metadata:    metadata,
+			Attachments: attachments,
+			Timestamp:   msg.ReceivedAt,
+		}
+
+		return h.producer.PublishInbound(ctx, inboundMsg)
+	}
+
+	return nil
+}
+
+// processEmailStatus processes an email delivery status update
+func (h *WebhookHandler) processEmailStatus(ctx context.Context, channel *entity.Channel, report *email.StatusCallback) {
+	var status string
+	switch report.Status {
+	case email.StatusSent:
+		status = "sent"
+	case email.StatusDelivered:
+		status = "delivered"
+	case email.StatusOpened, email.StatusClicked:
+		status = "read"
+	case email.StatusBounced, email.StatusFailed, email.StatusSpam:
+		status = "failed"
+	default:
+		status = "pending"
+	}
+
+	if h.producer != nil {
+		h.producer.PublishStatusUpdate(ctx, &nats.StatusUpdate{
+			MessageID:    report.MessageID,
+			ExternalID:   report.ExternalID,
+			ChannelType:  "email",
+			Status:       status,
+			ErrorMessage: report.ErrorMessage,
+			Timestamp:    report.Timestamp,
+		})
+	}
+}
+
+// Helper function to check if string contains substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+// Helper function to join strings
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
 }
 
 // WhatsApp types

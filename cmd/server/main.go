@@ -13,8 +13,15 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/ai/anthropic"
 	"github.com/msgfy/linktor/internal/adapters/ai/ollama"
 	"github.com/msgfy/linktor/internal/adapters/ai/openai"
+	"github.com/msgfy/linktor/internal/adapters/email"
+	"github.com/msgfy/linktor/internal/adapters/facebook"
+	"github.com/msgfy/linktor/internal/adapters/instagram"
+	"github.com/msgfy/linktor/internal/adapters/rcs"
+	"github.com/msgfy/linktor/internal/adapters/sms"
+	"github.com/msgfy/linktor/internal/adapters/telegram"
 	"github.com/msgfy/linktor/internal/adapters/webchat"
-	whatsapp "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
+	"github.com/msgfy/linktor/internal/adapters/whatsapp"
+	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/api/handlers"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
@@ -58,7 +65,7 @@ func main() {
 	// Run migrations
 	logger.Info("Running database migrations...")
 	if err := db.RunMigrations(context.Background()); err != nil {
-		logger.Fatal("Failed to run migrations")
+		logger.Fatal("Failed to run migrations: " + err.Error())
 	}
 
 	// Seed database with initial data
@@ -233,10 +240,52 @@ func main() {
 
 	// Initialize WhatsApp Official adapter
 	logger.Info("Initializing WhatsApp Official adapter...")
-	whatsappAdapter := whatsapp.NewAdapter()
+	whatsappOfficialAdapter := whatsappofficial.NewAdapter()
 	// Note: WhatsApp adapter requires per-channel initialization with credentials
 	// Registration makes it available as a channel type
-	plugin.Register(plugin.ChannelTypeWhatsAppOfficial, whatsappAdapter)
+	plugin.Register(plugin.ChannelTypeWhatsAppOfficial, whatsappOfficialAdapter)
+
+	// Initialize WhatsApp Unofficial adapter (whatsmeow)
+	logger.Info("Initializing WhatsApp Unofficial adapter...")
+	whatsappAdapter := whatsapp.NewAdapter()
+	// Note: WhatsApp unofficial requires QR code authentication
+	plugin.Register(plugin.ChannelTypeWhatsApp, whatsappAdapter)
+
+	// Initialize RCS adapter
+	logger.Info("Initializing RCS adapter...")
+	rcsAdapter := rcs.NewAdapter()
+	// Note: RCS adapter requires provider credentials (Zenvia, Infobip, etc)
+	plugin.Register(plugin.ChannelTypeRCS, rcsAdapter)
+
+	// Initialize Telegram adapter
+	logger.Info("Initializing Telegram adapter...")
+	telegramAdapter := telegram.NewAdapter()
+	// Note: Telegram adapter requires per-channel initialization with bot token
+	plugin.Register(plugin.ChannelTypeTelegram, telegramAdapter)
+
+	// Initialize SMS/Twilio adapter
+	logger.Info("Initializing SMS/Twilio adapter...")
+	smsAdapter := sms.NewAdapter()
+	// Note: SMS adapter requires per-channel initialization with Twilio credentials
+	plugin.Register(plugin.ChannelTypeSMS, smsAdapter)
+
+	// Initialize Facebook Messenger adapter
+	logger.Info("Initializing Facebook Messenger adapter...")
+	facebookAdapter := facebook.NewAdapter()
+	// Note: Facebook adapter requires per-channel initialization with OAuth credentials
+	plugin.Register(plugin.ChannelTypeFacebook, facebookAdapter)
+
+	// Initialize Instagram DM adapter
+	logger.Info("Initializing Instagram DM adapter...")
+	instagramAdapter := instagram.NewAdapter()
+	// Note: Instagram adapter requires per-channel initialization with OAuth credentials
+	plugin.Register(plugin.ChannelTypeInstagram, instagramAdapter)
+
+	// Initialize Email adapter
+	logger.Info("Initializing Email adapter...")
+	emailAdapter := email.NewAdapter()
+	// Note: Email adapter supports multiple providers (SMTP, SendGrid, Mailgun, SES, Postmark)
+	plugin.Register(plugin.ChannelTypeEmail, emailAdapter)
 
 	// Create WebChat handler
 	webchatHandler := webchat.NewHandler(
@@ -274,6 +323,13 @@ func main() {
 
 	// Create analytics handler
 	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
+
+	// Create OAuth handler
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		baseURL = fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
+	}
+	oauthHandler := handlers.NewOAuthHandler(channelRepo, baseURL)
 
 	// Create auth middleware
 	authMiddleware := middleware.NewAuthMiddleware(authService)
@@ -417,6 +473,17 @@ func main() {
 		{
 			webhooks.Any("/whatsapp/:channelId", webhookHandler.WhatsAppWebhook)
 			webhooks.POST("/telegram/:channelId", webhookHandler.TelegramWebhook)
+			webhooks.Any("/twilio/:channelId", webhookHandler.TwilioWebhook)
+			webhooks.Any("/sms/:channelId", webhookHandler.TwilioWebhook) // Alias for Twilio
+			webhooks.Any("/facebook/:channelId", webhookHandler.FacebookWebhook)
+			webhooks.Any("/messenger/:channelId", webhookHandler.FacebookWebhook) // Alias for Facebook
+			webhooks.Any("/instagram/:channelId", webhookHandler.InstagramWebhook)
+			webhooks.Any("/rcs/:channelId", webhookHandler.RCSWebhook)
+			webhooks.Any("/email/:channelId", webhookHandler.EmailWebhook)
+			webhooks.Any("/email/:channelId/sendgrid", webhookHandler.EmailWebhook)
+			webhooks.Any("/email/:channelId/mailgun", webhookHandler.EmailWebhook)
+			webhooks.Any("/email/:channelId/ses", webhookHandler.EmailWebhook)
+			webhooks.Any("/email/:channelId/postmark", webhookHandler.EmailWebhook)
 			webhooks.POST("/generic/:channelId", webhookHandler.GenericWebhook)
 			webhooks.POST("/status/:channelId", webhookHandler.StatusCallback)
 		}
@@ -450,6 +517,24 @@ func main() {
 			{
 				channels.GET("", createListChannelsHandler(channelRepo))
 				channels.GET("/:id", createGetChannelHandler(channelRepo))
+			}
+
+			// OAuth routes for Facebook/Instagram
+			oauth := protected.Group("/oauth")
+			{
+				// Facebook OAuth
+				oauth.POST("/facebook/login", oauthHandler.FacebookLogin)
+				oauth.POST("/facebook/callback", oauthHandler.FacebookCallback)
+
+				// Instagram OAuth
+				oauth.POST("/instagram/login", oauthHandler.InstagramLogin)
+				oauth.POST("/instagram/callback", oauthHandler.InstagramCallback)
+
+				// Channel creation from OAuth
+				oauth.POST("/channels", oauthHandler.CreateChannel)
+
+				// Token refresh
+				oauth.POST("/refresh", oauthHandler.RefreshToken)
 			}
 
 			// Bots
@@ -579,7 +664,14 @@ func main() {
 
 	// Disconnect adapters
 	webchatAdapter.Disconnect(context.Background())
+	whatsappOfficialAdapter.Disconnect(context.Background())
 	whatsappAdapter.Disconnect(context.Background())
+	telegramAdapter.Disconnect(context.Background())
+	smsAdapter.Disconnect(context.Background())
+	facebookAdapter.Disconnect(context.Background())
+	instagramAdapter.Disconnect(context.Background())
+	rcsAdapter.Disconnect(context.Background())
+	emailAdapter.Disconnect(context.Background())
 
 	// Create context with timeout for shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Duration(cfg.Server.ShutdownTimeout)*time.Second)

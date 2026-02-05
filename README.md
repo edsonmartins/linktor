@@ -193,6 +193,20 @@ linktor/
 │   ├── server/                   # Servidor principal
 │   │   └── main.go               # Bootstrap da aplicação
 │   └── cli/                      # CLI tool (msgfy)
+│       ├── main.go               # Entry point do CLI
+│       ├── cmd/                  # Comandos Cobra
+│       │   ├── root.go           # Comando raiz
+│       │   ├── auth.go           # Autenticação
+│       │   ├── channel.go        # Canais
+│       │   ├── send.go           # Enviar mensagens
+│       │   ├── conversation.go   # Conversas
+│       │   ├── contact.go        # Contatos
+│       │   ├── bot.go            # Bots
+│       │   ├── flow.go           # Flows
+│       │   ├── knowledge.go      # Knowledge bases
+│       │   ├── webhook.go        # Webhooks
+│       │   └── server.go         # Self-hosted
+│       └── internal/client/      # HTTP client
 │
 ├── internal/                     # Código interno (não exportado)
 │   ├── domain/                   # Camada de domínio (DDD)
@@ -306,12 +320,14 @@ linktor/
 │   ├── message/
 │   └── tenant/
 │
-├── sdk/                          # SDKs multiplataforma
-│   ├── go/
-│   ├── typescript/
-│   ├── python/
-│   ├── java/
-│   └── dotnet/
+├── sdks/                         # SDKs multiplataforma
+│   ├── go/                       # SDK Go
+│   ├── typescript/               # SDK TypeScript/JavaScript
+│   ├── python/                   # SDK Python
+│   ├── java/                     # SDK Java
+│   ├── dotnet/                   # SDK .NET/C#
+│   ├── rust/                     # SDK Rust
+│   └── php/                      # SDK PHP
 │
 ├── pkg/                          # Packages públicos
 │   ├── errors/                   # Error handling
@@ -739,65 +755,219 @@ ws.onmessage = (event) => {
 
 ## SDKs
 
+SDKs oficiais estão disponíveis em 7 linguagens. Todos seguem a mesma estrutura e API.
+
+| SDK | Package | Instalação |
+|-----|---------|------------|
+| Go | `github.com/linktor/linktor-go` | `go get github.com/linktor/linktor-go` |
+| TypeScript | `@linktor/sdk` | `npm install @linktor/sdk` |
+| Python | `linktor` | `pip install linktor` |
+| Java | `io.linktor:linktor-sdk` | Maven/Gradle |
+| .NET | `Linktor.SDK` | `dotnet add package Linktor.SDK` |
+| Rust | `linktor` | `cargo add linktor` |
+| PHP | `linktor/linktor-php` | `composer require linktor/linktor-php` |
+
 ### SDK Go
 
 ```go
-import "github.com/msgfy/msgfy-go"
+import linktor "github.com/linktor/linktor-go"
 
-client, err := msgfy.New("sk_live_...")
+client := linktor.NewClient("lk_live_...")
 
 // Enviar mensagem
-msg, err := client.SendMessage(ctx, &msgfy.SendMessageRequest{
-    ChannelID: "ch_123",
-    To:        "+5544999999999",
-    Text:      "Hello from Go!",
+msg, err := client.Conversations.SendMessage(ctx, "cv_123", &linktor.SendMessageInput{
+    Text: "Hello from Go!",
 })
 
 // Listar conversas
-convs, err := client.ListConversations(ctx, &msgfy.ListOptions{
-    Status: "open",
-    Limit:  20,
+convs, err := client.Conversations.List(ctx, &linktor.ListConversationsParams{
+    Status: linktor.String("open"),
+    Limit:  linktor.Int(20),
 })
+
+// WebSocket para eventos em tempo real
+ws := client.WebSocket()
+ws.OnMessage(func(msg *linktor.Message) {
+    fmt.Printf("New message: %s\n", msg.Text)
+})
+ws.Connect(ctx)
 ```
 
 ### SDK TypeScript
 
 ```typescript
-import { MsgfyClient } from '@msgfy/sdk';
+import { LinktorClient } from '@linktor/sdk';
 
-const client = new MsgfyClient('sk_live_...');
+const client = new LinktorClient('lk_live_...');
 
 // Enviar mensagem
-const msg = await client.sendMessage({
-  channelId: 'ch_123',
-  to: '+5544999999999',
+const msg = await client.conversations.sendMessage('cv_123', {
   text: 'Hello from TypeScript!',
 });
 
 // Listar conversas
-const convs = await client.listConversations({
+const convs = await client.conversations.list({
   status: 'open',
   limit: 20,
 });
+
+// WebSocket para eventos em tempo real
+const ws = client.websocket();
+ws.on('message', (msg) => {
+  console.log('New message:', msg.text);
+});
+await ws.connect();
 ```
 
 ### SDK Python
 
 ```python
-from msgfy import MsgfyClient
+from linktor import LinktorClient
 
-client = MsgfyClient("sk_live_...")
+client = LinktorClient("lk_live_...")
 
 # Enviar mensagem
-msg = client.send_message(
-    channel_id="ch_123",
-    to="+5544999999999",
+msg = client.conversations.send_message(
+    conversation_id="cv_123",
     text="Hello from Python!"
 )
 
 # Listar conversas
-convs = client.list_conversations(status="open", limit=20)
+convs = client.conversations.list(status="open", limit=20)
+
+# WebSocket para eventos em tempo real
+ws = client.websocket()
+
+@ws.on_message
+def handle_message(msg):
+    print(f"New message: {msg.text}")
+
+ws.connect()
 ```
+
+### SDK Java
+
+```java
+import io.linktor.LinktorClient;
+
+LinktorClient client = new LinktorClient("lk_live_...");
+
+// Enviar mensagem
+Message msg = client.conversations().sendMessage("cv_123",
+    new SendMessageInput().text("Hello from Java!"));
+
+// Listar conversas
+PaginatedResponse<Conversation> convs = client.conversations().list(
+    new ListConversationsParams().status("open").limit(20));
+
+// WebSocket para eventos em tempo real
+LinktorWebSocket ws = client.websocket();
+ws.onMessage(msg -> System.out.println("New message: " + msg.getText()));
+ws.connect();
+```
+
+### SDK .NET
+
+```csharp
+using Linktor;
+
+var client = new LinktorClient("lk_live_...");
+
+// Enviar mensagem
+var msg = await client.Conversations.SendMessageAsync("cv_123", new SendMessageInput
+{
+    Text = "Hello from .NET!"
+});
+
+// Listar conversas
+var convs = await client.Conversations.ListAsync(new ListConversationsParams
+{
+    Status = "open",
+    Limit = 20
+});
+
+// WebSocket para eventos em tempo real
+var ws = client.WebSocket();
+ws.OnMessage += (sender, msg) => Console.WriteLine($"New message: {msg.Text}");
+await ws.ConnectAsync();
+```
+
+### SDK Rust
+
+```rust
+use linktor::LinktorClient;
+
+let client = LinktorClient::new("lk_live_...");
+
+// Enviar mensagem
+let msg = client.conversations()
+    .send_message("cv_123", SendMessageInput {
+        text: Some("Hello from Rust!".to_string()),
+        ..Default::default()
+    })
+    .await?;
+
+// Listar conversas
+let convs = client.conversations()
+    .list(ListConversationsParams {
+        status: Some("open".to_string()),
+        limit: Some(20),
+        ..Default::default()
+    })
+    .await?;
+```
+
+### SDK PHP
+
+```php
+use Linktor\LinktorClient;
+
+$client = new LinktorClient('lk_live_...');
+
+// Enviar mensagem
+$msg = $client->conversations->sendMessage('cv_123', [
+    'text' => 'Hello from PHP!'
+]);
+
+// Listar conversas
+$convs = $client->conversations->list([
+    'status' => 'open',
+    'limit' => 20
+]);
+```
+
+### CLI (msgfy)
+
+O CLI oficial permite gerenciar a plataforma via linha de comando:
+
+```bash
+# Instalar
+go install github.com/linktor/msgfy@latest
+
+# Autenticar
+msgfy auth login
+
+# Listar canais
+msgfy channel list
+
+# Enviar mensagem
+msgfy send --channel ch_abc123 --to "+5544999999999" --text "Hello!"
+
+# Listar conversas
+msgfy conv list --status open
+
+# Gerenciar bots
+msgfy bot list
+msgfy bot start bt_abc123
+
+# Consultar knowledge base
+msgfy kb query kb_abc123 "Como resetar senha?"
+
+# Webhook debugging
+msgfy webhook listen --port 3000
+```
+
+Documentação completa do CLI: [cmd/cli/README.md](cmd/cli/README.md)
 
 ---
 
@@ -1084,13 +1254,15 @@ CREATE TABLE flows (
 - [x] Analytics Dashboard
 - [x] Escalação inteligente
 
-### Fase 6: SDKs & CLI 📋
-- [ ] SDK Go
-- [ ] SDK TypeScript
-- [ ] SDK Python
-- [ ] SDK Java
-- [ ] SDK .NET
-- [ ] CLI tool (msgfy)
+### Fase 6: SDKs & CLI ✅
+- [x] SDK Go
+- [x] SDK TypeScript
+- [x] SDK Python
+- [x] SDK Java
+- [x] SDK .NET
+- [x] SDK Rust
+- [x] SDK PHP
+- [x] CLI tool (msgfy)
 
 ### Fase 7: More Channels 📋
 - [ ] Telegram completo

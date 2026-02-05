@@ -63,6 +63,7 @@ export type ChannelType =
   | 'instagram'
   | 'facebook'
   | 'rcs'
+  | 'email'
 
 // Contact
 export interface Contact {
