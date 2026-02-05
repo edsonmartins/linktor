@@ -79,12 +79,14 @@ msgfy (GitHub org: msgfy)
 | Canal | Status | Descrição |
 |-------|--------|-----------|
 | WhatsApp Business API | ✅ Completo | Integração oficial Meta Cloud API |
+| WhatsApp Unofficial | ✅ Completo | Baileys/WhatsApp Web Multi-device |
 | WebChat | ✅ Completo | Widget embeddable para websites |
-| Telegram | 🚧 Em desenvolvimento | Bot API |
-| SMS | 🚧 Em desenvolvimento | Twilio, Vonage |
-| Instagram DM | 📋 Planejado | Meta Graph API |
-| Facebook Messenger | 📋 Planejado | Meta Graph API |
-| RCS | 📋 Planejado | Google RCS Business Messaging |
+| Telegram | ✅ Completo | Bot API com suporte a mídia |
+| SMS | ✅ Completo | Twilio, Vonage, Plivo |
+| Email | ✅ Completo | SMTP, SendGrid, SES, Mailgun, Postmark |
+| Instagram DM | ✅ Completo | Meta Graph API |
+| Facebook Messenger | ✅ Completo | Meta Graph API |
+| RCS | ✅ Completo | Google RCS Business Messaging |
 | Voice | 📋 Planejado | VoIP integration |
 
 ### Core Features
@@ -1264,13 +1266,15 @@ CREATE TABLE flows (
 - [x] SDK PHP
 - [x] CLI tool (msgfy)
 
-### Fase 7: More Channels 📋
-- [ ] Telegram completo
-- [ ] SMS (Twilio, Vonage)
-- [ ] Instagram DM
-- [ ] Facebook Messenger
-- [ ] RCS
-- [ ] Voice
+### Fase 7: More Channels ✅
+- [x] Telegram completo
+- [x] SMS (Twilio, Vonage, Plivo)
+- [x] Email (SMTP, SendGrid, SES, Mailgun, Postmark)
+- [x] Instagram DM
+- [x] Facebook Messenger
+- [x] RCS
+- [x] WhatsApp Unofficial (Baileys)
+- [ ] Voice (VoIP)
 
 ### Fase 8: Enterprise 📋
 - [ ] Webhooks outbound
