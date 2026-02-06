@@ -1,0 +1,255 @@
+/**
+ * Linktor Documentation - Terminal Dark Theme
+ * Matches the admin and landing page design system
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* Terminal Green as primary color */
+:root {
+  --ifm-color-primary: #4ade80;
+  --ifm-color-primary-dark: #22c55e;
+  --ifm-color-primary-darker: #16a34a;
+  --ifm-color-primary-darkest: #15803d;
+  --ifm-color-primary-light: #86efac;
+  --ifm-color-primary-lighter: #bbf7d0;
+  --ifm-color-primary-lightest: #dcfce7;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-font-family-base: 'Inter', system-ui, sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Dark Theme - Terminal Style */
+[data-theme='dark'] {
+  /* Terminal green as primary */
+  --ifm-color-primary: #4ade80;
+  --ifm-color-primary-dark: #22c55e;
+  --ifm-color-primary-darker: #16a34a;
+  --ifm-color-primary-darkest: #15803d;
+  --ifm-color-primary-light: #86efac;
+  --ifm-color-primary-lighter: #bbf7d0;
+  --ifm-color-primary-lightest: #dcfce7;
+
+  /* Background colors */
+  --ifm-background-color: #0a0a0a;
+  --ifm-background-surface-color: #141414;
+  --ifm-navbar-background-color: #0a0a0a;
+  --ifm-footer-background-color: #0a0a0a;
+
+  /* Text colors */
+  --ifm-font-color-base: #e5e5e5;
+  --ifm-font-color-secondary: #a3a3a3;
+
+  /* Border color */
+  --ifm-toc-border-color: #262626;
+  --ifm-hr-border-color: #262626;
+
+  /* Code highlighting */
+  --docusaurus-highlighted-code-line-bg: rgba(74, 222, 128, 0.1);
+
+  /* Card and sidebar */
+  --ifm-card-background-color: #141414;
+  --ifm-menu-color-background-active: rgba(74, 222, 128, 0.1);
+  --ifm-menu-color-active: #4ade80;
+}
+
+/* Navbar styling */
+.navbar {
+  border-bottom: 1px solid #262626;
+}
+
+[data-theme='dark'] .navbar {
+  background: rgba(10, 10, 10, 0.95);
+  backdrop-filter: blur(10px);
+}
+
+.navbar__title {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+}
+
+.navbar__title::after {
+  content: '_';
+  color: var(--ifm-color-primary);
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Sidebar styling */
+[data-theme='dark'] .menu {
+  background: transparent;
+}
+
+[data-theme='dark'] .menu__link {
+  border-radius: 0.5rem;
+}
+
+[data-theme='dark'] .menu__link--active {
+  background: rgba(74, 222, 128, 0.1);
+  border-left: 2px solid var(--ifm-color-primary);
+}
+
+/* Code blocks */
+[data-theme='dark'] pre {
+  background: #0a0a0a !important;
+  border: 1px solid #262626;
+  border-radius: 0.5rem;
+}
+
+[data-theme='dark'] code {
+  background: #141414;
+  border: 1px solid #262626;
+  border-radius: 0.25rem;
+}
+
+/* Terminal-style code block header */
+.prism-code::before {
+  content: '';
+  display: block;
+  background: #141414;
+  margin: -1rem -1rem 1rem -1rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #262626;
+  position: relative;
+}
+
+/* Admonitions / Alerts */
+[data-theme='dark'] .alert {
+  background: #141414;
+  border-color: #262626;
+}
+
+[data-theme='dark'] .alert--success {
+  --ifm-alert-border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+[data-theme='dark'] .alert--info {
+  --ifm-alert-border-color: #06b6d4;
+  background: rgba(6, 182, 212, 0.1);
+}
+
+[data-theme='dark'] .alert--warning {
+  --ifm-alert-border-color: #eab308;
+  background: rgba(234, 179, 8, 0.1);
+}
+
+[data-theme='dark'] .alert--danger {
+  --ifm-alert-border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Footer */
+[data-theme='dark'] .footer {
+  background: #0a0a0a;
+  border-top: 1px solid #262626;
+}
+
+/* Tables */
+[data-theme='dark'] table {
+  border-collapse: collapse;
+}
+
+[data-theme='dark'] table th,
+[data-theme='dark'] table td {
+  border: 1px solid #262626;
+}
+
+[data-theme='dark'] table th {
+  background: #141414;
+}
+
+[data-theme='dark'] table tr:nth-child(even) {
+  background: rgba(20, 20, 20, 0.5);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #404040;
+}
+
+/* Selection */
+::selection {
+  background: rgba(74, 222, 128, 0.3);
+}
+
+/* Search */
+[data-theme='dark'] .DocSearch-Button {
+  background: #141414;
+  border: 1px solid #262626;
+}
+
+[data-theme='dark'] .DocSearch-Button:hover {
+  background: #1a1a1a;
+  border-color: var(--ifm-color-primary);
+}
+
+/* Pagination */
+[data-theme='dark'] .pagination-nav__link {
+  background: #141414;
+  border: 1px solid #262626;
+}
+
+[data-theme='dark'] .pagination-nav__link:hover {
+  border-color: var(--ifm-color-primary);
+}
+
+/* TOC */
+[data-theme='dark'] .table-of-contents__link--active {
+  color: var(--ifm-color-primary);
+}
+
+/* Tabs */
+[data-theme='dark'] .tabs__item {
+  border-bottom: 2px solid transparent;
+}
+
+[data-theme='dark'] .tabs__item--active {
+  border-bottom-color: var(--ifm-color-primary);
+}
+
+/* Hero section on intro page */
+.hero {
+  background: linear-gradient(135deg, #0a0a0a 0%, #141414 100%);
+}
+
+.hero__title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.hero__subtitle {
+  color: #a3a3a3;
+}
+
+/* Cards */
+.card {
+  background: #141414;
+  border: 1px solid #262626;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 0 20px rgba(74, 222, 128, 0.1);
+}

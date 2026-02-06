@@ -2,10 +2,12 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import {
   LayoutDashboard,
   MessageSquare,
   Users,
+  UsersRound,
   Radio,
   BookOpen,
   GitBranch,
@@ -14,8 +16,8 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Terminal,
   Bell,
+  Bot,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -53,6 +55,11 @@ const navItems = [
     icon: Radio,
   },
   {
+    label: 'Bots',
+    href: '/bots',
+    icon: Bot,
+  },
+  {
     label: 'Knowledge Base',
     href: '/knowledge-base',
     icon: BookOpen,
@@ -66,6 +73,11 @@ const navItems = [
     label: 'Analytics',
     href: '/analytics',
     icon: BarChart3,
+  },
+  {
+    label: 'Team',
+    href: '/users',
+    icon: UsersRound,
   },
 ]
 
@@ -99,14 +111,27 @@ export function Sidebar() {
       {/* Header */}
       <div className="flex h-16 items-center justify-between px-4">
         {!collapsed && (
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <Terminal className="h-6 w-6 text-primary" />
-            <span className="text-lg font-bold text-gradient">LINKTOR</span>
+          <Link href="/dashboard" className="flex items-center">
+            <Image
+              src="/images/logo_fundo_escuro.png"
+              alt="Linktor"
+              width={120}
+              height={32}
+              className="h-8 w-auto"
+              priority
+            />
           </Link>
         )}
         {collapsed && (
           <Link href="/dashboard" className="mx-auto">
-            <Terminal className="h-6 w-6 text-primary" />
+            <Image
+              src="/images/logo_single.png"
+              alt="Linktor"
+              width={32}
+              height={32}
+              className="h-8 w-8"
+              priority
+            />
           </Link>
         )}
       </div>

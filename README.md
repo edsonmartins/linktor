@@ -1,7 +1,7 @@
 # Linktor
 
 <p align="center">
-  <img src="docs/assets/logo.png" alt="Linktor Logo" width="200"/>
+  <img src="imagens/logo_fundo_claro.png" alt="Linktor Logo" width="280"/>
 </p>
 
 <p align="center">
