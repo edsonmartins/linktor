@@ -163,7 +163,7 @@ msgfy (GitHub org: msgfy)
 ### Visão Geral
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" alt="Linktor Architecture" width="100%"/>
+  <img src="imagens/infografico_linktor.png" alt="Linktor Architecture" width="100%"/>
 </p>
 
 ### Padrão Arquitetural: Hexagonal (Ports & Adapters)
