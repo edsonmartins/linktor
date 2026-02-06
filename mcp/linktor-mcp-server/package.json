@@ -1,0 +1,51 @@
+{
+  "name": "@linktor/mcp-server",
+  "version": "1.0.0",
+  "description": "MCP Server for Linktor - Omnichannel Conversation Platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "bin": {
+    "linktor-mcp": "./bin/linktor-mcp.js"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --watch",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "linktor",
+    "chatbot",
+    "omnichannel",
+    "ai",
+    "claude"
+  ],
+  "author": "Linktor",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/linktor/linktor.git",
+    "directory": "mcp/linktor-mcp-server"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

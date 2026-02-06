@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "linktor": {
+      "command": "npx",
+      "args": ["-y", "@linktor/mcp-server"],
+      "env": {
+        "LINKTOR_API_URL": "https://api.linktor.io",
+        "LINKTOR_API_KEY": "sk_your_api_key_here"
+      }
+    }
+  }
+}
