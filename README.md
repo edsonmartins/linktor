@@ -87,7 +87,7 @@ msgfy (GitHub org: msgfy)
 | Instagram DM | ✅ Completo | Meta Graph API |
 | Facebook Messenger | ✅ Completo | Meta Graph API |
 | RCS | ✅ Completo | Google RCS Business Messaging |
-| Voice | 📋 Planejado | VoIP integration |
+| Voice | ✅ Completo | Twilio Voice, Vonage, Amazon Connect, Asterisk, FreeSWITCH |
 
 ### Core Features
 
@@ -1274,7 +1274,7 @@ CREATE TABLE flows (
 - [x] Facebook Messenger
 - [x] RCS
 - [x] WhatsApp Unofficial (Baileys)
-- [ ] Voice (VoIP)
+- [x] Voice (Twilio, Vonage, Amazon Connect, Asterisk, FreeSWITCH)
 
 ### Fase 8: Enterprise 📋
 - [ ] Webhooks outbound
