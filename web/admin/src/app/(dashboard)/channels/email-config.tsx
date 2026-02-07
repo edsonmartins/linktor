@@ -31,57 +31,76 @@ const providers = [
   { value: 'postmark', label: 'Postmark', description: 'Postmark API' },
 ]
 
-// Base schema
-const baseSchema = z.object({
+// Combined schema with all fields (provider-specific fields are optional for form handling)
+const emailConfigSchema = z.object({
   name: z.string().min(1, 'Channel name is required'),
   provider: z.enum(['smtp', 'sendgrid', 'mailgun', 'ses', 'postmark']),
   from_email: z.string().email('Valid email required'),
   from_name: z.string().optional(),
   reply_to: z.string().email().optional().or(z.literal('')),
-})
-
-// Provider-specific schemas
-const smtpSchema = baseSchema.extend({
-  provider: z.literal('smtp'),
-  smtp_host: z.string().min(1, 'SMTP host is required'),
-  smtp_port: z.coerce.number().min(1, 'SMTP port is required'),
+  // SMTP fields
+  smtp_host: z.string().optional(),
+  smtp_port: z.coerce.number().optional(),
   smtp_username: z.string().optional(),
   smtp_password: z.string().optional(),
-  smtp_encryption: z.enum(['tls', 'starttls', 'none']).default('tls'),
-  // IMAP for receiving
+  smtp_encryption: z.enum(['tls', 'starttls', 'none']).optional(),
+  // IMAP fields
   imap_host: z.string().optional(),
   imap_port: z.coerce.number().optional(),
   imap_username: z.string().optional(),
   imap_password: z.string().optional(),
   imap_folder: z.string().optional(),
   imap_poll_interval: z.coerce.number().optional(),
+  // SendGrid fields
+  sendgrid_api_key: z.string().optional(),
+  // Mailgun fields
+  mailgun_domain: z.string().optional(),
+  mailgun_api_key: z.string().optional(),
+  mailgun_region: z.enum(['us', 'eu']).optional(),
+  // SES fields
+  ses_region: z.string().optional(),
+  ses_access_key_id: z.string().optional(),
+  ses_secret_key: z.string().optional(),
+  // Postmark fields
+  postmark_server_token: z.string().optional(),
+}).superRefine((data, ctx) => {
+  // Validate provider-specific required fields
+  if (data.provider === 'smtp') {
+    if (!data.smtp_host) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'SMTP host is required', path: ['smtp_host'] })
+    }
+    if (!data.smtp_port) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'SMTP port is required', path: ['smtp_port'] })
+    }
+  } else if (data.provider === 'sendgrid') {
+    if (!data.sendgrid_api_key) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'API key is required', path: ['sendgrid_api_key'] })
+    }
+  } else if (data.provider === 'mailgun') {
+    if (!data.mailgun_domain) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Domain is required', path: ['mailgun_domain'] })
+    }
+    if (!data.mailgun_api_key) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'API key is required', path: ['mailgun_api_key'] })
+    }
+  } else if (data.provider === 'ses') {
+    if (!data.ses_region) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Region is required', path: ['ses_region'] })
+    }
+    if (!data.ses_access_key_id) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Access Key ID is required', path: ['ses_access_key_id'] })
+    }
+    if (!data.ses_secret_key) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Secret Key is required', path: ['ses_secret_key'] })
+    }
+  } else if (data.provider === 'postmark') {
+    if (!data.postmark_server_token) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Server token is required', path: ['postmark_server_token'] })
+    }
+  }
 })
 
-const sendgridSchema = baseSchema.extend({
-  provider: z.literal('sendgrid'),
-  sendgrid_api_key: z.string().min(1, 'API key is required'),
-})
-
-const mailgunSchema = baseSchema.extend({
-  provider: z.literal('mailgun'),
-  mailgun_domain: z.string().min(1, 'Domain is required'),
-  mailgun_api_key: z.string().min(1, 'API key is required'),
-  mailgun_region: z.enum(['us', 'eu']).default('us'),
-})
-
-const sesSchema = baseSchema.extend({
-  provider: z.literal('ses'),
-  ses_region: z.string().min(1, 'Region is required'),
-  ses_access_key_id: z.string().min(1, 'Access Key ID is required'),
-  ses_secret_key: z.string().min(1, 'Secret Key is required'),
-})
-
-const postmarkSchema = baseSchema.extend({
-  provider: z.literal('postmark'),
-  postmark_server_token: z.string().min(1, 'Server token is required'),
-})
-
-type EmailConfigForm = z.infer<typeof smtpSchema> | z.infer<typeof sendgridSchema> | z.infer<typeof mailgunSchema> | z.infer<typeof sesSchema> | z.infer<typeof postmarkSchema>
+type EmailConfigForm = z.infer<typeof emailConfigSchema>
 
 interface EmailConfigProps {
   channelId?: string
@@ -104,7 +123,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
     setValue,
     formState: { errors },
   } = useForm<EmailConfigForm>({
-    resolver: zodResolver(baseSchema),
+    resolver: zodResolver(emailConfigSchema),
     defaultValues: {
       provider: 'smtp',
       smtp_encryption: 'tls',
@@ -129,37 +148,32 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
       const credentials: Record<string, string> = {}
 
       if (data.provider === 'smtp') {
-        const smtpData = data as z.infer<typeof smtpSchema>
-        config.smtp_host = smtpData.smtp_host || ''
-        config.smtp_port = String(smtpData.smtp_port || '')
-        config.smtp_encryption = smtpData.smtp_encryption || 'tls'
-        credentials.smtp_username = smtpData.smtp_username || ''
-        credentials.smtp_password = smtpData.smtp_password || ''
+        config.smtp_host = data.smtp_host || ''
+        config.smtp_port = String(data.smtp_port || '')
+        config.smtp_encryption = data.smtp_encryption || 'tls'
+        credentials.smtp_username = data.smtp_username || ''
+        credentials.smtp_password = data.smtp_password || ''
         // IMAP
-        if (smtpData.imap_host) {
-          config.imap_host = smtpData.imap_host
-          config.imap_port = String(smtpData.imap_port || 993)
-          config.imap_folder = smtpData.imap_folder || 'INBOX'
-          config.imap_poll_interval = String(smtpData.imap_poll_interval || 30)
-          credentials.imap_username = smtpData.imap_username || ''
-          credentials.imap_password = smtpData.imap_password || ''
+        if (data.imap_host) {
+          config.imap_host = data.imap_host
+          config.imap_port = String(data.imap_port || 993)
+          config.imap_folder = data.imap_folder || 'INBOX'
+          config.imap_poll_interval = String(data.imap_poll_interval || 30)
+          credentials.imap_username = data.imap_username || ''
+          credentials.imap_password = data.imap_password || ''
         }
       } else if (data.provider === 'sendgrid') {
-        const sgData = data as z.infer<typeof sendgridSchema>
-        credentials.sendgrid_api_key = sgData.sendgrid_api_key
+        credentials.sendgrid_api_key = data.sendgrid_api_key || ''
       } else if (data.provider === 'mailgun') {
-        const mgData = data as z.infer<typeof mailgunSchema>
-        config.mailgun_domain = mgData.mailgun_domain
-        config.mailgun_region = mgData.mailgun_region || 'us'
-        credentials.mailgun_api_key = mgData.mailgun_api_key
+        config.mailgun_domain = data.mailgun_domain || ''
+        config.mailgun_region = data.mailgun_region || 'us'
+        credentials.mailgun_api_key = data.mailgun_api_key || ''
       } else if (data.provider === 'ses') {
-        const sesData = data as z.infer<typeof sesSchema>
-        config.ses_region = sesData.ses_region
-        credentials.ses_access_key_id = sesData.ses_access_key_id
-        credentials.ses_secret_key = sesData.ses_secret_key
+        config.ses_region = data.ses_region || ''
+        credentials.ses_access_key_id = data.ses_access_key_id || ''
+        credentials.ses_secret_key = data.ses_secret_key || ''
       } else if (data.provider === 'postmark') {
-        const pmData = data as z.infer<typeof postmarkSchema>
-        credentials.postmark_server_token = pmData.postmark_server_token
+        credentials.postmark_server_token = data.postmark_server_token || ''
       }
 
       const payload = {
@@ -188,7 +202,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
       toast({
         title: 'Error',
         description: error.message || 'Failed to save channel configuration.',
-        variant: 'destructive',
+        variant: 'error',
       })
     } finally {
       setIsSubmitting(false)
@@ -209,7 +223,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
       toast({
         title: 'Connection failed',
         description: error.message || 'Could not connect to email provider.',
-        variant: 'destructive',
+        variant: 'error',
       })
     } finally {
       setIsTesting(false)
@@ -229,7 +243,8 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col h-full">
+      <div className="flex-1 space-y-6">
       {/* Basic Configuration */}
       <div className="space-y-4">
         <div className="space-y-2">
@@ -911,9 +926,10 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
           </Card>
         </TabsContent>
       </Tabs>
+      </div>
 
       {/* Actions */}
-      <div className="flex justify-between pt-4">
+      <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
         <Button type="button" variant="outline" onClick={testConnection} disabled={isTesting}>
           {isTesting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Test Connection

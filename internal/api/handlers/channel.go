@@ -40,7 +40,16 @@ type CreateChannelRequest struct {
 	Credentials map[string]string `json:"credentials"`
 }
 
-// List returns all channels for the tenant
+// List godoc
+// @Summary      List channels
+// @Description  Returns all channels for the current tenant
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} Response{data=[]entity.Channel}
+// @Failure      401 {object} Response
+// @Router       /channels [get]
 func (h *ChannelHandler) List(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -56,7 +65,18 @@ func (h *ChannelHandler) List(c *gin.Context) {
 	RespondSuccess(c, channels)
 }
 
-// Create creates a new channel
+// Create godoc
+// @Summary      Create channel
+// @Description  Create a new channel for the current tenant
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body CreateChannelRequest true "Channel data"
+// @Success      201 {object} Response{data=entity.Channel}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /channels [post]
 func (h *ChannelHandler) Create(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -87,7 +107,18 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 	RespondCreated(c, channel)
 }
 
-// Get returns a channel by ID
+// Get godoc
+// @Summary      Get channel
+// @Description  Returns a channel by ID
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Success      200 {object} Response{data=entity.Channel}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id} [get]
 func (h *ChannelHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -104,7 +135,20 @@ func (h *ChannelHandler) Get(c *gin.Context) {
 	RespondSuccess(c, channel)
 }
 
-// Update updates a channel
+// Update godoc
+// @Summary      Update channel
+// @Description  Update a channel's configuration
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Param        request body CreateChannelRequest true "Channel update data"
+// @Success      200 {object} Response{data=entity.Channel}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id} [put]
 func (h *ChannelHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -134,7 +178,18 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 	RespondSuccess(c, channel)
 }
 
-// Delete deletes a channel
+// Delete godoc
+// @Summary      Delete channel
+// @Description  Delete a channel by ID
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Success      204 "No Content"
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id} [delete]
 func (h *ChannelHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -150,7 +205,19 @@ func (h *ChannelHandler) Delete(c *gin.Context) {
 	RespondNoContent(c)
 }
 
-// Connect connects a channel
+// Connect godoc
+// @Summary      Connect channel
+// @Description  Connect a channel to start receiving messages
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Success      200 {object} Response{data=object}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id}/connect [post]
 func (h *ChannelHandler) Connect(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -167,7 +234,19 @@ func (h *ChannelHandler) Connect(c *gin.Context) {
 	RespondSuccess(c, result)
 }
 
-// Disconnect disconnects a channel
+// Disconnect godoc
+// @Summary      Disconnect channel
+// @Description  Disconnect a channel to stop receiving messages
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id}/disconnect [post]
 func (h *ChannelHandler) Disconnect(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {

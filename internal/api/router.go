@@ -15,14 +15,15 @@ type Router struct {
 	authMiddleware *middleware.AuthMiddleware
 	rateLimiter    *middleware.RateLimiter
 	// Handlers
-	healthHandler   *handlers.HealthHandler
-	authHandler     *handlers.AuthHandler
-	tenantHandler   *handlers.TenantHandler
-	userHandler     *handlers.UserHandler
-	channelHandler  *handlers.ChannelHandler
-	contactHandler  *handlers.ContactHandler
-	conversationHandler *handlers.ConversationHandler
-	messageHandler  *handlers.MessageHandler
+	healthHandler        *handlers.HealthHandler
+	authHandler          *handlers.AuthHandler
+	tenantHandler        *handlers.TenantHandler
+	userHandler          *handlers.UserHandler
+	channelHandler       *handlers.ChannelHandler
+	contactHandler       *handlers.ContactHandler
+	conversationHandler  *handlers.ConversationHandler
+	messageHandler       *handlers.MessageHandler
+	observabilityHandler *handlers.ObservabilityHandler
 }
 
 // NewRouter creates a new router with all dependencies
@@ -38,19 +39,21 @@ func NewRouter(
 	contactHandler *handlers.ContactHandler,
 	conversationHandler *handlers.ConversationHandler,
 	messageHandler *handlers.MessageHandler,
+	observabilityHandler *handlers.ObservabilityHandler,
 ) *Router {
 	return &Router{
-		config:              cfg,
-		authMiddleware:      authMiddleware,
-		rateLimiter:         rateLimiter,
-		healthHandler:       healthHandler,
-		authHandler:         authHandler,
-		tenantHandler:       tenantHandler,
-		userHandler:         userHandler,
-		channelHandler:      channelHandler,
-		contactHandler:      contactHandler,
-		conversationHandler: conversationHandler,
-		messageHandler:      messageHandler,
+		config:               cfg,
+		authMiddleware:       authMiddleware,
+		rateLimiter:          rateLimiter,
+		healthHandler:        healthHandler,
+		authHandler:          authHandler,
+		tenantHandler:        tenantHandler,
+		userHandler:          userHandler,
+		channelHandler:       channelHandler,
+		contactHandler:       contactHandler,
+		conversationHandler:  conversationHandler,
+		messageHandler:       messageHandler,
+		observabilityHandler: observabilityHandler,
 	}
 }
 
@@ -157,6 +160,18 @@ func (r *Router) Setup() *gin.Engine {
 			messages := protected.Group("/messages")
 			{
 				messages.GET("/:id", r.messageHandler.Get)
+			}
+
+			// Observability management (admin only)
+			observability := protected.Group("/observability")
+			observability.Use(r.authMiddleware.RequireRole("admin", "owner"))
+			{
+				observability.GET("/logs", r.observabilityHandler.GetLogs)
+				observability.POST("/logs/cleanup", r.observabilityHandler.CleanupLogs)
+				observability.GET("/queue", r.observabilityHandler.GetQueueStats)
+				observability.GET("/queue/:stream", r.observabilityHandler.GetStreamInfo)
+				observability.POST("/queue/reset-consumer", r.observabilityHandler.ResetConsumer)
+				observability.GET("/stats", r.observabilityHandler.GetSystemStats)
 			}
 		}
 

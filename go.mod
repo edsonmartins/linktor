@@ -15,6 +15,9 @@ require (
 	github.com/nats-io/nats.go v1.32.0
 	github.com/redis/go-redis/v9 v9.4.0
 	github.com/spf13/viper v1.18.2
+	github.com/swaggo/files v1.0.1
+	github.com/swaggo/gin-swagger v1.6.0
+	github.com/swaggo/swag v1.16.4
 	github.com/twilio/twilio-go v1.30.0
 	go.mau.fi/whatsmeow v0.0.0-20260129212019-7787ab952245
 	go.uber.org/zap v1.26.0

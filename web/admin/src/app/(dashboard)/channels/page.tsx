@@ -1,6 +1,7 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
   Radio,
@@ -10,6 +11,9 @@ import {
   Wifi,
   WifiOff,
   AlertTriangle,
+  Trash2,
+  Power,
+  PowerOff,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -23,14 +27,43 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
+import { useToast } from '@/hooks/use-toast'
 import type { Channel, ChannelType } from '@/types'
 
+// Channel config components
+import { WebchatConfig } from './webchat-config'
+import { WhatsAppConfig } from './whatsapp-config'
+import { WhatsAppUnofficialConfig } from './whatsapp-unofficial-config'
+import { TelegramConfig } from './telegram-config'
+import { SMSConfig } from './sms-config'
+import { FacebookConfig } from './facebook-config'
+import { InstagramConfig } from './instagram-config'
+import { EmailConfig } from './email-config'
+import { RCSConfig } from './rcs-config'
+import { VoiceConfig } from './voice-config'
+
 /**
- * Channel type configurations - Plugin Pattern
- * Each channel type is a "plugin" with its own config
+ * Channel type configurations
  */
 const channelConfigs: Record<
   ChannelType,
@@ -51,7 +84,7 @@ const channelConfigs: Record<
   },
   whatsapp: {
     label: 'WhatsApp',
-    description: 'Meta Cloud API integration',
+    description: 'Unofficial WhatsApp integration',
     icon: <MessageSquare className="h-6 w-6" />,
     color: 'text-green-500',
     bgColor: 'bg-green-500/10',
@@ -105,6 +138,13 @@ const channelConfigs: Record<
     color: 'text-amber-500',
     bgColor: 'bg-amber-500/10',
   },
+  voice: {
+    label: 'Voice',
+    description: 'VoIP with IVR support',
+    icon: <MessageSquare className="h-6 w-6" />,
+    color: 'text-cyan-500',
+    bgColor: 'bg-cyan-500/10',
+  },
 }
 
 /**
@@ -142,7 +182,17 @@ function StatusBadge({ status }: { status: Channel['status'] }) {
 /**
  * Channel Card Component
  */
-function ChannelCard({ channel }: { channel: Channel }) {
+function ChannelCard({
+  channel,
+  onConfigure,
+  onToggleStatus,
+  onDelete,
+}: {
+  channel: Channel
+  onConfigure: () => void
+  onToggleStatus: () => void
+  onDelete: () => void
+}) {
   const config = channelConfigs[channel.type] || channelConfigs.webchat
 
   return (
@@ -173,15 +223,26 @@ function ChannelCard({ channel }: { channel: Channel }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={onConfigure}>
                 <Settings className="h-4 w-4 mr-2" />
                 Configure
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                View analytics
+              <DropdownMenuItem onClick={onToggleStatus}>
+                {channel.status === 'active' ? (
+                  <>
+                    <PowerOff className="h-4 w-4 mr-2" />
+                    Deactivate
+                  </>
+                ) : (
+                  <>
+                    <Power className="h-4 w-4 mr-2" />
+                    Activate
+                  </>
+                )}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive">
+              <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+                <Trash2 className="h-4 w-4 mr-2" />
                 Delete channel
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -206,9 +267,11 @@ function ChannelCard({ channel }: { channel: Channel }) {
 function AvailableChannelCard({
   type,
   disabled,
+  onClick,
 }: {
   type: ChannelType
   disabled?: boolean
+  onClick?: () => void
 }) {
   const config = channelConfigs[type]
 
@@ -220,6 +283,7 @@ function AvailableChannelCard({
           ? 'opacity-50 cursor-not-allowed'
           : 'hover:border-primary/30 cursor-pointer'
       )}
+      onClick={disabled ? undefined : onClick}
     >
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
@@ -250,9 +314,112 @@ function AvailableChannelCard({
 }
 
 /**
+ * Channel Config Sheet - renders the appropriate config component
+ */
+function ChannelConfigSheet({
+  open,
+  onOpenChange,
+  channelType,
+  channel,
+  onSuccess,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  channelType: ChannelType | null
+  channel?: Channel
+  onSuccess: () => void
+}) {
+  if (!channelType) return null
+
+  const config = channelConfigs[channelType]
+  const isEditing = !!channel
+
+  const handleSuccess = () => {
+    onSuccess()
+    onOpenChange(false)
+  }
+
+  const handleCancel = () => {
+    onOpenChange(false)
+  }
+
+  const renderConfigComponent = () => {
+    // Common props for most configs
+    const commonProps = {
+      channel,
+      onSuccess: handleSuccess,
+      onCancel: handleCancel,
+    }
+
+    switch (channelType) {
+      case 'webchat':
+        return <WebchatConfig {...commonProps} />
+      case 'whatsapp_official':
+        return <WhatsAppConfig {...commonProps} />
+      case 'whatsapp':
+        return <WhatsAppUnofficialConfig {...commonProps} />
+      case 'telegram':
+        return <TelegramConfig {...commonProps} />
+      case 'sms':
+        return <SMSConfig {...commonProps} />
+      case 'facebook':
+        return <FacebookConfig {...commonProps} />
+      case 'instagram':
+        return <InstagramConfig {...commonProps} />
+      case 'email':
+        return <EmailConfig channelId={channel?.id} onSuccess={handleSuccess} />
+      case 'rcs':
+        return (
+          <RCSConfig
+            channelId={channel?.id}
+            onSave={() => handleSuccess()}
+          />
+        )
+      case 'voice':
+        return <VoiceConfig channel={channel} onClose={handleCancel} />
+      default:
+        return <p>Configuration not available for this channel type.</p>
+    }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="sm:max-w-xl flex flex-col h-full p-0">
+        <SheetHeader className="px-6 pt-6 pb-4 border-b">
+          <SheetTitle className="flex items-center gap-2">
+            <div className={cn('p-2 rounded-lg', config.bgColor, config.color)}>
+              {config.icon}
+            </div>
+            {isEditing ? `Configure ${config.label}` : `Add ${config.label}`}
+          </SheetTitle>
+          <SheetDescription>
+            {isEditing
+              ? `Update your ${config.label} channel settings`
+              : `Set up a new ${config.label} channel`}
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {renderConfigComponent()}
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+/**
  * Channels Page
  */
 export default function ChannelsPage() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  // State for dialogs
+  const [configSheetOpen, setConfigSheetOpen] = useState(false)
+  const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null)
+  const [selectedChannel, setSelectedChannel] = useState<Channel | undefined>()
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [channelToDelete, setChannelToDelete] = useState<Channel | null>(null)
+
   // Fetch channels
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.channels.list(),
@@ -260,6 +427,80 @@ export default function ChannelsPage() {
   })
 
   const channels = data?.data || []
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/channels/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.channels.all })
+      toast({
+        title: 'Channel deleted',
+        description: 'The channel has been removed.',
+      })
+      setDeleteDialogOpen(false)
+      setChannelToDelete(null)
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete channel.',
+        variant: 'error',
+      })
+    },
+  })
+
+  // Toggle status mutation
+  const toggleStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'active' | 'inactive' }) =>
+      api.put(`/channels/${id}`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.channels.all })
+      toast({
+        title: 'Status updated',
+        description: 'Channel status has been updated.',
+      })
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update channel status.',
+        variant: 'error',
+      })
+    },
+  })
+
+  // Handlers
+  const handleAddChannel = (type: ChannelType) => {
+    setSelectedChannelType(type)
+    setSelectedChannel(undefined)
+    setConfigSheetOpen(true)
+  }
+
+  const handleConfigureChannel = (channel: Channel) => {
+    setSelectedChannelType(channel.type)
+    setSelectedChannel(channel)
+    setConfigSheetOpen(true)
+  }
+
+  const handleToggleStatus = (channel: Channel) => {
+    const newStatus = channel.status === 'active' ? 'inactive' : 'active'
+    toggleStatusMutation.mutate({ id: channel.id, status: newStatus })
+  }
+
+  const handleDeleteChannel = (channel: Channel) => {
+    setChannelToDelete(channel)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = () => {
+    if (channelToDelete) {
+      deleteMutation.mutate(channelToDelete.id)
+    }
+  }
+
+  const handleConfigSuccess = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.channels.all })
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -299,7 +540,13 @@ export default function ChannelsPage() {
           ) : channels.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {channels.map((channel) => (
-                <ChannelCard key={channel.id} channel={channel} />
+                <ChannelCard
+                  key={channel.id}
+                  channel={channel}
+                  onConfigure={() => handleConfigureChannel(channel)}
+                  onToggleStatus={() => handleToggleStatus(channel)}
+                  onDelete={() => handleDeleteChannel(channel)}
+                />
               ))}
             </div>
           ) : (
@@ -325,18 +572,50 @@ export default function ChannelsPage() {
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <AvailableChannelCard type="webchat" />
-            <AvailableChannelCard type="whatsapp_official" />
-            <AvailableChannelCard type="telegram" />
-            <AvailableChannelCard type="sms" />
-            <AvailableChannelCard type="facebook" />
-            <AvailableChannelCard type="instagram" />
-            <AvailableChannelCard type="email" />
-            <AvailableChannelCard type="whatsapp" />
-            <AvailableChannelCard type="rcs" />
+            <AvailableChannelCard type="webchat" onClick={() => handleAddChannel('webchat')} />
+            <AvailableChannelCard type="whatsapp_official" onClick={() => handleAddChannel('whatsapp_official')} />
+            <AvailableChannelCard type="telegram" onClick={() => handleAddChannel('telegram')} />
+            <AvailableChannelCard type="sms" onClick={() => handleAddChannel('sms')} />
+            <AvailableChannelCard type="facebook" onClick={() => handleAddChannel('facebook')} />
+            <AvailableChannelCard type="instagram" onClick={() => handleAddChannel('instagram')} />
+            <AvailableChannelCard type="email" onClick={() => handleAddChannel('email')} />
+            <AvailableChannelCard type="whatsapp" onClick={() => handleAddChannel('whatsapp')} />
+            <AvailableChannelCard type="rcs" onClick={() => handleAddChannel('rcs')} />
+            <AvailableChannelCard type="voice" onClick={() => handleAddChannel('voice')} />
           </div>
         </section>
       </div>
+
+      {/* Channel Config Sheet */}
+      <ChannelConfigSheet
+        open={configSheetOpen}
+        onOpenChange={setConfigSheetOpen}
+        channelType={selectedChannelType}
+        channel={selectedChannel}
+        onSuccess={handleConfigSuccess}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Channel</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{channelToDelete?.name}"? This action cannot be undone.
+              All conversations and messages associated with this channel will be preserved but the channel will no longer receive new messages.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

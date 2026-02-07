@@ -33,7 +33,21 @@ type CreateConversationRequest struct {
 	Tags      []string `json:"tags"`
 }
 
-// List returns all conversations for the tenant
+// List godoc
+// @Summary      List conversations
+// @Description  Returns all conversations for the current tenant with optional filters
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "Page number" default(1)
+// @Param        page_size query int false "Page size" default(20)
+// @Param        status query string false "Filter by status (open, pending, resolved)"
+// @Param        assigned_to query string false "Filter by assigned user ID"
+// @Param        channel_id query string false "Filter by channel ID"
+// @Success      200 {object} Response{data=[]entity.Conversation,meta=MetaResponse}
+// @Failure      401 {object} Response
+// @Router       /conversations [get]
 func (h *ConversationHandler) List(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -64,7 +78,18 @@ func (h *ConversationHandler) List(c *gin.Context) {
 	})
 }
 
-// Create creates a new conversation
+// Create godoc
+// @Summary      Create conversation
+// @Description  Create a new conversation
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body CreateConversationRequest true "Conversation data"
+// @Success      201 {object} Response{data=entity.Conversation}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /conversations [post]
 func (h *ConversationHandler) Create(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -95,7 +120,18 @@ func (h *ConversationHandler) Create(c *gin.Context) {
 	RespondCreated(c, conversation)
 }
 
-// Get returns a conversation by ID
+// Get godoc
+// @Summary      Get conversation
+// @Description  Returns a conversation by ID with messages
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Success      200 {object} Response{data=entity.Conversation}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id} [get]
 func (h *ConversationHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -120,7 +156,20 @@ type UpdateConversationRequest struct {
 	Tags     []string `json:"tags"`
 }
 
-// Update updates a conversation
+// Update godoc
+// @Summary      Update conversation
+// @Description  Update a conversation's properties
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Param        request body UpdateConversationRequest true "Conversation update data"
+// @Success      200 {object} Response{data=entity.Conversation}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id} [put]
 func (h *ConversationHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -155,7 +204,20 @@ type AssignRequest struct {
 	UserID string `json:"user_id" binding:"required"`
 }
 
-// Assign assigns a conversation to a user
+// Assign godoc
+// @Summary      Assign conversation
+// @Description  Assign a conversation to a user
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Param        request body AssignRequest true "Assignment data"
+// @Success      200 {object} Response{data=entity.Conversation}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id}/assign [post]
 func (h *ConversationHandler) Assign(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -178,7 +240,19 @@ func (h *ConversationHandler) Assign(c *gin.Context) {
 	RespondSuccess(c, conversation)
 }
 
-// Resolve marks a conversation as resolved
+// Resolve godoc
+// @Summary      Resolve conversation
+// @Description  Mark a conversation as resolved
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Success      200 {object} Response{data=entity.Conversation}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id}/resolve [post]
 func (h *ConversationHandler) Resolve(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -195,7 +269,19 @@ func (h *ConversationHandler) Resolve(c *gin.Context) {
 	RespondSuccess(c, conversation)
 }
 
-// Reopen reopens a resolved conversation
+// Reopen godoc
+// @Summary      Reopen conversation
+// @Description  Reopen a previously resolved conversation
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Success      200 {object} Response{data=entity.Conversation}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id}/reopen [post]
 func (h *ConversationHandler) Reopen(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -212,8 +298,18 @@ func (h *ConversationHandler) Reopen(c *gin.Context) {
 	RespondSuccess(c, conversation)
 }
 
-// GetEscalationContext returns the escalation context for a conversation
-// This provides human agents with full context when taking over from a bot
+// GetEscalationContext godoc
+// @Summary      Get escalation context
+// @Description  Returns the escalation context for a conversation, providing human agents with full context when taking over from a bot
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Success      200 {object} Response{data=usecase.EscalationContext}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id}/escalation-context [get]
 func (h *ConversationHandler) GetEscalationContext(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -247,7 +343,20 @@ type ConversationEscalateRequest struct {
 	AssignTo     *string `json:"assign_to"`
 }
 
-// Escalate escalates a conversation to human agents
+// Escalate godoc
+// @Summary      Escalate conversation
+// @Description  Escalate a conversation to human agents
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Param        request body ConversationEscalateRequest true "Escalation data"
+// @Success      200 {object} Response{data=usecase.EscalateConversationOutput}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id}/escalate [post]
 func (h *ConversationHandler) Escalate(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {

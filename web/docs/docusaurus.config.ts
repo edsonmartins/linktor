@@ -25,6 +25,32 @@ const config: Config = {
     locales: ['en'],
   },
 
+  // Note: @scalar/docusaurus requires React 18, but this project uses React 19.
+  // The Scalar plugin is temporarily disabled until compatibility is resolved.
+  // To re-enable, install @scalar/docusaurus with --legacy-peer-deps and uncomment below.
+  plugins: [
+    // [
+    //   '@scalar/docusaurus',
+    //   {
+    //     label: 'API Reference',
+    //     route: '/api-reference',
+    //     configuration: {
+    //       spec: {
+    //         url: '/openapi.json',
+    //       },
+    //       theme: 'purple',
+    //       hideModels: false,
+    //       hideDownloadButton: false,
+    //       hiddenClients: [],
+    //       defaultHttpClient: {
+    //         targetKey: 'javascript',
+    //         clientKey: 'fetch',
+    //       },
+    //     },
+    //   },
+    // ],
+  ],
+
   presets: [
     [
       'classic',
@@ -72,7 +98,12 @@ const config: Config = {
         },
         {
           to: '/api/overview',
-          label: 'API',
+          label: 'API Docs',
+          position: 'left',
+        },
+        {
+          to: '/mcp/overview',
+          label: 'MCP',
           position: 'left',
         },
         {

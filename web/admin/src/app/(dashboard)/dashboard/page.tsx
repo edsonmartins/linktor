@@ -9,6 +9,10 @@ import {
   TrendingUp,
   TrendingDown,
   Activity,
+  Bot,
+  Wifi,
+  WifiOff,
+  AlertTriangle,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,7 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn, formatRelativeTime } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
-import type { Conversation, DashboardStats } from '@/types'
+import type { Conversation, DashboardStats, Channel, Bot as BotType, OverviewAnalytics } from '@/types'
 
 /**
  * Stats Card Component
@@ -74,6 +78,50 @@ function StatCard({ title, value, description, icon, trend }: StatCardProps) {
 /**
  * Recent Conversation Item
  */
+/**
+ * Format duration in milliseconds to human readable string
+ */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}min`
+  return `${(ms / 3600000).toFixed(1)}h`
+}
+
+/**
+ * Channel Status Badge
+ */
+function ChannelStatusBadge({ status }: { status: Channel['status'] }) {
+  const config = {
+    active: { variant: 'success' as const, icon: <Wifi className="h-3 w-3" />, label: 'Online' },
+    inactive: { variant: 'secondary' as const, icon: <WifiOff className="h-3 w-3" />, label: 'Offline' },
+    error: { variant: 'error' as const, icon: <AlertTriangle className="h-3 w-3" />, label: 'Error' },
+  }
+  const { variant, icon, label } = config[status] || config.inactive
+  return (
+    <Badge variant={variant} className="gap-1">
+      {icon}
+      {label}
+    </Badge>
+  )
+}
+
+/**
+ * Channel Type Config
+ */
+const channelTypeConfig: Record<string, { color: string; bgColor: string }> = {
+  webchat: { color: 'text-primary', bgColor: 'bg-primary/10' },
+  whatsapp: { color: 'text-green-500', bgColor: 'bg-green-500/10' },
+  whatsapp_official: { color: 'text-green-600', bgColor: 'bg-green-600/10' },
+  telegram: { color: 'text-blue-500', bgColor: 'bg-blue-500/10' },
+  sms: { color: 'text-purple-500', bgColor: 'bg-purple-500/10' },
+  instagram: { color: 'text-pink-500', bgColor: 'bg-pink-500/10' },
+  facebook: { color: 'text-blue-600', bgColor: 'bg-blue-600/10' },
+  email: { color: 'text-amber-500', bgColor: 'bg-amber-500/10' },
+  rcs: { color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
+  voice: { color: 'text-cyan-500', bgColor: 'bg-cyan-500/10' },
+}
+
 function ConversationItem({ conversation }: { conversation: Conversation }) {
   return (
     <div className="flex items-center gap-3 rounded-md p-3 hover:bg-secondary/50 transition-colors">
@@ -108,10 +156,10 @@ function ConversationItem({ conversation }: { conversation: Conversation }) {
  * Dashboard Page
  */
 export default function DashboardPage() {
-  // Fetch dashboard stats
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.dashboard.stats(),
-    queryFn: () => api.get<DashboardStats>('/dashboard/stats'),
+  // Fetch analytics overview
+  const { data: analytics, isLoading: analyticsLoading } = useQuery({
+    queryKey: queryKeys.analytics.overview({ period: 'daily' }),
+    queryFn: () => api.get<OverviewAnalytics>('/analytics/overview', { period: 'daily' }),
   })
 
   // Fetch recent conversations
@@ -124,17 +172,29 @@ export default function DashboardPage() {
       }),
   })
 
-  // Mock stats for demo
-  const mockStats: DashboardStats = {
-    total_conversations: 156,
-    open_conversations: 23,
-    total_messages_today: 487,
-    total_contacts: 1247,
-    avg_response_time_seconds: 180,
-    satisfaction_rate: 94.5,
-  }
+  // Fetch channels
+  const { data: channelsData, isLoading: channelsLoading } = useQuery({
+    queryKey: queryKeys.channels.list(),
+    queryFn: () => api.get<{ data: Channel[] }>('/channels'),
+  })
 
-  const displayStats = stats || mockStats
+  // Fetch active bots
+  const { data: botsData } = useQuery({
+    queryKey: queryKeys.bots.list({ is_active: true }),
+    queryFn: () => api.get<{ data: BotType[] }>('/bots', { is_active: 'true' }),
+  })
+
+  // Fetch contacts count
+  const { data: contactsData } = useQuery({
+    queryKey: queryKeys.contacts.list({ limit: '1' }),
+    queryFn: () => api.get<{ data: unknown[], total: number }>('/contacts', { limit: '1' }),
+  })
+
+  const channels = channelsData?.data || []
+  const activeBots = botsData?.data?.length || 0
+  const totalContacts = contactsData?.total || 0
+
+  const statsLoading = analyticsLoading
 
   return (
     <div className="flex flex-col h-full">
@@ -161,32 +221,36 @@ export default function DashboardPage() {
             ) : (
               <>
                 <StatCard
-                  title="Open Conversations"
-                  value={displayStats.open_conversations}
-                  description="active now"
+                  title="Total Conversations"
+                  value={analytics?.total_conversations || 0}
+                  description="this period"
                   icon={<MessageSquare className="h-5 w-5" />}
-                  trend={{ value: 12, isPositive: true }}
+                  trend={analytics?.conversations_trend ? {
+                    value: Math.abs(analytics.conversations_trend),
+                    isPositive: analytics.conversations_trend >= 0
+                  } : undefined}
                 />
                 <StatCard
-                  title="Messages Today"
-                  value={displayStats.total_messages_today}
-                  description="vs yesterday"
-                  icon={<Activity className="h-5 w-5" />}
-                  trend={{ value: 8, isPositive: true }}
+                  title="Resolution Rate"
+                  value={`${((analytics?.resolution_rate || 0) * 100).toFixed(1)}%`}
+                  description="by bot"
+                  icon={<Bot className="h-5 w-5" />}
+                  trend={analytics?.resolution_trend ? {
+                    value: Math.abs(analytics.resolution_trend),
+                    isPositive: analytics.resolution_trend >= 0
+                  } : undefined}
                 />
                 <StatCard
                   title="Total Contacts"
-                  value={displayStats.total_contacts.toLocaleString()}
-                  description="this month"
+                  value={totalContacts.toLocaleString()}
+                  description="in database"
                   icon={<Users className="h-5 w-5" />}
-                  trend={{ value: 5, isPositive: true }}
                 />
                 <StatCard
                   title="Avg Response Time"
-                  value={`${Math.floor(displayStats.avg_response_time_seconds / 60)}min`}
-                  description="target: 5min"
+                  value={formatDuration(analytics?.avg_first_response_ms || 0)}
+                  description="first response"
                   icon={<Clock className="h-5 w-5" />}
-                  trend={{ value: 15, isPositive: false }}
                 />
               </>
             )}
@@ -241,65 +305,56 @@ export default function DashboardPage() {
                   Channel Status
                 </CardTitle>
                 <CardDescription>
-                  Active communication channels
+                  Active communication channels ({channels.length})
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {/* WebChat */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                        <MessageSquare className="h-5 w-5 text-primary" />
+                {channelsLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Skeleton className="h-10 w-10 rounded-lg" />
+                          <div className="space-y-2">
+                            <Skeleton className="h-4 w-24" />
+                            <Skeleton className="h-3 w-32" />
+                          </div>
+                        </div>
+                        <Skeleton className="h-6 w-16" />
                       </div>
-                      <div>
-                        <p className="text-sm font-medium">Web Chat</p>
-                        <p className="text-xs text-muted-foreground">
-                          Widget Integration
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="success" dot pulse>
-                      Online
-                    </Badge>
+                    ))}
                   </div>
-
-                  {/* WhatsApp */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
-                        <MessageSquare className="h-5 w-5 text-green-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">WhatsApp</p>
-                        <p className="text-xs text-muted-foreground">
-                          Meta Cloud API
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="warning" dot>
-                      Pending
-                    </Badge>
+                ) : channels.length > 0 ? (
+                  <div className="space-y-4">
+                    {channels.map((channel) => {
+                      const typeConfig = channelTypeConfig[channel.type] || channelTypeConfig.webchat
+                      return (
+                        <div key={channel.id} className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              'flex h-10 w-10 items-center justify-center rounded-lg',
+                              typeConfig.bgColor
+                            )}>
+                              <MessageSquare className={cn('h-5 w-5', typeConfig.color)} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{channel.name}</p>
+                              <p className="text-xs text-muted-foreground capitalize">
+                                {channel.type.replace('_', ' ')}
+                              </p>
+                            </div>
+                          </div>
+                          <ChannelStatusBadge status={channel.status} />
+                        </div>
+                      )
+                    })}
                   </div>
-
-                  {/* Telegram */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-                        <MessageSquare className="h-5 w-5 text-blue-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Telegram</p>
-                        <p className="text-xs text-muted-foreground">
-                          Bot API
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary">
-                      Not configured
-                    </Badge>
+                ) : (
+                  <div className="py-6 text-center text-muted-foreground">
+                    <Radio className="mx-auto h-8 w-8 opacity-50" />
+                    <p className="mt-2 text-sm">No channels configured</p>
                   </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>

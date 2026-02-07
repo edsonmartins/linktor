@@ -1,4 +1,4 @@
-import { Navbar, Hero, Features, Channels, SDKs, CTA, Footer } from '@/components'
+import { Navbar, Hero, Features, Channels, SDKs, Docs, CTA, Footer } from '@/components'
 
 export default function Home() {
   return (
@@ -9,6 +9,7 @@ export default function Home() {
         <Features />
         <Channels />
         <SDKs />
+        <Docs />
         <CTA />
       </main>
       <Footer />

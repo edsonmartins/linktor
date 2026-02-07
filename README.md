@@ -21,6 +21,8 @@
   <a href="#uso">Uso</a> •
   <a href="#api">API</a> •
   <a href="#sdks">SDKs</a> •
+  <a href="#mcp-server">MCP</a> •
+  <a href="#documentação">Docs</a> •
   <a href="#plugins">Plugins</a> •
   <a href="#contribuição">Contribuição</a>
 </p>
@@ -937,6 +939,90 @@ $convs = $client->conversations->list([
     'limit' => 20
 ]);
 ```
+
+### MCP Server
+
+O Linktor oferece um servidor MCP (Model Context Protocol) que permite que assistentes de IA como Claude interajam diretamente com a plataforma.
+
+```bash
+# Instalar
+npm install @linktor/mcp-server
+
+# Executar (modo stdio - para Claude Desktop)
+npx @linktor/mcp-server
+
+# Executar (modo HTTP - para playground web)
+npm run start:http
+```
+
+#### Configuração no Claude Desktop
+
+Adicione ao `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "linktor": {
+      "command": "npx",
+      "args": ["-y", "@linktor/mcp-server"],
+      "env": {
+        "LINKTOR_API_KEY": "sua-api-key",
+        "LINKTOR_API_URL": "https://api.linktor.io"
+      }
+    }
+  }
+}
+```
+
+#### Capabilities
+
+| Tipo | Quantidade | Descrição |
+|------|------------|-----------|
+| Tools | 30+ | Conversas, mensagens, contatos, canais, bots, analytics, knowledge |
+| Resources | 6 | Dados estáticos e templates parametrizados |
+| Prompts | 4 | customer_support, conversation_summary, draft_response, analyze_sentiment |
+
+#### MCP Playground
+
+Teste as tools MCP interativamente no browser:
+
+```bash
+# Iniciar o servidor HTTP
+cd mcp/linktor-mcp-server
+npm run start:http
+
+# Acessar o playground na documentação
+open http://localhost:3002/mcp/playground
+```
+
+---
+
+## Documentação
+
+A documentação oficial está disponível em [docs.linktor.io](https://docs.linktor.io) e inclui:
+
+| Seção | Descrição |
+|-------|-----------|
+| **Getting Started** | Instalação, quick start, autenticação |
+| **Channels** | WhatsApp, Telegram, SMS, Email, Voice, WebChat, Instagram, Facebook, RCS |
+| **AI & Bots** | Configuração de bots, providers, escalação |
+| **Flows** | Flow Builder visual, tipos de nós, triggers |
+| **Knowledge Base** | RAG, embeddings, busca semântica |
+| **SDKs** | TypeScript, Python, Go, Java, Rust, .NET, PHP |
+| **MCP** | Model Context Protocol, Playground interativo |
+| **API Reference** | Documentação OpenAPI interativa |
+| **Self-Hosting** | Docker, Kubernetes |
+
+### Playground Interativo
+
+A documentação inclui um **MCP Playground** que permite testar as tools da API diretamente no browser, sem necessidade de código. O playground:
+
+- Lista automaticamente todas as tools, resources e prompts
+- Gera formulários dinâmicos a partir do schema de cada tool
+- Executa chamadas em tempo real via JSON-RPC
+- Exibe respostas formatadas com tempo de execução
+
+---
 
 ### CLI (msgfy)
 

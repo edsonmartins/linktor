@@ -25,7 +25,20 @@ type SendMessageRequest struct {
 	Metadata    map[string]string `json:"metadata"`
 }
 
-// List returns all messages for a conversation
+// List godoc
+// @Summary      List messages
+// @Description  Returns all messages for a conversation
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Param        page query int false "Page number" default(1)
+// @Param        page_size query int false "Page size" default(50)
+// @Success      200 {object} Response{data=[]entity.Message,meta=MetaResponse}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id}/messages [get]
 func (h *MessageHandler) List(c *gin.Context) {
 	conversationID := c.Param("id")
 	if conversationID == "" {
@@ -46,7 +59,20 @@ func (h *MessageHandler) List(c *gin.Context) {
 	})
 }
 
-// Send sends a new message
+// Send godoc
+// @Summary      Send message
+// @Description  Send a new message in a conversation
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Param        request body SendMessageRequest true "Message data"
+// @Success      201 {object} Response{data=entity.Message}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id}/messages [post]
 func (h *MessageHandler) Send(c *gin.Context) {
 	conversationID := c.Param("id")
 	if conversationID == "" {
@@ -83,7 +109,18 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	RespondCreated(c, message)
 }
 
-// Get returns a message by ID
+// Get godoc
+// @Summary      Get message
+// @Description  Returns a message by ID
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Message ID"
+// @Success      200 {object} Response{data=entity.Message}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /messages/{id} [get]
 func (h *MessageHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {

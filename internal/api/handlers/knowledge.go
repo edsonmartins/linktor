@@ -62,7 +62,18 @@ type SearchRequest struct {
 	Limit int    `json:"limit"`
 }
 
-// ListKnowledgeBases returns all knowledge bases for the tenant
+// ListKnowledgeBases godoc
+// @Summary      List knowledge bases
+// @Description  Returns all knowledge bases for the current tenant with pagination
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "Page number" default(1)
+// @Param        page_size query int false "Page size" default(20)
+// @Success      200 {object} Response{data=[]entity.KnowledgeBase}
+// @Failure      401 {object} Response
+// @Router       /knowledge-bases [get]
 func (h *KnowledgeHandler) ListKnowledgeBases(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -89,7 +100,18 @@ func (h *KnowledgeHandler) ListKnowledgeBases(c *gin.Context) {
 	RespondPaginated(c, kbs, total, params.Page, params.PageSize)
 }
 
-// CreateKnowledgeBase creates a new knowledge base
+// CreateKnowledgeBase godoc
+// @Summary      Create knowledge base
+// @Description  Create a new knowledge base for storing FAQs, documents, or website content
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body CreateKnowledgeBaseRequest true "Knowledge base data"
+// @Success      201 {object} Response{data=entity.KnowledgeBase}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /knowledge-bases [post]
 func (h *KnowledgeHandler) CreateKnowledgeBase(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -119,7 +141,18 @@ func (h *KnowledgeHandler) CreateKnowledgeBase(c *gin.Context) {
 	RespondCreated(c, kb)
 }
 
-// GetKnowledgeBase returns a knowledge base by ID
+// GetKnowledgeBase godoc
+// @Summary      Get knowledge base
+// @Description  Returns a knowledge base by ID
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Success      200 {object} Response{data=entity.KnowledgeBase}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id} [get]
 func (h *KnowledgeHandler) GetKnowledgeBase(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -136,7 +169,20 @@ func (h *KnowledgeHandler) GetKnowledgeBase(c *gin.Context) {
 	RespondSuccess(c, kb)
 }
 
-// UpdateKnowledgeBase updates a knowledge base
+// UpdateKnowledgeBase godoc
+// @Summary      Update knowledge base
+// @Description  Update a knowledge base's properties
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Param        request body UpdateKnowledgeBaseRequest true "Knowledge base update data"
+// @Success      200 {object} Response{data=entity.KnowledgeBase}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id} [put]
 func (h *KnowledgeHandler) UpdateKnowledgeBase(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -165,7 +211,18 @@ func (h *KnowledgeHandler) UpdateKnowledgeBase(c *gin.Context) {
 	RespondSuccess(c, kb)
 }
 
-// DeleteKnowledgeBase deletes a knowledge base
+// DeleteKnowledgeBase godoc
+// @Summary      Delete knowledge base
+// @Description  Delete a knowledge base and all its items
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Success      204 "No Content"
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id} [delete]
 func (h *KnowledgeHandler) DeleteKnowledgeBase(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -181,7 +238,20 @@ func (h *KnowledgeHandler) DeleteKnowledgeBase(c *gin.Context) {
 	RespondNoContent(c)
 }
 
-// ListItems returns all items in a knowledge base
+// ListItems godoc
+// @Summary      List knowledge base items
+// @Description  Returns all items in a knowledge base with pagination
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Param        page query int false "Page number" default(1)
+// @Param        page_size query int false "Page size" default(20)
+// @Success      200 {object} Response{data=[]entity.KnowledgeItem}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id}/items [get]
 func (h *KnowledgeHandler) ListItems(c *gin.Context) {
 	kbID := c.Param("id")
 	if kbID == "" {
@@ -209,7 +279,20 @@ func (h *KnowledgeHandler) ListItems(c *gin.Context) {
 	RespondPaginated(c, items, total, params.Page, params.PageSize)
 }
 
-// AddItem adds an item to a knowledge base
+// AddItem godoc
+// @Summary      Add item to knowledge base
+// @Description  Add a new FAQ or content item to a knowledge base
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Param        request body AddItemRequest true "Item data"
+// @Success      201 {object} Response{data=entity.KnowledgeItem}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id}/items [post]
 func (h *KnowledgeHandler) AddItem(c *gin.Context) {
 	kbID := c.Param("id")
 	if kbID == "" {
@@ -241,7 +324,19 @@ func (h *KnowledgeHandler) AddItem(c *gin.Context) {
 	RespondCreated(c, item)
 }
 
-// GetItem returns an item by ID
+// GetItem godoc
+// @Summary      Get knowledge base item
+// @Description  Returns a knowledge base item by ID
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Param        itemId path string true "Item ID"
+// @Success      200 {object} Response{data=entity.KnowledgeItem}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id}/items/{itemId} [get]
 func (h *KnowledgeHandler) GetItem(c *gin.Context) {
 	itemID := c.Param("itemId")
 	if itemID == "" {
@@ -258,7 +353,21 @@ func (h *KnowledgeHandler) GetItem(c *gin.Context) {
 	RespondSuccess(c, item)
 }
 
-// UpdateItem updates an item
+// UpdateItem godoc
+// @Summary      Update knowledge base item
+// @Description  Update a knowledge base item's content
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Param        itemId path string true "Item ID"
+// @Param        request body UpdateItemRequest true "Item update data"
+// @Success      200 {object} Response{data=entity.KnowledgeItem}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id}/items/{itemId} [put]
 func (h *KnowledgeHandler) UpdateItem(c *gin.Context) {
 	itemID := c.Param("itemId")
 	if itemID == "" {
@@ -289,7 +398,19 @@ func (h *KnowledgeHandler) UpdateItem(c *gin.Context) {
 	RespondSuccess(c, item)
 }
 
-// DeleteItem deletes an item
+// DeleteItem godoc
+// @Summary      Delete knowledge base item
+// @Description  Delete an item from a knowledge base
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Param        itemId path string true "Item ID"
+// @Success      204 "No Content"
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id}/items/{itemId} [delete]
 func (h *KnowledgeHandler) DeleteItem(c *gin.Context) {
 	itemID := c.Param("itemId")
 	if itemID == "" {
@@ -305,7 +426,20 @@ func (h *KnowledgeHandler) DeleteItem(c *gin.Context) {
 	RespondNoContent(c)
 }
 
-// Search performs semantic search on a knowledge base
+// Search godoc
+// @Summary      Search knowledge base
+// @Description  Perform semantic search on a knowledge base using embeddings
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Param        request body SearchRequest true "Search query"
+// @Success      200 {object} Response{data=object{results=[]entity.KnowledgeItem,query=string,count=int}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id}/search [post]
 func (h *KnowledgeHandler) Search(c *gin.Context) {
 	kbID := c.Param("id")
 	if kbID == "" {
@@ -340,7 +474,18 @@ func (h *KnowledgeHandler) Search(c *gin.Context) {
 	})
 }
 
-// RegenerateEmbeddings regenerates embeddings for all items in a knowledge base
+// RegenerateEmbeddings godoc
+// @Summary      Regenerate embeddings
+// @Description  Regenerate vector embeddings for all items in a knowledge base
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id}/regenerate-embeddings [post]
 func (h *KnowledgeHandler) RegenerateEmbeddings(c *gin.Context) {
 	kbID := c.Param("id")
 	if kbID == "" {
@@ -356,7 +501,20 @@ func (h *KnowledgeHandler) RegenerateEmbeddings(c *gin.Context) {
 	RespondSuccess(c, gin.H{"message": "Embeddings regeneration started"})
 }
 
-// BulkAddItems adds multiple items to a knowledge base
+// BulkAddItems godoc
+// @Summary      Bulk add items
+// @Description  Add multiple items to a knowledge base in a single request (max 100 items)
+// @Tags         knowledge
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Knowledge base ID"
+// @Param        request body object{items=[]AddItemRequest} true "Items data"
+// @Success      200 {object} Response{data=object{created=int,items=[]entity.KnowledgeItem,errors=[]string}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /knowledge-bases/{id}/items/bulk [post]
 func (h *KnowledgeHandler) BulkAddItems(c *gin.Context) {
 	kbID := c.Param("id")
 	if kbID == "" {

@@ -1,3 +1,62 @@
+// @title           Linktor API
+// @version         1.0
+// @description     Linktor is an omnichannel conversation platform API that enables businesses to manage customer communications across multiple channels including WhatsApp, Telegram, SMS, Email, and more.
+// @termsOfService  https://linktor.io/terms
+
+// @contact.name   Linktor Support
+// @contact.url    https://linktor.io/support
+// @contact.email  support@linktor.io
+
+// @license.name  Apache 2.0
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host      api.linktor.io
+// @BasePath  /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
+
+// @tag.name auth
+// @tag.description Authentication endpoints for login and token management
+
+// @tag.name users
+// @tag.description User management endpoints
+
+// @tag.name channels
+// @tag.description Channel configuration and management
+
+// @tag.name contacts
+// @tag.description Contact management and identity linking
+
+// @tag.name conversations
+// @tag.description Conversation handling and lifecycle management
+
+// @tag.name messages
+// @tag.description Message sending and retrieval
+
+// @tag.name bots
+// @tag.description AI bot configuration and management
+
+// @tag.name knowledge
+// @tag.description Knowledge base management for AI bots
+
+// @tag.name flows
+// @tag.description Conversation flow automation
+
+// @tag.name analytics
+// @tag.description Analytics and reporting
+
+// @tag.name observability
+// @tag.description System monitoring, logs, and queue management
+
+// @tag.name health
+// @tag.description Health check endpoints
+
+// @tag.name webhooks
+// @tag.description Webhook endpoints for external integrations
+
 package main
 
 import (
@@ -10,6 +69,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	_ "github.com/msgfy/linktor/docs" // Swagger docs
+
 	"github.com/msgfy/linktor/internal/adapters/ai/anthropic"
 	"github.com/msgfy/linktor/internal/adapters/ai/ollama"
 	"github.com/msgfy/linktor/internal/adapters/ai/openai"
@@ -451,6 +515,9 @@ func main() {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ready", "nats": natsStatus})
 	})
+
+	// Swagger documentation endpoint
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// WebSocket endpoint for WebChat
 	router.GET("/ws/:channelId", webchatHandler.WebSocketHandler)

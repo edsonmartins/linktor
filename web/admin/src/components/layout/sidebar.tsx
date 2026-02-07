@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Bell,
   Bot,
+  Activity,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -73,6 +74,11 @@ const navItems = [
     label: 'Analytics',
     href: '/analytics',
     icon: BarChart3,
+  },
+  {
+    label: 'Observability',
+    href: '/observability',
+    icon: Activity,
   },
   {
     label: 'Team',

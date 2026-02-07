@@ -28,7 +28,19 @@ type CreateContactRequest struct {
 	Tags         []string          `json:"tags"`
 }
 
-// List returns all contacts for the tenant
+// List godoc
+// @Summary      List contacts
+// @Description  Returns all contacts for the current tenant with pagination
+// @Tags         contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "Page number" default(1)
+// @Param        page_size query int false "Page size" default(20)
+// @Param        search query string false "Search by name, email or phone"
+// @Success      200 {object} Response{data=[]entity.Contact,meta=MetaResponse}
+// @Failure      401 {object} Response
+// @Router       /contacts [get]
 func (h *ContactHandler) List(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -48,7 +60,18 @@ func (h *ContactHandler) List(c *gin.Context) {
 	})
 }
 
-// Create creates a new contact
+// Create godoc
+// @Summary      Create contact
+// @Description  Create a new contact for the current tenant
+// @Tags         contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body CreateContactRequest true "Contact data"
+// @Success      201 {object} Response{data=entity.Contact}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /contacts [post]
 func (h *ContactHandler) Create(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -80,7 +103,18 @@ func (h *ContactHandler) Create(c *gin.Context) {
 	RespondCreated(c, contact)
 }
 
-// Get returns a contact by ID
+// Get godoc
+// @Summary      Get contact
+// @Description  Returns a contact by ID
+// @Tags         contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Contact ID"
+// @Success      200 {object} Response{data=entity.Contact}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /contacts/{id} [get]
 func (h *ContactHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -97,7 +131,20 @@ func (h *ContactHandler) Get(c *gin.Context) {
 	RespondSuccess(c, contact)
 }
 
-// Update updates a contact
+// Update godoc
+// @Summary      Update contact
+// @Description  Update a contact's information
+// @Tags         contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Contact ID"
+// @Param        request body CreateContactRequest true "Contact update data"
+// @Success      200 {object} Response{data=entity.Contact}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /contacts/{id} [put]
 func (h *ContactHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -129,7 +176,18 @@ func (h *ContactHandler) Update(c *gin.Context) {
 	RespondSuccess(c, contact)
 }
 
-// Delete deletes a contact
+// Delete godoc
+// @Summary      Delete contact
+// @Description  Delete a contact by ID
+// @Tags         contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Contact ID"
+// @Success      204 "No Content"
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /contacts/{id} [delete]
 func (h *ContactHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -152,7 +210,20 @@ type AddIdentityRequest struct {
 	Metadata    map[string]string `json:"metadata"`
 }
 
-// AddIdentity adds an identity to a contact
+// AddIdentity godoc
+// @Summary      Add identity
+// @Description  Add a channel identity to a contact
+// @Tags         contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Contact ID"
+// @Param        request body AddIdentityRequest true "Identity data"
+// @Success      200 {object} Response{data=entity.Contact}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /contacts/{id}/identities [post]
 func (h *ContactHandler) AddIdentity(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -175,7 +246,20 @@ func (h *ContactHandler) AddIdentity(c *gin.Context) {
 	RespondSuccess(c, contact)
 }
 
-// RemoveIdentity removes an identity from a contact
+// RemoveIdentity godoc
+// @Summary      Remove identity
+// @Description  Remove a channel identity from a contact
+// @Tags         contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Contact ID"
+// @Param        identityId path string true "Identity ID"
+// @Success      200 {object} Response{data=entity.Contact}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /contacts/{id}/identities/{identityId} [delete]
 func (h *ContactHandler) RemoveIdentity(c *gin.Context) {
 	id := c.Param("id")
 	identityID := c.Param("identityId")

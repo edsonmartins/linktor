@@ -13,9 +13,11 @@
     "bin"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts src/http-server.ts --format esm --dts --clean",
     "dev": "tsup src/index.ts --format esm --watch",
+    "dev:http": "tsup src/http-server.ts --format esm --watch --onSuccess 'node dist/http-server.js'",
     "start": "node dist/index.js",
+    "start:http": "node dist/http-server.js",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
@@ -38,9 +40,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2"

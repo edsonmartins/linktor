@@ -53,7 +53,17 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password" binding:"required,min=8"`
 }
 
-// Login handles user login
+// Login godoc
+// @Summary      Login user
+// @Description  Authenticate user with email and password and receive JWT tokens
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request body LoginRequest true "Login credentials"
+// @Success      200 {object} Response{data=LoginResponse}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -75,7 +85,17 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
-// RefreshToken handles token refresh
+// RefreshToken godoc
+// @Summary      Refresh access token
+// @Description  Get a new access token using a valid refresh token
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request body RefreshRequest true "Refresh token"
+// @Success      200 {object} Response{data=RefreshResponse}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req RefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -96,7 +116,16 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	})
 }
 
-// Me returns the current user
+// Me godoc
+// @Summary      Get current user
+// @Description  Returns the currently authenticated user's profile
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} Response{data=UserResponse}
+// @Failure      401 {object} Response
+// @Router       /me [get]
 func (h *AuthHandler) Me(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == "" {
@@ -119,7 +148,18 @@ type UpdateMeRequest struct {
 	AvatarURL *string `json:"avatar_url"`
 }
 
-// UpdateMe updates the current user
+// UpdateMe godoc
+// @Summary      Update current user
+// @Description  Update the currently authenticated user's profile
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body UpdateMeRequest true "User update data"
+// @Success      200 {object} Response{data=UserResponse}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /me [put]
 func (h *AuthHandler) UpdateMe(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == "" {
@@ -147,7 +187,18 @@ func (h *AuthHandler) UpdateMe(c *gin.Context) {
 	RespondSuccess(c, toUserResponse(user))
 }
 
-// ChangePassword changes the current user's password
+// ChangePassword godoc
+// @Summary      Change password
+// @Description  Change the currently authenticated user's password
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body ChangePasswordRequest true "Password change data"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /me/password [put]
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == "" {

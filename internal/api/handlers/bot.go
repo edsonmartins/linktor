@@ -76,7 +76,20 @@ type TestBotRequest struct {
 	Message string `json:"message" binding:"required"`
 }
 
-// List returns all bots for the tenant
+// List godoc
+// @Summary      List bots
+// @Description  Returns all AI bots for the current tenant with pagination
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "Page number" default(1)
+// @Param        page_size query int false "Page size" default(20)
+// @Param        sort_by query string false "Sort field" default(created_at)
+// @Param        sort_dir query string false "Sort direction (asc, desc)" default(desc)
+// @Success      200 {object} Response{data=[]entity.Bot}
+// @Failure      401 {object} Response
+// @Router       /bots [get]
 func (h *BotHandler) List(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -103,7 +116,18 @@ func (h *BotHandler) List(c *gin.Context) {
 	RespondPaginated(c, bots, total, params.Page, params.PageSize)
 }
 
-// Create creates a new bot
+// Create godoc
+// @Summary      Create bot
+// @Description  Create a new AI bot
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body CreateBotRequest true "Bot data"
+// @Success      201 {object} Response{data=entity.Bot}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /bots [post]
 func (h *BotHandler) Create(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -136,7 +160,18 @@ func (h *BotHandler) Create(c *gin.Context) {
 	RespondCreated(c, bot)
 }
 
-// Get returns a bot by ID
+// Get godoc
+// @Summary      Get bot
+// @Description  Returns a bot by ID
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Success      200 {object} Response{data=entity.Bot}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id} [get]
 func (h *BotHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -153,7 +188,20 @@ func (h *BotHandler) Get(c *gin.Context) {
 	RespondSuccess(c, bot)
 }
 
-// Update updates a bot
+// Update godoc
+// @Summary      Update bot
+// @Description  Update a bot's basic properties
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Param        request body UpdateBotRequest true "Bot update data"
+// @Success      200 {object} Response{data=entity.Bot}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id} [put]
 func (h *BotHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -186,7 +234,18 @@ func (h *BotHandler) Update(c *gin.Context) {
 	RespondSuccess(c, bot)
 }
 
-// Delete deletes a bot
+// Delete godoc
+// @Summary      Delete bot
+// @Description  Delete a bot by ID
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Success      204 "No Content"
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id} [delete]
 func (h *BotHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -202,7 +261,19 @@ func (h *BotHandler) Delete(c *gin.Context) {
 	RespondNoContent(c)
 }
 
-// Activate activates a bot
+// Activate godoc
+// @Summary      Activate bot
+// @Description  Activate a bot to start responding to messages
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id}/activate [post]
 func (h *BotHandler) Activate(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -218,7 +289,19 @@ func (h *BotHandler) Activate(c *gin.Context) {
 	RespondSuccess(c, gin.H{"message": "Bot activated"})
 }
 
-// Deactivate deactivates a bot
+// Deactivate godoc
+// @Summary      Deactivate bot
+// @Description  Deactivate a bot to stop responding to messages
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id}/deactivate [post]
 func (h *BotHandler) Deactivate(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -234,7 +317,20 @@ func (h *BotHandler) Deactivate(c *gin.Context) {
 	RespondSuccess(c, gin.H{"message": "Bot deactivated"})
 }
 
-// AssignChannel assigns a channel to a bot
+// AssignChannel godoc
+// @Summary      Assign channel to bot
+// @Description  Assign a channel to a bot so the bot responds to messages from that channel
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Param        request body AssignChannelRequest true "Channel assignment data"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id}/channels [post]
 func (h *BotHandler) AssignChannel(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -256,7 +352,20 @@ func (h *BotHandler) AssignChannel(c *gin.Context) {
 	RespondSuccess(c, gin.H{"message": "Channel assigned to bot"})
 }
 
-// UnassignChannel unassigns a channel from a bot
+// UnassignChannel godoc
+// @Summary      Unassign channel from bot
+// @Description  Remove a channel assignment from a bot
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Param        channelId path string true "Channel ID"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id}/channels/{channelId} [delete]
 func (h *BotHandler) UnassignChannel(c *gin.Context) {
 	botID := c.Param("id")
 	channelID := c.Param("channelId")
@@ -278,7 +387,20 @@ func (h *BotHandler) UnassignChannel(c *gin.Context) {
 	RespondSuccess(c, gin.H{"message": "Channel unassigned from bot"})
 }
 
-// UpdateConfig updates bot configuration
+// UpdateConfig godoc
+// @Summary      Update bot configuration
+// @Description  Update a bot's advanced configuration including prompts, escalation rules, and working hours
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Param        request body UpdateBotConfigRequest true "Bot config data"
+// @Success      200 {object} Response{data=entity.Bot}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id}/config [put]
 func (h *BotHandler) UpdateConfig(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -347,7 +469,20 @@ func (h *BotHandler) UpdateConfig(c *gin.Context) {
 	RespondSuccess(c, updatedBot)
 }
 
-// AddEscalationRule adds an escalation rule to a bot
+// AddEscalationRule godoc
+// @Summary      Add escalation rule
+// @Description  Add an escalation rule to a bot that triggers handoff to human agents
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Param        request body AddEscalationRuleRequest true "Escalation rule data"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id}/escalation-rules [post]
 func (h *BotHandler) AddEscalationRule(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -375,7 +510,20 @@ func (h *BotHandler) AddEscalationRule(c *gin.Context) {
 	RespondSuccess(c, gin.H{"message": "Escalation rule added"})
 }
 
-// Test tests a bot with a message
+// Test godoc
+// @Summary      Test bot
+// @Description  Test a bot by sending a message and getting a response
+// @Tags         bots
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Bot ID"
+// @Param        request body TestBotRequest true "Test message"
+// @Success      200 {object} Response{data=object}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /bots/{id}/test [post]
 func (h *BotHandler) Test(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {

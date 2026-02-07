@@ -72,6 +72,14 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'MCP',
+      items: [
+        'mcp/overview',
+        'mcp/playground',
+      ],
+    },
+    {
+      type: 'category',
       label: 'API Reference',
       items: [
         'api/overview',

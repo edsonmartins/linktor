@@ -48,8 +48,20 @@ func (h *AnalyticsHandler) parseAnalyticsParams(c *gin.Context) (entity.Analytic
 	return period, startDate, endDate
 }
 
-// GetOverview returns high-level analytics metrics
-// GET /api/v1/analytics/overview
+// GetOverview godoc
+// @Summary      Get analytics overview
+// @Description  Returns high-level analytics metrics including message counts, response times, and conversation statistics
+// @Tags         analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        period query string false "Time period (daily, weekly, monthly)" default(weekly)
+// @Param        start_date query string false "Custom start date (YYYY-MM-DD)"
+// @Param        end_date query string false "Custom end date (YYYY-MM-DD)"
+// @Success      200 {object} Response{data=entity.AnalyticsOverview}
+// @Failure      401 {object} Response
+// @Failure      500 {object} Response
+// @Router       /analytics/overview [get]
 func (h *AnalyticsHandler) GetOverview(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	period, startDate, endDate := h.parseAnalyticsParams(c)
@@ -63,8 +75,20 @@ func (h *AnalyticsHandler) GetOverview(c *gin.Context) {
 	c.JSON(http.StatusOK, overview)
 }
 
-// GetConversations returns conversation analytics by day
-// GET /api/v1/analytics/conversations
+// GetConversations godoc
+// @Summary      Get conversation analytics
+// @Description  Returns conversation analytics grouped by day
+// @Tags         analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        period query string false "Time period (daily, weekly, monthly)" default(weekly)
+// @Param        start_date query string false "Custom start date (YYYY-MM-DD)"
+// @Param        end_date query string false "Custom end date (YYYY-MM-DD)"
+// @Success      200 {object} Response{data=[]entity.ConversationsByDay}
+// @Failure      401 {object} Response
+// @Failure      500 {object} Response
+// @Router       /analytics/conversations [get]
 func (h *AnalyticsHandler) GetConversations(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	_, startDate, endDate := h.parseAnalyticsParams(c)
@@ -78,8 +102,20 @@ func (h *AnalyticsHandler) GetConversations(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": conversations})
 }
 
-// GetFlows returns flow analytics
-// GET /api/v1/analytics/flows
+// GetFlows godoc
+// @Summary      Get flow analytics
+// @Description  Returns analytics for conversation flows including execution counts and success rates
+// @Tags         analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        period query string false "Time period (daily, weekly, monthly)" default(weekly)
+// @Param        start_date query string false "Custom start date (YYYY-MM-DD)"
+// @Param        end_date query string false "Custom end date (YYYY-MM-DD)"
+// @Success      200 {object} Response{data=[]entity.FlowAnalytics}
+// @Failure      401 {object} Response
+// @Failure      500 {object} Response
+// @Router       /analytics/flows [get]
 func (h *AnalyticsHandler) GetFlows(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	_, startDate, endDate := h.parseAnalyticsParams(c)
@@ -93,8 +129,20 @@ func (h *AnalyticsHandler) GetFlows(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": flows})
 }
 
-// GetEscalations returns escalation analytics by reason
-// GET /api/v1/analytics/escalations
+// GetEscalations godoc
+// @Summary      Get escalation analytics
+// @Description  Returns escalation analytics grouped by reason
+// @Tags         analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        period query string false "Time period (daily, weekly, monthly)" default(weekly)
+// @Param        start_date query string false "Custom start date (YYYY-MM-DD)"
+// @Param        end_date query string false "Custom end date (YYYY-MM-DD)"
+// @Success      200 {object} Response{data=[]entity.EscalationsByReason}
+// @Failure      401 {object} Response
+// @Failure      500 {object} Response
+// @Router       /analytics/escalations [get]
 func (h *AnalyticsHandler) GetEscalations(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	_, startDate, endDate := h.parseAnalyticsParams(c)
@@ -108,8 +156,20 @@ func (h *AnalyticsHandler) GetEscalations(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": escalations})
 }
 
-// GetChannels returns channel analytics
-// GET /api/v1/analytics/channels
+// GetChannels godoc
+// @Summary      Get channel analytics
+// @Description  Returns analytics for each channel including message counts and engagement metrics
+// @Tags         analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        period query string false "Time period (daily, weekly, monthly)" default(weekly)
+// @Param        start_date query string false "Custom start date (YYYY-MM-DD)"
+// @Param        end_date query string false "Custom end date (YYYY-MM-DD)"
+// @Success      200 {object} Response{data=[]entity.ChannelAnalytics}
+// @Failure      401 {object} Response
+// @Failure      500 {object} Response
+// @Router       /analytics/channels [get]
 func (h *AnalyticsHandler) GetChannels(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	_, startDate, endDate := h.parseAnalyticsParams(c)

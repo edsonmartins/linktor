@@ -155,6 +155,45 @@ export const queryKeys = {
     channels: (params: Record<string, unknown>) =>
       [...queryKeys.analytics.all, 'channels', params] as const,
   },
+
+  // Bots
+  bots: {
+    all: ['bots'] as const,
+    lists: () => [...queryKeys.bots.all, 'list'] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...queryKeys.bots.lists(), filters] as const,
+    details: () => [...queryKeys.bots.all, 'detail'] as const,
+    detail: (id: string) => [...queryKeys.bots.details(), id] as const,
+  },
+
+  // Users
+  users: {
+    all: ['users'] as const,
+    lists: () => [...queryKeys.users.all, 'list'] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...queryKeys.users.lists(), filters] as const,
+    details: () => [...queryKeys.users.all, 'detail'] as const,
+    detail: (id: string) => [...queryKeys.users.details(), id] as const,
+  },
+
+  // AI Providers
+  ai: {
+    all: ['ai'] as const,
+    providers: () => [...queryKeys.ai.all, 'providers'] as const,
+    models: (provider: string) => [...queryKeys.ai.all, 'models', provider] as const,
+  },
+
+  // Observability
+  observability: {
+    all: ['observability'] as const,
+    logs: (filters: Record<string, unknown>) =>
+      [...queryKeys.observability.all, 'logs', filters] as const,
+    queue: () => [...queryKeys.observability.all, 'queue'] as const,
+    streamInfo: (streamName: string) =>
+      [...queryKeys.observability.all, 'queue', streamName] as const,
+    stats: (period: string) =>
+      [...queryKeys.observability.all, 'stats', period] as const,
+  },
 }
 
 export { getQueryClient }

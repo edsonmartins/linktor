@@ -182,7 +182,8 @@ export function TelegramConfig({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full">
+        <div className="flex-1 space-y-6">
         <Tabs defaultValue="credentials" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="credentials">Credentials</TabsTrigger>
@@ -412,10 +413,9 @@ export function TelegramConfig({
             </Alert>
           </TabsContent>
         </Tabs>
+        </div>
 
-        <Separator />
-
-        <div className="flex justify-end gap-3">
+        <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel}>
               Cancel

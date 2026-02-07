@@ -50,7 +50,21 @@ type TestFlowRequest struct {
 	Inputs []string `json:"inputs" binding:"required"`
 }
 
-// List returns all flows for the tenant
+// List godoc
+// @Summary      List flows
+// @Description  Returns all conversation flows for the current tenant with pagination and filters
+// @Tags         flows
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "Page number" default(1)
+// @Param        page_size query int false "Page size" default(20)
+// @Param        bot_id query string false "Filter by bot ID"
+// @Param        is_active query bool false "Filter by active status"
+// @Param        trigger query string false "Filter by trigger type"
+// @Success      200 {object} Response{data=[]entity.Flow}
+// @Failure      401 {object} Response
+// @Router       /flows [get]
 func (h *FlowHandler) List(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -97,7 +111,18 @@ func (h *FlowHandler) List(c *gin.Context) {
 	RespondPaginated(c, flows, total, params.Page, params.PageSize)
 }
 
-// Create creates a new flow
+// Create godoc
+// @Summary      Create flow
+// @Description  Create a new conversation flow for automation
+// @Tags         flows
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body CreateFlowRequest true "Flow data"
+// @Success      201 {object} Response{data=entity.Flow}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /flows [post]
 func (h *FlowHandler) Create(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -130,7 +155,19 @@ func (h *FlowHandler) Create(c *gin.Context) {
 	RespondCreated(c, flow)
 }
 
-// Get returns a flow by ID
+// Get godoc
+// @Summary      Get flow
+// @Description  Returns a flow by ID with all its nodes
+// @Tags         flows
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Flow ID"
+// @Success      200 {object} Response{data=entity.Flow}
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /flows/{id} [get]
 func (h *FlowHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -154,7 +191,21 @@ func (h *FlowHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, flow)
 }
 
-// Update updates a flow
+// Update godoc
+// @Summary      Update flow
+// @Description  Update a flow's definition and nodes
+// @Tags         flows
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Flow ID"
+// @Param        request body UpdateFlowRequest true "Flow update data"
+// @Success      200 {object} Response{data=entity.Flow}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /flows/{id} [put]
 func (h *FlowHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -202,7 +253,19 @@ func (h *FlowHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, flow)
 }
 
-// Delete deletes a flow
+// Delete godoc
+// @Summary      Delete flow
+// @Description  Delete a flow by ID
+// @Tags         flows
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Flow ID"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /flows/{id} [delete]
 func (h *FlowHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -234,7 +297,19 @@ func (h *FlowHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Flow deleted successfully"})
 }
 
-// Activate activates a flow
+// Activate godoc
+// @Summary      Activate flow
+// @Description  Activate a flow so it starts processing messages
+// @Tags         flows
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Flow ID"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /flows/{id}/activate [post]
 func (h *FlowHandler) Activate(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -266,7 +341,19 @@ func (h *FlowHandler) Activate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Flow activated successfully"})
 }
 
-// Deactivate deactivates a flow
+// Deactivate godoc
+// @Summary      Deactivate flow
+// @Description  Deactivate a flow so it stops processing messages
+// @Tags         flows
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Flow ID"
+// @Success      200 {object} Response{data=object{message=string}}
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /flows/{id}/deactivate [post]
 func (h *FlowHandler) Deactivate(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -298,7 +385,21 @@ func (h *FlowHandler) Deactivate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Flow deactivated successfully"})
 }
 
-// Test tests a flow with simulated inputs
+// Test godoc
+// @Summary      Test flow
+// @Description  Test a flow with simulated message inputs
+// @Tags         flows
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Flow ID"
+// @Param        request body TestFlowRequest true "Test inputs"
+// @Success      200 {object} Response{data=object{flow_id=string,results=[]object}}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /flows/{id}/test [post]
 func (h *FlowHandler) Test(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {

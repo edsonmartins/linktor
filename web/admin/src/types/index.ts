@@ -64,6 +64,10 @@ export type ChannelType =
   | 'facebook'
   | 'rcs'
   | 'email'
+  | 'voice'
+
+// Voice Provider Types
+export type VoiceProvider = 'twilio' | 'vonage' | 'amazon_connect' | 'asterisk' | 'freeswitch'
 
 // Contact
 export interface Contact {
@@ -368,6 +372,114 @@ export interface FlowTestResult {
   flow_ended: boolean
 }
 
+// Bot
+export type BotType = 'customer_service' | 'sales' | 'faq' | 'custom'
+export type AIProvider = 'openai' | 'anthropic' | 'ollama'
+export type EscalationRuleType = 'low_confidence' | 'sentiment' | 'keyword' | 'intent' | 'user_request'
+
+export interface Bot {
+  id: string
+  tenant_id: string
+  name: string
+  type: BotType
+  provider: AIProvider
+  model: string
+  config: BotConfig
+  is_active: boolean
+  channel_ids: string[]
+  created_at: string
+  updated_at: string
+  // Expanded relations
+  channels?: Channel[]
+  knowledge_bases?: KnowledgeBase[]
+}
+
+export interface BotConfig {
+  system_prompt: string
+  temperature: number
+  max_tokens: number
+  context_window: number
+  confidence_threshold: number
+  welcome_message: string
+  fallback_message: string
+  working_hours?: WorkingHours
+  knowledge_base_ids: string[]
+  escalation_rules: EscalationRule[]
+}
+
+export interface WorkingHours {
+  enabled: boolean
+  timezone: string
+  schedule: WeekSchedule
+  outside_hours_message: string
+}
+
+export interface WeekSchedule {
+  monday?: DaySchedule
+  tuesday?: DaySchedule
+  wednesday?: DaySchedule
+  thursday?: DaySchedule
+  friday?: DaySchedule
+  saturday?: DaySchedule
+  sunday?: DaySchedule
+}
+
+export interface DaySchedule {
+  enabled: boolean
+  start: string // "09:00"
+  end: string   // "18:00"
+}
+
+export interface EscalationRule {
+  id: string
+  type: EscalationRuleType
+  value?: string
+  priority: number
+  message?: string
+}
+
+export interface CreateBotInput {
+  name: string
+  type: BotType
+  provider: AIProvider
+  model: string
+  config?: Partial<BotConfig>
+}
+
+export interface UpdateBotInput {
+  name?: string
+  type?: BotType
+  provider?: AIProvider
+  model?: string
+}
+
+export interface UpdateBotConfigInput {
+  system_prompt?: string
+  temperature?: number
+  max_tokens?: number
+  context_window?: number
+  confidence_threshold?: number
+  welcome_message?: string
+  fallback_message?: string
+  working_hours?: WorkingHours
+  knowledge_base_ids?: string[]
+}
+
+export interface BotTestInput {
+  message: string
+  conversation_context?: Message[]
+}
+
+export interface BotTestResult {
+  response: string
+  confidence: number
+  intent?: string
+  entities?: Record<string, string>
+  knowledge_used?: KnowledgeItem[]
+  should_escalate: boolean
+  escalation_reason?: string
+}
+
 // Analytics
 export type AnalyticsPeriod = 'daily' | 'weekly' | 'monthly'
 
@@ -418,4 +530,112 @@ export interface ChannelAnalytics {
   total_conversations: number
   resolved_by_bot: number
   resolution_rate: number
+}
+
+// Observability
+export type LogLevel = 'info' | 'warn' | 'error'
+export type LogSource = 'channel' | 'queue' | 'system' | 'webhook'
+export type StatsPeriod = 'hour' | 'day' | 'week'
+
+export interface MessageLog {
+  id: string
+  tenant_id: string
+  channel_id?: string
+  channel_name?: string
+  level: LogLevel
+  source: LogSource
+  message: string
+  metadata?: Record<string, unknown>
+  created_at: string
+}
+
+export interface LogsResponse {
+  logs: MessageLog[]
+  total: number
+  has_more: boolean
+}
+
+export interface ConsumerInfo {
+  name: string
+  pending: number
+  ack_pending: number
+  redelivered: number
+  last_delivered?: string
+}
+
+export interface StreamInfo {
+  name: string
+  description?: string
+  messages: number
+  bytes: number
+  consumers: ConsumerInfo[]
+  first_seq: number
+  last_seq: number
+  created: string
+}
+
+export interface QueueStats {
+  streams: StreamInfo[]
+  total_messages: number
+  total_pending: number
+}
+
+export interface HourlyCount {
+  hour: string
+  count: number
+}
+
+export interface ChannelCount {
+  channel_id: string
+  channel_name: string
+  channel_type: string
+  count: number
+}
+
+export interface MessageStats {
+  total: number
+  per_hour: HourlyCount[]
+  by_channel: ChannelCount[]
+}
+
+export interface ResponseTimeStats {
+  avg_ms: number
+  p95_ms: number
+  p99_ms: number
+}
+
+export interface ChannelStats {
+  total: number
+  connected: number
+  disconnected: number
+}
+
+export interface ConversationStats {
+  active: number
+  resolved_today: number
+  pending: number
+}
+
+export interface SourceErrorCount {
+  source: LogSource
+  count: number
+}
+
+export interface ErrorStats {
+  last_hour: number
+  last_24h: number
+  by_source: SourceErrorCount[]
+}
+
+export interface SystemStats {
+  messages: MessageStats
+  response_time: ResponseTimeStats
+  channels: ChannelStats
+  conversations: ConversationStats
+  errors: ErrorStats
+}
+
+export interface ResetConsumerRequest {
+  stream: string
+  consumer: string
 }

@@ -77,7 +77,19 @@ type UpdateUserRequest struct {
 	Status    *string `json:"status"`
 }
 
-// List returns all users for the tenant
+// List godoc
+// @Summary      List users
+// @Description  Returns all users for the current tenant with pagination
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "Page number" default(1)
+// @Param        page_size query int false "Page size" default(20)
+// @Success      200 {object} Response{data=[]UserResponse,meta=MetaResponse}
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Router       /users [get]
 func (h *UserHandler) List(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -103,7 +115,20 @@ func (h *UserHandler) List(c *gin.Context) {
 	})
 }
 
-// Create creates a new user
+// Create godoc
+// @Summary      Create user
+// @Description  Create a new user in the current tenant
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body CreateUserRequest true "User data"
+// @Success      201 {object} Response{data=UserResponse}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      409 {object} Response
+// @Router       /users [post]
 func (h *UserHandler) Create(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
@@ -133,7 +158,19 @@ func (h *UserHandler) Create(c *gin.Context) {
 	RespondCreated(c, toUserResponse(user))
 }
 
-// Get returns a user by ID
+// Get godoc
+// @Summary      Get user
+// @Description  Returns a user by ID
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "User ID"
+// @Success      200 {object} Response{data=UserResponse}
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /users/{id} [get]
 func (h *UserHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -157,7 +194,21 @@ func (h *UserHandler) Get(c *gin.Context) {
 	RespondSuccess(c, toUserResponse(user))
 }
 
-// Update updates a user
+// Update godoc
+// @Summary      Update user
+// @Description  Update a user's information
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "User ID"
+// @Param        request body UpdateUserRequest true "User update data"
+// @Success      200 {object} Response{data=UserResponse}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /users/{id} [put]
 func (h *UserHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -195,7 +246,20 @@ func (h *UserHandler) Update(c *gin.Context) {
 	RespondSuccess(c, toUserResponse(user))
 }
 
-// Delete deletes a user
+// Delete godoc
+// @Summary      Delete user
+// @Description  Delete a user by ID
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "User ID"
+// @Success      204 "No Content"
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /users/{id} [delete]
 func (h *UserHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {

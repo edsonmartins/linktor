@@ -1,0 +1,128 @@
+---
+title: MCP Playground
+description: Test Linktor MCP tools directly in your browser
+sidebar_position: 2
+---
+
+import McpPlayground from '@site/src/components/McpPlayground';
+
+# MCP Playground
+
+Explore and test Linktor's MCP (Model Context Protocol) tools, resources, and prompts interactively.
+
+## Available Capabilities
+
+### Tools
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **Conversations** | 6 | List, get, create, update, close, and assign conversations |
+| **Messages** | 3 | Send messages and retrieve message history |
+| **Contacts** | 5 | Manage contact information and identities |
+| **Channels** | 4 | List and manage communication channels |
+| **Bots** | 4 | AI bot management and testing |
+| **Analytics** | 4 | Access metrics, reports, and performance data |
+| **Knowledge** | 4 | Search and manage knowledge base articles |
+
+### Resources
+
+The MCP server exposes the following resources:
+
+- `linktor://conversations` - Active conversations
+- `linktor://contacts` - Contact list
+- `linktor://channels` - Configured channels
+- `linktor://bots` - AI bots
+- `linktor://analytics/summary` - Analytics summary (last 30 days)
+- `linktor://users` - Team members/agents
+
+### Prompts
+
+Pre-built prompt templates for common use cases:
+
+- **customer_support** - Customer support assistant prompt
+- **conversation_summary** - Summarize a conversation
+- **draft_response** - Draft a response to a customer message
+- **analyze_sentiment** - Analyze sentiment of text
+
+## Try It Out
+
+Connect to a Linktor MCP server to explore available tools and test them interactively.
+
+<McpPlayground
+  serverUrl="http://localhost:3001/mcp"
+  serverName="Linktor MCP Server"
+  showConfig={true}
+/>
+
+## Running Your Own Server
+
+To run the MCP HTTP server locally:
+
+```bash
+# Navigate to the MCP server directory
+cd mcp/linktor-mcp-server
+
+# Install dependencies
+npm install
+
+# Build the server
+npm run build
+
+# Start the HTTP server (default port: 3001)
+npm run start:http
+
+# Or with a custom port
+MCP_HTTP_PORT=4000 npm run start:http
+```
+
+The server exposes:
+- **POST /mcp** - MCP JSON-RPC endpoint
+- **GET /health** - Health check endpoint
+
+## Authentication
+
+For production use, the MCP server supports API key authentication:
+
+```bash
+# Set your API key in the environment
+export LINKTOR_API_KEY=your-api-key
+
+# The server will use this to authenticate with the Linktor API
+npm run start:http
+```
+
+In the playground, enter your API key in the configuration panel before connecting.
+
+## Integration Examples
+
+### Using from Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "linktor": {
+      "command": "npx",
+      "args": ["-y", "@linktor/mcp-server"],
+      "env": {
+        "LINKTOR_API_KEY": "your-api-key",
+        "LINKTOR_API_URL": "https://api.linktor.io"
+      }
+    }
+  }
+}
+```
+
+### Using Programmatically
+
+```typescript
+import { createHttpServer, startHttpServer } from '@linktor/mcp-server';
+
+// Start with default settings
+startHttpServer(3001);
+
+// Or create a custom Express app
+const app = createHttpServer();
+app.listen(4000);
+```

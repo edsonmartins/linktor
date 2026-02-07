@@ -505,10 +505,12 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
             </CardHeader>
             <CardContent>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full">
+                  <div className="flex-1 space-y-4">
                   {renderProviderFields()}
+                  </div>
 
-                  <div className="flex gap-2 pt-4">
+                  <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
                     <Button
                       type="button"
                       variant="outline"
