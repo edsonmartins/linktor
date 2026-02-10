@@ -53,6 +53,10 @@ impl LinktorClient {
         FlowsResource { client: self.clone() }
     }
 
+    pub fn vre(&self) -> VREResource {
+        VREResource { client: self.clone() }
+    }
+
     pub async fn set_access_token(&self, token: Option<String>) {
         let mut guard = self.access_token.write().await;
         *guard = token;
@@ -542,5 +546,146 @@ impl FlowsResource {
     pub async fn execute(&self, id: &str, conversation_id: &str) -> Result<FlowExecution> {
         let input = ExecuteFlowInput::new(conversation_id);
         self.client.post(&format!("/flows/{}/execute", id), input).await
+    }
+}
+
+pub struct VREResource {
+    client: LinktorClient,
+}
+
+impl VREResource {
+    /// Render a VRE template to an image.
+    /// Returns base64-encoded image data that can be sent to messaging channels.
+    pub async fn render(&self, request: VRERenderRequest) -> Result<VRERenderResponse> {
+        self.client.post("/vre/render", request).await
+    }
+
+    /// Render a VRE template and send it directly to a conversation.
+    /// Combines rendering and sending in one operation.
+    pub async fn render_and_send(&self, request: VRERenderAndSendRequest) -> Result<VRERenderAndSendResponse> {
+        self.client.post("/vre/render-and-send", request).await
+    }
+
+    /// List available VRE templates with their schemas and example data.
+    pub async fn list_templates(&self, tenant_id: Option<&str>) -> Result<VREListTemplatesResponse> {
+        let path = match tenant_id {
+            Some(id) => format!("/vre/templates?tenant_id={}", id),
+            None => "/vre/templates".to_string(),
+        };
+        self.client.get(&path).await
+    }
+
+    /// Preview a VRE template with sample data.
+    pub async fn preview(&self, template_id: &str, data: Option<std::collections::HashMap<String, serde_json::Value>>) -> Result<VREPreviewResponse> {
+        let request = VREPreviewRequest { data };
+        self.client.post(&format!("/vre/templates/{}/preview", template_id), request).await
+    }
+
+    /// Render a menu with numbered options.
+    pub async fn render_menu(
+        &self,
+        tenant_id: &str,
+        titulo: &str,
+        opcoes: Vec<MenuOpcaoData>,
+        channel: VREChannelType,
+    ) -> Result<VRERenderResponse> {
+        let mut data = std::collections::HashMap::new();
+        data.insert("titulo".to_string(), serde_json::json!(titulo));
+        data.insert("opcoes".to_string(), serde_json::to_value(&opcoes).unwrap_or_default());
+
+        let request = VRERenderRequest::new(tenant_id, "menu_opcoes", data)
+            .channel(channel);
+        self.render(request).await
+    }
+
+    /// Render a product card.
+    pub async fn render_product_card(
+        &self,
+        tenant_id: &str,
+        produto: CardProdutoData,
+        channel: VREChannelType,
+    ) -> Result<VRERenderResponse> {
+        let data = serde_json::to_value(&produto)
+            .map(|v| v.as_object().cloned().unwrap_or_default())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, v)| (k, v))
+            .collect();
+
+        let request = VRERenderRequest::new(tenant_id, "card_produto", data)
+            .channel(channel);
+        self.render(request).await
+    }
+
+    /// Render an order status timeline.
+    pub async fn render_order_status(
+        &self,
+        tenant_id: &str,
+        status: StatusPedidoData,
+        channel: VREChannelType,
+    ) -> Result<VRERenderResponse> {
+        let data = serde_json::to_value(&status)
+            .map(|v| v.as_object().cloned().unwrap_or_default())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, v)| (k, v))
+            .collect();
+
+        let request = VRERenderRequest::new(tenant_id, "status_pedido", data)
+            .channel(channel);
+        self.render(request).await
+    }
+
+    /// Render a product list for comparison.
+    pub async fn render_product_list(
+        &self,
+        tenant_id: &str,
+        titulo: &str,
+        produtos: Vec<ListaProdutoItem>,
+        channel: VREChannelType,
+    ) -> Result<VRERenderResponse> {
+        let mut data = std::collections::HashMap::new();
+        data.insert("titulo".to_string(), serde_json::json!(titulo));
+        data.insert("produtos".to_string(), serde_json::to_value(&produtos).unwrap_or_default());
+
+        let request = VRERenderRequest::new(tenant_id, "lista_produtos", data)
+            .channel(channel);
+        self.render(request).await
+    }
+
+    /// Render a confirmation summary.
+    pub async fn render_confirmation(
+        &self,
+        tenant_id: &str,
+        valor_total: f64,
+        itens: Vec<ConfirmacaoItem>,
+        channel: VREChannelType,
+    ) -> Result<VRERenderResponse> {
+        let mut data = std::collections::HashMap::new();
+        data.insert("valor_total".to_string(), serde_json::json!(valor_total));
+        data.insert("itens".to_string(), serde_json::to_value(&itens).unwrap_or_default());
+
+        let request = VRERenderRequest::new(tenant_id, "confirmacao", data)
+            .channel(channel);
+        self.render(request).await
+    }
+
+    /// Render a PIX payment QR code.
+    pub async fn render_pix_payment(
+        &self,
+        tenant_id: &str,
+        pix: CobrancaPixData,
+        channel: VREChannelType,
+    ) -> Result<VRERenderResponse> {
+        let data = serde_json::to_value(&pix)
+            .map(|v| v.as_object().cloned().unwrap_or_default())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, v)| (k, v))
+            .collect();
+
+        let request = VRERenderRequest::new(tenant_id, "cobranca_pix", data)
+            .channel(channel);
+        self.render(request).await
     }
 }

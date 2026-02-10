@@ -327,7 +327,7 @@ func (m *MediaManager) BatchUploadMedia(ctx context.Context, media []*plugin.Med
 		if err != nil {
 			result.Error = err
 		} else if !upload.Success {
-			result.Error = fmt.Errorf(upload.Error)
+			result.Error = fmt.Errorf("%s", upload.Error)
 		} else {
 			result.MediaID = upload.MediaID
 			result.MediaType = m.getMediaType(med.MimeType)

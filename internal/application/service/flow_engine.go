@@ -201,6 +201,42 @@ func (s *FlowEngineService) ExecuteNode(ctx context.Context, flow *entity.Flow, 
 			convContext.State["current_node_id"] = result.NextNodeID
 		}
 
+	case entity.FlowNodeVRE:
+		// VRE (Visual Response Engine) node - renders a visual template
+		result.IsVREResponse = true
+
+		if node.VREConfig != nil {
+			// Store VRE config in result for the bot orchestrator to render
+			result.Message = node.VREConfig.TemplateID // Template ID for rendering
+			result.VRECaption = s.ProcessTemplate(node.VREConfig.Caption, convContext)
+			result.VREFollowUp = s.ProcessTemplate(node.VREConfig.FollowUpText, convContext)
+
+			// Build template data from flow collected data using the mapping
+			templateData := make(map[string]interface{})
+			collected := s.GetCollectedData(convContext)
+			for templateKey, flowKey := range node.VREConfig.DataMapping {
+				// Process template syntax in the flow key (e.g., {{user_name}})
+				value := s.ProcessTemplate(flowKey, convContext)
+				if collected != nil && collected[flowKey] != "" {
+					templateData[templateKey] = collected[flowKey]
+				} else {
+					templateData[templateKey] = value
+				}
+			}
+
+			// Store template data in context for the VRE renderer
+			if convContext.State == nil {
+				convContext.State = make(map[string]interface{})
+			}
+			convContext.State["vre_template_data"] = templateData
+		}
+
+		// Continue to next node
+		if len(node.Transitions) > 0 {
+			result.NextNodeID = node.Transitions[0].ToNodeID
+			convContext.State["current_node_id"] = result.NextNodeID
+		}
+
 	case entity.FlowNodeEnd:
 		// End the flow
 		result.Message = s.ProcessTemplate(node.Content, convContext)

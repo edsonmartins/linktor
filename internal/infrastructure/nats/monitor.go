@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -91,12 +92,16 @@ func (m *Monitor) getConsumersForStream(ctx context.Context, stream jetstream.St
 
 	consumerLister := stream.ListConsumers(ctx)
 	for consumerInfo := range consumerLister.Info() {
+		var lastDelivered time.Time
+		if consumerInfo.Delivered.Last != nil {
+			lastDelivered = *consumerInfo.Delivered.Last
+		}
 		consumers = append(consumers, entity.ConsumerInfo{
 			Name:          consumerInfo.Name,
 			Pending:       int(consumerInfo.NumPending),
 			AckPending:    int(consumerInfo.NumAckPending),
 			Redelivered:   int(consumerInfo.NumRedelivered),
-			LastDelivered: consumerInfo.Delivered.Last,
+			LastDelivered: lastDelivered,
 		})
 	}
 
@@ -182,11 +187,16 @@ func (m *Monitor) GetConsumerInfo(ctx context.Context, streamName, consumerName 
 		return nil, fmt.Errorf("failed to get consumer info for %s: %w", consumerName, err)
 	}
 
+	var lastDelivered time.Time
+	if info.Delivered.Last != nil {
+		lastDelivered = *info.Delivered.Last
+	}
+
 	return &entity.ConsumerInfo{
 		Name:          info.Name,
 		Pending:       int(info.NumPending),
 		AckPending:    int(info.NumAckPending),
 		Redelivered:   int(info.NumRedelivered),
-		LastDelivered: info.Delivered.Last,
+		LastDelivered: lastDelivered,
 	}, nil
 }

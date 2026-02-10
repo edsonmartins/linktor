@@ -23,6 +23,7 @@ public class LinktorClient
     public AIResource AI { get; }
     public KnowledgeBasesResource KnowledgeBases { get; }
     public FlowsResource Flows { get; }
+    public VREResource VRE { get; }
 
     public LinktorClient(LinktorClientOptions options)
     {
@@ -46,6 +47,7 @@ public class LinktorClient
         AI = new AIResource(this);
         KnowledgeBases = new KnowledgeBasesResource(this);
         Flows = new FlowsResource(this);
+        VRE = new VREResource(this);
     }
 
     internal void SetAccessToken(string? token) => _accessToken = token;

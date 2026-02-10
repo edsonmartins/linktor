@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:800px;font-family:{{ .Brand.FontFamily }};background:{{ .Brand.Background }};color:{{ .Brand.TextColor }}}
+.card{padding:20px}
+.header{background:linear-gradient(135deg,{{ .Brand.PrimaryColor }},#1a2980);padding:20px;display:flex;align-items:center;gap:12px;border-radius:14px 14px 0 0}
+.logo{width:38px;height:38px;background:rgba(255,255,255,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;font-weight:700;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.1)}
+.brand{color:rgba(255,255,255,.7);font-size:11px;font-weight:500;letter-spacing:.5px}
+.title{color:#fff;font-size:17px;font-weight:700;margin-top:2px}
+.body{padding:16px;background:#fff;border-radius:0 0 14px 14px}
+.opt{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8f9fb;border-radius:10px;margin-bottom:8px;border:1px solid #eef0f3}
+.opt:last-child{margin-bottom:0}
+.num{width:28px;height:28px;background:{{ .Brand.PrimaryColor }};color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+.ico{font-size:20px;flex-shrink:0;width:28px;text-align:center}
+.lbl{font-size:13.5px;font-weight:600;color:{{ .Brand.TextColor }}}
+.sub{font-size:11px;color:{{ .Brand.MutedColor }};margin-top:1px}
+.foot{text-align:center;padding:10px 16px 14px;font-size:11px;color:#b0b8c4}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    {{ if .Brand.LogoURL }}
+    <img src="{{ .Brand.LogoURL }}" class="logo" style="object-fit:cover" />
+    {{ else }}
+    <div class="logo">{{ substr .Brand.Name 0 2 | upper }}</div>
+    {{ end }}
+    <div>
+      <div class="brand">{{ .Brand.Name }}</div>
+      <div class="title">{{ .Data.titulo }}</div>
+    </div>
+  </div>
+  <div class="body">
+    {{ range $i, $opt := .Data.opcoes }}
+    <div class="opt">
+      <div class="num">{{ add $i 1 }}</div>
+      <div class="ico">{{ icon $opt.icone }}</div>
+      <div>
+        <div class="lbl">{{ $opt.label }}</div>
+        {{ if $opt.descricao }}
+        <div class="sub">{{ $opt.descricao }}</div>
+        {{ end }}
+      </div>
+    </div>
+    {{ end }}
+  </div>
+  <div class="foot">Responda com o número da opção desejada</div>
+</div>
+</body>
+</html>

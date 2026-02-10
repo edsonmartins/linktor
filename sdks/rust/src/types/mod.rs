@@ -8,6 +8,7 @@ pub mod ai;
 pub mod knowledge;
 pub mod flow;
 pub mod webhook;
+pub mod vre;
 
 pub use common::*;
 pub use auth::*;
@@ -19,3 +20,4 @@ pub use ai::*;
 pub use knowledge::*;
 pub use flow::*;
 pub use webhook::*;
+pub use vre::*;

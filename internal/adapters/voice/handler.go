@@ -185,7 +185,7 @@ func (h *HTTPHandler) HandleRecordingCallback(w http.ResponseWriter, r *http.Req
 
 	// Set recording-specific type if not already set
 	if event.Type == "" {
-		event.Type = WebhookRecordingCompleted
+		event.Type = "recording.completed"
 	}
 
 	// Call handler if set
@@ -233,7 +233,7 @@ func (h *HTTPHandler) HandleTranscriptionCallback(w http.ResponseWriter, r *http
 
 	// Set transcription-specific type
 	if event.Type == "" {
-		event.Type = WebhookTranscriptionCompleted
+		event.Type = "transcription.completed"
 	}
 
 	// Call handler if set
@@ -396,11 +396,13 @@ func (h *CallFlowHandler) buildStepActions(step *CallFlowStep) ([]IVRAction, err
 		actions = append(actions, gather)
 
 	case "dial":
-		numbers := []string{}
-		if nums, ok := step.Config["numbers"].([]interface{}); ok {
-			for _, n := range nums {
-				numbers = append(numbers, n.(string))
-			}
+		// Get the primary number to dial
+		number := ""
+		if num, ok := step.Config["number"].(string); ok {
+			number = num
+		} else if nums, ok := step.Config["numbers"].([]interface{}); ok && len(nums) > 0 {
+			// Use first number if array provided
+			number, _ = nums[0].(string)
 		}
 		timeout := 30
 		if t, ok := step.Config["timeout"].(float64); ok {
@@ -410,7 +412,7 @@ func (h *CallFlowHandler) buildStepActions(step *CallFlowStep) ([]IVRAction, err
 		record, _ := step.Config["record"].(bool)
 
 		actions = append(actions, IVRDial{
-			Numbers:  numbers,
+			Number:   number,
 			Timeout:  timeout,
 			CallerID: callerID,
 			Record:   record,

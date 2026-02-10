@@ -10,6 +10,7 @@ import {
   GitBranch,
   Zap,
   CircleStop,
+  ImageIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,7 +25,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import type { FlowNode, FlowTransition, QuickReply, FlowAction, FlowActionType, TransitionCondition } from '@/types'
+import type { FlowNode, FlowTransition, QuickReply, FlowAction, FlowActionType, TransitionCondition, VRETemplateId, VRENodeConfig } from '@/types'
 
 interface NodePanelProps {
   node: FlowNode
@@ -39,6 +40,7 @@ const nodeTypeLabels: Record<FlowNode['type'], { icon: React.ReactNode; label: s
   question: { icon: <HelpCircle className="h-4 w-4" />, label: 'Question' },
   condition: { icon: <GitBranch className="h-4 w-4" />, label: 'Condition' },
   action: { icon: <Zap className="h-4 w-4" />, label: 'Action' },
+  vre: { icon: <ImageIcon className="h-4 w-4" />, label: 'VRE Visual' },
   end: { icon: <CircleStop className="h-4 w-4" />, label: 'End' },
 }
 
@@ -55,6 +57,15 @@ const conditionTypes: { value: TransitionCondition; label: string }[] = [
   { value: 'reply_equals', label: 'Reply equals' },
   { value: 'contains', label: 'Contains' },
   { value: 'regex', label: 'Regex match' },
+]
+
+const vreTemplateTypes: { value: VRETemplateId; label: string; description: string }[] = [
+  { value: 'menu_opcoes', label: 'Menu Options', description: 'Menu with up to 8 numbered options' },
+  { value: 'card_produto', label: 'Product Card', description: 'Product card with price and stock' },
+  { value: 'status_pedido', label: 'Order Status', description: 'Order status timeline' },
+  { value: 'lista_produtos', label: 'Product List', description: 'List of products for comparison' },
+  { value: 'confirmacao', label: 'Confirmation', description: 'Confirmation summary with items' },
+  { value: 'cobranca_pix', label: 'PIX Payment', description: 'PIX QR code with copy-paste code' },
 ]
 
 export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodePanelProps) {
@@ -288,6 +299,84 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
                     )}
                   </div>
                 ))}
+              </div>
+            </>
+          )}
+
+          {/* VRE Configuration (for vre nodes) */}
+          {localNode.type === 'vre' && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <Label>VRE Template</Label>
+                <Select
+                  value={localNode.vre_config?.template_id || ''}
+                  onValueChange={(v) =>
+                    handleChange({
+                      vre_config: {
+                        ...localNode.vre_config,
+                        template_id: v as VRETemplateId,
+                        data_mapping: localNode.vre_config?.data_mapping || {},
+                      },
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select template..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vreTemplateTypes.map((template) => (
+                      <SelectItem key={template.value} value={template.value}>
+                        <div>
+                          <div className="font-medium">{template.label}</div>
+                          <div className="text-xs text-muted-foreground">{template.description}</div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {localNode.vre_config?.template_id && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="vre-caption">Caption (optional)</Label>
+                      <Input
+                        id="vre-caption"
+                        value={localNode.vre_config?.caption || ''}
+                        onChange={(e) =>
+                          handleChange({
+                            vre_config: {
+                              ...localNode.vre_config!,
+                              caption: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="Custom caption for the image"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="vre-followup">Follow-up Text (optional)</Label>
+                      <Input
+                        id="vre-followup"
+                        value={localNode.vre_config?.follow_up_text || ''}
+                        onChange={(e) =>
+                          handleChange({
+                            vre_config: {
+                              ...localNode.vre_config!,
+                              follow_up_text: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="Text to send after the image"
+                      />
+                    </div>
+
+                    <div className="text-xs text-muted-foreground p-2 bg-muted rounded">
+                      Use <code className="text-purple-600">{'{{variable}}'}</code> syntax to map flow data to template fields.
+                    </div>
+                  </>
+                )}
               </div>
             </>
           )}

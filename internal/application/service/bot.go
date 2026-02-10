@@ -41,6 +41,7 @@ type BotServiceImpl struct {
 	contextService *ConversationContextService
 	aiFactory      *AIProviderFactory
 	flowEngine     *FlowEngineService
+	vreService     *VREService // VRE for visual responses
 }
 
 // NewBotService creates a new bot service
@@ -60,6 +61,11 @@ func NewBotService(
 		aiFactory:      aiFactory,
 		flowEngine:     flowEngine,
 	}
+}
+
+// SetVREService sets the VRE service for visual responses
+func (s *BotServiceImpl) SetVREService(vreService *VREService) {
+	s.vreService = vreService
 }
 
 // Create creates a new bot
@@ -341,6 +347,9 @@ func (s *BotServiceImpl) processAIMessage(ctx context.Context, message *entity.M
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to build messages")
 	}
 
+	// Get tools for the bot
+	tools := bot.GetTools()
+
 	// Generate completion
 	startTime := time.Now()
 	completion, err := provider.Complete(ctx, &CompletionRequest{
@@ -348,6 +357,8 @@ func (s *BotServiceImpl) processAIMessage(ctx context.Context, message *entity.M
 		Model:       bot.Model,
 		MaxTokens:   bot.Config.MaxTokens,
 		Temperature: bot.Config.Temperature,
+		Tools:       tools,
+		ToolChoice:  bot.Config.ToolChoice,
 	})
 	if err != nil {
 		// Use fallback message
@@ -360,6 +371,11 @@ func (s *BotServiceImpl) processAIMessage(ctx context.Context, message *entity.M
 	}
 
 	latencyMs := time.Since(startTime).Milliseconds()
+
+	// Check if AI made tool calls
+	if len(completion.ToolCalls) > 0 {
+		return s.handleToolCalls(ctx, completion, conversation, bot, convContext, latencyMs)
+	}
 
 	// Calculate confidence
 	confidence := CalculateConfidence(completion, convContext.Intent)
@@ -393,6 +409,80 @@ func (s *BotServiceImpl) processAIMessage(ctx context.Context, message *entity.M
 	}
 
 	return response, nil
+}
+
+// handleToolCalls processes tool calls from the AI response
+func (s *BotServiceImpl) handleToolCalls(ctx context.Context, completion *CompletionResponse, conversation *entity.Conversation, bot *entity.Bot, convContext *entity.ConversationContext, latencyMs int64) (*BotResponse, error) {
+	// Process the first tool call (typically there's only one for visual tools)
+	toolCall := completion.ToolCalls[0]
+
+	// Find the tool definition
+	tool := bot.GetToolByName(toolCall.Name)
+	if tool == nil {
+		// Tool not found, return text content if available
+		return &BotResponse{
+			Content:    completion.Content,
+			Confidence: 0.5,
+			TokensUsed: completion.TokensUsed,
+			LatencyMs:  latencyMs,
+		}, nil
+	}
+
+	// Check if it's a visual (VRE) tool
+	if tool.IsVisual() && s.vreService != nil {
+		return s.handleVisualToolCall(ctx, toolCall, tool, conversation, bot, completion.TokensUsed, latencyMs)
+	}
+
+	// For non-visual tools, return text content
+	// Future: implement other tool types (data, text)
+	return &BotResponse{
+		Content:    completion.Content,
+		Confidence: 0.9,
+		TokensUsed: completion.TokensUsed,
+		LatencyMs:  latencyMs,
+	}, nil
+}
+
+// handleVisualToolCall processes a visual tool call using VRE
+func (s *BotServiceImpl) handleVisualToolCall(ctx context.Context, toolCall *entity.ToolCall, tool *entity.Tool, conversation *entity.Conversation, bot *entity.Bot, tokensUsed int, latencyMs int64) (*BotResponse, error) {
+	// Determine channel type from conversation
+	channel := entity.VREChannelWhatsApp // default
+	// TODO: get actual channel type from conversation.ChannelID
+
+	// Build render request
+	renderReq := &entity.RenderRequest{
+		TenantID:   conversation.TenantID,
+		TemplateID: tool.GetLinktorTemplate(),
+		Data:       toolCall.Arguments,
+		Channel:    channel,
+	}
+
+	// Render the template
+	renderResp, err := s.vreService.Render(ctx, renderReq)
+	if err != nil {
+		// Failed to render, return error message
+		return &BotResponse{
+			Content:        "Desculpe, não consegui gerar a visualização. Por favor, tente novamente.",
+			Confidence:     0.5,
+			ShouldEscalate: false,
+			TokensUsed:     tokensUsed,
+			LatencyMs:      latencyMs,
+		}, nil
+	}
+
+	// Build visual response
+	return &BotResponse{
+		Content:      "", // No text content for visual responses
+		IsVisual:     true,
+		ImageBase64:  renderResp.ImageBase64,
+		ImageURL:     renderResp.ImageURL,
+		Caption:      renderResp.Caption,
+		FollowUpText: renderResp.FollowUpText,
+		TemplateID:   renderReq.TemplateID,
+		Confidence:   1.0, // Visual responses are deterministic
+		TokensUsed:   tokensUsed,
+		LatencyMs:    latencyMs + int64(renderResp.RenderTime.Milliseconds()),
+	}, nil
 }
 
 // ShouldEscalate checks if conversation should be escalated based on context

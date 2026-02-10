@@ -12,6 +12,7 @@ import { AIResource } from './resources/ai';
 import { KnowledgeBasesResource } from './resources/knowledge-bases';
 import { FlowsResource } from './resources/flows';
 import { AnalyticsResource } from './resources/analytics';
+import { VREResource } from './resources/vre';
 import { LinktorWebSocket, WebSocketConfig } from './websocket/client';
 import * as webhookUtils from './utils/webhook';
 
@@ -117,6 +118,11 @@ export class LinktorClient {
   public readonly analytics: AnalyticsResource;
 
   /**
+   * VRE (Visual Response Engine) resource
+   */
+  public readonly vre: VREResource;
+
+  /**
    * Webhook utilities
    */
   public readonly webhooks = {
@@ -183,6 +189,7 @@ export class LinktorClient {
     this.knowledgeBases = new KnowledgeBasesResource(this.http);
     this.flows = new FlowsResource(this.http);
     this.analytics = new AnalyticsResource(this.http);
+    this.vre = new VREResource(this.http);
   }
 
   /**

@@ -1,0 +1,1557 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linktor VRE — Showcase de Templates</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Rio Quality brand */
+    --rq-primary: #0F3460;
+    --rq-secondary: #E94560;
+    --rq-accent: #16C79A;
+    --rq-warm: #F5A623;
+    --rq-bg: #FFFFFF;
+    --rq-text: #1A1A2E;
+    --rq-muted: #8B95A2;
+    --rq-light: #F0F2F5;
+    --rq-radius: 14px;
+    --rq-font: 'DM Sans', sans-serif;
+
+    /* WhatsApp chrome */
+    --wa-bg: #E5DDD5;
+    --wa-bg-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 5 L35 15 L30 12 L25 15Z' fill='%23d4cdc4' opacity='0.3'/%3E%3Ccircle cx='10' cy='40' r='2' fill='%23d4cdc4' opacity='0.2'/%3E%3Ccircle cx='50' cy='35' r='1.5' fill='%23d4cdc4' opacity='0.2'/%3E%3C/svg%3E");
+    --wa-bot: #FFFFFF;
+    --wa-user: #D9FDD3;
+    --wa-header: #075E54;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--rq-font);
+    background: #0a0a12;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+
+  /* === HERO HEADER === */
+  .hero {
+    background: linear-gradient(135deg, #0F3460 0%, #1A1A2E 50%, #0F3460 100%);
+    padding: 60px 40px 40px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: 
+      radial-gradient(circle at 20% 50%, rgba(233,69,96,0.15) 0%, transparent 50%),
+      radial-gradient(circle at 80% 50%, rgba(22,199,154,0.1) 0%, transparent 50%);
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--rq-accent);
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    position: relative;
+  }
+
+  .hero h1 {
+    font-size: 42px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 12px;
+    position: relative;
+  }
+
+  .hero h1 span { color: var(--rq-accent); }
+
+  .hero p {
+    font-size: 16px;
+    color: rgba(255,255,255,0.6);
+    max-width: 600px;
+    margin: 0 auto;
+    line-height: 1.6;
+    position: relative;
+  }
+
+  /* === SECTION LAYOUT === */
+  .showcase {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  .section {
+    margin-bottom: 64px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+
+  .section-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--rq-secondary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .section-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .section-desc {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 28px;
+    margin-left: 48px;
+    line-height: 1.5;
+  }
+
+  .section-desc code {
+    background: rgba(22,199,154,0.12);
+    color: var(--rq-accent);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+
+  /* === WHATSAPP PHONE MOCKUP === */
+  .phone-row {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+  }
+
+  .phone-frame {
+    width: 380px;
+    flex-shrink: 0;
+    background: #1a1a1a;
+    border-radius: 32px;
+    padding: 8px;
+    box-shadow: 
+      0 24px 80px rgba(0,0,0,0.5),
+      0 0 0 1px rgba(255,255,255,0.06),
+      inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+
+  .phone-inner {
+    border-radius: 26px;
+    overflow: hidden;
+    background: var(--wa-bg);
+  }
+
+  .wa-topbar {
+    background: var(--wa-header);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: white;
+  }
+
+  .wa-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--rq-primary), var(--rq-secondary));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    color: white;
+  }
+
+  .wa-name {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .wa-status {
+    font-size: 11px;
+    opacity: 0.7;
+  }
+
+  .wa-chat {
+    min-height: 200px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background-image: var(--wa-bg-pattern);
+    background-color: var(--wa-bg);
+  }
+
+  .wa-bubble {
+    max-width: 88%;
+    padding: 6px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    position: relative;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  }
+
+  .wa-bubble.bot {
+    background: var(--wa-bot);
+    align-self: flex-start;
+    border-top-left-radius: 2px;
+  }
+
+  .wa-bubble.user {
+    background: var(--wa-user);
+    align-self: flex-end;
+    border-top-right-radius: 2px;
+    padding: 8px 12px;
+  }
+
+  .wa-bubble .time {
+    font-size: 10px;
+    color: #999;
+    float: right;
+    margin-left: 8px;
+    margin-top: 4px;
+  }
+
+  .wa-bubble.user .time {
+    color: #6dab64;
+  }
+
+  /* === CARD IMAGES INSIDE BUBBLES === */
+  .card-img {
+    border-radius: 6px 6px 0 0;
+    width: 100%;
+    display: block;
+    overflow: hidden;
+  }
+
+  .card-caption {
+    padding: 6px 8px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #333;
+    white-space: pre-line;
+  }
+
+  /* === THE ACTUAL CARD DESIGNS (rendered as inline HTML) === */
+
+  /* --- Menu Card --- */
+  .tpl-menu {
+    width: 100%;
+    background: #fff;
+    font-family: var(--rq-font);
+    overflow: hidden;
+  }
+
+  .tpl-menu-header {
+    background: linear-gradient(135deg, var(--rq-primary), #1a2980);
+    padding: 20px 20px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .tpl-menu-logo {
+    width: 38px;
+    height: 38px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: white;
+    font-weight: 700;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .tpl-menu-brand {
+    color: rgba(255,255,255,0.7);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+
+  .tpl-menu-title {
+    color: white;
+    font-size: 17px;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+
+  .tpl-menu-body { padding: 16px; }
+
+  .tpl-menu-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: #f8f9fb;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    border: 1px solid #eef0f3;
+  }
+
+  .tpl-menu-option:last-child { margin-bottom: 0; }
+
+  .tpl-menu-num {
+    width: 28px;
+    height: 28px;
+    background: var(--rq-primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .tpl-menu-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+    width: 28px;
+    text-align: center;
+  }
+
+  .tpl-menu-label {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--rq-text);
+  }
+
+  .tpl-menu-sublabel {
+    font-size: 11px;
+    color: var(--rq-muted);
+    margin-top: 1px;
+  }
+
+  .tpl-menu-footer {
+    text-align: center;
+    padding: 10px 16px 14px;
+    font-size: 11px;
+    color: #b0b8c4;
+  }
+
+  /* --- Product Card --- */
+  .tpl-product {
+    width: 100%;
+    background: #fff;
+    font-family: var(--rq-font);
+    overflow: hidden;
+  }
+
+  .tpl-product-img {
+    height: 140px;
+    background: linear-gradient(135deg, #f0f4f8, #e8ecf1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 64px;
+    position: relative;
+  }
+
+  .tpl-product-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: var(--rq-secondary);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .tpl-product-body {
+    padding: 16px;
+  }
+
+  .tpl-product-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--rq-text);
+    margin-bottom: 4px;
+  }
+
+  .tpl-product-sku {
+    font-size: 11px;
+    color: var(--rq-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .tpl-product-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f2f5;
+  }
+
+  .tpl-product-price {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--rq-primary);
+  }
+
+  .tpl-product-price small {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--rq-muted);
+  }
+
+  .tpl-product-stock {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 600;
+  }
+
+  .stock-ok { background: #e6f9f1; color: #0d9f6e; }
+  .stock-low { background: #fff3e0; color: #e67e22; }
+
+  /* --- Status Card --- */
+  .tpl-status {
+    width: 100%;
+    background: #fff;
+    font-family: var(--rq-font);
+    overflow: hidden;
+  }
+
+  .tpl-status-header {
+    background: linear-gradient(135deg, var(--rq-primary), #1a2980);
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+  }
+
+  .tpl-status-pedido {
+    font-size: 12px;
+    opacity: 0.7;
+  }
+
+  .tpl-status-pedido strong {
+    font-size: 18px;
+    opacity: 1;
+    display: block;
+    margin-top: 2px;
+  }
+
+  .tpl-status-logo-circle {
+    width: 34px;
+    height: 34px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 13px;
+  }
+
+  .tpl-status-timeline {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 24px 16px 16px;
+    position: relative;
+  }
+
+  .tpl-status-timeline::before {
+    content: '';
+    position: absolute;
+    top: 42px;
+    left: 48px;
+    right: 48px;
+    height: 3px;
+    background: #ecf0f1;
+    border-radius: 2px;
+  }
+
+  .tpl-status-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    z-index: 1;
+    flex: 1;
+  }
+
+  .step-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    border: 2px solid transparent;
+  }
+
+  .step-icon.done {
+    background: var(--rq-accent);
+    color: white;
+  }
+
+  .step-icon.active {
+    background: var(--rq-warm);
+    color: white;
+    box-shadow: 0 0 0 4px rgba(245,166,35,0.25);
+  }
+
+  .step-icon.wait {
+    background: #ecf0f1;
+    color: #bdc3c7;
+  }
+
+  .step-text {
+    font-size: 10px;
+    color: var(--rq-muted);
+    text-align: center;
+    max-width: 56px;
+    line-height: 1.3;
+  }
+
+  .step-text.current {
+    color: var(--rq-text);
+    font-weight: 600;
+  }
+
+  .tpl-status-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 0 16px 16px;
+  }
+
+  .tpl-status-info-item {
+    background: #f8f9fb;
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  .tpl-status-info-label {
+    font-size: 10px;
+    color: var(--rq-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .tpl-status-info-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--rq-text);
+    margin-top: 2px;
+  }
+
+  /* --- Product List Card --- */
+  .tpl-list {
+    width: 100%;
+    background: #fff;
+    font-family: var(--rq-font);
+    overflow: hidden;
+  }
+
+  .tpl-list-header {
+    background: linear-gradient(135deg, var(--rq-primary), #1a2980);
+    padding: 16px 20px;
+    color: white;
+  }
+
+  .tpl-list-title {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .tpl-list-sub {
+    font-size: 11px;
+    opacity: 0.6;
+    margin-top: 2px;
+  }
+
+  .tpl-list-body { padding: 12px 16px; }
+
+  .tpl-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    margin-bottom: 6px;
+    background: #f8f9fb;
+  }
+
+  .tpl-list-item:last-child { margin-bottom: 0; }
+
+  .tpl-list-item-num {
+    width: 24px;
+    height: 24px;
+    background: var(--rq-primary);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .tpl-list-item-emoji {
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+
+  .tpl-list-item-info { flex: 1; }
+
+  .tpl-list-item-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rq-text);
+  }
+
+  .tpl-list-item-meta {
+    font-size: 11px;
+    color: var(--rq-muted);
+  }
+
+  .tpl-list-item-price {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--rq-primary);
+    flex-shrink: 0;
+  }
+
+  .tpl-list-footer {
+    padding: 10px 16px 14px;
+    text-align: center;
+    font-size: 11px;
+    color: #b0b8c4;
+  }
+
+  /* --- Confirmation Card --- */
+  .tpl-confirm {
+    width: 100%;
+    background: #fff;
+    font-family: var(--rq-font);
+    overflow: hidden;
+  }
+
+  .tpl-confirm-top {
+    background: linear-gradient(135deg, #0d9f6e, #16c79a);
+    padding: 20px;
+    text-align: center;
+    color: white;
+  }
+
+  .tpl-confirm-check {
+    width: 44px;
+    height: 44px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    margin-bottom: 8px;
+  }
+
+  .tpl-confirm-title {
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .tpl-confirm-sub {
+    font-size: 12px;
+    opacity: 0.8;
+    margin-top: 4px;
+  }
+
+  .tpl-confirm-body { padding: 16px; }
+
+  .tpl-confirm-items {
+    border: 1px solid #eef0f3;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+
+  .tpl-confirm-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    font-size: 13px;
+    border-bottom: 1px solid #f4f5f7;
+  }
+
+  .tpl-confirm-item:last-child { border-bottom: none; }
+
+  .tpl-confirm-item-name {
+    color: var(--rq-text);
+    font-weight: 500;
+  }
+
+  .tpl-confirm-item-name small {
+    color: var(--rq-muted);
+    font-weight: 400;
+  }
+
+  .tpl-confirm-item-price {
+    font-weight: 600;
+    color: var(--rq-text);
+  }
+
+  .tpl-confirm-total {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: var(--rq-primary);
+    border-radius: 10px;
+    color: white;
+    font-weight: 700;
+  }
+
+  .tpl-confirm-total-value {
+    font-size: 18px;
+  }
+
+  .tpl-confirm-footer {
+    padding: 12px 16px 14px;
+    text-align: center;
+    font-size: 11px;
+    color: #b0b8c4;
+  }
+
+  /* --- PIX Payment Card --- */
+  .tpl-pix {
+    width: 100%;
+    background: #fff;
+    font-family: var(--rq-font);
+    overflow: hidden;
+  }
+
+  .tpl-pix-header {
+    background: linear-gradient(135deg, #00897B, #26A69A);
+    padding: 16px 20px;
+    text-align: center;
+    color: white;
+  }
+
+  .tpl-pix-icon {
+    font-size: 28px;
+    margin-bottom: 4px;
+  }
+
+  .tpl-pix-title {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .tpl-pix-body { padding: 16px; text-align: center; }
+
+  .tpl-pix-qr {
+    width: 140px;
+    height: 140px;
+    background: 
+      repeating-conic-gradient(#333 0% 25%, #fff 0% 50%) 50% / 10px 10px;
+    border-radius: 10px;
+    margin: 0 auto 14px;
+    border: 4px solid #f0f2f5;
+  }
+
+  .tpl-pix-valor {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--rq-primary);
+    margin-bottom: 4px;
+  }
+
+  .tpl-pix-exp {
+    font-size: 12px;
+    color: var(--rq-muted);
+    margin-bottom: 14px;
+  }
+
+  .tpl-pix-code-box {
+    background: #f8f9fb;
+    border: 1px solid #eef0f3;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--rq-muted);
+    word-break: break-all;
+  }
+
+  .tpl-pix-footer {
+    padding: 10px 16px 14px;
+    text-align: center;
+    font-size: 11px;
+    color: #b0b8c4;
+  }
+
+  /* === SIDE INFO PANELS === */
+  .side-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .info-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .info-card h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rq-accent);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .info-card pre {
+    background: rgba(0,0,0,0.3);
+    border-radius: 8px;
+    padding: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: #b0c4de;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .info-card pre .key { color: var(--rq-accent); }
+  .info-card pre .str { color: #F5A623; }
+  .info-card pre .comment { color: #666; font-style: italic; }
+
+  .info-card p {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #999;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background: rgba(22,199,154,0.1);
+    color: var(--rq-accent);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* === RESPONSIVE === */
+  @media (max-width: 900px) {
+    .phone-row {
+      flex-direction: column;
+      align-items: center;
+    }
+    .phone-frame { width: 100%; max-width: 380px; }
+    .side-info { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ======== HERO ======== -->
+<div class="hero">
+  <div class="hero-badge">⚡ Linktor Platform</div>
+  <h1>Visual Response <span>Engine</span></h1>
+  <p>Templates HTML renderizados como imagens no WhatsApp.<br>Cada card é gerado pelo VRE a partir de dados estruturados do LLM.</p>
+</div>
+
+<div class="showcase">
+
+<!-- ======== 1. MENU PRINCIPAL ======== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">1</div>
+    <div class="section-title">Menu Principal</div>
+  </div>
+  <div class="section-desc">
+    Tool <code>mostrar_menu</code> — O LLM decide apresentar opções ao cliente. O VRE renderiza o card com a identidade visual do tenant.
+  </div>
+  <div class="phone-row">
+    <div class="phone-frame">
+      <div class="phone-inner">
+        <div class="wa-topbar">
+          <div class="wa-avatar">RQ</div>
+          <div>
+            <div class="wa-name">Rio Quality</div>
+            <div class="wa-status">online</div>
+          </div>
+        </div>
+        <div class="wa-chat">
+          <div class="wa-bubble user">
+            Oi, boa tarde!
+            <span class="time">14:02 ✓✓</span>
+          </div>
+
+          <div class="wa-bubble bot">
+            <div class="card-img">
+              <!-- RENDERED MENU CARD -->
+              <div class="tpl-menu">
+                <div class="tpl-menu-header">
+                  <div class="tpl-menu-logo">RQ</div>
+                  <div>
+                    <div class="tpl-menu-brand">Rio Quality</div>
+                    <div class="tpl-menu-title">Como posso ajudar?</div>
+                  </div>
+                </div>
+                <div class="tpl-menu-body">
+                  <div class="tpl-menu-option">
+                    <div class="tpl-menu-num">1</div>
+                    <div class="tpl-menu-icon">🛒</div>
+                    <div>
+                      <div class="tpl-menu-label">Fazer pedido</div>
+                      <div class="tpl-menu-sublabel">Monte seu pedido com nosso catálogo</div>
+                    </div>
+                  </div>
+                  <div class="tpl-menu-option">
+                    <div class="tpl-menu-num">2</div>
+                    <div class="tpl-menu-icon">📦</div>
+                    <div>
+                      <div class="tpl-menu-label">Status do pedido</div>
+                      <div class="tpl-menu-sublabel">Rastreie sua entrega em tempo real</div>
+                    </div>
+                  </div>
+                  <div class="tpl-menu-option">
+                    <div class="tpl-menu-num">3</div>
+                    <div class="tpl-menu-icon">📋</div>
+                    <div>
+                      <div class="tpl-menu-label">Ver catálogo</div>
+                      <div class="tpl-menu-sublabel">Conheça nossos produtos e promoções</div>
+                    </div>
+                  </div>
+                  <div class="tpl-menu-option">
+                    <div class="tpl-menu-num">4</div>
+                    <div class="tpl-menu-icon">💰</div>
+                    <div>
+                      <div class="tpl-menu-label">Financeiro</div>
+                      <div class="tpl-menu-sublabel">Boletos, notas fiscais e pagamentos</div>
+                    </div>
+                  </div>
+                  <div class="tpl-menu-option">
+                    <div class="tpl-menu-num">5</div>
+                    <div class="tpl-menu-icon">👤</div>
+                    <div>
+                      <div class="tpl-menu-label">Falar com atendente</div>
+                      <div class="tpl-menu-sublabel">Transferir para atendimento humano</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="tpl-menu-footer">Responda com o número da opção desejada</div>
+              </div>
+            </div>
+            <div class="card-caption">
+              Boa tarde, João! 👋 Que bom ter você aqui.
+
+Escolha uma opção:
+1️⃣ Fazer pedido
+2️⃣ Status do pedido
+3️⃣ Ver catálogo
+4️⃣ Financeiro
+5️⃣ Falar com atendente
+              <span class="time">14:02</span>
+            </div>
+          </div>
+
+          <div class="wa-bubble user">
+            2
+            <span class="time">14:03 ✓✓</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-info">
+      <div class="info-card">
+        <h4>🔧 Tool Call do LLM</h4>
+        <pre><span class="comment">// O LLM chamou:</span>
+{
+  <span class="key">"name"</span>: <span class="str">"mostrar_menu"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"titulo"</span>: <span class="str">"Como posso ajudar?"</span>,
+    <span class="key">"opcoes"</span>: [
+      { <span class="key">"label"</span>: <span class="str">"Fazer pedido"</span>,
+        <span class="key">"descricao"</span>: <span class="str">"Monte seu pedido..."</span>,
+        <span class="key">"icone"</span>: <span class="str">"pedido"</span> },
+      { <span class="key">"label"</span>: <span class="str">"Status do pedido"</span>,
+        <span class="key">"icone"</span>: <span class="str">"entrega"</span> },
+      ...
+    ],
+    <span class="key">"mensagem_antes"</span>: <span class="str">"Boa tarde, João! 👋"</span>
+  }
+}</pre>
+      </div>
+      <div class="info-card">
+        <h4>⚙️ O que acontece</h4>
+        <p>
+          O orquestrador detecta <span class="tag">terminal: true</span> na tool, monta o request para o VRE com 
+          <span class="tag">template_id: menu_opcoes</span> e <span class="tag">tenant_id: rio-quality</span>.
+          O VRE carrega o template HTML, injeta os dados + config de brand, renderiza via chromedp, e retorna a imagem PNG + caption acessível.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 2. CARD DE PRODUTO ======== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">2</div>
+    <div class="section-title">Card de Produto</div>
+  </div>
+  <div class="section-desc">
+    Tool <code>mostrar_card_produto</code> — Após o cliente pedir um produto, o LLM busca dados e apresenta visualmente.
+  </div>
+  <div class="phone-row">
+    <div class="phone-frame">
+      <div class="phone-inner">
+        <div class="wa-topbar">
+          <div class="wa-avatar">RQ</div>
+          <div>
+            <div class="wa-name">Rio Quality</div>
+            <div class="wa-status">online</div>
+          </div>
+        </div>
+        <div class="wa-chat">
+          <div class="wa-bubble user">
+            Tem camarão cinza?
+            <span class="time">14:05 ✓✓</span>
+          </div>
+
+          <div class="wa-bubble bot">
+            <div class="card-img">
+              <div class="tpl-product">
+                <div class="tpl-product-img">
+                  🦐
+                  <div class="tpl-product-badge">⭐ Mais vendido</div>
+                </div>
+                <div class="tpl-product-body">
+                  <div class="tpl-product-name">Camarão Cinza Limpo GG</div>
+                  <div class="tpl-product-sku">SKU: FRT-CM-2840</div>
+                  <div class="tpl-product-row">
+                    <div class="tpl-product-price">R$ 62,90 <small>/kg</small></div>
+                    <div class="tpl-product-stock stock-ok">✓ Em estoque</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card-caption">
+              Temos sim! 🦐 Esse é o nosso campeão de vendas. Camarão cinza limpo tamanho GG, R$ 62,90/kg.
+
+Quer adicionar ao pedido? Quantos kg?
+              <span class="time">14:05</span>
+            </div>
+          </div>
+
+          <div class="wa-bubble user">
+            Manda 15 kg
+            <span class="time">14:06 ✓✓</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-info">
+      <div class="info-card">
+        <h4>🔧 Fluxo do LLM</h4>
+        <pre><span class="comment">// 1. LLM chama tool de dados:</span>
+{
+  <span class="key">"name"</span>: <span class="str">"buscar_produtos"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"termo"</span>: <span class="str">"camarão cinza"</span>
+  }
+}
+
+<span class="comment">// 2. Recebe resultado → decide apresentar</span>
+<span class="comment">// 3. Chama tool visual (terminal):</span>
+{
+  <span class="key">"name"</span>: <span class="str">"mostrar_card_produto"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"nome"</span>: <span class="str">"Camarão Cinza Limpo GG"</span>,
+    <span class="key">"sku"</span>: <span class="str">"FRT-CM-2840"</span>,
+    <span class="key">"preco"</span>: 62.90,
+    <span class="key">"unidade"</span>: <span class="str">"kg"</span>,
+    <span class="key">"estoque"</span>: 230,
+    <span class="key">"destaque"</span>: <span class="str">"mais vendido"</span>,
+    <span class="key">"mensagem"</span>: <span class="str">"Temos sim! 🦐..."</span>
+  }
+}</pre>
+      </div>
+      <div class="info-card">
+        <h4>💡 Decisão do LLM</h4>
+        <p>
+          Repare que o LLM <strong>primeiro</strong> buscou dados com <span class="tag">buscar_produtos</span> (tool de dados, não-terminal), 
+          recebeu o resultado, e <strong>depois</strong> decidiu usar <span class="tag">mostrar_card_produto</span> (terminal) para apresentar. 
+          Ele poderia ter respondido em texto se fosse uma pergunta simples como "vocês vendem camarão?".
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 3. STATUS DO PEDIDO ======== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">3</div>
+    <div class="section-title">Status do Pedido</div>
+  </div>
+  <div class="section-desc">
+    Tool <code>mostrar_status_pedido</code> — Timeline visual com etapas e informações de entrega.
+  </div>
+  <div class="phone-row">
+    <div class="phone-frame">
+      <div class="phone-inner">
+        <div class="wa-topbar">
+          <div class="wa-avatar">RQ</div>
+          <div>
+            <div class="wa-name">Rio Quality</div>
+            <div class="wa-status">online</div>
+          </div>
+        </div>
+        <div class="wa-chat">
+          <div class="wa-bubble user">
+            Cadê meu pedido?
+            <span class="time">14:10 ✓✓</span>
+          </div>
+
+          <div class="wa-bubble bot">
+            <div class="card-img">
+              <div class="tpl-status">
+                <div class="tpl-status-header">
+                  <div>
+                    <div class="tpl-status-pedido">Pedido <strong>#4521</strong></div>
+                  </div>
+                  <div class="tpl-status-logo-circle">RQ</div>
+                </div>
+                <div class="tpl-status-timeline">
+                  <div class="tpl-status-step">
+                    <div class="step-icon done">✓</div>
+                    <div class="step-text">Recebido</div>
+                  </div>
+                  <div class="tpl-status-step">
+                    <div class="step-icon done">✓</div>
+                    <div class="step-text">Separação</div>
+                  </div>
+                  <div class="tpl-status-step">
+                    <div class="step-icon done">✓</div>
+                    <div class="step-text">Faturado</div>
+                  </div>
+                  <div class="tpl-status-step">
+                    <div class="step-icon active">🚚</div>
+                    <div class="step-text current">Em transporte</div>
+                  </div>
+                  <div class="tpl-status-step">
+                    <div class="step-icon wait">📍</div>
+                    <div class="step-text">Entregue</div>
+                  </div>
+                </div>
+                <div class="tpl-status-info">
+                  <div class="tpl-status-info-item">
+                    <div class="tpl-status-info-label">Itens</div>
+                    <div class="tpl-status-info-value">12 produtos</div>
+                  </div>
+                  <div class="tpl-status-info-item">
+                    <div class="tpl-status-info-label">Valor</div>
+                    <div class="tpl-status-info-value">R$ 3.847,50</div>
+                  </div>
+                  <div class="tpl-status-info-item">
+                    <div class="tpl-status-info-label">Previsão</div>
+                    <div class="tpl-status-info-value">Hoje, 16h</div>
+                  </div>
+                  <div class="tpl-status-info-item">
+                    <div class="tpl-status-info-label">Motorista</div>
+                    <div class="tpl-status-info-value">Carlos R.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card-caption">
+              Seu pedido #4521 está a caminho! 🚚
+
+📦 12 produtos — R$ 3.847,50
+🕐 Previsão: hoje às 16h
+🚛 Motorista: Carlos R.
+              <span class="time">14:10</span>
+            </div>
+          </div>
+
+          <div class="wa-bubble user">
+            Beleza, obrigado!
+            <span class="time">14:11 ✓✓</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-info">
+      <div class="info-card">
+        <h4>🔧 Tool Call do LLM</h4>
+        <pre><span class="comment">// 1. Busca dados (não-terminal)</span>
+<span class="key">"name"</span>: <span class="str">"consultar_pedido"</span>
+→ retorna dados do pedido
+
+<span class="comment">// 2. Apresenta (terminal)</span>
+{
+  <span class="key">"name"</span>: <span class="str">"mostrar_status_pedido"</span>,
+  <span class="key">"arguments"</span>: {
+    <span class="key">"numero_pedido"</span>: <span class="str">"4521"</span>,
+    <span class="key">"status_atual"</span>: <span class="str">"transporte"</span>,
+    <span class="key">"itens_resumo"</span>: <span class="str">"12 produtos"</span>,
+    <span class="key">"valor_total"</span>: 3847.50,
+    <span class="key">"previsao_entrega"</span>: <span class="str">"Hoje, 16h"</span>,
+    <span class="key">"motorista"</span>: <span class="str">"Carlos R."</span>
+  }
+}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 4. LISTA DE PRODUTOS ======== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">4</div>
+    <div class="section-title">Lista de Produtos</div>
+  </div>
+  <div class="section-desc">
+    Tool <code>mostrar_lista_produtos</code> — Apresenta múltiplos produtos para comparação rápida.
+  </div>
+  <div class="phone-row">
+    <div class="phone-frame">
+      <div class="phone-inner">
+        <div class="wa-topbar">
+          <div class="wa-avatar">RQ</div>
+          <div>
+            <div class="wa-name">Rio Quality</div>
+            <div class="wa-status">online</div>
+          </div>
+        </div>
+        <div class="wa-chat">
+          <div class="wa-bubble user">
+            Quais pescados tem disponível?
+            <span class="time">14:15 ✓✓</span>
+          </div>
+
+          <div class="wa-bubble bot">
+            <div class="card-img">
+              <div class="tpl-list">
+                <div class="tpl-list-header">
+                  <div class="tpl-list-title">🐟 Pescados Disponíveis</div>
+                  <div class="tpl-list-sub">4 produtos encontrados</div>
+                </div>
+                <div class="tpl-list-body">
+                  <div class="tpl-list-item">
+                    <div class="tpl-list-item-num">1</div>
+                    <div class="tpl-list-item-emoji">🦐</div>
+                    <div class="tpl-list-item-info">
+                      <div class="tpl-list-item-name">Camarão Cinza GG</div>
+                      <div class="tpl-list-item-meta">FRT-CM-2840 · Em estoque</div>
+                    </div>
+                    <div class="tpl-list-item-price">R$ 62,90/kg</div>
+                  </div>
+                  <div class="tpl-list-item">
+                    <div class="tpl-list-item-num">2</div>
+                    <div class="tpl-list-item-emoji">🐟</div>
+                    <div class="tpl-list-item-info">
+                      <div class="tpl-list-item-name">Filé de Tilápia</div>
+                      <div class="tpl-list-item-meta">FRT-TL-1205 · Em estoque</div>
+                    </div>
+                    <div class="tpl-list-item-price">R$ 34,50/kg</div>
+                  </div>
+                  <div class="tpl-list-item">
+                    <div class="tpl-list-item-num">3</div>
+                    <div class="tpl-list-item-emoji">🐙</div>
+                    <div class="tpl-list-item-info">
+                      <div class="tpl-list-item-name">Polvo Limpo</div>
+                      <div class="tpl-list-item-meta">FRT-PV-0892 · Estoque baixo</div>
+                    </div>
+                    <div class="tpl-list-item-price">R$ 89,00/kg</div>
+                  </div>
+                  <div class="tpl-list-item">
+                    <div class="tpl-list-item-num">4</div>
+                    <div class="tpl-list-item-emoji">🦑</div>
+                    <div class="tpl-list-item-info">
+                      <div class="tpl-list-item-name">Lula Limpa em Anéis</div>
+                      <div class="tpl-list-item-meta">FRT-LL-0445 · Em estoque</div>
+                    </div>
+                    <div class="tpl-list-item-price">R$ 45,90/kg</div>
+                  </div>
+                </div>
+                <div class="tpl-list-footer">Responda com o número para ver detalhes</div>
+              </div>
+            </div>
+            <div class="card-caption">
+              Separei os pescados disponíveis pra você! 🐟
+
+1️⃣ Camarão Cinza GG — R$ 62,90/kg
+2️⃣ Filé de Tilápia — R$ 34,50/kg
+3️⃣ Polvo Limpo — R$ 89,00/kg
+4️⃣ Lula em Anéis — R$ 45,90/kg
+
+Qual te interessa? Pode pedir mais de um!
+              <span class="time">14:15</span>
+            </div>
+          </div>
+
+          <div class="wa-bubble user">
+            1 e 4, manda 15kg e 8kg
+            <span class="time">14:16 ✓✓</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-info">
+      <div class="info-card">
+        <h4>💡 Parsing inteligente</h4>
+        <p>
+          O cliente respondeu <strong>"1 e 4, manda 15kg e 8kg"</strong> — linguagem 100% natural. 
+          O LLM entende que item 1 (Camarão) = 15kg e item 4 (Lula) = 8kg. 
+          Sem necessidade de fluxo rígido ou menus sequenciais. A IA faz o parse contextual.
+        </p>
+      </div>
+      <div class="info-card">
+        <h4>⚙️ Decisão contextual</h4>
+        <p>
+          Se o cliente perguntasse "vocês tem tilápia?" — resposta simples, texto bastava. 
+          Mas "quais pescados tem?" pede uma <strong>lista comparativa</strong>, e o LLM sabe que o visual é melhor. 
+          Essa decisão é do LLM, não do fluxo.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 5. CONFIRMAÇÃO DE PEDIDO ======== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">5</div>
+    <div class="section-title">Confirmação de Pedido</div>
+  </div>
+  <div class="section-desc">
+    Tool <code>mostrar_confirmacao</code> — Resumo final antes de confirmar o pedido. Momento crítico de conversão.
+  </div>
+  <div class="phone-row">
+    <div class="phone-frame">
+      <div class="phone-inner">
+        <div class="wa-topbar">
+          <div class="wa-avatar">RQ</div>
+          <div>
+            <div class="wa-name">Rio Quality</div>
+            <div class="wa-status">online</div>
+          </div>
+        </div>
+        <div class="wa-chat">
+          <div class="wa-bubble bot">
+            <div class="card-img">
+              <div class="tpl-confirm">
+                <div class="tpl-confirm-top">
+                  <div class="tpl-confirm-check">✓</div>
+                  <div class="tpl-confirm-title">Confirmar Pedido?</div>
+                  <div class="tpl-confirm-sub">Entrega prevista: Quinta, 12/02</div>
+                </div>
+                <div class="tpl-confirm-body">
+                  <div class="tpl-confirm-items">
+                    <div class="tpl-confirm-item">
+                      <div class="tpl-confirm-item-name">🦐 Camarão Cinza GG <small>· 15kg</small></div>
+                      <div class="tpl-confirm-item-price">R$ 943,50</div>
+                    </div>
+                    <div class="tpl-confirm-item">
+                      <div class="tpl-confirm-item-name">🦑 Lula em Anéis <small>· 8kg</small></div>
+                      <div class="tpl-confirm-item-price">R$ 367,20</div>
+                    </div>
+                    <div class="tpl-confirm-item">
+                      <div class="tpl-confirm-item-name">🐟 Filé de Tilápia <small>· 20kg</small></div>
+                      <div class="tpl-confirm-item-price">R$ 690,00</div>
+                    </div>
+                  </div>
+                  <div class="tpl-confirm-total">
+                    <span>Total</span>
+                    <span class="tpl-confirm-total-value">R$ 2.000,70</span>
+                  </div>
+                </div>
+                <div class="tpl-confirm-footer">Responda SIM para confirmar ou EDITAR para alterar</div>
+              </div>
+            </div>
+            <div class="card-caption">
+              Seu pedido ficou assim:
+
+🦐 Camarão Cinza GG — 15kg — R$ 943,50
+🦑 Lula em Anéis — 8kg — R$ 367,20
+🐟 Filé de Tilápia — 20kg — R$ 690,00
+
+💰 Total: R$ 2.000,70
+📅 Entrega: Quinta, 12/02
+
+Confirma? Responda SIM ou peça alterações.
+              <span class="time">14:20</span>
+            </div>
+          </div>
+
+          <div class="wa-bubble user">
+            Sim, confirma!
+            <span class="time">14:21 ✓✓</span>
+          </div>
+
+          <div class="wa-bubble bot" style="padding: 8px 12px;">
+            Pedido #4587 confirmado! ✅ Você receberá na quinta. Qualquer dúvida, estou aqui. 😊
+            <span class="time">14:21</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-info">
+      <div class="info-card">
+        <h4>💡 Texto puro quando faz sentido</h4>
+        <p>
+          A confirmação final <strong>"Pedido confirmado! ✅"</strong> é texto puro — não precisa de card. 
+          O LLM sabe que nesse momento a rapidez importa mais que o visual. 
+          Já a apresentação do resumo do pedido merece o card profissional porque é momento de <strong>decisão de compra</strong>.
+        </p>
+      </div>
+      <div class="info-card">
+        <h4>⚙️ Pós-confirmação</h4>
+        <p>
+          Após confirmar, o orquestrador pode disparar automaticamente o card de status (template 3) 
+          como proactive message quando o status mudar no ERP. O VRE vira canal de notificação visual.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 6. PIX/PAGAMENTO ======== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">6</div>
+    <div class="section-title">Cobrança PIX</div>
+  </div>
+  <div class="section-desc">
+    Tool <code>mostrar_cobranca_pix</code> — Card de pagamento com QR code e código copia-e-cola. Reuso para qualquer vertical.
+  </div>
+  <div class="phone-row">
+    <div class="phone-frame">
+      <div class="phone-inner">
+        <div class="wa-topbar">
+          <div class="wa-avatar">RQ</div>
+          <div>
+            <div class="wa-name">Rio Quality</div>
+            <div class="wa-status">online</div>
+          </div>
+        </div>
+        <div class="wa-chat">
+          <div class="wa-bubble user">
+            Manda o pix do pedido 4587
+            <span class="time">14:25 ✓✓</span>
+          </div>
+
+          <div class="wa-bubble bot">
+            <div class="card-img">
+              <div class="tpl-pix">
+                <div class="tpl-pix-header">
+                  <div class="tpl-pix-icon">◆</div>
+                  <div class="tpl-pix-title">Pagamento via PIX</div>
+                </div>
+                <div class="tpl-pix-body">
+                  <div class="tpl-pix-qr"></div>
+                  <div class="tpl-pix-valor">R$ 2.000,70</div>
+                  <div class="tpl-pix-exp">Pedido #4587 · Válido por 30 minutos</div>
+                  <div class="tpl-pix-code-box">
+                    00020126580014br.gov.bcb.pix0136a1b2c3d4-e5f6-7890-abcd-ef1234567890520400005303986540720000.705802BR5925RIO QUALITY DIST LTDA6009SAO PAULO62070503***6304A1B2
+                  </div>
+                </div>
+                <div class="tpl-pix-footer">Escaneie o QR Code ou copie o código acima</div>
+              </div>
+            </div>
+            <div class="card-caption">
+              Aqui está o PIX do pedido #4587! 💰
+
+Valor: R$ 2.000,70
+⏱ Válido por 30 minutos
+
+Código PIX copia e cola:
+00020126580014br.gov.bcb.pix0136a1b2c3d4...
+
+Assim que identificarmos o pagamento, te aviso aqui!
+              <span class="time">14:25</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-info">
+      <div class="info-card">
+        <h4>🔄 Reuso cross-vertical</h4>
+        <p>
+          O template de PIX é <strong>genérico do Linktor</strong>, não específico do SAC. 
+          Um bot de cobrança, um bot de reservas, ou um bot de assinaturas reutiliza o mesmo template 
+          só mudando as cores via <span class="tag">config.json</span> do tenant.
+        </p>
+      </div>
+      <div class="info-card">
+        <h4>⚙️ QR Code real</h4>
+        <p>
+          Na implementação real, o VRE recebe o payload PIX como dado, gera o QR Code 
+          dinamicamente (via lib Go como <span class="tag">skip2/go-qrcode</span>), 
+          e injeta a imagem no template antes de renderizar. 
+          O caption inclui o código para copiar no celular.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- .showcase -->
+
+</body>
+</html>

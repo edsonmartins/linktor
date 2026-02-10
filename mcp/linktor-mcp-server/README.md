@@ -25,12 +25,338 @@ The Linktor MCP Server allows AI assistants to:
 
 ## Features
 
-- **26 Tools** for managing conversations, messages, contacts, channels, bots, and analytics
+- **34 Tools** for managing conversations, messages, contacts, channels, bots, analytics, and visual responses
 - **6 Resources** for reading platform data
 - **4 Prompts** for common customer support tasks
+- **Visual Response Engine (VRE)** for rich visual messages on channels without native buttons
 - Full TypeScript support with type definitions
 - HTTP client with retry logic and error handling
 - Works with Claude Desktop and other MCP-compatible clients
+
+## Visual Response Engine (VRE)
+
+The VRE enables sending rich visual responses on channels that don't support native buttons (like unofficial WhatsApp). HTML templates are rendered as images and sent with accessible captions.
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   AI decides    │────▶│  VRE renders    │────▶│  Image sent to  │
+│   visual tool   │     │  HTML → PNG     │     │  WhatsApp/etc   │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+```
+
+### VRE Tools (8 tools)
+
+| Tool | Description |
+|------|-------------|
+| `render_template` | Render template and return base64 image |
+| `render_and_send` | Render and send directly to conversation |
+| `mostrar_menu` | Visual menu with up to 8 numbered options |
+| `mostrar_card_produto` | Product card with price and stock |
+| `mostrar_status_pedido` | Order status visual timeline |
+| `mostrar_lista_produtos` | Comparative product list |
+| `mostrar_confirmacao` | Order confirmation summary |
+| `mostrar_cobranca_pix` | PIX QR code with copy-paste code |
+
+### Visual Templates
+
+#### 1. Menu Options (`menu_opcoes`)
+
+Interactive menu with numbered options and icons. The AI shows this when presenting choices to the customer.
+
+<p align="center">
+<img src="https://via.placeholder.com/320x400/0F3460/FFFFFF?text=Menu+Visual" alt="Menu Template" />
+</p>
+
+```
+┌─────────────────────────────────────┐
+│  🏢 ACME CORP                       │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+│  Como posso ajudar?                 │
+├─────────────────────────────────────┤
+│                                     │
+│  ┌─────────────────────────────┐   │
+│  │ ① 🛒 Fazer pedido           │   │
+│  │   Monte seu pedido          │   │
+│  └─────────────────────────────┘   │
+│                                     │
+│  ┌─────────────────────────────┐   │
+│  │ ② 📦 Status do pedido       │   │
+│  │   Rastreie sua entrega      │   │
+│  └─────────────────────────────┘   │
+│                                     │
+│  ┌─────────────────────────────┐   │
+│  │ ③ 📋 Ver catálogo           │   │
+│  │   Conheça nossos produtos   │   │
+│  └─────────────────────────────┘   │
+│                                     │
+│  ┌─────────────────────────────┐   │
+│  │ ④ 💰 Financeiro             │   │
+│  │   Boletos e pagamentos      │   │
+│  └─────────────────────────────┘   │
+│                                     │
+│  ┌─────────────────────────────┐   │
+│  │ ⑤ 👤 Falar com atendente    │   │
+│  │   Atendimento humano        │   │
+│  └─────────────────────────────┘   │
+│                                     │
+│  ─────────────────────────────────  │
+│  Responda com o número da opção     │
+└─────────────────────────────────────┘
+```
+
+**Tool Call:**
+```json
+{
+  "name": "mostrar_menu",
+  "arguments": {
+    "titulo": "Como posso ajudar?",
+    "opcoes": [
+      { "label": "Fazer pedido", "descricao": "Monte seu pedido", "icone": "pedido" },
+      { "label": "Status do pedido", "icone": "entrega" },
+      { "label": "Ver catálogo", "icone": "catalogo" },
+      { "label": "Financeiro", "icone": "financeiro" },
+      { "label": "Falar com atendente", "icone": "atendente" }
+    ]
+  }
+}
+```
+
+#### 2. Product Card (`card_produto`)
+
+Product card with image, price, and stock status. Used when presenting a specific product.
+
+```
+┌─────────────────────────────────────┐
+│                                     │
+│           🦐                        │
+│                    ┌──────────────┐ │
+│                    │ ⭐ MAIS      │ │
+│                    │   VENDIDO   │ │
+│                    └──────────────┘ │
+├─────────────────────────────────────┤
+│                                     │
+│  Camarão Cinza Limpo GG             │
+│  SKU: FRT-CM-2840                   │
+│                                     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                     │
+│  R$ 62,90/kg        ✓ Em estoque    │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+**Tool Call:**
+```json
+{
+  "name": "mostrar_card_produto",
+  "arguments": {
+    "nome": "Camarão Cinza Limpo GG",
+    "sku": "FRT-CM-2840",
+    "preco": 62.90,
+    "unidade": "kg",
+    "estoque": 230,
+    "destaque": "mais vendido",
+    "mensagem": "Temos sim! 🦐 Esse é o nosso campeão de vendas."
+  }
+}
+```
+
+#### 3. Order Status (`status_pedido`)
+
+Visual timeline showing order progress with delivery information.
+
+```
+┌─────────────────────────────────────┐
+│  Pedido #4521                   🏢  │
+├─────────────────────────────────────┤
+│                                     │
+│   ✓ ─────── ✓ ─────── ✓ ─────── 🚚 ─────── ○   │
+│   │         │         │         │         │   │
+│ Recebido Separação Faturado Transporte Entregue│
+│                                     │
+├──────────────────┬──────────────────┤
+│ Itens            │ Valor            │
+│ 12 produtos      │ R$ 3.847,50      │
+├──────────────────┼──────────────────┤
+│ Previsão         │ Motorista        │
+│ Hoje, 16h        │ Carlos R.        │
+└──────────────────┴──────────────────┘
+```
+
+**Tool Call:**
+```json
+{
+  "name": "mostrar_status_pedido",
+  "arguments": {
+    "numero_pedido": "4521",
+    "status_atual": "transporte",
+    "itens_resumo": "12 produtos",
+    "valor_total": 3847.50,
+    "previsao_entrega": "Hoje, 16h",
+    "motorista": "Carlos R."
+  }
+}
+```
+
+#### 4. Product List (`lista_produtos`)
+
+Comparative list for multiple products. Used when customer asks for options.
+
+```
+┌─────────────────────────────────────┐
+│  🐟 Pescados Disponíveis            │
+│  4 produtos encontrados             │
+├─────────────────────────────────────┤
+│                                     │
+│  ① 🦐 Camarão Cinza GG              │
+│     FRT-CM-2840 · Em estoque        │
+│                       R$ 62,90/kg   │
+│                                     │
+│  ② 🐟 Filé de Tilápia               │
+│     FRT-TL-1205 · Em estoque        │
+│                       R$ 34,50/kg   │
+│                                     │
+│  ③ 🐙 Polvo Limpo                   │
+│     FRT-PV-0892 · Estoque baixo     │
+│                       R$ 89,00/kg   │
+│                                     │
+│  ④ 🦑 Lula Limpa em Anéis           │
+│     FRT-LL-0445 · Em estoque        │
+│                       R$ 45,90/kg   │
+│                                     │
+│  ─────────────────────────────────  │
+│  Responda com o número para detalhes│
+└─────────────────────────────────────┘
+```
+
+**Tool Call:**
+```json
+{
+  "name": "mostrar_lista_produtos",
+  "arguments": {
+    "titulo": "Pescados Disponíveis",
+    "produtos": [
+      { "nome": "Camarão Cinza GG", "sku": "FRT-CM-2840", "preco": 62.90, "estoque": "ok" },
+      { "nome": "Filé de Tilápia", "sku": "FRT-TL-1205", "preco": 34.50, "estoque": "ok" },
+      { "nome": "Polvo Limpo", "sku": "FRT-PV-0892", "preco": 89.00, "estoque": "baixo" },
+      { "nome": "Lula em Anéis", "sku": "FRT-LL-0445", "preco": 45.90, "estoque": "ok" }
+    ],
+    "mensagem": "Separei os pescados disponíveis pra você! 🐟"
+  }
+}
+```
+
+#### 5. Order Confirmation (`confirmacao`)
+
+Summary card for order confirmation. Critical conversion moment.
+
+```
+┌─────────────────────────────────────┐
+│          ┌───┐                      │
+│          │ ✓ │                      │
+│          └───┘                      │
+│     Confirmar Pedido?               │
+│  Entrega prevista: Quinta, 12/02    │
+├─────────────────────────────────────┤
+│                                     │
+│  🦐 Camarão Cinza GG · 15kg         │
+│                       R$ 943,50     │
+│  ─────────────────────────────────  │
+│  🦑 Lula em Anéis · 8kg             │
+│                       R$ 367,20     │
+│  ─────────────────────────────────  │
+│  🐟 Filé de Tilápia · 20kg          │
+│                       R$ 690,00     │
+│                                     │
+├─────────────────────────────────────┤
+│  Total              R$ 2.000,70     │
+├─────────────────────────────────────┤
+│  Responda SIM para confirmar        │
+└─────────────────────────────────────┘
+```
+
+**Tool Call:**
+```json
+{
+  "name": "mostrar_confirmacao",
+  "arguments": {
+    "titulo": "Confirmar Pedido?",
+    "itens": [
+      { "nome": "Camarão Cinza GG", "quantidade": "15kg", "valor": 943.50 },
+      { "nome": "Lula em Anéis", "quantidade": "8kg", "valor": 367.20 },
+      { "nome": "Filé de Tilápia", "quantidade": "20kg", "valor": 690.00 }
+    ],
+    "valor_total": 2000.70,
+    "previsao_entrega": "Quinta, 12/02"
+  }
+}
+```
+
+#### 6. PIX Payment (`cobranca_pix`)
+
+Payment card with QR code and copy-paste code. Reusable across verticals.
+
+```
+┌─────────────────────────────────────┐
+│            ◆ PIX                    │
+│      Pagamento via PIX              │
+├─────────────────────────────────────┤
+│                                     │
+│         ┌───────────────┐           │
+│         │ ▓▓░░▓▓░░▓▓░░ │           │
+│         │ ░░▓▓░░▓▓░░▓▓ │           │
+│         │ ▓▓░░▓▓░░▓▓░░ │           │
+│         │ ░░▓▓░░▓▓░░▓▓ │           │
+│         │   QR CODE    │           │
+│         └───────────────┘           │
+│                                     │
+│        R$ 2.000,70                  │
+│   Pedido #4587 · Válido 30min       │
+│                                     │
+│  ┌─────────────────────────────┐   │
+│  │ 00020126580014br.gov.bcb... │   │
+│  └─────────────────────────────┘   │
+│                                     │
+│  Escaneie ou copie o código acima   │
+└─────────────────────────────────────┘
+```
+
+**Tool Call:**
+```json
+{
+  "name": "mostrar_cobranca_pix",
+  "arguments": {
+    "valor": 2000.70,
+    "pedido_id": "4587",
+    "pix_payload": "00020126580014br.gov.bcb.pix...",
+    "validade_minutos": 30
+  }
+}
+```
+
+### How VRE Works
+
+1. **AI Decision**: The LLM decides when a visual response is appropriate
+2. **Tool Call**: AI calls a VRE tool (e.g., `mostrar_menu`) with structured data
+3. **Template Resolution**: VRE loads the HTML template with tenant branding
+4. **Rendering**: Template is rendered to PNG via headless Chrome
+5. **Caption Generation**: Accessible text caption is generated
+6. **Delivery**: Image + caption sent to the customer's channel
+
+### Tenant Customization
+
+Each tenant can customize templates via `config.json`:
+
+```json
+{
+  "tenant_id": "acme-corp",
+  "name": "Acme Corp",
+  "logo_url": "https://...",
+  "primary_color": "#0F3460",
+  "secondary_color": "#E94560",
+  "accent_color": "#16C79A"
+}
+```
 
 ## Installation
 
@@ -105,7 +431,8 @@ linktor-mcp-server/
     │   ├── channels.ts         # Channel operations
     │   ├── bots.ts             # Bot management
     │   ├── analytics.ts        # Analytics queries
-    │   └── knowledge.ts        # Knowledge base search
+    │   ├── knowledge.ts        # Knowledge base search
+    │   └── vre.ts              # Visual Response Engine tools
     ├── resources/
     │   ├── index.ts            # Resource exports
     │   └── handlers.ts         # Resource handlers
@@ -175,6 +502,19 @@ linktor-mcp-server/
 | `search_knowledge` | Semantic search in knowledge base |
 | `list_knowledge_documents` | List KB documents |
 | `get_knowledge_document` | Get document content |
+
+### Visual Response Engine (8 tools)
+
+| Tool | Description |
+|------|-------------|
+| `render_template` | Render any template and return base64 image |
+| `render_and_send` | Render template and send directly to conversation |
+| `mostrar_menu` | Display visual menu with numbered options |
+| `mostrar_card_produto` | Display product card with price/stock |
+| `mostrar_status_pedido` | Display order status timeline |
+| `mostrar_lista_produtos` | Display comparative product list |
+| `mostrar_confirmacao` | Display order confirmation summary |
+| `mostrar_cobranca_pix` | Display PIX payment QR code |
 
 ## Resources
 

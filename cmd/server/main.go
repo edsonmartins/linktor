@@ -57,6 +57,9 @@
 // @tag.name webhooks
 // @tag.description Webhook endpoints for external integrations
 
+// @tag.name VRE
+// @tag.description Visual Response Engine - render HTML templates to images for channels that don't support interactive elements
+
 package main
 
 import (
@@ -96,6 +99,8 @@ import (
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
+
+	"github.com/go-redis/redis/v8"
 )
 
 func main() {
@@ -226,6 +231,47 @@ func main() {
 
 	// Initialize analytics service
 	analyticsService := service.NewAnalyticsService(analyticsRepo)
+
+	// Initialize VRE (Visual Response Engine) service
+	logger.Info("Initializing VRE service...")
+	var vreService *service.VREService
+	var redisClient *redis.Client
+
+	// Connect to Redis if configured (for VRE caching)
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL != "" {
+		opt, err := redis.ParseURL(redisURL)
+		if err == nil {
+			redisClient = redis.NewClient(opt)
+			if err := redisClient.Ping(context.Background()).Err(); err != nil {
+				logger.Warn("Failed to connect to Redis - VRE caching disabled: " + err.Error())
+				redisClient = nil
+			} else {
+				logger.Info("Redis connected for VRE caching")
+			}
+		}
+	}
+
+	// Create VRE service
+	vreConfig := &service.VREServiceConfig{
+		TemplatesPath:  "./templates",
+		CacheTTL:       5 * time.Minute,
+		ChromePoolSize: 3,
+		DefaultWidth:   800,
+		DefaultQuality: 85,
+	}
+	if templatesPath := os.Getenv("VRE_TEMPLATES_PATH"); templatesPath != "" {
+		vreConfig.TemplatesPath = templatesPath
+	}
+
+	vreService, err = service.NewVREService(vreConfig, redisClient)
+	if err != nil {
+		logger.Warn("Failed to initialize VRE service - visual rendering disabled: " + err.Error())
+	} else {
+		logger.Info("VRE service initialized")
+		// Cleanup VRE on shutdown
+		defer vreService.Close()
+	}
 
 	// Initialize use cases
 	sendMessageUC := usecase.NewSendMessageUseCase(
@@ -387,6 +433,12 @@ func main() {
 
 	// Create analytics handler
 	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
+
+	// Create VRE handler (if VRE service is available)
+	var vreHandler *handlers.VREHandler
+	if vreService != nil {
+		vreHandler = handlers.NewVREHandler(vreService)
+	}
 
 	// Create OAuth handler
 	baseURL := os.Getenv("BASE_URL")
@@ -673,6 +725,21 @@ func main() {
 				analytics.GET("/flows", analyticsHandler.GetFlows)
 				analytics.GET("/escalations", analyticsHandler.GetEscalations)
 				analytics.GET("/channels", analyticsHandler.GetChannels)
+			}
+
+			// VRE (Visual Response Engine)
+			if vreHandler != nil {
+				vreRoutes := protected.Group("/vre")
+				{
+					vreRoutes.POST("/render", vreHandler.Render)
+					vreRoutes.POST("/render-and-send", vreHandler.RenderAndSend)
+					vreRoutes.GET("/templates", vreHandler.ListTemplates)
+					vreRoutes.GET("/templates/:id/preview", vreHandler.PreviewTemplate)
+					vreRoutes.POST("/templates/:id", vreHandler.UploadTemplate)
+					vreRoutes.GET("/config", vreHandler.GetBrandConfig)
+					vreRoutes.PUT("/config", vreHandler.UpdateBrandConfig)
+					vreRoutes.DELETE("/cache", vreHandler.InvalidateCache)
+				}
 			}
 
 			// Conversation Management (with escalation support)

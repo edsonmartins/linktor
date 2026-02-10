@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(find:*)",
+      "Bash(go test:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go doc:*)",
+      "Bash(go tool cover:*)",
+      "Bash(go build:*)",
+      "Bash(go get:*)",
+      "Bash(go vet:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(git -C /Users/edsonmartins/desenvolvimento/linktor/mcp/linktor-mcp-server log --oneline)",
+      "Bash(git add:*)"
+    ]
+  }
+}

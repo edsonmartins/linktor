@@ -19,6 +19,7 @@ public class LinktorClient {
     public final KnowledgeBasesResource knowledgeBases;
     public final FlowsResource flows;
     public final AnalyticsResource analytics;
+    public final VREResource vre;
 
     private LinktorClient(Builder builder) {
         this.http = new HttpClient(
@@ -41,6 +42,7 @@ public class LinktorClient {
         this.knowledgeBases = new KnowledgeBasesResource(http);
         this.flows = new FlowsResource(http);
         this.analytics = new AnalyticsResource(http);
+        this.vre = new VREResource(http);
     }
 
     /**

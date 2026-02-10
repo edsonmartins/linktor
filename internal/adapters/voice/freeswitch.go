@@ -266,15 +266,15 @@ func (p *FreeSWITCHProvider) handleESLEvent(event *ESLEvent) {
 }
 
 // parseDirection parses FreeSWITCH call direction
-func (p *FreeSWITCHProvider) parseDirection(dir string) string {
+func (p *FreeSWITCHProvider) parseDirection(dir string) CallDirection {
 	if dir == "inbound" {
-		return "inbound"
+		return CallDirectionInbound
 	}
-	return "outbound"
+	return CallDirectionOutbound
 }
 
 // parseHangupCause converts FreeSWITCH hangup cause to call status
-func (p *FreeSWITCHProvider) parseHangupCause(cause string) string {
+func (p *FreeSWITCHProvider) parseHangupCause(cause string) CallStatus {
 	switch cause {
 	case "NORMAL_CLEARING":
 		return CallStatusCompleted
@@ -292,15 +292,17 @@ func (p *FreeSWITCHProvider) parseHangupCause(cause string) string {
 // Capabilities returns FreeSWITCH capabilities
 func (p *FreeSWITCHProvider) Capabilities() ProviderCapabilities {
 	return ProviderCapabilities{
-		Outbound:      true,
-		Inbound:       true,
-		Recording:     true,
-		Transcription: false, // Requires external service
-		IVR:           true,
-		Conferencing:  true,
-		Queueing:      true,
-		WebRTC:        true,
-		SIP:           true,
+		OutboundCalls:     true,
+		InboundCalls:      true,
+		Recording:         true,
+		Transcription:     false, // Requires external service
+		TextToSpeech:      true,
+		SpeechRecognition: true,
+		DTMF:              true,
+		Conferencing: true,
+		CallQueues:   true,
+		WebRTC:       true,
+		SIP:          true,
 	}
 }
 
@@ -332,8 +334,8 @@ func (p *FreeSWITCHProvider) MakeCall(ctx context.Context, input MakeCallInput) 
 		vars = append(vars, "RECORD_MIN_SEC=1")
 	}
 
-	// Custom variables
-	for k, v := range input.CustomData {
+	// Custom variables from metadata
+	for k, v := range input.Metadata {
 		vars = append(vars, fmt.Sprintf("linktor_%s=%s", k, v))
 	}
 
@@ -492,7 +494,7 @@ func (p *FreeSWITCHProvider) GetRecording(ctx context.Context, recordingID strin
 		ID:        recordingID,
 		CallID:    extractCallIDFromPath(recordingPath),
 		URL:       fmt.Sprintf("%s/%s", webURL, recordingPath),
-		Status:    "completed",
+		Format:    "wav",
 		CreatedAt: time.Now(),
 	}
 
@@ -707,13 +709,13 @@ func (p *FreeSWITCHProvider) buildDialString(dial IVRDial) string {
 
 	// Build destinations
 	destinations := []string{}
-	for _, dest := range dial.Numbers {
-		destinations = append(destinations, fmt.Sprintf("sofia/gateway/%s/%s", gateway, dest))
+	if dial.Number != "" {
+		destinations = append(destinations, fmt.Sprintf("sofia/gateway/%s/%s", gateway, dial.Number))
 	}
 
-	// For SIP URIs
-	for _, sip := range dial.SIPURIs {
-		destinations = append(destinations, fmt.Sprintf("sofia/external/%s", sip))
+	// For SIP endpoint
+	if dial.SIPEndpoint != "" {
+		destinations = append(destinations, fmt.Sprintf("sofia/external/%s", dial.SIPEndpoint))
 	}
 
 	return fmt.Sprintf("%s%s", varString, strings.Join(destinations, ","))
@@ -740,7 +742,7 @@ func (p *FreeSWITCHProvider) ParseWebhook(ctx context.Context, headers map[strin
 	}
 
 	event := &WebhookEvent{
-		Raw: data,
+		RawPayload: data,
 	}
 
 	// Parse common fields
@@ -783,19 +785,19 @@ func (p *FreeSWITCHProvider) ParseWebhook(ctx context.Context, headers map[strin
 func (p *FreeSWITCHProvider) mapEventType(eventName string) string {
 	switch eventName {
 	case "CHANNEL_CREATE":
-		return WebhookCallInitiated
+		return "call.initiated"
 	case "CHANNEL_ANSWER":
-		return WebhookCallAnswered
+		return "call.answered"
 	case "CHANNEL_HANGUP", "CHANNEL_HANGUP_COMPLETE":
-		return WebhookCallCompleted
+		return "call.completed"
 	case "DTMF":
-		return WebhookDTMFReceived
+		return "dtmf.received"
 	case "DETECTED_SPEECH":
-		return WebhookSpeechReceived
+		return "speech.received"
 	case "RECORD_START":
-		return WebhookRecordingStarted
+		return "recording.started"
 	case "RECORD_STOP":
-		return WebhookRecordingCompleted
+		return "recording.completed"
 	default:
 		return eventName
 	}

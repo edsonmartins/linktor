@@ -23,6 +23,7 @@ import { registerChannelTools, channelToolDefinitions } from './tools/channels.j
 import { registerBotTools, botToolDefinitions } from './tools/bots.js';
 import { registerAnalyticsTools, analyticsToolDefinitions } from './tools/analytics.js';
 import { registerKnowledgeTools, knowledgeToolDefinitions } from './tools/knowledge.js';
+import { registerVRETools, vreToolDefinitions } from './tools/vre.js';
 import { resourceDefinitions, handleResourceRead } from './resources/handlers.js';
 import { promptDefinitions, handlePromptGet } from './prompts/templates.js';
 
@@ -50,6 +51,7 @@ export function createServer(client: LinktorClient): Server {
     ...botToolDefinitions,
     ...analyticsToolDefinitions,
     ...knowledgeToolDefinitions,
+    ...vreToolDefinitions,
   ];
 
   // Register tool handlers
@@ -62,6 +64,7 @@ export function createServer(client: LinktorClient): Server {
   registerBotTools(toolHandlers, client);
   registerAnalyticsTools(toolHandlers, client);
   registerKnowledgeTools(toolHandlers, client);
+  registerVRETools(toolHandlers, client);
 
   // List Tools Handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {

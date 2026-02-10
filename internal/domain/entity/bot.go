@@ -87,6 +87,9 @@ type BotConfig struct {
 	ContextWindowSize   int              `json:"context_window_size"` // Number of messages to include
 	EnabledIntents      []string         `json:"enabled_intents"`     // Intents the bot can handle
 	MaxResponseLength   int              `json:"max_response_length"`
+	Tools               []*Tool          `json:"tools,omitempty"`       // Custom tools available to the bot
+	EnableVRETools      bool             `json:"enable_vre_tools"`      // Enable built-in VRE visual tools
+	ToolChoice          string           `json:"tool_choice,omitempty"` // auto, none, required
 }
 
 // Bot represents an AI chatbot configuration
@@ -190,6 +193,33 @@ func (b *Bot) SetSystemPrompt(prompt string) {
 func (b *Bot) AddEscalationRule(rule EscalationRule) {
 	b.Config.EscalationRules = append(b.Config.EscalationRules, rule)
 	b.UpdatedAt = time.Now()
+}
+
+// GetTools returns all tools available to the bot (custom + VRE if enabled)
+func (b *Bot) GetTools() []*Tool {
+	var tools []*Tool
+
+	// Add custom tools
+	if len(b.Config.Tools) > 0 {
+		tools = append(tools, b.Config.Tools...)
+	}
+
+	// Add VRE tools if enabled
+	if b.Config.EnableVRETools {
+		tools = append(tools, BuiltInVRETools()...)
+	}
+
+	return tools
+}
+
+// GetToolByName returns a tool by name
+func (b *Bot) GetToolByName(name string) *Tool {
+	for _, tool := range b.GetTools() {
+		if tool.Name == name {
+			return tool
+		}
+	}
+	return nil
 }
 
 // ShouldEscalate checks if a conversation should be escalated based on rules

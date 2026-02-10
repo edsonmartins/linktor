@@ -78,6 +78,7 @@ type Client struct {
 	KnowledgeBases *KnowledgeBasesResource
 	Flows         *FlowsResource
 	Analytics     *AnalyticsResource
+	VRE           *VREResource
 }
 
 // NewClient creates a new Linktor client
@@ -115,6 +116,7 @@ func NewClient(opts ...Option) *Client {
 	client.KnowledgeBases = &KnowledgeBasesResource{client: client}
 	client.Flows = &FlowsResource{client: client}
 	client.Analytics = &AnalyticsResource{client: client}
+	client.VRE = &VREResource{client: client}
 
 	return client
 }
@@ -572,4 +574,141 @@ func (r *AnalyticsResource) GetRealtime(ctx context.Context) (map[string]interfa
 	var result map[string]interface{}
 	err := r.client.get(ctx, "/analytics/realtime", &result)
 	return result, err
+}
+
+// VREResource handles VRE (Visual Response Engine) operations
+type VREResource struct {
+	client *Client
+}
+
+// Render renders a VRE template to an image
+func (r *VREResource) Render(ctx context.Context, input *types.VRERenderRequest) (*types.VRERenderResponse, error) {
+	var result types.VRERenderResponse
+	err := r.client.post(ctx, "/vre/render", input, &result)
+	return &result, err
+}
+
+// RenderAndSend renders a template and sends it directly to a conversation
+func (r *VREResource) RenderAndSend(ctx context.Context, input *types.VRERenderAndSendRequest) (*types.VRERenderAndSendResponse, error) {
+	var result types.VRERenderAndSendResponse
+	err := r.client.post(ctx, "/vre/render-and-send", input, &result)
+	return &result, err
+}
+
+// ListTemplates lists available VRE templates
+func (r *VREResource) ListTemplates(ctx context.Context, tenantID string) (*types.VREListTemplatesResponse, error) {
+	path := "/vre/templates"
+	if tenantID != "" {
+		path += "?tenant_id=" + tenantID
+	}
+	var result types.VREListTemplatesResponse
+	err := r.client.get(ctx, path, &result)
+	return &result, err
+}
+
+// Preview previews a VRE template with sample data
+func (r *VREResource) Preview(ctx context.Context, templateID string, data map[string]interface{}) (*types.VREPreviewResponse, error) {
+	var result types.VREPreviewResponse
+	body := map[string]interface{}{}
+	if data != nil {
+		body["data"] = data
+	}
+	err := r.client.post(ctx, "/vre/templates/"+templateID+"/preview", body, &result)
+	return &result, err
+}
+
+// RenderMenu renders a menu with numbered options
+func (r *VREResource) RenderMenu(ctx context.Context, tenantID, titulo string, opcoes []types.MenuOpcaoData, channel types.VREChannelType) (*types.VRERenderResponse, error) {
+	return r.Render(ctx, &types.VRERenderRequest{
+		TenantID:   tenantID,
+		TemplateID: types.VRETemplateMenuOpcoes,
+		Data: map[string]interface{}{
+			"titulo": titulo,
+			"opcoes": opcoes,
+		},
+		Channel: channel,
+	})
+}
+
+// RenderProductCard renders a product card
+func (r *VREResource) RenderProductCard(ctx context.Context, tenantID string, produto *types.CardProdutoData, channel types.VREChannelType) (*types.VRERenderResponse, error) {
+	return r.Render(ctx, &types.VRERenderRequest{
+		TenantID:   tenantID,
+		TemplateID: types.VRETemplateCardProduto,
+		Data: map[string]interface{}{
+			"nome":       produto.Nome,
+			"preco":      produto.Preco,
+			"unidade":    produto.Unidade,
+			"sku":        produto.SKU,
+			"estoque":    produto.Estoque,
+			"imagem_url": produto.ImagemURL,
+			"destaque":   produto.Destaque,
+			"mensagem":   produto.Mensagem,
+		},
+		Channel: channel,
+	})
+}
+
+// RenderOrderStatus renders an order status timeline
+func (r *VREResource) RenderOrderStatus(ctx context.Context, tenantID string, status *types.StatusPedidoData, channel types.VREChannelType) (*types.VRERenderResponse, error) {
+	return r.Render(ctx, &types.VRERenderRequest{
+		TenantID:   tenantID,
+		TemplateID: types.VRETemplateStatusPedido,
+		Data: map[string]interface{}{
+			"numero_pedido":    status.NumeroPedido,
+			"status_atual":     status.StatusAtual,
+			"itens_resumo":     status.ItensResumo,
+			"valor_total":      status.ValorTotal,
+			"previsao_entrega": status.PrevisaoEntrega,
+			"motorista":        status.Motorista,
+			"mensagem":         status.Mensagem,
+		},
+		Channel: channel,
+	})
+}
+
+// RenderProductList renders a product list for comparison
+func (r *VREResource) RenderProductList(ctx context.Context, tenantID, titulo string, produtos []types.ListaProdutoItem, channel types.VREChannelType) (*types.VRERenderResponse, error) {
+	return r.Render(ctx, &types.VRERenderRequest{
+		TenantID:   tenantID,
+		TemplateID: types.VRETemplateListaProdutos,
+		Data: map[string]interface{}{
+			"titulo":   titulo,
+			"produtos": produtos,
+		},
+		Channel: channel,
+	})
+}
+
+// RenderConfirmation renders a confirmation summary
+func (r *VREResource) RenderConfirmation(ctx context.Context, tenantID string, confirmacao *types.ConfirmacaoData, channel types.VREChannelType) (*types.VRERenderResponse, error) {
+	return r.Render(ctx, &types.VRERenderRequest{
+		TenantID:   tenantID,
+		TemplateID: types.VRETemplateConfirmacao,
+		Data: map[string]interface{}{
+			"titulo":           confirmacao.Titulo,
+			"subtitulo":        confirmacao.Subtitulo,
+			"itens":            confirmacao.Itens,
+			"valor_total":      confirmacao.ValorTotal,
+			"previsao_entrega": confirmacao.PrevisaoEntrega,
+			"mensagem":         confirmacao.Mensagem,
+		},
+		Channel: channel,
+	})
+}
+
+// RenderPixPayment renders a PIX payment QR code
+func (r *VREResource) RenderPixPayment(ctx context.Context, tenantID string, pix *types.CobrancaPixData, channel types.VREChannelType) (*types.VRERenderResponse, error) {
+	return r.Render(ctx, &types.VRERenderRequest{
+		TenantID:   tenantID,
+		TemplateID: types.VRETemplateCobrancaPix,
+		Data: map[string]interface{}{
+			"valor":         pix.Valor,
+			"pix_payload":   pix.PixPayload,
+			"numero_pedido": pix.NumeroPedido,
+			"expiracao":     pix.Expiracao,
+			"mensagem":      pix.Mensagem,
+		},
+		Channel: channel,
+	})
 }

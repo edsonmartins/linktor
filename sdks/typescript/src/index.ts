@@ -20,6 +20,7 @@ export { AIResource } from './resources/ai';
 export { KnowledgeBasesResource } from './resources/knowledge-bases';
 export { FlowsResource } from './resources/flows';
 export { AnalyticsResource, DateRange } from './resources/analytics';
+export { VREResource } from './resources/vre';
 
 // WebSocket
 export {

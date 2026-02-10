@@ -157,6 +157,78 @@ msgfy (GitHub org: msgfy)
 - Análise de sentimento e intenção
 - Fila de atendimento por prioridade
 
+#### 8. LVRE - Linktor Visual Response Engine
+
+O **LVRE** (Linktor Visual Response Engine) é um sistema de renderização que converte HTML em imagens otimizadas para canais que não suportam elementos interativos (como botões ou templates estruturados) - como WhatsApp não-oficial, SMS, ou canais legados.
+
+<p align="center">
+  <img src="imagens/lvre-menu.svg" alt="LVRE Menu" width="280"/>
+  <img src="imagens/lvre-produto.svg" alt="LVRE Produto" width="280"/>
+</p>
+
+<p align="center">
+  <img src="imagens/lvre-status.svg" alt="LVRE Status" width="280"/>
+  <img src="imagens/lvre-pix.svg" alt="LVRE PIX" width="280"/>
+</p>
+
+**Características:**
+
+- **Renderização HTML → Imagem**: Usa headless Chrome (chromedp) para renderizar qualquer HTML
+- **Templates Predefinidos**: 6 templates otimizados para WhatsApp (menu, produto, status, lista, confirmação, PIX)
+- **Custom HTML**: Desenvolvedores podem passar qualquer HTML para renderização
+- **Otimização de Imagem**: WebP por padrão (30% menor), compressão PNG via pngquant
+- **Multi-canal**: Configurações otimizadas por canal (WhatsApp, Telegram, Web, Email)
+- **Cache Redis**: Imagens renderizadas são cacheadas para performance
+- **Caption + Follow-up**: Suporte a texto junto com a imagem e mensagem de acompanhamento
+- **Multi-tenant**: Branding customizado por tenant (cores, logo, fontes)
+
+**API Endpoints:**
+
+```bash
+# Renderizar HTML customizado
+POST /api/v1/vre/render
+{
+  "html": "<div style='padding:20px'>...</div>",
+  "channel": "whatsapp",
+  "caption": "Texto junto com a imagem",
+  "follow_up_text": "Mensagem enviada após a imagem"
+}
+
+# Renderizar template predefinido
+POST /api/v1/vre/render
+{
+  "template_id": "menu_opcoes",
+  "data": {
+    "titulo": "Como posso ajudar?",
+    "opcoes": [
+      {"label": "Fazer pedido", "icone": "pedido"},
+      {"label": "Rastrear pedido", "icone": "entrega"}
+    ]
+  },
+  "channel": "whatsapp"
+}
+
+# Listar templates disponíveis
+GET /api/v1/vre/templates
+
+# Preview de template
+GET /api/v1/vre/templates/:id/preview
+
+# Configurar branding do tenant
+PUT /api/v1/vre/config
+```
+
+**Templates Disponíveis:**
+
+| Template | Descrição | Uso |
+|----------|-----------|-----|
+| `menu_opcoes` | Menu com até 8 opções numeradas | Menus interativos |
+| `card_produto` | Card de produto com preço e estoque | Catálogo |
+| `status_pedido` | Timeline visual de status | Rastreamento |
+| `lista_produtos` | Lista comparativa (até 6 itens) | Busca de produtos |
+| `confirmacao` | Resumo para confirmação | Checkout |
+| `cobranca_pix` | QR code PIX + código copia-cola | Pagamentos |
+
 ---
 
 ## Arquitetura
@@ -286,6 +358,12 @@ linktor/
 │       │   ├── producer.go
 │       │   └── consumer.go
 │       ├── redis/                # Cache
+│       ├── vre/                  # Visual Response Engine
+│       │   ├── renderer.go       # Chrome renderer (chromedp)
+│       │   ├── pool.go           # Browser instance pool
+│       │   ├── template_registry.go # Template discovery
+│       │   ├── template_functions.go # Custom template funcs
+│       │   └── caption_generator.go # Accessible captions
 │       └── config/               # Configurações
 │
 ├── web/                          # Frontend
@@ -311,6 +389,18 @@ linktor/
 │   │   │   └── types/            # TypeScript types
 │   │   └── package.json
 │   └── embed/                    # Widget embeddable
+│
+├── templates/                    # LVRE HTML Templates
+│   ├── default/                  # Templates padrão
+│   │   ├── menu_opcoes.html      # Menu interativo
+│   │   ├── card_produto.html     # Card de produto
+│   │   ├── status_pedido.html    # Timeline de status
+│   │   ├── lista_produtos.html   # Lista de produtos
+│   │   ├── confirmacao.html      # Confirmação de pedido
+│   │   └── cobranca_pix.html     # Cobrança PIX
+│   └── tenants/                  # Templates por tenant
+│       └── {tenant_id}/
+│           └── config.json       # Branding config
 │
 ├── deploy/                       # Deploy configs
 │   ├── docker/                   # Docker & migrations
@@ -367,6 +457,8 @@ linktor/
 | JWT | - | Autenticação stateless |
 | gRPC | - | Comunicação inter-serviços |
 | HashiCorp go-plugin | - | Sistema de plugins |
+| chromedp | - | LVRE: Renderização HTML → Imagem |
+| pngquant | - | LVRE: Compressão de PNG (opcional) |
 
 ### Frontend
 
@@ -718,6 +810,18 @@ POST /api/v1/ai/classify-intent            # Classificar intent
 POST /api/v1/ai/analyze-sentiment          # Análise de sentimento
 POST /api/v1/ai/generate-response          # Gerar resposta
 POST /api/v1/ai/escalate                   # Escalar conversa
+```
+
+#### VRE (Visual Response Engine)
+```
+POST   /api/v1/vre/render                  # Renderizar HTML para imagem
+POST   /api/v1/vre/render-and-send         # Renderizar e enviar
+GET    /api/v1/vre/templates               # Listar templates
+GET    /api/v1/vre/templates/:id/preview   # Preview de template
+POST   /api/v1/vre/templates/:id           # Upload de template
+GET    /api/v1/vre/config                  # Configuração de branding
+PUT    /api/v1/vre/config                  # Atualizar branding
+DELETE /api/v1/vre/cache                   # Invalidar cache
 ```
 
 #### Webhooks

@@ -24,6 +24,7 @@ import { QuestionNode } from './nodes/question-node'
 import { ConditionNode } from './nodes/condition-node'
 import { ActionNode } from './nodes/action-node'
 import { EndNode } from './nodes/end-node'
+import { VRENode } from './nodes/vre-node'
 
 interface FlowCanvasProps {
   nodes: FlowNode[]
@@ -39,6 +40,7 @@ const nodeTypes = {
   question: QuestionNode,
   condition: ConditionNode,
   action: ActionNode,
+  vre: VRENode,
   end: EndNode,
 } as const
 

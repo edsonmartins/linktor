@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:800px;font-family:{{ .Brand.FontFamily }};background:{{ .Brand.Background }}}
+.card{background:#fff;border-radius:14px;overflow:hidden}
+.header{background:linear-gradient(135deg,{{ .Brand.PrimaryColor }},#1a2980);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;color:#fff}
+.pedido{font-size:12px;opacity:.7}
+.pedido strong{font-size:18px;opacity:1;display:block;margin-top:2px}
+.logo-circle{width:34px;height:34px;background:rgba(255,255,255,.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.timeline{display:flex;align-items:flex-start;justify-content:space-between;padding:24px 16px 16px;position:relative}
+.timeline::before{content:'';position:absolute;top:42px;left:48px;right:48px;height:3px;background:#ecf0f1;border-radius:2px}
+.step{display:flex;flex-direction:column;align-items:center;gap:6px;z-index:1;flex:1}
+.step-icon{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;border:2px solid transparent}
+.step-icon.done{background:{{ .Brand.AccentColor }};color:#fff}
+.step-icon.active{background:{{ .Brand.SecondaryColor }};color:#fff;box-shadow:0 0 0 4px rgba(245,166,35,.25)}
+.step-icon.wait{background:#ecf0f1;color:#bdc3c7}
+.step-text{font-size:10px;color:{{ .Brand.MutedColor }};text-align:center;max-width:56px;line-height:1.3}
+.step-text.current{color:{{ .Brand.TextColor }};font-weight:600}
+.info{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px 16px}
+.info-item{background:#f8f9fb;border-radius:8px;padding:10px 12px}
+.info-label{font-size:10px;color:{{ .Brand.MutedColor }};text-transform:uppercase;letter-spacing:.5px}
+.info-value{font-size:14px;font-weight:600;color:{{ .Brand.TextColor }};margin-top:2px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <div>
+      <div class="pedido">Pedido <strong>#{{ .Data.numero_pedido }}</strong></div>
+    </div>
+    {{ if .Brand.LogoURL }}
+    <img src="{{ .Brand.LogoURL }}" style="height:32px" />
+    {{ else }}
+    <div class="logo-circle">{{ substr .Brand.Name 0 2 | upper }}</div>
+    {{ end }}
+  </div>
+  <div class="timeline">
+    {{ $status := .Data.status_atual }}
+    {{ $statusOrder := list "recebido" "separacao" "faturado" "transporte" "entregue" }}
+    {{ $icons := dict "recebido" "✓" "separacao" "✓" "faturado" "✓" "transporte" "🚚" "entregue" "📍" }}
+    {{ $labels := dict "recebido" "Recebido" "separacao" "Separação" "faturado" "Faturado" "transporte" "Em transporte" "entregue" "Entregue" }}
+    {{ range $i, $s := $statusOrder }}
+    <div class="step">
+      {{ if lt $i (index $statusOrder $status) }}
+      <div class="step-icon done">✓</div>
+      <div class="step-text">{{ index $labels $s }}</div>
+      {{ else if eq $s $status }}
+      <div class="step-icon active">{{ index $icons $s }}</div>
+      <div class="step-text current">{{ index $labels $s }}</div>
+      {{ else }}
+      <div class="step-icon wait">{{ index $icons $s }}</div>
+      <div class="step-text">{{ index $labels $s }}</div>
+      {{ end }}
+    </div>
+    {{ end }}
+  </div>
+  <div class="info">
+    {{ if .Data.itens_resumo }}
+    <div class="info-item">
+      <div class="info-label">Itens</div>
+      <div class="info-value">{{ .Data.itens_resumo }}</div>
+    </div>
+    {{ end }}
+    {{ if .Data.valor_total }}
+    <div class="info-item">
+      <div class="info-label">Valor Total</div>
+      <div class="info-value">{{ formatCurrency .Data.valor_total }}</div>
+    </div>
+    {{ end }}
+    {{ if .Data.previsao_entrega }}
+    <div class="info-item">
+      <div class="info-label">Previsão</div>
+      <div class="info-value">{{ .Data.previsao_entrega }}</div>
+    </div>
+    {{ end }}
+    {{ if .Data.motorista }}
+    <div class="info-item">
+      <div class="info-label">Motorista</div>
+      <div class="info-value">{{ .Data.motorista }}</div>
+    </div>
+    {{ end }}
+  </div>
+</div>
+</body>
+</html>

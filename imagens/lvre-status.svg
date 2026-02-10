@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="260" viewBox="0 0 400 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="400" height="260" rx="14" fill="white"/>
+
+  <!-- Header -->
+  <rect width="400" height="60" rx="14" fill="url(#statusGrad)"/>
+  <rect y="46" width="400" height="14" fill="url(#statusGrad)"/>
+
+  <!-- Order number badge -->
+  <rect x="16" y="16" width="100" height="28" rx="14" fill="rgba(255,255,255,0.2)"/>
+  <text x="66" y="35" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="white" text-anchor="middle">Pedido #1234</text>
+
+  <!-- Status text -->
+  <text x="384" y="35" font-family="system-ui, sans-serif" font-size="12" fill="rgba(255,255,255,0.8)" text-anchor="end">5 itens · R$ 250,00</text>
+
+  <!-- Timeline -->
+  <!-- Step 1 - Done -->
+  <circle cx="50" cy="100" r="16" fill="#16C79A"/>
+  <text x="50" y="106" font-family="system-ui, sans-serif" font-size="14" fill="white" text-anchor="middle">✓</text>
+  <text x="50" y="130" font-family="system-ui, sans-serif" font-size="10" fill="#16C79A" text-anchor="middle">Recebido</text>
+
+  <!-- Line 1-2 -->
+  <line x1="66" y1="100" x2="104" y2="100" stroke="#16C79A" stroke-width="2"/>
+
+  <!-- Step 2 - Done -->
+  <circle cx="120" cy="100" r="16" fill="#16C79A"/>
+  <text x="120" y="106" font-family="system-ui, sans-serif" font-size="14" fill="white" text-anchor="middle">✓</text>
+  <text x="120" y="130" font-family="system-ui, sans-serif" font-size="10" fill="#16C79A" text-anchor="middle">Separação</text>
+
+  <!-- Line 2-3 -->
+  <line x1="136" y1="100" x2="174" y2="100" stroke="#16C79A" stroke-width="2"/>
+
+  <!-- Step 3 - Done -->
+  <circle cx="190" cy="100" r="16" fill="#16C79A"/>
+  <text x="190" y="106" font-family="system-ui, sans-serif" font-size="14" fill="white" text-anchor="middle">✓</text>
+  <text x="190" y="130" font-family="system-ui, sans-serif" font-size="10" fill="#16C79A" text-anchor="middle">Faturado</text>
+
+  <!-- Line 3-4 -->
+  <line x1="206" y1="100" x2="244" y2="100" stroke="#16C79A" stroke-width="2"/>
+
+  <!-- Step 4 - Active (pulsing) -->
+  <circle cx="260" cy="100" r="20" fill="#E94560" fill-opacity="0.2"/>
+  <circle cx="260" cy="100" r="16" fill="#E94560"/>
+  <text x="260" y="106" font-family="system-ui, sans-serif" font-size="14" fill="white" text-anchor="middle">🚚</text>
+  <text x="260" y="130" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#E94560" text-anchor="middle">Transporte</text>
+
+  <!-- Line 4-5 -->
+  <line x1="276" y1="100" x2="314" y2="100" stroke="#D1D5DB" stroke-width="2" stroke-dasharray="4,4"/>
+
+  <!-- Step 5 - Wait -->
+  <circle cx="330" cy="100" r="16" fill="#F3F4F6" stroke="#D1D5DB" stroke-width="2"/>
+  <text x="330" y="106" font-family="system-ui, sans-serif" font-size="14" fill="#9CA3AF" text-anchor="middle">📍</text>
+  <text x="330" y="130" font-family="system-ui, sans-serif" font-size="10" fill="#9CA3AF" text-anchor="middle">Entregue</text>
+
+  <!-- Info box -->
+  <rect x="16" y="155" width="368" height="48" rx="10" fill="#FFF7E6"/>
+  <text x="32" y="175" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="#D97706">🚚 Previsão: Hoje, 18h</text>
+  <text x="32" y="193" font-family="system-ui, sans-serif" font-size="11" fill="#92400E">Motorista: João S. • Rota Centro</text>
+
+  <!-- Footer -->
+  <text x="200" y="235" font-family="system-ui, sans-serif" font-size="11" fill="#B0B8C4" text-anchor="middle">Atualizaremos você quando houver mudanças</text>
+
+  <defs>
+    <linearGradient id="statusGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0F3460"/>
+      <stop offset="100%" style="stop-color:#1A1A2E"/>
+    </linearGradient>
+  </defs>
+</svg>

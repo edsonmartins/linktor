@@ -33,3 +33,6 @@ export * from './flow';
 
 // Webhook types
 export * from './webhook';
+
+// VRE types
+export * from './vre';

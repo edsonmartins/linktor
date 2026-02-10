@@ -12,6 +12,7 @@ use Linktor\Resources\BotsResource;
 use Linktor\Resources\AIResource;
 use Linktor\Resources\KnowledgeBasesResource;
 use Linktor\Resources\FlowsResource;
+use Linktor\Resources\VREResource;
 use Linktor\Utils\HttpClient;
 use Linktor\Utils\WebhookVerifier;
 use Linktor\Types\WebhookEvent;
@@ -28,6 +29,7 @@ class LinktorClient
     public AIResource $ai;
     public KnowledgeBasesResource $knowledgeBases;
     public FlowsResource $flows;
+    public VREResource $vre;
 
     public function __construct(array $options = [])
     {
@@ -54,6 +56,7 @@ class LinktorClient
         $this->ai = new AIResource($this);
         $this->knowledgeBases = new KnowledgeBasesResource($this);
         $this->flows = new FlowsResource($this);
+        $this->vre = new VREResource($this);
     }
 
     public function setAccessToken(?string $token): void

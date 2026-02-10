@@ -6,6 +6,7 @@ import {
   GitBranch,
   Zap,
   CircleStop,
+  ImageIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -44,6 +45,12 @@ const nodeTypes: { type: FlowNodeType; icon: React.ReactNode; label: string; des
     icon: <Zap className="h-5 w-5" />,
     label: 'Action',
     description: 'Execute actions like tagging or escalation',
+  },
+  {
+    type: 'vre',
+    icon: <ImageIcon className="h-5 w-5" />,
+    label: 'VRE Visual',
+    description: 'Send a visual response image (menu, product card, etc.)',
   },
   {
     type: 'end',

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:800px;font-family:{{ .Brand.FontFamily }};background:{{ .Brand.Background }}}
+.card{background:#fff;border-radius:14px;overflow:hidden}
+.top{background:linear-gradient(135deg,#0d9f6e,{{ .Brand.AccentColor }});padding:20px;text-align:center;color:#fff}
+.check{width:44px;height:44px;background:rgba(255,255,255,.2);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:8px}
+.title{font-size:17px;font-weight:700}
+.subtitle{font-size:12px;opacity:.8;margin-top:4px}
+.body{padding:16px}
+.items{border:1px solid #eef0f3;border-radius:10px;overflow:hidden;margin-bottom:12px}
+.item{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;font-size:13px;border-bottom:1px solid #f4f5f7}
+.item:last-child{border-bottom:none}
+.item-name{color:{{ .Brand.TextColor }};font-weight:500}
+.item-name small{color:{{ .Brand.MutedColor }};font-weight:400}
+.item-price{font-weight:600;color:{{ .Brand.TextColor }}}
+.total{display:flex;justify-content:space-between;padding:12px 14px;background:{{ .Brand.PrimaryColor }};border-radius:10px;color:#fff;font-weight:700}
+.total-value{font-size:18px}
+.foot{padding:12px 16px 14px;text-align:center;font-size:11px;color:#b0b8c4}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="top">
+    <div class="check">✓</div>
+    <div class="title">{{ if .Data.titulo }}{{ .Data.titulo }}{{ else }}Confirmar Pedido?{{ end }}</div>
+    {{ if .Data.previsao_entrega }}
+    <div class="subtitle">Entrega prevista: {{ .Data.previsao_entrega }}</div>
+    {{ end }}
+  </div>
+  <div class="body">
+    <div class="items">
+      {{ range .Data.itens }}
+      <div class="item">
+        <div class="item-name">{{ if .emoji }}{{ .emoji }} {{ end }}{{ .nome }}{{ if .quantidade }} <small>· {{ .quantidade }}</small>{{ end }}</div>
+        <div class="item-price">{{ formatCurrency .preco }}</div>
+      </div>
+      {{ end }}
+    </div>
+    <div class="total">
+      <span>Total</span>
+      <span class="total-value">{{ formatCurrency .Data.valor_total }}</span>
+    </div>
+  </div>
+  <div class="foot">Responda SIM para confirmar ou EDITAR para alterar</div>
+</div>
+</body>
+</html>

@@ -12,3 +12,4 @@ from linktor.types.ai import *
 from linktor.types.knowledge import *
 from linktor.types.flow import *
 from linktor.types.webhook import *
+from linktor.types.vre import *

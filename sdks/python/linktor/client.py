@@ -20,6 +20,13 @@ from linktor.types import (
     User,
     LoginResponse,
     RefreshTokenResponse,
+    VRERenderResponse,
+    VRERenderAndSendResponse,
+    VREListTemplatesResponse,
+    VREPreviewResponse,
+    VRETemplateType,
+    VREChannelType,
+    VREOutputFormat,
 )
 
 
@@ -411,6 +418,335 @@ class AnalyticsResource:
         return self._http.get("/analytics/realtime")
 
 
+class VREResource:
+    """VRE (Visual Response Engine) resource"""
+
+    def __init__(self, http: HttpClient):
+        self._http = http
+
+    def render(
+        self,
+        tenant_id: str,
+        template_id: str,
+        data: dict[str, Any],
+        channel: Optional[str] = None,
+        format: Optional[str] = None,
+        width: Optional[int] = None,
+        quality: Optional[int] = None,
+        scale: Optional[float] = None,
+    ) -> VRERenderResponse:
+        """
+        Render a VRE template to an image.
+
+        Args:
+            tenant_id: Tenant ID
+            template_id: Template to render (menu_opcoes, card_produto, etc.)
+            data: Template data
+            channel: Target channel for optimization (whatsapp, telegram, web, email)
+            format: Output format (png, webp, jpeg)
+            width: Override default width
+            quality: Quality 0-100 (for webp/jpeg)
+            scale: Scale factor (1.0-2.0)
+
+        Returns:
+            VRERenderResponse with image_base64 and caption
+        """
+        payload = {
+            "tenant_id": tenant_id,
+            "template_id": template_id,
+            "data": data,
+        }
+        if channel:
+            payload["channel"] = channel
+        if format:
+            payload["format"] = format
+        if width:
+            payload["width"] = width
+        if quality:
+            payload["quality"] = quality
+        if scale:
+            payload["scale"] = scale
+
+        response = self._http.post("/vre/render", payload)
+        return VRERenderResponse(**response)
+
+    def render_and_send(
+        self,
+        conversation_id: str,
+        template_id: str,
+        data: dict[str, Any],
+        caption: Optional[str] = None,
+        follow_up_text: Optional[str] = None,
+    ) -> VRERenderAndSendResponse:
+        """
+        Render a template and send it directly to a conversation.
+
+        Args:
+            conversation_id: Conversation to send to
+            template_id: Template to render
+            data: Template data
+            caption: Optional custom caption
+            follow_up_text: Optional text to send after the image
+
+        Returns:
+            VRERenderAndSendResponse with message_id
+        """
+        payload = {
+            "conversation_id": conversation_id,
+            "template_id": template_id,
+            "data": data,
+        }
+        if caption:
+            payload["caption"] = caption
+        if follow_up_text:
+            payload["follow_up_text"] = follow_up_text
+
+        response = self._http.post("/vre/render-and-send", payload)
+        return VRERenderAndSendResponse(**response)
+
+    def list_templates(self, tenant_id: Optional[str] = None) -> VREListTemplatesResponse:
+        """
+        List available VRE templates.
+
+        Args:
+            tenant_id: Optional tenant ID to include custom templates
+
+        Returns:
+            VREListTemplatesResponse with templates list
+        """
+        params = {}
+        if tenant_id:
+            params["tenant_id"] = tenant_id
+        response = self._http.get("/vre/templates", params=params if params else None)
+        return VREListTemplatesResponse(**response)
+
+    def preview(
+        self, template_id: str, data: Optional[dict[str, Any]] = None
+    ) -> VREPreviewResponse:
+        """
+        Preview a VRE template with sample data.
+
+        Args:
+            template_id: Template to preview
+            data: Optional custom data (uses defaults if not provided)
+
+        Returns:
+            VREPreviewResponse with image_base64
+        """
+        payload = {}
+        if data:
+            payload["data"] = data
+        response = self._http.post(f"/vre/templates/{template_id}/preview", payload if payload else None)
+        return VREPreviewResponse(**response)
+
+    # Convenience methods
+
+    def render_menu(
+        self,
+        tenant_id: str,
+        titulo: str,
+        opcoes: list[dict[str, Any]],
+        subtitulo: Optional[str] = None,
+        channel: str = "whatsapp",
+    ) -> VRERenderResponse:
+        """
+        Render a menu with numbered options.
+
+        Args:
+            tenant_id: Tenant ID
+            titulo: Menu title
+            opcoes: List of options with label, icone, descricao
+            subtitulo: Optional subtitle
+            channel: Target channel
+
+        Returns:
+            VRERenderResponse
+        """
+        data = {"titulo": titulo, "opcoes": opcoes}
+        if subtitulo:
+            data["subtitulo"] = subtitulo
+        return self.render(tenant_id, "menu_opcoes", data, channel=channel)
+
+    def render_product_card(
+        self,
+        tenant_id: str,
+        nome: str,
+        preco: float,
+        unidade: str,
+        sku: Optional[str] = None,
+        estoque: Optional[int] = None,
+        imagem_url: Optional[str] = None,
+        destaque: Optional[str] = None,
+        channel: str = "whatsapp",
+    ) -> VRERenderResponse:
+        """
+        Render a product card.
+
+        Args:
+            tenant_id: Tenant ID
+            nome: Product name
+            preco: Product price
+            unidade: Unit (kg, un, cx, etc.)
+            sku: Product SKU
+            estoque: Stock quantity
+            imagem_url: Product image URL
+            destaque: Highlight badge
+            channel: Target channel
+
+        Returns:
+            VRERenderResponse
+        """
+        data: dict[str, Any] = {"nome": nome, "preco": preco, "unidade": unidade}
+        if sku:
+            data["sku"] = sku
+        if estoque is not None:
+            data["estoque"] = estoque
+        if imagem_url:
+            data["imagem_url"] = imagem_url
+        if destaque:
+            data["destaque"] = destaque
+        return self.render(tenant_id, "card_produto", data, channel=channel)
+
+    def render_order_status(
+        self,
+        tenant_id: str,
+        numero_pedido: str,
+        status_atual: str,
+        itens_resumo: Optional[str] = None,
+        valor_total: Optional[float] = None,
+        previsao_entrega: Optional[str] = None,
+        motorista: Optional[str] = None,
+        channel: str = "whatsapp",
+    ) -> VRERenderResponse:
+        """
+        Render an order status timeline.
+
+        Args:
+            tenant_id: Tenant ID
+            numero_pedido: Order number
+            status_atual: Current status (recebido, separacao, faturado, transporte, entregue)
+            itens_resumo: Items summary
+            valor_total: Total value
+            previsao_entrega: Delivery estimate
+            motorista: Driver name
+            channel: Target channel
+
+        Returns:
+            VRERenderResponse
+        """
+        data: dict[str, Any] = {
+            "numero_pedido": numero_pedido,
+            "status_atual": status_atual,
+        }
+        if itens_resumo:
+            data["itens_resumo"] = itens_resumo
+        if valor_total is not None:
+            data["valor_total"] = valor_total
+        if previsao_entrega:
+            data["previsao_entrega"] = previsao_entrega
+        if motorista:
+            data["motorista"] = motorista
+        return self.render(tenant_id, "status_pedido", data, channel=channel)
+
+    def render_product_list(
+        self,
+        tenant_id: str,
+        titulo: str,
+        produtos: list[dict[str, Any]],
+        mensagem: Optional[str] = None,
+        channel: str = "whatsapp",
+    ) -> VRERenderResponse:
+        """
+        Render a product list for comparison.
+
+        Args:
+            tenant_id: Tenant ID
+            titulo: List title
+            produtos: List of products with nome, preco, unidade, etc.
+            mensagem: Optional message
+            channel: Target channel
+
+        Returns:
+            VRERenderResponse
+        """
+        data: dict[str, Any] = {"titulo": titulo, "produtos": produtos}
+        if mensagem:
+            data["mensagem"] = mensagem
+        return self.render(tenant_id, "lista_produtos", data, channel=channel)
+
+    def render_confirmation(
+        self,
+        tenant_id: str,
+        valor_total: float,
+        itens: list[dict[str, Any]],
+        titulo: Optional[str] = None,
+        subtitulo: Optional[str] = None,
+        previsao_entrega: Optional[str] = None,
+        mensagem: Optional[str] = None,
+        channel: str = "whatsapp",
+    ) -> VRERenderResponse:
+        """
+        Render a confirmation summary.
+
+        Args:
+            tenant_id: Tenant ID
+            valor_total: Total value
+            itens: List of items with nome, quantidade, preco
+            titulo: Confirmation title
+            subtitulo: Subtitle
+            previsao_entrega: Delivery estimate
+            mensagem: Optional message
+            channel: Target channel
+
+        Returns:
+            VRERenderResponse
+        """
+        data: dict[str, Any] = {"valor_total": valor_total, "itens": itens}
+        if titulo:
+            data["titulo"] = titulo
+        if subtitulo:
+            data["subtitulo"] = subtitulo
+        if previsao_entrega:
+            data["previsao_entrega"] = previsao_entrega
+        if mensagem:
+            data["mensagem"] = mensagem
+        return self.render(tenant_id, "confirmacao", data, channel=channel)
+
+    def render_pix_payment(
+        self,
+        tenant_id: str,
+        valor: float,
+        pix_payload: str,
+        numero_pedido: Optional[str] = None,
+        expiracao: Optional[str] = None,
+        mensagem: Optional[str] = None,
+        channel: str = "whatsapp",
+    ) -> VRERenderResponse:
+        """
+        Render a PIX payment QR code.
+
+        Args:
+            tenant_id: Tenant ID
+            valor: Payment amount
+            pix_payload: PIX EMV/BRCode payload
+            numero_pedido: Order number
+            expiracao: Expiration time
+            mensagem: Optional message
+            channel: Target channel
+
+        Returns:
+            VRERenderResponse
+        """
+        data: dict[str, Any] = {"valor": valor, "pix_payload": pix_payload}
+        if numero_pedido:
+            data["numero_pedido"] = numero_pedido
+        if expiracao:
+            data["expiracao"] = expiracao
+        if mensagem:
+            data["mensagem"] = mensagem
+        return self.render(tenant_id, "cobranca_pix", data, channel=channel)
+
+
 class LinktorClient:
     """Linktor SDK Client (Synchronous)"""
 
@@ -445,6 +781,7 @@ class LinktorClient:
         self.knowledge_bases = KnowledgeBasesResource(self._http)
         self.flows = FlowsResource(self._http)
         self.analytics = AnalyticsResource(self._http)
+        self.vre = VREResource(self._http)
 
     def set_api_key(self, api_key: str) -> None:
         """Set API key"""

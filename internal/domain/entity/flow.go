@@ -22,6 +22,7 @@ const (
 	FlowNodeQuestion  FlowNodeType = "question"  // Ask a question with options
 	FlowNodeCondition FlowNodeType = "condition" // Conditional branch
 	FlowNodeAction    FlowNodeType = "action"    // Execute an action
+	FlowNodeVRE       FlowNodeType = "vre"       // Send a VRE visual response
 	FlowNodeEnd       FlowNodeType = "end"       // End the flow
 )
 
@@ -61,6 +62,14 @@ type FlowAction struct {
 	Config map[string]interface{} `json:"config"`
 }
 
+// VRENodeConfig represents configuration for a VRE node
+type VRENodeConfig struct {
+	TemplateID    string            `json:"template_id"`              // Template to render (menu_opcoes, card_produto, etc.)
+	DataMapping   map[string]string `json:"data_mapping,omitempty"`   // Maps flow variables to template data
+	Caption       string            `json:"caption,omitempty"`        // Optional custom caption
+	FollowUpText  string            `json:"follow_up_text,omitempty"` // Optional text to send after image
+}
+
 // FlowTransition represents a transition between nodes
 type FlowTransition struct {
 	ID        string              `json:"id"`
@@ -77,7 +86,8 @@ type FlowNode struct {
 	Content      string                 `json:"content,omitempty"`       // Message text or template
 	QuickReplies []QuickReply           `json:"quick_replies,omitempty"` // Buttons for questions
 	Transitions  []FlowTransition       `json:"transitions"`
-	Actions      []FlowAction           `json:"actions,omitempty"` // Actions to execute
+	Actions      []FlowAction           `json:"actions,omitempty"`    // Actions to execute
+	VREConfig    *VRENodeConfig         `json:"vre_config,omitempty"` // VRE configuration (for vre nodes)
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -201,6 +211,11 @@ type FlowExecutionResult struct {
 	Actions      []FlowAction `json:"actions,omitempty"`       // Actions to execute
 	FlowEnded    bool         `json:"flow_ended"`              // True if flow has ended
 	ShouldWait   bool         `json:"should_wait"`             // True if waiting for user input
+	// VRE-specific fields
+	VREImage      string `json:"vre_image,omitempty"`       // Base64-encoded VRE image
+	VRECaption    string `json:"vre_caption,omitempty"`     // Caption for the VRE image
+	VREFollowUp   string `json:"vre_follow_up,omitempty"`   // Follow-up text after VRE image
+	IsVREResponse bool   `json:"is_vre_response,omitempty"` // True if this is a VRE response
 }
 
 // CreateFlowInput represents input for creating a flow

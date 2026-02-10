@@ -16,23 +16,26 @@ type Message struct {
 
 // CompletionRequest represents a request for AI completion
 type CompletionRequest struct {
-	Messages     []Message `json:"messages"`
-	Model        string    `json:"model"`
-	MaxTokens    int       `json:"max_tokens"`
-	Temperature  float64   `json:"temperature"`
-	SystemPrompt string    `json:"system_prompt,omitempty"`
+	Messages     []Message      `json:"messages"`
+	Model        string         `json:"model"`
+	MaxTokens    int            `json:"max_tokens"`
+	Temperature  float64        `json:"temperature"`
+	SystemPrompt string         `json:"system_prompt,omitempty"`
+	Tools        []*entity.Tool `json:"tools,omitempty"`        // Available tools for the AI
+	ToolChoice   string         `json:"tool_choice,omitempty"`  // auto, none, required, or specific tool name
 }
 
 // CompletionResponse represents a response from AI completion
 type CompletionResponse struct {
-	Content      string  `json:"content"`
-	Model        string  `json:"model"`
-	TokensUsed   int     `json:"tokens_used"`
-	PromptTokens int     `json:"prompt_tokens"`
-	CompTokens   int     `json:"completion_tokens"`
-	FinishReason string  `json:"finish_reason"`
-	Confidence   float64 `json:"confidence,omitempty"`
-	LatencyMs    int64   `json:"latency_ms"`
+	Content      string              `json:"content"`
+	Model        string              `json:"model"`
+	TokensUsed   int                 `json:"tokens_used"`
+	PromptTokens int                 `json:"prompt_tokens"`
+	CompTokens   int                 `json:"completion_tokens"`
+	FinishReason string              `json:"finish_reason"` // stop, length, tool_calls, content_filter
+	Confidence   float64             `json:"confidence,omitempty"`
+	LatencyMs    int64               `json:"latency_ms"`
+	ToolCalls    []*entity.ToolCall  `json:"tool_calls,omitempty"` // Tool calls made by the AI
 }
 
 // EmbeddingRequest represents a request for embedding generation
@@ -206,8 +209,16 @@ type BotResponse struct {
 	TokensUsed     int                    `json:"tokens_used"`
 	LatencyMs      int64                  `json:"latency_ms"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
-	FlowID         string                 `json:"flow_id,omitempty"`     // Active flow if any
-	FlowEnded      bool                   `json:"flow_ended,omitempty"`  // True if flow just ended
+	FlowID         string                 `json:"flow_id,omitempty"`    // Active flow if any
+	FlowEnded      bool                   `json:"flow_ended,omitempty"` // True if flow just ended
+
+	// VRE Visual Response fields
+	IsVisual     bool   `json:"is_visual,omitempty"`      // True if response is a visual (image)
+	ImageBase64  string `json:"image_base64,omitempty"`   // Base64 encoded image
+	ImageURL     string `json:"image_url,omitempty"`      // URL to the image (if uploaded)
+	Caption      string `json:"caption,omitempty"`        // Caption for the image
+	FollowUpText string `json:"follow_up_text,omitempty"` // Text to send after the image
+	TemplateID   string `json:"template_id,omitempty"`    // VRE template used
 }
 
 // BotAction represents an action the bot wants to perform

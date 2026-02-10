@@ -293,9 +293,19 @@ export interface UpdateKnowledgeItemInput {
 
 // Flow (Conversational Decision Trees)
 export type FlowTriggerType = 'intent' | 'keyword' | 'manual' | 'welcome'
-export type FlowNodeType = 'message' | 'question' | 'condition' | 'action' | 'end'
+export type FlowNodeType = 'message' | 'question' | 'condition' | 'action' | 'end' | 'vre'
 export type TransitionCondition = 'default' | 'reply_equals' | 'contains' | 'regex'
 export type FlowActionType = 'tag' | 'assign' | 'escalate' | 'set_entity' | 'http_call'
+
+// VRE (Visual Response Engine) Template Types
+export type VRETemplateId = 'menu_opcoes' | 'card_produto' | 'status_pedido' | 'lista_produtos' | 'confirmacao' | 'cobranca_pix'
+
+export interface VRENodeConfig {
+  template_id: VRETemplateId
+  data_mapping: Record<string, string>  // Maps flow variables to template data
+  caption?: string
+  follow_up_text?: string
+}
 
 export interface Flow {
   id: string
@@ -320,6 +330,7 @@ export interface FlowNode {
   quick_replies?: QuickReply[]
   transitions: FlowTransition[]
   actions?: FlowAction[]
+  vre_config?: VRENodeConfig  // VRE node configuration
   metadata?: Record<string, unknown>
   // UI positioning for visual editor
   position?: { x: number; y: number }

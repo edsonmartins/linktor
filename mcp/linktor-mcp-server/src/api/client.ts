@@ -443,6 +443,81 @@ export class LinktorClient {
   };
 
   // ============================================
+  // VRE (Visual Response Engine)
+  // ============================================
+
+  readonly vre = {
+    render: async (input: {
+      tenant_id: string;
+      template_id: string;
+      data: Record<string, unknown>;
+      channel?: string;
+      format?: string;
+    }): Promise<{
+      image_base64: string;
+      caption: string;
+      width: number;
+      height: number;
+      format: string;
+      render_time_ms: number;
+    }> => {
+      return this.request({
+        method: 'POST',
+        path: '/vre/render',
+        body: input,
+      });
+    },
+
+    renderAndSend: async (input: {
+      conversation_id: string;
+      template_id: string;
+      data: Record<string, unknown>;
+      caption?: string;
+      follow_up_text?: string;
+    }): Promise<{
+      message_id: string;
+      image_url: string;
+      caption: string;
+    }> => {
+      return this.request({
+        method: 'POST',
+        path: '/vre/render-and-send',
+        body: input,
+      });
+    },
+
+    listTemplates: async (tenantId?: string): Promise<{
+      templates: Array<{
+        id: string;
+        name: string;
+        description: string;
+        schema: Record<string, unknown>;
+      }>;
+    }> => {
+      return this.request({
+        method: 'GET',
+        path: '/vre/templates',
+        params: tenantId ? { tenant_id: tenantId } : undefined,
+      });
+    },
+
+    preview: async (input: {
+      template_id: string;
+      data?: Record<string, unknown>;
+    }): Promise<{
+      image_base64: string;
+      width: number;
+      height: number;
+    }> => {
+      return this.request({
+        method: 'POST',
+        path: `/vre/templates/${input.template_id}/preview`,
+        body: input.data ? { data: input.data } : undefined,
+      });
+    },
+  };
+
+  // ============================================
   // Users (for reference/lookup)
   // ============================================
 

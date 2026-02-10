@@ -99,7 +99,7 @@ export default function FlowEditorPage() {
     const newNode: FlowNode = {
       id: `node-${Date.now()}`,
       type,
-      content: type === 'end' ? '' : 'New node content...',
+      content: type === 'end' ? '' : type === 'vre' ? 'Visual response' : 'New node content...',
       transitions: [],
       position: { x: 250, y: (nodes.length + 1) * 150 },
     }
@@ -113,6 +113,13 @@ export default function FlowEditorPage() {
 
     if (type === 'action') {
       newNode.actions = [{ type: 'tag', config: { tag: 'new-tag' } }]
+    }
+
+    if (type === 'vre') {
+      newNode.vre_config = {
+        template_id: 'menu_opcoes',
+        data_mapping: {},
+      }
     }
 
     setNodes([...nodes, newNode])

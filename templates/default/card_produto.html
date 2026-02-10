@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:800px;font-family:{{ .Brand.FontFamily }};background:{{ .Brand.Background }}}
+.card{background:#fff;border-radius:14px;overflow:hidden}
+.img{height:160px;background:linear-gradient(135deg,#f0f4f8,#e8ecf1);display:flex;align-items:center;justify-content:center;font-size:72px;position:relative}
+{{ if .Data.imagem_url }}
+.img{background:url('{{ .Data.imagem_url }}') center/cover}
+.img .emoji{display:none}
+{{ end }}
+.badge{position:absolute;top:10px;right:10px;background:{{ .Brand.SecondaryColor }};color:#fff;font-size:10px;font-weight:700;padding:4px 10px;border-radius:6px;text-transform:uppercase;letter-spacing:.5px}
+.body{padding:16px}
+.name{font-size:16px;font-weight:700;color:{{ .Brand.TextColor }};margin-bottom:4px}
+.sku{font-size:11px;color:{{ .Brand.MutedColor }};font-family:monospace}
+.row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid #f0f2f5}
+.price{font-size:24px;font-weight:700;color:{{ .Brand.PrimaryColor }}}
+.price small{font-size:13px;font-weight:400;color:{{ .Brand.MutedColor }}}
+.stock{font-size:12px;padding:4px 10px;border-radius:6px;font-weight:600}
+.stock-ok{background:#e6f9f1;color:#0d9f6e}
+.stock-low{background:#fff3e0;color:#e67e22}
+.stock-out{background:#ffebee;color:#e74c3c}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="img">
+    <span class="emoji">📦</span>
+    {{ if .Data.destaque }}
+    <div class="badge">{{ if eq .Data.destaque "promocao" }}🔥 Promoção{{ else if eq .Data.destaque "novo" }}✨ Novo{{ else if eq .Data.destaque "mais vendido" }}⭐ Mais vendido{{ else }}{{ .Data.destaque }}{{ end }}</div>
+    {{ end }}
+  </div>
+  <div class="body">
+    <div class="name">{{ .Data.nome }}</div>
+    {{ if .Data.sku }}
+    <div class="sku">SKU: {{ .Data.sku }}</div>
+    {{ end }}
+    <div class="row">
+      <div class="price">R$ {{ formatCurrency .Data.preco }} <small>{{ formatUnit .Data.unidade }}</small></div>
+      {{ if gt .Data.estoque 0 }}
+      <div class="stock stock-ok">✓ Em estoque</div>
+      {{ else if eq .Data.estoque 0 }}
+      <div class="stock stock-out">✗ Indisponível</div>
+      {{ end }}
+    </div>
+  </div>
+</div>
+</body>
+</html>
