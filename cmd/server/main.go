@@ -431,6 +431,10 @@ func main() {
 	// Create flow handler
 	flowHandler := handlers.NewFlowHandler(flowService)
 
+	// Create channel service and handler
+	channelService := service.NewChannelService(channelRepo)
+	channelHandler := handlers.NewChannelHandler(channelService, producer)
+
 	// Create analytics handler
 	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
 
@@ -634,8 +638,13 @@ func main() {
 			// Channels
 			channels := protected.Group("/channels")
 			{
-				channels.GET("", createListChannelsHandler(channelRepo))
-				channels.GET("/:id", createGetChannelHandler(channelRepo))
+				channels.GET("", channelHandler.List)
+				channels.POST("", channelHandler.Create)
+				channels.GET("/:id", channelHandler.Get)
+				channels.PUT("/:id", channelHandler.Update)
+				channels.DELETE("/:id", channelHandler.Delete)
+				channels.POST("/:id/connect", channelHandler.Connect)
+				channels.POST("/:id/disconnect", channelHandler.Disconnect)
 			}
 
 			// OAuth routes for Facebook/Instagram

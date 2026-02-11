@@ -72,8 +72,17 @@ func (db *PostgresDB) RunMigrations(ctx context.Context) error {
 		createConversationsTable,
 		createMessagesTable,
 		createMessageAttachmentsTable,
+		createBotsTable,
+		createBotChannelsTable,
+		createFlowsTable,
+		createConversationContextsTable,
+		createKnowledgeBasesTable,
+		createKnowledgeItemsTable,
+		createAIResponsesTable,
 		createIndexes,
-		addLimitsColumn, // Add limits column if missing
+		createNewIndexes,
+		addLimitsColumn,
+		addBotsChannelsColumn,
 	}
 
 	for _, migration := range migrations {
@@ -90,6 +99,15 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tenants' AND column_name='limits') THEN
         ALTER TABLE tenants ADD COLUMN limits JSONB DEFAULT '{}';
+    END IF;
+END $$;
+`
+
+const addBotsChannelsColumn = `
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bots' AND column_name='channels') THEN
+        ALTER TABLE bots ADD COLUMN channels UUID[] DEFAULT '{}';
     END IF;
 END $$;
 `
@@ -219,6 +237,107 @@ CREATE TABLE IF NOT EXISTS message_attachments (
 );
 `
 
+const createBotsTable = `
+CREATE TABLE IF NOT EXISTS bots (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(50) NOT NULL DEFAULT 'customer_service',
+    provider VARCHAR(50) NOT NULL DEFAULT 'openai',
+    model VARCHAR(100) NOT NULL DEFAULT 'gpt-4',
+    status VARCHAR(50) NOT NULL DEFAULT 'inactive',
+    config JSONB DEFAULT '{}',
+    channels UUID[] DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+`
+
+const createBotChannelsTable = `
+CREATE TABLE IF NOT EXISTS bot_channels (
+    bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    PRIMARY KEY (bot_id, channel_id)
+);
+`
+
+const createFlowsTable = `
+CREATE TABLE IF NOT EXISTS flows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    trigger VARCHAR(50) NOT NULL DEFAULT 'keyword',
+    trigger_value VARCHAR(255),
+    start_node_id VARCHAR(100),
+    nodes JSONB DEFAULT '[]',
+    is_active BOOLEAN DEFAULT false,
+    priority INT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+`
+
+const createConversationContextsTable = `
+CREATE TABLE IF NOT EXISTS conversation_contexts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    context_data JSONB DEFAULT '{}',
+    flow_state JSONB DEFAULT '{}',
+    intent VARCHAR(100),
+    sentiment VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(conversation_id)
+);
+`
+
+const createKnowledgeBasesTable = `
+CREATE TABLE IF NOT EXISTS knowledge_bases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    type VARCHAR(50) NOT NULL DEFAULT 'document',
+    config JSONB DEFAULT '{}',
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    item_count INT DEFAULT 0,
+    last_sync_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+`
+
+const createKnowledgeItemsTable = `
+CREATE TABLE IF NOT EXISTS knowledge_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    knowledge_base_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+    title VARCHAR(500) NOT NULL,
+    content TEXT NOT NULL,
+    content_type VARCHAR(50) DEFAULT 'text',
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+`
+
+const createAIResponsesTable = `
+CREATE TABLE IF NOT EXISTS ai_responses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    bot_id UUID REFERENCES bots(id) ON DELETE SET NULL,
+    prompt TEXT,
+    response TEXT,
+    model VARCHAR(100),
+    tokens_used INT,
+    latency_ms INT,
+    confidence FLOAT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+`
+
 const createIndexes = `
 -- Tenant indexes
 CREATE INDEX IF NOT EXISTS idx_tenants_slug ON tenants(slug);
@@ -261,4 +380,37 @@ CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at DESC);
 
 -- Attachment indexes
 CREATE INDEX IF NOT EXISTS idx_message_attachments_message_id ON message_attachments(message_id);
+`
+
+const createNewIndexes = `
+-- Bot indexes
+CREATE INDEX IF NOT EXISTS idx_bots_tenant_id ON bots(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_bots_status ON bots(status);
+CREATE INDEX IF NOT EXISTS idx_bots_provider ON bots(provider);
+
+-- Bot channels indexes
+CREATE INDEX IF NOT EXISTS idx_bot_channels_bot_id ON bot_channels(bot_id);
+CREATE INDEX IF NOT EXISTS idx_bot_channels_channel_id ON bot_channels(channel_id);
+
+-- Flow indexes
+CREATE INDEX IF NOT EXISTS idx_flows_tenant_id ON flows(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_flows_is_active ON flows(is_active);
+CREATE INDEX IF NOT EXISTS idx_flows_trigger ON flows(trigger);
+CREATE INDEX IF NOT EXISTS idx_flows_bot_id ON flows(bot_id);
+
+-- Conversation context indexes
+CREATE INDEX IF NOT EXISTS idx_conversation_contexts_conversation_id ON conversation_contexts(conversation_id);
+
+-- Knowledge base indexes
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_tenant_id ON knowledge_bases(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_status ON knowledge_bases(status);
+
+-- Knowledge item indexes
+CREATE INDEX IF NOT EXISTS idx_knowledge_items_knowledge_base_id ON knowledge_items(knowledge_base_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_items_content_type ON knowledge_items(content_type);
+
+-- AI response indexes
+CREATE INDEX IF NOT EXISTS idx_ai_responses_conversation_id ON ai_responses(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_ai_responses_bot_id ON ai_responses(bot_id);
+CREATE INDEX IF NOT EXISTS idx_ai_responses_created_at ON ai_responses(created_at DESC);
 `

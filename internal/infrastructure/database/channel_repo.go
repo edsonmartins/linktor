@@ -83,6 +83,11 @@ func (r *ChannelRepository) FindByID(ctx context.Context, id string) (*entity.Ch
 
 // FindByTenant finds channels for a tenant with pagination
 func (r *ChannelRepository) FindByTenant(ctx context.Context, tenantID string, params *repository.ListParams) ([]*entity.Channel, int64, error) {
+	// Use default params if nil
+	if params == nil {
+		params = repository.NewListParams()
+	}
+
 	// Count total
 	countQuery := `SELECT COUNT(*) FROM channels WHERE tenant_id = $1`
 	var total int64

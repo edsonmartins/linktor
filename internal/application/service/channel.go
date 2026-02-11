@@ -2,9 +2,23 @@ package service
 
 import (
 	"context"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/pkg/errors"
 )
+
+// DefaultListParams returns default pagination parameters
+func DefaultListParams() *repository.ListParams {
+	return &repository.ListParams{
+		Page:     1,
+		PageSize: 100,
+		SortBy:   "created_at",
+		SortDir:  "desc",
+	}
+}
 
 // CreateChannelInput represents input for creating a channel
 type CreateChannelInput struct {
@@ -32,52 +46,123 @@ type ConnectResult struct {
 
 // ChannelService handles channel operations
 type ChannelService struct {
-	// TODO: Add repositories and adapters
+	repo repository.ChannelRepository
 }
 
 // NewChannelService creates a new channel service
-func NewChannelService() *ChannelService {
-	return &ChannelService{}
+func NewChannelService(repo repository.ChannelRepository) *ChannelService {
+	return &ChannelService{
+		repo: repo,
+	}
 }
 
 // List returns all channels for a tenant
 func (s *ChannelService) List(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
-	// TODO: Implement
-	return []*entity.Channel{}, nil
+	if s.repo == nil {
+		return nil, errors.New(errors.ErrCodeInternal, "channel repository not initialized")
+	}
+	// Use default pagination params
+	params := repository.NewListParams()
+	params.Page = 1
+	params.PageSize = 100
+	params.SortBy = "created_at"
+	params.SortDir = "desc"
+
+	channels, _, err := s.repo.FindByTenant(ctx, tenantID, params)
+	return channels, err
 }
 
 // Create creates a new channel
 func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) (*entity.Channel, error) {
-	// TODO: Implement
-	return &entity.Channel{}, nil
+	now := time.Now()
+	channel := &entity.Channel{
+		ID:          uuid.New().String(),
+		TenantID:    input.TenantID,
+		Type:        entity.ChannelType(input.Type),
+		Name:        input.Name,
+		Identifier:  input.Identifier,
+		Status:      entity.ChannelStatusDisconnected,
+		Config:      input.Config,
+		Credentials: input.Credentials,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	if err := s.repo.Create(ctx, channel); err != nil {
+		return nil, err
+	}
+
+	return channel, nil
 }
 
 // GetByID returns a channel by ID
 func (s *ChannelService) GetByID(ctx context.Context, id string) (*entity.Channel, error) {
-	// TODO: Implement
-	return &entity.Channel{}, nil
+	return s.repo.FindByID(ctx, id)
 }
 
 // Update updates a channel
 func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateChannelInput) (*entity.Channel, error) {
-	// TODO: Implement
-	return &entity.Channel{}, nil
+	channel, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.Name != nil {
+		channel.Name = *input.Name
+	}
+	if input.Identifier != nil {
+		channel.Identifier = *input.Identifier
+	}
+	if input.Config != nil {
+		channel.Config = input.Config
+	}
+	if input.Credentials != nil {
+		channel.Credentials = input.Credentials
+	}
+	channel.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(ctx, channel); err != nil {
+		return nil, err
+	}
+
+	return channel, nil
 }
 
 // Delete deletes a channel
 func (s *ChannelService) Delete(ctx context.Context, id string) error {
-	// TODO: Implement
-	return nil
+	return s.repo.Delete(ctx, id)
 }
 
 // Connect connects a channel
 func (s *ChannelService) Connect(ctx context.Context, id string) (*ConnectResult, error) {
-	// TODO: Implement
-	return &ConnectResult{}, nil
+	channel, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	channel.Status = entity.ChannelStatusActive
+	channel.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(ctx, channel); err != nil {
+		return nil, err
+	}
+
+	// For WhatsApp, we need to return a QR code
+	// This would be handled by the adapter
+	return &ConnectResult{
+		Channel: channel,
+	}, nil
 }
 
 // Disconnect disconnects a channel
 func (s *ChannelService) Disconnect(ctx context.Context, id string) error {
-	// TODO: Implement
-	return nil
+	channel, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	channel.Status = entity.ChannelStatusDisconnected
+	channel.UpdatedAt = time.Now()
+
+	return s.repo.Update(ctx, channel)
 }
