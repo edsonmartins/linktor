@@ -168,14 +168,21 @@ export function WhatsAppUnofficialConfig({
     setPairCode(null)
 
     try {
-      const response = await api.post<{ qr_code: string; expires_in: number }>(
-        `/channels/${channelId}/whatsapp/login`
+      const response = await api.post<{ channel: Channel; qr_code?: string; expires_in?: number }>(
+        `/channels/${channelId}/connect`
       )
 
       if (response.qr_code) {
         setConnectionStatus('qr_pending')
         setQrCode(response.qr_code)
         setQrExpiry(response.expires_in || 60)
+      } else {
+        // Channel connected without QR (already authenticated or different auth method)
+        setConnectionStatus('connected')
+        toast({
+          title: t('channelConnected'),
+          description: t('channelConnectedDesc'),
+        })
       }
     } catch (error) {
       setConnectionStatus('disconnected')
@@ -203,14 +210,26 @@ export function WhatsAppUnofficialConfig({
     setQrCode(null)
 
     try {
-      const response = await api.post<{ code: string; expires_in: number }>(
-        `/channels/${channel?.id}/whatsapp/pair`,
+      // TODO: Backend needs to implement pair code support
+      // For now, use connect endpoint with phone_number
+      const response = await api.post<{ channel: Channel; code?: string; expires_in?: number }>(
+        `/channels/${channel?.id}/connect`,
         { phone_number: phoneNumber }
       )
 
-      setPairCode(response.code)
-      setQrExpiry(response.expires_in || 300)
-      setConnectionStatus('qr_pending')
+      if (response.code) {
+        setPairCode(response.code)
+        setQrExpiry(response.expires_in || 300)
+        setConnectionStatus('qr_pending')
+      } else {
+        // Pair code not supported yet
+        toast({
+          title: t('notAvailable'),
+          description: t('pairCodeNotAvailable'),
+          variant: 'warning',
+        })
+        setConnectionStatus('disconnected')
+      }
     } catch (error) {
       setConnectionStatus('disconnected')
       toast({
