@@ -593,7 +593,7 @@ export default function UsersPage() {
   const [userToDelete, setUserToDelete] = useState<User | undefined>()
 
   // Fetch users
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.users.list({ search, role: roleFilter }),
     queryFn: () =>
       api.get<PaginatedResponse<User>>('/users', {
@@ -698,10 +698,20 @@ export default function UsersPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <UserPlus className="h-4 w-4 mr-2" />
-            {t('addMember')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            </Button>
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              {t('addMember')}
+            </Button>
+          </div>
         </div>
 
         {/* Users Grid */}

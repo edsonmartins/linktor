@@ -15,6 +15,7 @@ import {
   Trash2,
   Power,
   PowerOff,
+  RefreshCw,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -316,7 +317,7 @@ function ChannelConfigSheet({
           />
         )
       case 'voice':
-        return <VoiceConfig channel={channel} onClose={handleCancel} />
+        return <VoiceConfig channel={channel} onSuccess={handleSuccess} onCancel={handleCancel} />
       default:
         return <p>{t('configNotAvailable')}</p>
     }
@@ -362,7 +363,7 @@ export default function ChannelsPage() {
   const [channelToDelete, setChannelToDelete] = useState<Channel | null>(null)
 
   // Fetch channels
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.channels.list(),
     queryFn: () => api.get<PaginatedResponse<Channel>>('/channels'),
   })
@@ -443,6 +444,15 @@ export default function ChannelsPage() {
                 {t('manageChannels')}
               </p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn("h-4 w-4 mr-2", isFetching && "animate-spin")} />
+              {tCommon('refresh')}
+            </Button>
           </div>
 
           {isLoading ? (

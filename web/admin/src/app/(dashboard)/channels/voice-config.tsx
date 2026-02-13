@@ -42,13 +42,14 @@ import type { Channel, VoiceProvider } from '@/types'
 
 interface VoiceConfigProps {
   channel?: Channel
-  onClose: () => void
+  onSuccess?: () => void
+  onCancel?: () => void
 }
 
 /**
  * Voice Channel Configuration Component
  */
-export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
+export function VoiceConfig({ channel, onSuccess, onCancel }: VoiceConfigProps) {
   const t = useTranslations('channels.config')
   const tCommon = useTranslations('common')
   const queryClient = useQueryClient()
@@ -157,7 +158,7 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.channels.all })
-      onClose()
+      onSuccess?.()
     },
   })
 
@@ -537,7 +538,7 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
 
       {/* Form Actions */}
       <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
-        <Button type="button" variant="outline" onClick={onClose}>
+        <Button type="button" variant="outline" onClick={onCancel}>
           {tCommon('cancel')}
         </Button>
         <Button type="submit" disabled={saveMutation.isPending || !formData.name}>

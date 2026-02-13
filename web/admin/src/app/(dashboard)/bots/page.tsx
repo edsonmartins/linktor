@@ -15,6 +15,7 @@ import {
   Brain,
   MessageSquare,
   Search,
+  RefreshCw,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -393,7 +394,7 @@ export default function BotsPage() {
   const [botToDelete, setBotToDelete] = useState<Bot | null>(null)
 
   // Fetch bots
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.bots.list({ search }),
     queryFn: () => api.get<PaginatedResponse<Bot>>('/bots', search ? { search } : undefined),
   })
@@ -466,10 +467,20 @@ export default function BotsPage() {
               className="pl-9"
             />
           </div>
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            {t('createBot')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            </Button>
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              {t('createBot')}
+            </Button>
+          </div>
         </div>
 
         {/* Bots Grid */}

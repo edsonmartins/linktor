@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
-import { Search, Filter, MessageSquare, Plus } from 'lucide-react'
+import { Search, Filter, MessageSquare, Plus, RefreshCw } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -120,7 +120,7 @@ export default function ConversationsPage() {
   ]
 
   // Fetch conversations
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.conversations.list({
       search: searchQuery,
       status: statusFilter,
@@ -150,6 +150,14 @@ export default function ConversationsPage() {
               leftIcon={<Search className="h-4 w-4" />}
               className="flex-1"
             />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">

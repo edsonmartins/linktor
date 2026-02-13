@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
-import { Search, Plus, Filter, Users, Mail, Phone, MoreVertical } from 'lucide-react'
+import { Search, Plus, Filter, Users, Mail, Phone, MoreVertical, RefreshCw } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -118,7 +118,7 @@ export default function ContactsPage() {
   const [searchQuery, setSearchQuery] = useState('')
 
   // Fetch contacts
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.contacts.list({ search: searchQuery }),
     queryFn: () =>
       api.get<PaginatedResponse<Contact>>('/contacts', {
@@ -146,10 +146,20 @@ export default function ContactsPage() {
               <Filter className="h-4 w-4" />
             </Button>
           </div>
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            {t('addContact')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            </Button>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              {t('addContact')}
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}

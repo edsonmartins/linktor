@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, GitBranch, Play, Pause, Trash2, Edit, TestTube } from 'lucide-react'
+import { Plus, Search, GitBranch, Play, Pause, Trash2, Edit, TestTube, RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import type { Flow, FlowTriggerType, PaginatedResponse } from '@/types'
@@ -46,7 +47,7 @@ export default function FlowsPage() {
 
   const queryClient = useQueryClient()
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.flows.list({ search: searchQuery, trigger: triggerFilter, status: statusFilter }),
     queryFn: () =>
       api.get<PaginatedResponse<Flow>>('/flows', {
@@ -164,11 +165,21 @@ export default function FlowsPage() {
             </Select>
           </div>
 
-          {/* Add Button */}
-          <Button onClick={() => setIsCreateOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('newFlow')}
-          </Button>
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            </Button>
+            <Button onClick={() => setIsCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('newFlow')}
+            </Button>
+          </div>
         </div>
 
         {/* Content */}

@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import type { KnowledgeBase, KnowledgeBaseType, KnowledgeBaseStatus, PaginatedResponse } from '@/types'
@@ -45,7 +46,7 @@ export default function KnowledgeBasePage() {
 
   const queryClient = useQueryClient()
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.knowledgeBases.list({ search: searchQuery, type: typeFilter, status: statusFilter }),
     queryFn: () =>
       api.get<PaginatedResponse<KnowledgeBase>>('/knowledge-bases', {
@@ -146,11 +147,21 @@ export default function KnowledgeBasePage() {
             </Select>
           </div>
 
-          {/* Add Button */}
-          <Button onClick={() => setIsFormOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('newKnowledgeBase')}
-          </Button>
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            </Button>
+            <Button onClick={() => setIsFormOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('newKnowledgeBase')}
+            </Button>
+          </div>
         </div>
 
         {/* Content */}
