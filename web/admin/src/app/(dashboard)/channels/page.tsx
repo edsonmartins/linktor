@@ -84,25 +84,36 @@ const channelIcons: Record<ChannelType, { color: string; bgColor: string }> = {
  * Status Badge
  */
 function StatusBadge({ status, tCommon }: { status: Channel['status']; tCommon: (key: string) => string }) {
-  const config = {
+  const config: Record<string, { variant: 'success' | 'secondary' | 'error' | 'warning'; icon: React.ReactNode; labelKey: string }> = {
     active: {
-      variant: 'success' as const,
+      variant: 'success',
       icon: <Wifi className="h-3 w-3" />,
       labelKey: 'active',
     },
+    connected: {
+      variant: 'success',
+      icon: <Wifi className="h-3 w-3" />,
+      labelKey: 'connected',
+    },
     inactive: {
-      variant: 'secondary' as const,
+      variant: 'secondary',
       icon: <WifiOff className="h-3 w-3" />,
       labelKey: 'inactive',
     },
+    disconnected: {
+      variant: 'warning',
+      icon: <WifiOff className="h-3 w-3" />,
+      labelKey: 'disconnected',
+    },
     error: {
-      variant: 'error' as const,
+      variant: 'error',
       icon: <AlertTriangle className="h-3 w-3" />,
       labelKey: 'error',
     },
   }
 
-  const { variant, icon, labelKey } = config[status]
+  const statusConfig = config[status] || config.inactive
+  const { variant, icon, labelKey } = statusConfig
 
   return (
     <Badge variant={variant} className="gap-1">

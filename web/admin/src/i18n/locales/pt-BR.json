@@ -24,6 +24,8 @@
     "type": "Tipo",
     "active": "Ativo",
     "inactive": "Inativo",
+    "connected": "Conectado",
+    "disconnected": "Desconectado",
     "enabled": "Habilitado",
     "disabled": "Desabilitado",
     "all": "Todos",
