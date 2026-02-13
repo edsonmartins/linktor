@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import {
   AreaChart,
   Area,
@@ -18,6 +19,8 @@ interface ConversationsChartProps {
 }
 
 export function ConversationsChart({ data }: ConversationsChartProps) {
+  const t = useTranslations('analytics')
+
   const chartData = data.map((item) => ({
     ...item,
     date: format(parseISO(item.date), 'MMM d'),
@@ -25,11 +28,11 @@ export function ConversationsChart({ data }: ConversationsChartProps) {
 
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
-      <h3 className="mb-4 text-lg font-semibold">Conversations Over Time</h3>
+      <h3 className="mb-4 text-lg font-semibold">{t('conversationsOverTime')}</h3>
       <div className="h-[300px]">
         {data.length === 0 ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
-            No data available for selected period
+            {t('noDataAvailable')}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -71,7 +74,7 @@ export function ConversationsChart({ data }: ConversationsChartProps) {
               <Area
                 type="monotone"
                 dataKey="total_conversations"
-                name="Total"
+                name={t('total')}
                 stroke="#3b82f6"
                 fillOpacity={1}
                 fill="url(#colorTotal)"
@@ -79,7 +82,7 @@ export function ConversationsChart({ data }: ConversationsChartProps) {
               <Area
                 type="monotone"
                 dataKey="resolved_by_bot"
-                name="Resolved by Bot"
+                name={t('resolvedByBot')}
                 stroke="#10b981"
                 fillOpacity={1}
                 fill="url(#colorResolved)"
@@ -87,7 +90,7 @@ export function ConversationsChart({ data }: ConversationsChartProps) {
               <Area
                 type="monotone"
                 dataKey="escalated"
-                name="Escalated"
+                name={t('escalated')}
                 stroke="#f59e0b"
                 fillOpacity={1}
                 fill="url(#colorEscalated)"

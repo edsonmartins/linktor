@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslations } from 'next-intl'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
@@ -30,8 +31,8 @@ import { useToast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
 import type { Channel } from '@/types'
 
-const webchatConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
+const createSchema = (t: (key: string) => string) => z.object({
+  name: z.string().min(1, t('channelNameRequired')),
   // Appearance
   primary_color: z.string(),
   text_color: z.string(),
@@ -56,6 +57,8 @@ interface WebchatConfigProps {
 }
 
 export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigProps) {
+  const t = useTranslations('channels.config')
+  const tCommon = useTranslations('common')
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -69,7 +72,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
     setValue,
     formState: { errors },
   } = useForm<WebchatConfigForm>({
-    resolver: zodResolver(webchatConfigSchema),
+    resolver: zodResolver(createSchema(tCommon)),
     defaultValues: {
       name: channel?.name || '',
       primary_color: (channel?.config?.primary_color as string) || '#6366f1',
@@ -112,22 +115,22 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
       if (isEditing) {
         result = await api.put<Channel>(`/channels/${channel.id}`, payload)
         toast({
-          title: 'Channel updated',
-          description: 'WebChat configuration has been updated.',
+          title: t('channelUpdated'),
+          description: t('channelUpdatedDesc', { name: 'WebChat' }),
         })
       } else {
         result = await api.post<Channel>('/channels', payload)
         toast({
-          title: 'Channel created',
-          description: 'WebChat channel has been created successfully.',
+          title: t('channelCreated'),
+          description: t('channelCreatedDesc', { name: 'WebChat' }),
         })
       }
 
       onSuccess?.(result)
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to save channel configuration.'
+      const message = error instanceof Error ? error.message : t('failedToSave')
       toast({
-        title: 'Error',
+        title: t('error'),
         description: message,
         variant: 'error',
       })
@@ -157,10 +160,10 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
       <div className="flex-1 space-y-6">
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Channel Name</Label>
+            <Label htmlFor="name">{t('channelName')}</Label>
             <Input
               id="name"
-              placeholder="My Website Chat"
+              placeholder={t('myWebsiteChat')}
               {...register('name')}
             />
             {errors.name && (
@@ -171,9 +174,9 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
 
         <Tabs defaultValue="appearance" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          <TabsTrigger value="behavior">Behavior</TabsTrigger>
-          <TabsTrigger value="embed">Embed Code</TabsTrigger>
+          <TabsTrigger value="appearance">{t('appearance')}</TabsTrigger>
+          <TabsTrigger value="behavior">{t('behavior')}</TabsTrigger>
+          <TabsTrigger value="embed">{t('embedCode')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="appearance" className="space-y-4 pt-4">
@@ -181,14 +184,14 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Palette className="h-4 w-4" />
-                Widget Appearance
+                {t('widgetAppearance')}
               </CardTitle>
-              <CardDescription>Customize how the chat widget looks</CardDescription>
+              <CardDescription>{t('customizeWidget')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="primary_color">Primary Color</Label>
+                  <Label htmlFor="primary_color">{t('primaryColor')}</Label>
                   <div className="flex gap-2">
                     <Input
                       id="primary_color"
@@ -205,7 +208,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="text_color">Text Color</Label>
+                  <Label htmlFor="text_color">{t('textColor')}</Label>
                   <div className="flex gap-2">
                     <Input
                       id="text_color"
@@ -223,7 +226,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
               </div>
 
               <div className="space-y-2">
-                <Label>Widget Position</Label>
+                <Label>{t('widgetPosition')}</Label>
                 <Select
                   value={position}
                   onValueChange={(value: 'bottom-right' | 'bottom-left') => setValue('position', value)}
@@ -232,26 +235,26 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="bottom-right">Bottom Right</SelectItem>
-                    <SelectItem value="bottom-left">Bottom Left</SelectItem>
+                    <SelectItem value="bottom-right">{t('bottomRight')}</SelectItem>
+                    <SelectItem value="bottom-left">{t('bottomLeft')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="welcome_message">Welcome Message</Label>
+                <Label htmlFor="welcome_message">{t('welcomeMessage')}</Label>
                 <Textarea
                   id="welcome_message"
-                  placeholder="Hello! How can we help you today?"
+                  placeholder={t('welcomeMessagePlaceholder')}
                   {...register('welcome_message')}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="placeholder_text">Input Placeholder</Label>
+                <Label htmlFor="placeholder_text">{t('inputPlaceholder')}</Label>
                 <Input
                   id="placeholder_text"
-                  placeholder="Type a message..."
+                  placeholder={t('inputPlaceholderDefault')}
                   {...register('placeholder_text')}
                 />
               </div>
@@ -261,7 +264,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
           {/* Preview */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Preview</CardTitle>
+              <CardTitle className="text-base">{t('preview')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="relative h-64 bg-muted rounded-lg overflow-hidden">
@@ -283,15 +286,15 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
         <TabsContent value="behavior" className="space-y-4 pt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Widget Behavior</CardTitle>
-              <CardDescription>Configure how the widget behaves</CardDescription>
+              <CardTitle className="text-base">{t('widgetBehavior')}</CardTitle>
+              <CardDescription>{t('configureBehavior')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>Auto-open Widget</Label>
+                  <Label>{t('autoOpenWidget')}</Label>
                   <p className="text-sm text-muted-foreground">
-                    Automatically open the chat widget after a delay
+                    {t('autoOpenDesc')}
                   </p>
                 </div>
                 <Switch
@@ -302,7 +305,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
 
               {autoOpen && (
                 <div className="space-y-2 pl-4 border-l-2 border-primary/20">
-                  <Label htmlFor="auto_open_delay">Delay (seconds)</Label>
+                  <Label htmlFor="auto_open_delay">{t('delaySeconds')}</Label>
                   <Input
                     id="auto_open_delay"
                     type="number"
@@ -314,9 +317,9 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>Show Typing Indicator</Label>
+                  <Label>{t('showTypingIndicator')}</Label>
                   <p className="text-sm text-muted-foreground">
-                    Show when the agent or bot is typing
+                    {t('typingIndicatorDesc')}
                   </p>
                 </div>
                 <Switch
@@ -326,14 +329,14 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="allowed_domains">Allowed Domains</Label>
+                <Label htmlFor="allowed_domains">{t('allowedDomains')}</Label>
                 <Textarea
                   id="allowed_domains"
-                  placeholder="example.com&#10;app.example.com"
+                  placeholder={t('allowedDomainsPlaceholder')}
                   {...register('allowed_domains')}
                 />
                 <p className="text-xs text-muted-foreground">
-                  One domain per line. Leave empty to allow all domains.
+                  {t('allowedDomainsDesc')}
                 </p>
               </div>
             </CardContent>
@@ -345,10 +348,10 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Code className="h-4 w-4" />
-                Embed Code
+                {t('embedCodeTitle')}
               </CardTitle>
               <CardDescription>
-                Add this code to your website to display the chat widget
+                {t('embedCodeDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -376,7 +379,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
               </div>
 
               <p className="text-sm text-muted-foreground">
-                Place this code just before the closing <code className="bg-muted px-1 rounded">&lt;/body&gt;</code> tag on your website.
+                {t('embedCodePlacement', { tag: '</body>' })}
               </p>
             </CardContent>
           </Card>
@@ -387,12 +390,12 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
       <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
+            {t('cancel')}
           </Button>
         )}
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isEditing ? 'Update Channel' : 'Create Channel'}
+          {isEditing ? t('updateChannel') : t('createChannel')}
         </Button>
       </div>
     </form>

@@ -9,13 +9,14 @@ import { useUIStore, useUnreadCount } from '@/stores/ui-store'
 
 interface HeaderProps {
   title?: string
+  children?: React.ReactNode
 }
 
 /**
  * Header Component
  * Top bar with search and notifications
  */
-export function Header({ title }: HeaderProps) {
+export function Header({ title, children }: HeaderProps) {
   const unreadCount = useUnreadCount()
   const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen)
 
@@ -26,6 +27,7 @@ export function Header({ title }: HeaderProps) {
         {title && (
           <h1 className="text-xl font-semibold text-foreground">{title}</h1>
         )}
+        {children}
       </div>
 
       {/* Actions */}

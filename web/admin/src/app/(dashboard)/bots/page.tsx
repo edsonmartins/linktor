@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import {
   Plus,
   Bot as BotIcon,
@@ -37,6 +38,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -44,41 +55,33 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
-import type { Bot, BotType, AIProvider, CreateBotInput } from '@/types'
+import type { Bot, BotType, AIProvider, CreateBotInput, PaginatedResponse } from '@/types'
 import { useRouter } from 'next/navigation'
 
 /**
- * Bot type configurations
+ * Bot type icons and colors
  */
-const botTypeConfigs: Record<BotType, { label: string; description: string; icon: React.ReactNode; color: string; bgColor: string }> = {
+const botTypeIcons: Record<BotType, { icon: React.ReactNode; color: string; bgColor: string }> = {
   customer_service: {
-    label: 'Customer Service',
-    description: 'Handle support inquiries and FAQs',
     icon: <MessageSquare className="h-5 w-5" />,
     color: 'text-blue-500',
     bgColor: 'bg-blue-500/10',
   },
   sales: {
-    label: 'Sales',
-    description: 'Qualify leads and assist with purchases',
     icon: <Zap className="h-5 w-5" />,
     color: 'text-green-500',
     bgColor: 'bg-green-500/10',
   },
   faq: {
-    label: 'FAQ',
-    description: 'Answer frequently asked questions',
     icon: <Brain className="h-5 w-5" />,
     color: 'text-purple-500',
     bgColor: 'bg-purple-500/10',
   },
   custom: {
-    label: 'Custom',
-    description: 'Fully customizable bot',
     icon: <BotIcon className="h-5 w-5" />,
     color: 'text-amber-500',
     bgColor: 'bg-amber-500/10',
@@ -106,18 +109,18 @@ const providerConfigs: Record<AIProvider, { label: string; models: string[] }> =
 /**
  * Status Badge
  */
-function StatusBadge({ isActive }: { isActive: boolean }) {
+function StatusBadge({ isActive, tCommon }: { isActive: boolean; tCommon: (key: string) => string }) {
   return (
     <Badge variant={isActive ? 'success' : 'secondary'} className="gap-1">
       {isActive ? (
         <>
           <Play className="h-3 w-3" />
-          Active
+          {tCommon('active')}
         </>
       ) : (
         <>
           <Pause className="h-3 w-3" />
-          Inactive
+          {tCommon('inactive')}
         </>
       )}
     </Badge>
@@ -132,14 +135,18 @@ function BotCard({
   onActivate,
   onDeactivate,
   onDelete,
+  t,
+  tCommon,
 }: {
   bot: Bot
   onActivate: () => void
   onDeactivate: () => void
   onDelete: () => void
+  t: (key: string) => string
+  tCommon: (key: string) => string
 }) {
   const router = useRouter()
-  const config = botTypeConfigs[bot.type] || botTypeConfigs.custom
+  const icons = botTypeIcons[bot.type] || botTypeIcons.custom
 
   return (
     <Card className="hover:border-primary/30 transition-colors">
@@ -149,11 +156,11 @@ function BotCard({
             <div
               className={cn(
                 'flex h-12 w-12 items-center justify-center rounded-lg',
-                config.bgColor,
-                config.color
+                icons.bgColor,
+                icons.color
               )}
             >
-              {config.icon}
+              {icons.icon}
             </div>
             <div>
               <CardTitle className="text-base">{bot.name}</CardTitle>
@@ -171,23 +178,23 @@ function BotCard({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => router.push(`/bots/${bot.id}`)}>
                 <Settings className="h-4 w-4 mr-2" />
-                Configure
+                {t('configure')}
               </DropdownMenuItem>
               {bot.is_active ? (
                 <DropdownMenuItem onClick={onDeactivate}>
                   <Pause className="h-4 w-4 mr-2" />
-                  Deactivate
+                  {t('deactivate')}
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem onClick={onActivate}>
                   <Play className="h-4 w-4 mr-2" />
-                  Activate
+                  {t('activate')}
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive" onClick={onDelete}>
                 <Trash2 className="h-4 w-4 mr-2" />
-                Delete
+                {tCommon('delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -195,10 +202,10 @@ function BotCard({
       </CardHeader>
       <CardContent className="pt-0">
         <div className="flex items-center justify-between">
-          <StatusBadge isActive={bot.is_active} />
+          <StatusBadge isActive={bot.is_active} tCommon={tCommon} />
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline" className="font-mono text-xs">
-              {bot.channel_ids?.length || 0} channels
+              {bot.channel_ids?.length || 0} {t('channels')}
             </Badge>
           </div>
         </div>
@@ -219,10 +226,14 @@ function CreateBotDialog({
   open,
   onOpenChange,
   onSuccess,
+  t,
+  tCommon,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
+  t: (key: string) => string
+  tCommon: (key: string) => string
 }) {
   const [formData, setFormData] = useState<CreateBotInput>({
     name: '',
@@ -260,18 +271,18 @@ function CreateBotDialog({
       <DialogContent className="sm:max-w-[500px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Create New Bot</DialogTitle>
+            <DialogTitle>{t('createNewBot')}</DialogTitle>
             <DialogDescription>
-              Configure a new AI bot for your conversations
+              {t('configureNewBot')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="name">Bot Name</Label>
+              <Label htmlFor="name">{t('botName')}</Label>
               <Input
                 id="name"
-                placeholder="e.g., Support Bot"
+                placeholder={t('botNamePlaceholder')}
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 required
@@ -279,7 +290,7 @@ function CreateBotDialog({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="type">Bot Type</Label>
+              <Label htmlFor="type">{t('botType')}</Label>
               <Select
                 value={formData.type}
                 onValueChange={(value: BotType) => setFormData({ ...formData, type: value })}
@@ -288,24 +299,27 @@ function CreateBotDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(botTypeConfigs).map(([key, config]) => (
-                    <SelectItem key={key} value={key}>
-                      <div className="flex items-center gap-2">
-                        <span className={config.color}>{config.icon}</span>
-                        <span>{config.label}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {(Object.keys(botTypeIcons) as BotType[]).map((key) => {
+                    const icons = botTypeIcons[key]
+                    return (
+                      <SelectItem key={key} value={key}>
+                        <div className="flex items-center gap-2">
+                          <span className={icons.color}>{icons.icon}</span>
+                          <span>{t(`types.${key}`)}</span>
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {botTypeConfigs[formData.type].description}
+                {t(`descriptions.${formData.type}`)}
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="provider">AI Provider</Label>
+                <Label htmlFor="provider">{t('aiProvider')}</Label>
                 <Select
                   value={formData.provider}
                   onValueChange={(value: AIProvider) => {
@@ -331,7 +345,7 @@ function CreateBotDialog({
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="model">Model</Label>
+                <Label htmlFor="model">{t('model')}</Label>
                 <Select
                   value={formData.model}
                   onValueChange={(value) => setFormData({ ...formData, model: value })}
@@ -353,10 +367,10 @@ function CreateBotDialog({
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {tCommon('cancel')}
             </Button>
             <Button type="submit" disabled={createMutation.isPending || !formData.name}>
-              {createMutation.isPending ? 'Creating...' : 'Create Bot'}
+              {createMutation.isPending ? t('creating') : t('createBot')}
             </Button>
           </DialogFooter>
         </form>
@@ -369,24 +383,32 @@ function CreateBotDialog({
  * Bots Page
  */
 export default function BotsPage() {
+  const t = useTranslations('bots')
+  const tCommon = useTranslations('common')
+  const { toast } = useToast()
   const router = useRouter()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [botToDelete, setBotToDelete] = useState<Bot | null>(null)
 
   // Fetch bots
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.bots.list({ search }),
-    queryFn: () => api.get<{ data: Bot[] }>('/bots', search ? { search } : undefined),
+    queryFn: () => api.get<PaginatedResponse<Bot>>('/bots', search ? { search } : undefined),
   })
 
-  const bots = data?.data || []
+  const bots = data?.data ?? []
 
   // Activate mutation
   const activateMutation = useMutation({
     mutationFn: (id: string) => api.post(`/bots/${id}/activate`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.bots.all })
+      toast({
+        title: t('statusUpdated'),
+        description: t('statusUpdatedDesc'),
+      })
     },
   })
 
@@ -395,6 +417,10 @@ export default function BotsPage() {
     mutationFn: (id: string) => api.post(`/bots/${id}/deactivate`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.bots.all })
+      toast({
+        title: t('statusUpdated'),
+        description: t('statusUpdatedDesc'),
+      })
     },
   })
 
@@ -403,6 +429,18 @@ export default function BotsPage() {
     mutationFn: (id: string) => api.delete(`/bots/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.bots.all })
+      setBotToDelete(null)
+      toast({
+        title: t('botDeleted'),
+        description: t('botDeletedDesc'),
+      })
+    },
+    onError: () => {
+      toast({
+        title: tCommon('error'),
+        description: tCommon('error'),
+        variant: 'destructive',
+      })
     },
   })
 
@@ -414,7 +452,7 @@ export default function BotsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Bots" />
+      <Header title={t('title')} />
 
       <div className="p-6 space-y-6 overflow-auto">
         {/* Header with search and create */}
@@ -422,7 +460,7 @@ export default function BotsPage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search bots..."
+              placeholder={t('searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
@@ -430,7 +468,7 @@ export default function BotsPage() {
           </div>
           <Button onClick={() => setCreateDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Create Bot
+            {t('createBot')}
           </Button>
         </div>
 
@@ -462,11 +500,9 @@ export default function BotsPage() {
                 bot={bot}
                 onActivate={() => activateMutation.mutate(bot.id)}
                 onDeactivate={() => deactivateMutation.mutate(bot.id)}
-                onDelete={() => {
-                  if (confirm('Are you sure you want to delete this bot?')) {
-                    deleteMutation.mutate(bot.id)
-                  }
-                }}
+                onDelete={() => setBotToDelete(bot)}
+                t={t}
+                tCommon={tCommon}
               />
             ))}
           </div>
@@ -474,13 +510,13 @@ export default function BotsPage() {
           <Card className="border-dashed">
             <CardContent className="py-12 text-center">
               <BotIcon className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
-              <p className="mt-4 text-lg font-medium">No bots configured</p>
+              <p className="mt-4 text-lg font-medium">{t('noBots')}</p>
               <p className="text-sm text-muted-foreground">
-                Create your first AI bot to automate conversations
+                {t('noBotsDescription')}
               </p>
               <Button className="mt-4" onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                Create Bot
+                {t('createBot')}
               </Button>
             </CardContent>
           </Card>
@@ -488,29 +524,32 @@ export default function BotsPage() {
 
         {/* Bot Types Reference */}
         <section>
-          <h3 className="text-lg font-semibold mb-4">Bot Types</h3>
+          <h3 className="text-lg font-semibold mb-4">{t('botTypes')}</h3>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            {Object.entries(botTypeConfigs).map(([key, config]) => (
-              <Card key={key} className="hover:border-primary/30 transition-colors">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={cn(
-                        'flex h-10 w-10 items-center justify-center rounded-lg',
-                        config.bgColor,
-                        config.color
-                      )}
-                    >
-                      {config.icon}
+            {(Object.keys(botTypeIcons) as BotType[]).map((key) => {
+              const icons = botTypeIcons[key]
+              return (
+                <Card key={key} className="hover:border-primary/30 transition-colors">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={cn(
+                          'flex h-10 w-10 items-center justify-center rounded-lg',
+                          icons.bgColor,
+                          icons.color
+                        )}
+                      >
+                        {icons.icon}
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium">{t(`types.${key}`)}</h4>
+                        <p className="text-xs text-muted-foreground">{t(`descriptions.${key}`)}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-sm font-medium">{config.label}</h4>
-                      <p className="text-xs text-muted-foreground">{config.description}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         </section>
       </div>
@@ -520,7 +559,30 @@ export default function BotsPage() {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onSuccess={() => {}}
+        t={t}
+        tCommon={tCommon}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!botToDelete} onOpenChange={(open) => !open && setBotToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('deleteBotTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('deleteBotDescription', { name: botToDelete?.name || '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => botToDelete && deleteMutation.mutate(botToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {tCommon('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -2,17 +2,8 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import { format, subDays } from 'date-fns'
-import {
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
-  MessageSquare,
-  Bot,
-  Users,
-  Clock,
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { queryKeys } from '@/lib/query'
 import { api } from '@/lib/api'
 import type {
@@ -23,6 +14,7 @@ import type {
   ChannelAnalytics,
   AnalyticsPeriod,
 } from '@/types'
+import { Header } from '@/components/layout/header'
 import { Spinner } from '@/components/ui/spinner'
 import { StatsCards } from './components/stats-cards'
 import { ConversationsChart } from './components/conversations-chart'
@@ -32,6 +24,7 @@ import { ChannelBreakdownTable } from './components/channel-breakdown-table'
 import { DateRangePicker } from './components/date-range-picker'
 
 export default function AnalyticsPage() {
+  const t = useTranslations('analytics')
   const [period, setPeriod] = useState<AnalyticsPeriod>('weekly')
   const [dateRange, setDateRange] = useState({
     start: format(subDays(new Date(), 7), 'yyyy-MM-dd'),
@@ -131,49 +124,40 @@ export default function AnalyticsPage() {
     isLoadingChannels
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <BarChart3 className="h-6 w-6 text-primary" />
-            Bot Analytics
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Monitor your bot performance and conversation metrics
-          </p>
-        </div>
-
+    <div className="flex flex-col h-full">
+      <Header title={t('title')}>
         <DateRangePicker
           period={period}
           onPeriodChange={handlePeriodChange}
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
         />
+      </Header>
+
+      <div className="p-6 space-y-6 overflow-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Spinner size="lg" />
+          </div>
+        ) : (
+          <>
+            {/* Stats Cards */}
+            <StatsCards overview={overview} />
+
+            {/* Charts Row */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <ConversationsChart data={conversationsData || []} />
+              <EscalationsChart data={escalationsData || []} />
+            </div>
+
+            {/* Tables Row */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <FlowPerformanceTable data={flowsData || []} />
+              <ChannelBreakdownTable data={channelsData || []} />
+            </div>
+          </>
+        )}
       </div>
-
-      {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Spinner size="lg" />
-        </div>
-      ) : (
-        <>
-          {/* Stats Cards */}
-          <StatsCards overview={overview} />
-
-          {/* Charts Row */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <ConversationsChart data={conversationsData || []} />
-            <EscalationsChart data={escalationsData || []} />
-          </div>
-
-          {/* Tables Row */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <FlowPerformanceTable data={flowsData || []} />
-            <ChannelBreakdownTable data={channelsData || []} />
-          </div>
-        </>
-      )}
     </div>
   )
 }

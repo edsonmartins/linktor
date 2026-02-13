@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import { Search, Plus, Filter, Users, Mail, Phone, MoreVertical } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Input } from '@/components/ui/input'
@@ -20,12 +21,20 @@ import {
 import { cn, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
-import type { Contact } from '@/types'
+import type { Contact, PaginatedResponse } from '@/types'
 
 /**
  * Contact Card Component
  */
-function ContactCard({ contact }: { contact: Contact }) {
+function ContactCard({
+  contact,
+  t,
+  tCommon,
+}: {
+  contact: Contact
+  t: (key: string) => string
+  tCommon: (key: string) => string
+}) {
   return (
     <Card className="hover:border-primary/30 transition-colors">
       <CardContent className="p-4">
@@ -41,11 +50,11 @@ function ContactCard({ contact }: { contact: Contact }) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem>View details</DropdownMenuItem>
-                  <DropdownMenuItem>Start conversation</DropdownMenuItem>
-                  <DropdownMenuItem>Edit contact</DropdownMenuItem>
+                  <DropdownMenuItem>{t('viewDetails')}</DropdownMenuItem>
+                  <DropdownMenuItem>{t('startConversation')}</DropdownMenuItem>
+                  <DropdownMenuItem>{t('editContact')}</DropdownMenuItem>
                   <DropdownMenuItem className="text-destructive">
-                    Delete
+                    {tCommon('delete')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -91,7 +100,7 @@ function ContactCard({ contact }: { contact: Contact }) {
             )}
 
             <p className="mt-2 text-xs text-muted-foreground">
-              Created {formatDate(contact.created_at)}
+              {t('created')} {formatDate(contact.created_at)}
             </p>
           </div>
         </div>
@@ -104,29 +113,31 @@ function ContactCard({ contact }: { contact: Contact }) {
  * Contacts Page
  */
 export default function ContactsPage() {
+  const t = useTranslations('contacts')
+  const tCommon = useTranslations('common')
   const [searchQuery, setSearchQuery] = useState('')
 
   // Fetch contacts
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.contacts.list({ search: searchQuery }),
     queryFn: () =>
-      api.get<{ data: Contact[] }>('/contacts', {
+      api.get<PaginatedResponse<Contact>>('/contacts', {
         ...(searchQuery && { search: searchQuery }),
       }),
   })
 
-  const contacts = data?.data || []
+  const contacts = data?.data ?? []
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Contacts" />
+      <Header title={t('title')} />
 
       <div className="p-6 space-y-6">
         {/* Search and Actions */}
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 flex-1 max-w-md">
             <Input
-              placeholder="Search contacts..."
+              placeholder={t('searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               leftIcon={<Search className="h-4 w-4" />}
@@ -137,7 +148,7 @@ export default function ContactsPage() {
           </div>
           <Button>
             <Plus className="h-4 w-4 mr-2" />
-            Add Contact
+            {t('addContact')}
           </Button>
         </div>
 
@@ -146,7 +157,7 @@ export default function ContactsPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Contacts
+                {t('totalContacts')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -156,7 +167,7 @@ export default function ContactsPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                With Phone
+                {t('withPhone')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -168,7 +179,7 @@ export default function ContactsPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                With Email
+                {t('withEmail')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -201,17 +212,22 @@ export default function ContactsPage() {
           ) : contacts.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {contacts.map((contact) => (
-                <ContactCard key={contact.id} contact={contact} />
+                <ContactCard
+                  key={contact.id}
+                  contact={contact}
+                  t={t}
+                  tCommon={tCommon}
+                />
               ))}
             </div>
           ) : (
             <div className="py-12 text-center text-muted-foreground">
               <Users className="mx-auto h-12 w-12 opacity-50" />
-              <p className="mt-4 text-lg font-medium">No contacts found</p>
-              <p className="text-sm">Add your first contact to get started</p>
+              <p className="mt-4 text-lg font-medium">{t('noContacts')}</p>
+              <p className="text-sm">{t('noContactsDescription')}</p>
               <Button className="mt-4">
                 <Plus className="h-4 w-4 mr-2" />
-                Add Contact
+                {t('addContact')}
               </Button>
             </div>
           )}

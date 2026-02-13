@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import { Plus, Search, GitBranch, Play, Pause, Trash2, Edit, TestTube } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/layout/header'
@@ -15,35 +16,56 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useToast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
-import type { Flow, FlowTriggerType } from '@/types'
+import type { Flow, FlowTriggerType, PaginatedResponse } from '@/types'
 import { FlowCard } from './components/flow-card'
 import { CreateFlowDialog } from './components/create-flow-dialog'
 
 export default function FlowsPage() {
+  const t = useTranslations('flows')
+  const tCommon = useTranslations('common')
+  const { toast } = useToast()
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
   const [triggerFilter, setTriggerFilter] = useState<FlowTriggerType | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [flowToDelete, setFlowToDelete] = useState<Flow | null>(null)
 
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.flows.list({ search: searchQuery, trigger: triggerFilter, status: statusFilter }),
     queryFn: () =>
-      api.get<{ data: Flow[]; total: number }>('/flows', {
+      api.get<PaginatedResponse<Flow>>('/flows', {
         ...(searchQuery && { search: searchQuery }),
         ...(triggerFilter !== 'all' && { trigger: triggerFilter }),
         ...(statusFilter !== 'all' && { is_active: statusFilter === 'active' ? 'true' : 'false' }),
       }),
   })
 
+  const flows = data?.data ?? []
+
   const activateMutation = useMutation({
     mutationFn: (id: string) => api.post(`/flows/${id}/activate`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.flows.all })
+      toast({
+        title: tCommon('success'),
+        description: t('active'),
+      })
     },
   })
 
@@ -51,6 +73,10 @@ export default function FlowsPage() {
     mutationFn: (id: string) => api.post(`/flows/${id}/deactivate`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.flows.all })
+      toast({
+        title: tCommon('success'),
+        description: t('inactive'),
+      })
     },
   })
 
@@ -58,10 +84,19 @@ export default function FlowsPage() {
     mutationFn: (id: string) => api.delete(`/flows/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.flows.all })
+      setFlowToDelete(null)
+      toast({
+        title: tCommon('success'),
+        description: t('deleteFlow'),
+      })
+    },
+    onError: () => {
+      toast({
+        title: tCommon('error'),
+        variant: 'destructive',
+      })
     },
   })
-
-  const flows = data?.data || []
 
   const handleEdit = (flow: Flow) => {
     router.push(`/flows/${flow.id}`)
@@ -75,10 +110,8 @@ export default function FlowsPage() {
     }
   }
 
-  const handleDelete = async (flow: Flow) => {
-    if (confirm(`Are you sure you want to delete "${flow.name}"?`)) {
-      await deleteMutation.mutateAsync(flow.id)
-    }
+  const handleDelete = (flow: Flow) => {
+    setFlowToDelete(flow)
   }
 
   const handleTest = (flow: Flow) => {
@@ -87,7 +120,7 @@ export default function FlowsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <Header title="Conversational Flows" />
+      <Header title={t('title')} />
 
       <div className="flex-1 overflow-auto p-6">
         {/* Toolbar */}
@@ -97,7 +130,7 @@ export default function FlowsPage() {
             <div className="relative max-w-sm flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search flows..."
+                placeholder={t('searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -107,26 +140,26 @@ export default function FlowsPage() {
             {/* Trigger Filter */}
             <Select value={triggerFilter} onValueChange={(v) => setTriggerFilter(v as typeof triggerFilter)}>
               <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Trigger" />
+                <SelectValue placeholder={t('trigger')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Triggers</SelectItem>
-                <SelectItem value="welcome">Welcome</SelectItem>
-                <SelectItem value="keyword">Keyword</SelectItem>
-                <SelectItem value="intent">Intent</SelectItem>
-                <SelectItem value="manual">Manual</SelectItem>
+                <SelectItem value="all">{t('allTriggers')}</SelectItem>
+                <SelectItem value="welcome">{t('welcome')}</SelectItem>
+                <SelectItem value="keyword">{t('keyword')}</SelectItem>
+                <SelectItem value="intent">{t('intent')}</SelectItem>
+                <SelectItem value="manual">{t('manual')}</SelectItem>
               </SelectContent>
             </Select>
 
             {/* Status Filter */}
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
               <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={tCommon('status')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="all">{t('allStatus')}</SelectItem>
+                <SelectItem value="active">{t('active')}</SelectItem>
+                <SelectItem value="inactive">{t('inactive')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -134,7 +167,7 @@ export default function FlowsPage() {
           {/* Add Button */}
           <Button onClick={() => setIsCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            New Flow
+            {t('newFlow')}
           </Button>
         </div>
 
@@ -156,13 +189,13 @@ export default function FlowsPage() {
         ) : flows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <GitBranch className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
-            <h3 className="mb-2 text-lg font-medium">No flows yet</h3>
+            <h3 className="mb-2 text-lg font-medium">{t('noFlows')}</h3>
             <p className="mb-4 text-sm text-muted-foreground">
-              Create conversational flows to guide your customers through decision trees.
+              {t('noFlowsDesc')}
             </p>
             <Button onClick={() => setIsCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Create Flow
+              {t('createFlow')}
             </Button>
           </div>
         ) : (
@@ -190,6 +223,27 @@ export default function FlowsPage() {
         open={isCreateOpen}
         onOpenChange={setIsCreateOpen}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!flowToDelete} onOpenChange={(open) => !open && setFlowToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('deleteFlow')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('confirmDelete', { name: flowToDelete?.name || '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => flowToDelete && deleteMutation.mutate(flowToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {tCommon('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

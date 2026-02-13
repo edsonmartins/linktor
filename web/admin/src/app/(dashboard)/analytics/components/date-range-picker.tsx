@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { Calendar, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AnalyticsPeriod } from '@/types'
@@ -11,18 +12,20 @@ interface DateRangePickerProps {
   onDateRangeChange: (range: { start: string; end: string }) => void
 }
 
-const PERIODS: { value: AnalyticsPeriod; label: string }[] = [
-  { value: 'daily', label: 'Last 24 hours' },
-  { value: 'weekly', label: 'Last 7 days' },
-  { value: 'monthly', label: 'Last 30 days' },
-]
-
 export function DateRangePicker({
   period,
   onPeriodChange,
   dateRange,
   onDateRangeChange,
 }: DateRangePickerProps) {
+  const t = useTranslations('analytics')
+
+  const PERIODS: { value: AnalyticsPeriod; label: string }[] = [
+    { value: 'daily', label: t('periods.last24Hours') },
+    { value: 'weekly', label: t('periods.last7Days') },
+    { value: 'monthly', label: t('periods.last30Days') },
+  ]
+
   return (
     <div className="flex items-center gap-4">
       {/* Period Selector */}

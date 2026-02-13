@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useTranslations } from 'next-intl'
 import { Loader2, Mail, Server, Cloud, Copy, Check, ExternalLink, Eye, EyeOff } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -22,20 +23,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 
-// Provider options
-const providers = [
-  { value: 'smtp', label: 'SMTP', description: 'Generic SMTP server' },
-  { value: 'sendgrid', label: 'SendGrid', description: 'SendGrid API' },
-  { value: 'mailgun', label: 'Mailgun', description: 'Mailgun API' },
-  { value: 'ses', label: 'AWS SES', description: 'Amazon Simple Email Service' },
-  { value: 'postmark', label: 'Postmark', description: 'Postmark API' },
-]
-
 // Combined schema with all fields (provider-specific fields are optional for form handling)
-const emailConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
+const createEmailConfigSchema = (tCommon: (key: string) => string, t: (key: string) => string) => z.object({
+  name: z.string().min(1, tCommon('required')),
   provider: z.enum(['smtp', 'sendgrid', 'mailgun', 'ses', 'postmark']),
-  from_email: z.string().email('Valid email required'),
+  from_email: z.string().email(t('validEmailRequired')),
   from_name: z.string().optional(),
   reply_to: z.string().email().optional().or(z.literal('')),
   // SMTP fields
@@ -67,40 +59,40 @@ const emailConfigSchema = z.object({
   // Validate provider-specific required fields
   if (data.provider === 'smtp') {
     if (!data.smtp_host) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'SMTP host is required', path: ['smtp_host'] })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['smtp_host'] })
     }
     if (!data.smtp_port) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'SMTP port is required', path: ['smtp_port'] })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['smtp_port'] })
     }
   } else if (data.provider === 'sendgrid') {
     if (!data.sendgrid_api_key) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'API key is required', path: ['sendgrid_api_key'] })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['sendgrid_api_key'] })
     }
   } else if (data.provider === 'mailgun') {
     if (!data.mailgun_domain) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Domain is required', path: ['mailgun_domain'] })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['mailgun_domain'] })
     }
     if (!data.mailgun_api_key) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'API key is required', path: ['mailgun_api_key'] })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['mailgun_api_key'] })
     }
   } else if (data.provider === 'ses') {
     if (!data.ses_region) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Region is required', path: ['ses_region'] })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['ses_region'] })
     }
     if (!data.ses_access_key_id) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Access Key ID is required', path: ['ses_access_key_id'] })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['ses_access_key_id'] })
     }
     if (!data.ses_secret_key) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Secret Key is required', path: ['ses_secret_key'] })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['ses_secret_key'] })
     }
   } else if (data.provider === 'postmark') {
     if (!data.postmark_server_token) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Server token is required', path: ['postmark_server_token'] })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['postmark_server_token'] })
     }
   }
 })
 
-type EmailConfigForm = z.infer<typeof emailConfigSchema>
+type EmailConfigForm = z.infer<ReturnType<typeof createEmailConfigSchema>>
 
 interface EmailConfigProps {
   channelId?: string
@@ -113,8 +105,20 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
   const [copied, setCopied] = useState(false)
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({})
   const { toast } = useToast()
+  const t = useTranslations('channels.config')
+  const tCommon = useTranslations('common')
 
   const isEditing = !!channelId
+  const emailConfigSchema = createEmailConfigSchema(tCommon, t)
+
+  // Provider options with translations
+  const providers = [
+    { value: 'smtp', label: 'SMTP', description: t('smtpDesc') },
+    { value: 'sendgrid', label: 'SendGrid', description: t('sendgridDesc') },
+    { value: 'mailgun', label: 'Mailgun', description: t('mailgunDesc') },
+    { value: 'ses', label: 'AWS SES', description: t('sesDesc') },
+    { value: 'postmark', label: 'Postmark', description: t('postmarkDesc') },
+  ]
 
   const {
     register,
@@ -186,22 +190,22 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
       if (isEditing) {
         await api.put(`/channels/${channelId}`, payload)
         toast({
-          title: 'Channel updated',
-          description: 'Email channel configuration has been updated.',
+          title: tCommon('updated'),
+          description: t('channelUpdated'),
         })
       } else {
         await api.post('/channels', payload)
         toast({
-          title: 'Channel created',
-          description: 'Email channel has been created successfully.',
+          title: tCommon('created'),
+          description: t('channelCreated'),
         })
       }
 
       onSuccess?.()
     } catch (error: any) {
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to save channel configuration.',
+        title: tCommon('error'),
+        description: error.message || t('saveError'),
         variant: 'error',
       })
     } finally {
@@ -216,13 +220,13 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
       // Would call test endpoint
       await new Promise((resolve) => setTimeout(resolve, 2000))
       toast({
-        title: 'Connection successful',
-        description: 'Email provider connection verified.',
+        title: t('connectionSuccess'),
+        description: t('emailConnectionVerified'),
       })
     } catch (error: any) {
       toast({
-        title: 'Connection failed',
-        description: error.message || 'Could not connect to email provider.',
+        title: t('connectionFailed'),
+        description: error.message || t('emailConnectionError'),
         variant: 'error',
       })
     } finally {
@@ -248,10 +252,10 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
       {/* Basic Configuration */}
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="name">Channel Name</Label>
+          <Label htmlFor="name">{t('channelName')}</Label>
           <Input
             id="name"
-            placeholder="My Email Channel"
+            placeholder={t('myEmailChannel')}
             {...register('name')}
           />
           {errors.name && (
@@ -260,13 +264,13 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="provider">Email Provider</Label>
+          <Label htmlFor="provider">{t('emailProvider')}</Label>
           <Select
             value={selectedProvider}
             onValueChange={(value) => setValue('provider', value as any)}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select provider" />
+              <SelectValue placeholder={t('selectProvider')} />
             </SelectTrigger>
             <SelectContent>
               {providers.map((provider) => (
@@ -285,7 +289,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="from_email">From Email</Label>
+            <Label htmlFor="from_email">{t('fromEmail')}</Label>
             <Input
               id="from_email"
               type="email"
@@ -298,17 +302,17 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="from_name">From Name (Optional)</Label>
+            <Label htmlFor="from_name">{t('fromNameOptional')}</Label>
             <Input
               id="from_name"
-              placeholder="My Company"
+              placeholder={t('myCompany')}
               {...register('from_name')}
             />
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="reply_to">Reply-To (Optional)</Label>
+          <Label htmlFor="reply_to">{t('replyToOptional')}</Label>
           <Input
             id="reply_to"
             type="email"
@@ -320,9 +324,9 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
 
       <Tabs defaultValue="credentials" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="credentials">Credentials</TabsTrigger>
-          <TabsTrigger value="receiving">Receiving</TabsTrigger>
-          <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
+          <TabsTrigger value="credentials">{t('credentials')}</TabsTrigger>
+          <TabsTrigger value="receiving">{t('receiving')}</TabsTrigger>
+          <TabsTrigger value="webhooks">{t('webhooks')}</TabsTrigger>
         </TabsList>
 
         {/* Credentials Tab */}
@@ -333,14 +337,14 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Server className="h-4 w-4" />
-                  SMTP Settings
+                  {t('smtpSettings')}
                 </CardTitle>
-                <CardDescription>Configure your SMTP server connection</CardDescription>
+                <CardDescription>{t('configureSmtpConnection')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="smtp_host">SMTP Host</Label>
+                    <Label htmlFor="smtp_host">{t('smtpHost')}</Label>
                     <Input
                       id="smtp_host"
                       placeholder="smtp.example.com"
@@ -348,7 +352,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="smtp_port">SMTP Port</Label>
+                    <Label htmlFor="smtp_port">{t('smtpPort')}</Label>
                     <Input
                       id="smtp_port"
                       type="number"
@@ -360,15 +364,15 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="smtp_username">Username</Label>
+                    <Label htmlFor="smtp_username">{tCommon('username')}</Label>
                     <Input
                       id="smtp_username"
-                      placeholder="username"
+                      placeholder={tCommon('username').toLowerCase()}
                       {...register('smtp_username' as any)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="smtp_password">Password</Label>
+                    <Label htmlFor="smtp_password">{tCommon('password')}</Label>
                     <div className="relative">
                       <Input
                         id="smtp_password"
@@ -394,7 +398,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="smtp_encryption">Encryption</Label>
+                  <Label htmlFor="smtp_encryption">{t('encryption')}</Label>
                   <Select
                     defaultValue="tls"
                     onValueChange={(value) => setValue('smtp_encryption' as any, value)}
@@ -403,9 +407,9 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="tls">TLS (Recommended)</SelectItem>
+                      <SelectItem value="tls">{t('tlsRecommended')}</SelectItem>
                       <SelectItem value="starttls">STARTTLS</SelectItem>
-                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="none">{tCommon('none')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -419,24 +423,24 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Cloud className="h-4 w-4" />
-                  SendGrid Settings
+                  {t('sendgridSettings')}
                 </CardTitle>
                 <CardDescription>
-                  Get your API key from{' '}
+                  {t('getApiKeyFrom')}{' '}
                   <a
                     href="https://app.sendgrid.com/settings/api_keys"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline inline-flex items-center gap-1"
                   >
-                    SendGrid Settings
+                    {t('sendgridSettingsLink')}
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="sendgrid_api_key">API Key</Label>
+                  <Label htmlFor="sendgrid_api_key">{t('apiKey')}</Label>
                   <div className="relative">
                     <Input
                       id="sendgrid_api_key"
@@ -463,7 +467,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                 <Alert>
                   <Mail className="h-4 w-4" />
                   <AlertDescription>
-                    Make sure your API key has "Mail Send" permissions and your sender email is verified.
+                    {t('sendgridApiKeyAlert')}
                   </AlertDescription>
                 </Alert>
               </CardContent>
@@ -476,17 +480,17 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Cloud className="h-4 w-4" />
-                  Mailgun Settings
+                  {t('mailgunSettings')}
                 </CardTitle>
                 <CardDescription>
-                  Get your credentials from{' '}
+                  {t('getCredentialsFrom')}{' '}
                   <a
                     href="https://app.mailgun.com/app/sending/domains"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline inline-flex items-center gap-1"
                   >
-                    Mailgun Dashboard
+                    {t('mailgunDashboard')}
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </CardDescription>
@@ -494,7 +498,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="mailgun_domain">Domain</Label>
+                    <Label htmlFor="mailgun_domain">{t('domain')}</Label>
                     <Input
                       id="mailgun_domain"
                       placeholder="mg.example.com"
@@ -502,7 +506,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="mailgun_region">Region</Label>
+                    <Label htmlFor="mailgun_region">{t('region')}</Label>
                     <Select
                       defaultValue="us"
                       onValueChange={(value) => setValue('mailgun_region' as any, value)}
@@ -519,7 +523,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="mailgun_api_key">API Key</Label>
+                  <Label htmlFor="mailgun_api_key">{t('apiKey')}</Label>
                   <div className="relative">
                     <Input
                       id="mailgun_api_key"
@@ -552,20 +556,20 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Cloud className="h-4 w-4" />
-                  AWS SES Settings
+                  {t('sesSettings')}
                 </CardTitle>
                 <CardDescription>
-                  Configure your AWS Simple Email Service credentials
+                  {t('configureAwsSes')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="ses_region">Region</Label>
+                  <Label htmlFor="ses_region">{t('region')}</Label>
                   <Select
                     onValueChange={(value) => setValue('ses_region' as any, value)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select region" />
+                      <SelectValue placeholder={t('selectRegion')} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="us-east-1">US East (N. Virginia)</SelectItem>
@@ -579,7 +583,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="ses_access_key_id">Access Key ID</Label>
+                  <Label htmlFor="ses_access_key_id">{t('accessKeyId')}</Label>
                   <Input
                     id="ses_access_key_id"
                     placeholder="AKIAIOSFODNN7EXAMPLE"
@@ -588,7 +592,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="ses_secret_key">Secret Access Key</Label>
+                  <Label htmlFor="ses_secret_key">{t('secretAccessKey')}</Label>
                   <div className="relative">
                     <Input
                       id="ses_secret_key"
@@ -615,7 +619,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                 <Alert>
                   <Mail className="h-4 w-4" />
                   <AlertDescription>
-                    Ensure your IAM user has SES permissions and your sender email is verified in the SES console.
+                    {t('sesIamAlert')}
                   </AlertDescription>
                 </Alert>
               </CardContent>
@@ -628,24 +632,24 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Cloud className="h-4 w-4" />
-                  Postmark Settings
+                  {t('postmarkSettings')}
                 </CardTitle>
                 <CardDescription>
-                  Get your server token from{' '}
+                  {t('getServerTokenFrom')}{' '}
                   <a
                     href="https://account.postmarkapp.com/servers"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline inline-flex items-center gap-1"
                   >
-                    Postmark Servers
+                    {t('postmarkServers')}
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="postmark_server_token">Server Token</Label>
+                  <Label htmlFor="postmark_server_token">{t('serverToken')}</Label>
                   <div className="relative">
                     <Input
                       id="postmark_server_token"
@@ -672,7 +676,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                 <Alert>
                   <Mail className="h-4 w-4" />
                   <AlertDescription>
-                    Make sure your sender signature is verified in Postmark.
+                    {t('postmarkSignatureAlert')}
                   </AlertDescription>
                 </Alert>
               </CardContent>
@@ -687,16 +691,16 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Mail className="h-4 w-4" />
-                  IMAP Settings (Optional)
+                  {t('imapSettingsOptional')}
                 </CardTitle>
                 <CardDescription>
-                  Configure IMAP to receive incoming emails. Leave blank to use webhooks only.
+                  {t('imapSettingsDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="imap_host">IMAP Host</Label>
+                    <Label htmlFor="imap_host">{t('imapHost')}</Label>
                     <Input
                       id="imap_host"
                       placeholder="imap.example.com"
@@ -704,7 +708,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="imap_port">IMAP Port</Label>
+                    <Label htmlFor="imap_port">{t('imapPort')}</Label>
                     <Input
                       id="imap_port"
                       type="number"
@@ -717,15 +721,15 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="imap_username">Username</Label>
+                    <Label htmlFor="imap_username">{tCommon('username')}</Label>
                     <Input
                       id="imap_username"
-                      placeholder="username"
+                      placeholder={tCommon('username').toLowerCase()}
                       {...register('imap_username' as any)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="imap_password">Password</Label>
+                    <Label htmlFor="imap_password">{tCommon('password')}</Label>
                     <div className="relative">
                       <Input
                         id="imap_password"
@@ -752,7 +756,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="imap_folder">Folder</Label>
+                    <Label htmlFor="imap_folder">{t('folder')}</Label>
                     <Input
                       id="imap_folder"
                       placeholder="INBOX"
@@ -761,7 +765,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="imap_poll_interval">Poll Interval (seconds)</Label>
+                    <Label htmlFor="imap_poll_interval">{t('pollInterval')}</Label>
                     <Input
                       id="imap_poll_interval"
                       type="number"
@@ -776,20 +780,19 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Inbound Webhooks</CardTitle>
+                <CardTitle className="text-base">{t('inboundWebhooks')}</CardTitle>
                 <CardDescription>
-                  {selectedProvider === 'sendgrid' && 'Configure SendGrid Inbound Parse to receive emails.'}
-                  {selectedProvider === 'mailgun' && 'Configure Mailgun Routes to receive emails.'}
-                  {selectedProvider === 'ses' && 'Configure SES receiving rules to forward to SNS.'}
-                  {selectedProvider === 'postmark' && 'Configure Postmark Inbound to receive emails.'}
+                  {selectedProvider === 'sendgrid' && t('sendgridInboundDesc')}
+                  {selectedProvider === 'mailgun' && t('mailgunInboundDesc')}
+                  {selectedProvider === 'ses' && t('sesInboundDesc')}
+                  {selectedProvider === 'postmark' && t('postmarkInboundDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <Alert>
                   <Mail className="h-4 w-4" />
                   <AlertDescription>
-                    Configure the inbound webhook URL in your provider's dashboard to receive incoming emails.
-                    See the Webhooks tab for the URL to configure.
+                    {t('inboundWebhooksAlert')}
                   </AlertDescription>
                 </Alert>
               </CardContent>
@@ -801,16 +804,16 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
         <TabsContent value="webhooks" className="space-y-4 pt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Webhook URLs</CardTitle>
+              <CardTitle className="text-base">{t('webhookUrls')}</CardTitle>
               <CardDescription>
-                Configure these URLs in your email provider's dashboard to receive events and inbound emails.
+                {t('webhookUrlsDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {selectedProvider === 'sendgrid' && (
                 <>
                   <div className="space-y-2">
-                    <Label>Inbound Parse Webhook</Label>
+                    <Label>{t('inboundParseWebhook')}</Label>
                     <div className="flex gap-2">
                       <Input
                         readOnly
@@ -828,7 +831,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Event Webhook</Label>
+                    <Label>{t('eventWebhook')}</Label>
                     <div className="flex gap-2">
                       <Input
                         readOnly
@@ -850,7 +853,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
 
               {selectedProvider === 'mailgun' && (
                 <div className="space-y-2">
-                  <Label>Mailgun Webhook</Label>
+                  <Label>{t('mailgunWebhook')}</Label>
                   <div className="flex gap-2">
                     <Input
                       readOnly
@@ -871,7 +874,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
 
               {selectedProvider === 'ses' && (
                 <div className="space-y-2">
-                  <Label>SNS Notification Endpoint</Label>
+                  <Label>{t('snsNotificationEndpoint')}</Label>
                   <div className="flex gap-2">
                     <Input
                       readOnly
@@ -888,14 +891,14 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Create an SNS topic, subscribe this HTTPS endpoint, then configure SES to publish events to that topic.
+                    {t('snsEndpointDesc')}
                   </p>
                 </div>
               )}
 
               {selectedProvider === 'postmark' && (
                 <div className="space-y-2">
-                  <Label>Postmark Webhook</Label>
+                  <Label>{t('postmarkWebhook')}</Label>
                   <div className="flex gap-2">
                     <Input
                       readOnly
@@ -918,7 +921,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                 <Alert>
                   <Mail className="h-4 w-4" />
                   <AlertDescription>
-                    SMTP provider uses IMAP polling for receiving emails. No webhook configuration needed.
+                    {t('smtpImapPollingInfo')}
                   </AlertDescription>
                 </Alert>
               )}
@@ -932,12 +935,12 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
       <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
         <Button type="button" variant="outline" onClick={testConnection} disabled={isTesting}>
           {isTesting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Test Connection
+          {t('testConnection')}
         </Button>
 
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isEditing ? 'Update Channel' : 'Create Channel'}
+          {isEditing ? t('updateChannel') : t('createChannel')}
         </Button>
       </div>
     </form>

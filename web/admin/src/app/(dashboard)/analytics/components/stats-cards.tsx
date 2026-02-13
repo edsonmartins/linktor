@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { TrendingUp, TrendingDown, MessageSquare, Bot, Users, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { OverviewAnalytics } from '@/types'
@@ -9,9 +10,11 @@ interface StatsCardsProps {
 }
 
 export function StatsCards({ overview }: StatsCardsProps) {
+  const t = useTranslations('analytics')
+
   const stats = [
     {
-      label: 'Total Conversations',
+      label: t('totalConversations'),
       value: overview?.total_conversations ?? 0,
       trend: overview?.conversations_trend ?? 0,
       icon: MessageSquare,
@@ -19,7 +22,7 @@ export function StatsCards({ overview }: StatsCardsProps) {
       bgColor: 'bg-blue-100',
     },
     {
-      label: 'Resolution Rate',
+      label: t('resolutionRate'),
       value: `${(overview?.resolution_rate ?? 0).toFixed(1)}%`,
       trend: overview?.resolution_trend ?? 0,
       icon: Bot,
@@ -27,14 +30,14 @@ export function StatsCards({ overview }: StatsCardsProps) {
       bgColor: 'bg-emerald-100',
     },
     {
-      label: 'Avg Response Time',
+      label: t('avgResponseTime'),
       value: formatDuration(overview?.avg_first_response_ms ?? 0),
       icon: Clock,
       color: 'text-amber-600',
       bgColor: 'bg-amber-100',
     },
     {
-      label: 'Avg Confidence',
+      label: t('avgConfidence'),
       value: (overview?.avg_confidence ?? 0).toFixed(2),
       icon: Users,
       color: 'text-purple-600',

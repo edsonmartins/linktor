@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { User, Bell, Shield, Palette, Key, Building } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -14,29 +15,17 @@ import { useUser } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 
 /**
- * Settings Navigation Items
- */
-const settingsNav = [
-  { id: 'profile', label: 'Profile', icon: User },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'security', label: 'Security', icon: Shield },
-  { id: 'appearance', label: 'Appearance', icon: Palette },
-  { id: 'api-keys', label: 'API Keys', icon: Key },
-  { id: 'organization', label: 'Organization', icon: Building },
-]
-
-/**
  * Profile Settings Section
  */
-function ProfileSettings() {
+function ProfileSettings({ t }: { t: (key: string) => string }) {
   const user = useUser()
 
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium">Profile</h3>
+        <h3 className="text-lg font-medium">{t('profile')}</h3>
         <p className="text-sm text-muted-foreground">
-          Manage your personal information
+          {t('managePersonalInfo')}
         </p>
       </div>
 
@@ -46,17 +35,17 @@ function ProfileSettings() {
         <Avatar src={user?.avatar_url} fallback={user?.name || 'U'} size="xl" />
         <div>
           <Button variant="outline" size="sm">
-            Change avatar
+            {t('changeAvatar')}
           </Button>
           <p className="mt-1 text-xs text-muted-foreground">
-            JPG, PNG or GIF. Max 2MB.
+            {t('avatarHint')}
           </p>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="name">Name</Label>
+          <Label htmlFor="name">{t('profile')}</Label>
           <Input id="name" defaultValue={user?.name} />
         </div>
         <div className="space-y-2">
@@ -66,7 +55,7 @@ function ProfileSettings() {
       </div>
 
       <div className="space-y-2">
-        <Label>Role</Label>
+        <Label>{t('role')}</Label>
         <div>
           <Badge variant="outline" className="capitalize">
             {user?.role}
@@ -74,7 +63,7 @@ function ProfileSettings() {
         </div>
       </div>
 
-      <Button>Save changes</Button>
+      <Button>{t('saveChanges')}</Button>
     </div>
   )
 }
@@ -82,13 +71,13 @@ function ProfileSettings() {
 /**
  * Notifications Settings Section
  */
-function NotificationsSettings() {
+function NotificationsSettings({ t }: { t: (key: string) => string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium">Notifications</h3>
+        <h3 className="text-lg font-medium">{t('notifications')}</h3>
         <p className="text-sm text-muted-foreground">
-          Configure how you receive notifications
+          {t('configureNotifications')}
         </p>
       </div>
 
@@ -97,23 +86,23 @@ function NotificationsSettings() {
       <div className="space-y-4">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Email Notifications</CardTitle>
+            <CardTitle className="text-base">{t('emailNotifications')}</CardTitle>
             <CardDescription>
-              Receive email notifications for important events
+              {t('emailNotificationsDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               <label className="flex items-center justify-between">
-                <span className="text-sm">New conversation assigned</span>
+                <span className="text-sm">{t('newConversationAssigned')}</span>
                 <input type="checkbox" defaultChecked className="toggle" />
               </label>
               <label className="flex items-center justify-between">
-                <span className="text-sm">Conversation resolved</span>
+                <span className="text-sm">{t('conversationResolved')}</span>
                 <input type="checkbox" defaultChecked className="toggle" />
               </label>
               <label className="flex items-center justify-between">
-                <span className="text-sm">Daily summary</span>
+                <span className="text-sm">{t('dailySummary')}</span>
                 <input type="checkbox" className="toggle" />
               </label>
             </div>
@@ -122,19 +111,19 @@ function NotificationsSettings() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Push Notifications</CardTitle>
+            <CardTitle className="text-base">{t('pushNotifications')}</CardTitle>
             <CardDescription>
-              Receive push notifications in your browser
+              {t('pushNotificationsDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               <label className="flex items-center justify-between">
-                <span className="text-sm">New messages</span>
+                <span className="text-sm">{t('newMessages')}</span>
                 <input type="checkbox" defaultChecked className="toggle" />
               </label>
               <label className="flex items-center justify-between">
-                <span className="text-sm">Mentions</span>
+                <span className="text-sm">{t('mentions')}</span>
                 <input type="checkbox" defaultChecked className="toggle" />
               </label>
             </div>
@@ -148,13 +137,13 @@ function NotificationsSettings() {
 /**
  * Security Settings Section
  */
-function SecuritySettings() {
+function SecuritySettings({ t, tCommon }: { t: (key: string) => string; tCommon: (key: string) => string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium">Security</h3>
+        <h3 className="text-lg font-medium">{t('security')}</h3>
         <p className="text-sm text-muted-foreground">
-          Manage your account security settings
+          {t('manageAccountSecurity')}
         </p>
       </div>
 
@@ -162,58 +151,58 @@ function SecuritySettings() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Change Password</CardTitle>
+          <CardTitle className="text-base">{t('changePassword')}</CardTitle>
           <CardDescription>
-            Update your password regularly to keep your account secure
+            {t('changePasswordDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="current-password">Current password</Label>
+            <Label htmlFor="current-password">{t('currentPassword')}</Label>
             <Input id="current-password" type="password" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="new-password">New password</Label>
+            <Label htmlFor="new-password">{t('newPassword')}</Label>
             <Input id="new-password" type="password" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirm-password">Confirm new password</Label>
+            <Label htmlFor="confirm-password">{t('confirmNewPassword')}</Label>
             <Input id="confirm-password" type="password" />
           </div>
-          <Button>Update password</Button>
+          <Button>{t('updatePassword')}</Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Two-Factor Authentication</CardTitle>
+          <CardTitle className="text-base">{t('twoFactorAuth')}</CardTitle>
           <CardDescription>
-            Add an extra layer of security to your account
+            {t('twoFactorAuthDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="outline">Enable 2FA</Button>
+          <Button variant="outline">{t('enable2FA')}</Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Active Sessions</CardTitle>
+          <CardTitle className="text-base">{t('activeSessions')}</CardTitle>
           <CardDescription>
-            Manage your active login sessions
+            {t('activeSessionsDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             <div className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
               <div>
-                <p className="text-sm font-medium">Current session</p>
+                <p className="text-sm font-medium">{t('currentSession')}</p>
                 <p className="text-xs text-muted-foreground">
-                  macOS - Chrome - Last active: Now
+                  macOS - Chrome - {t('lastActive')}: Now
                 </p>
               </div>
               <Badge variant="success" dot>
-                Active
+                {tCommon('active')}
               </Badge>
             </div>
           </div>
@@ -226,13 +215,13 @@ function SecuritySettings() {
 /**
  * Appearance Settings Section
  */
-function AppearanceSettings() {
+function AppearanceSettings({ t }: { t: (key: string) => string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium">Appearance</h3>
+        <h3 className="text-lg font-medium">{t('appearance')}</h3>
         <p className="text-sm text-muted-foreground">
-          Customize how Linktor looks for you
+          {t('customizeAppearance')}
         </p>
       </div>
 
@@ -240,27 +229,27 @@ function AppearanceSettings() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Theme</CardTitle>
+          <CardTitle className="text-base">{t('theme')}</CardTitle>
           <CardDescription>
-            Select your preferred color theme
+            {t('selectTheme')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 grid-cols-3">
             <button className="p-4 rounded-lg border-2 border-primary bg-[hsl(180,3%,10%)] text-left">
               <div className="h-2 w-2 rounded-full bg-primary mb-2" />
-              <p className="text-sm font-medium text-white">Terminal</p>
-              <p className="text-xs text-gray-400">Default dark theme</p>
+              <p className="text-sm font-medium text-white">{t('terminal')}</p>
+              <p className="text-xs text-gray-400">{t('defaultDarkTheme')}</p>
             </button>
             <button className="p-4 rounded-lg border border-border bg-gray-900 text-left opacity-50 cursor-not-allowed">
               <div className="h-2 w-2 rounded-full bg-blue-500 mb-2" />
-              <p className="text-sm font-medium text-white">Ocean</p>
-              <p className="text-xs text-gray-400">Coming soon</p>
+              <p className="text-sm font-medium text-white">{t('ocean')}</p>
+              <p className="text-xs text-gray-400">{t('comingSoon')}</p>
             </button>
             <button className="p-4 rounded-lg border border-border bg-white text-left opacity-50 cursor-not-allowed">
               <div className="h-2 w-2 rounded-full bg-gray-900 mb-2" />
-              <p className="text-sm font-medium text-gray-900">Light</p>
-              <p className="text-xs text-gray-500">Coming soon</p>
+              <p className="text-sm font-medium text-gray-900">{t('light')}</p>
+              <p className="text-xs text-gray-500">{t('comingSoon')}</p>
             </button>
           </div>
         </CardContent>
@@ -272,13 +261,13 @@ function AppearanceSettings() {
 /**
  * API Keys Settings Section
  */
-function ApiKeysSettings() {
+function ApiKeysSettings({ t }: { t: (key: string) => string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium">API Keys</h3>
+        <h3 className="text-lg font-medium">{t('apiKeys')}</h3>
         <p className="text-sm text-muted-foreground">
-          Manage API keys for external integrations
+          {t('manageApiKeys')}
         </p>
       </div>
 
@@ -286,19 +275,19 @@ function ApiKeysSettings() {
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          API keys allow external applications to access your data
+          {t('apiKeysAllowAccess')}
         </p>
         <Button>
-          Generate new key
+          {t('generateNewKey')}
         </Button>
       </div>
 
       <Card className="border-dashed">
         <CardContent className="py-8 text-center">
           <Key className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
-          <p className="mt-4 text-sm font-medium">No API keys</p>
+          <p className="mt-4 text-sm font-medium">{t('noApiKeys')}</p>
           <p className="text-xs text-muted-foreground">
-            Generate a key to start integrating with external services
+            {t('generateKeyHint')}
           </p>
         </CardContent>
       </Card>
@@ -309,13 +298,13 @@ function ApiKeysSettings() {
 /**
  * Organization Settings Section
  */
-function OrganizationSettings() {
+function OrganizationSettings({ t }: { t: (key: string) => string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium">Organization</h3>
+        <h3 className="text-lg font-medium">{t('organization')}</h3>
         <p className="text-sm text-muted-foreground">
-          Manage your organization settings
+          {t('manageOrganization')}
         </p>
       </div>
 
@@ -323,40 +312,40 @@ function OrganizationSettings() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Organization Details</CardTitle>
+          <CardTitle className="text-base">{t('organizationDetails')}</CardTitle>
           <CardDescription>
-            Basic information about your organization
+            {t('organizationDetailsDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="org-name">Organization name</Label>
+            <Label htmlFor="org-name">{t('organizationName')}</Label>
             <Input id="org-name" defaultValue="Demo Company" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="org-slug">Slug</Label>
+            <Label htmlFor="org-slug">{t('slug')}</Label>
             <Input id="org-slug" defaultValue="demo" disabled />
           </div>
-          <Button>Save changes</Button>
+          <Button>{t('saveChanges')}</Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Subscription</CardTitle>
+          <CardTitle className="text-base">{t('subscription')}</CardTitle>
           <CardDescription>
-            Your current plan and billing information
+            {t('subscriptionDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between p-4 bg-primary/10 rounded-lg border border-primary/30">
             <div>
-              <p className="font-medium">Professional Plan</p>
+              <p className="font-medium">{t('professionalPlan')}</p>
               <p className="text-sm text-muted-foreground">
-                $99/month - Unlimited agents
+                $99/month - {t('unlimitedAgents')}
               </p>
             </div>
-            <Button variant="outline">Manage plan</Button>
+            <Button variant="outline">{t('managePlan')}</Button>
           </div>
         </CardContent>
       </Card>
@@ -368,30 +357,42 @@ function OrganizationSettings() {
  * Settings Page
  */
 export default function SettingsPage() {
+  const t = useTranslations('settings')
+  const tCommon = useTranslations('common')
   const [activeSection, setActiveSection] = useState('profile')
+
+  // Settings Navigation Items with translations
+  const settingsNav = [
+    { id: 'profile', label: t('profile'), icon: User },
+    { id: 'notifications', label: t('notifications'), icon: Bell },
+    { id: 'security', label: t('security'), icon: Shield },
+    { id: 'appearance', label: t('appearance'), icon: Palette },
+    { id: 'api-keys', label: t('apiKeys'), icon: Key },
+    { id: 'organization', label: t('organization'), icon: Building },
+  ]
 
   const renderSection = () => {
     switch (activeSection) {
       case 'profile':
-        return <ProfileSettings />
+        return <ProfileSettings t={t} />
       case 'notifications':
-        return <NotificationsSettings />
+        return <NotificationsSettings t={t} />
       case 'security':
-        return <SecuritySettings />
+        return <SecuritySettings t={t} tCommon={tCommon} />
       case 'appearance':
-        return <AppearanceSettings />
+        return <AppearanceSettings t={t} />
       case 'api-keys':
-        return <ApiKeysSettings />
+        return <ApiKeysSettings t={t} />
       case 'organization':
-        return <OrganizationSettings />
+        return <OrganizationSettings t={t} />
       default:
-        return <ProfileSettings />
+        return <ProfileSettings t={t} />
     }
   }
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Settings" />
+      <Header title={t('title')} />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Settings Navigation */}

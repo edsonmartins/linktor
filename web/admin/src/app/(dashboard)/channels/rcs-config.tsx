@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { useTranslations } from "next-intl";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -129,6 +130,8 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [webhookUrl, setWebhookUrl] = useState<string>("");
   const { toast } = useToast();
+  const t = useTranslations('channels.config');
+  const tCommon = useTranslations('common');
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -168,8 +171,8 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
       setConnectionStatus("connected");
 
       toast({
-        title: "Configuration saved",
-        description: "RCS channel has been configured successfully.",
+        title: t('configurationSaved'),
+        description: t('rcsConfiguredSuccessfully'),
       });
 
       if (onSave) {
@@ -179,8 +182,8 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
       setConnectionStatus("error");
       toast({
         variant: "error",
-        title: "Configuration failed",
-        description: error instanceof Error ? error.message : "Failed to save configuration",
+        title: t('configurationFailed'),
+        description: error instanceof Error ? error.message : t('saveConfigError'),
       });
     }
   };
@@ -197,20 +200,20 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
       });
 
       if (!response.ok) {
-        throw new Error("Connection test failed");
+        throw new Error(t('connectionTestFailed'));
       }
 
       setTestStatus("success");
       toast({
-        title: "Connection successful",
-        description: "RCS provider connection verified.",
+        title: t('connectionSuccess'),
+        description: t('rcsConnectionVerified'),
       });
     } catch (error) {
       setTestStatus("error");
       toast({
         variant: "error",
-        title: "Test failed",
-        description: error instanceof Error ? error.message : "Connection test failed",
+        title: t('testFailed'),
+        description: error instanceof Error ? error.message : t('connectionTestFailed'),
       });
     }
   };
@@ -433,10 +436,10 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
-            RCS Provider
+            {t('rcsProvider')}
           </CardTitle>
           <CardDescription>
-            Select your RCS Business Messaging provider
+            {t('selectRcsProvider')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -487,20 +490,20 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="credentials" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            Credentials
+            {t('credentials')}
           </TabsTrigger>
           <TabsTrigger value="webhook" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
-            Webhook
+            {t('webhook')}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="credentials">
           <Card>
             <CardHeader>
-              <CardTitle>Provider Credentials</CardTitle>
+              <CardTitle>{t('providerCredentials')}</CardTitle>
               <CardDescription>
-                Enter your {providerInfo[selectedProvider].name} credentials
+                {t('enterProviderCredentials', { provider: providerInfo[selectedProvider].name })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -520,12 +523,12 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
                       {testStatus === "testing" ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Testing...
+                          {t('testing')}
                         </>
                       ) : (
                         <>
                           <TestTube className="mr-2 h-4 w-4" />
-                          Test Connection
+                          {t('testConnection')}
                         </>
                       )}
                     </Button>
@@ -533,10 +536,10 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
                       {connectionStatus === "connecting" ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving...
+                          {tCommon('saving')}
                         </>
                       ) : (
-                        "Save Configuration"
+                        t('saveConfiguration')
                       )}
                     </Button>
                   </div>
@@ -544,9 +547,9 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
                   {testStatus === "success" && (
                     <Alert className="mt-4">
                       <CheckCircle2 className="h-4 w-4" />
-                      <AlertTitle>Connection Verified</AlertTitle>
+                      <AlertTitle>{t('connectionVerified')}</AlertTitle>
                       <AlertDescription>
-                        Successfully connected to {providerInfo[selectedProvider].name}.
+                        {t('successfullyConnectedTo', { provider: providerInfo[selectedProvider].name })}
                       </AlertDescription>
                     </Alert>
                   )}
@@ -554,9 +557,9 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
                   {testStatus === "error" && (
                     <Alert variant="destructive" className="mt-4">
                       <XCircle className="h-4 w-4" />
-                      <AlertTitle>Connection Failed</AlertTitle>
+                      <AlertTitle>{t('connectionFailed')}</AlertTitle>
                       <AlertDescription>
-                        Failed to connect. Please verify your credentials.
+                        {t('verifyCredentials')}
                       </AlertDescription>
                     </Alert>
                   )}
@@ -569,16 +572,16 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
         <TabsContent value="webhook">
           <Card>
             <CardHeader>
-              <CardTitle>Webhook Configuration</CardTitle>
+              <CardTitle>{t('webhookConfiguration')}</CardTitle>
               <CardDescription>
-                Configure your webhook URL in the {providerInfo[selectedProvider].name} dashboard
+                {t('configureWebhookInProvider', { provider: providerInfo[selectedProvider].name })}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {connectionStatus === "connected" && webhookUrl ? (
                 <>
                   <div className="space-y-2">
-                    <Label>Webhook URL</Label>
+                    <Label>{t('webhookUrl')}</Label>
                     <div className="flex gap-2">
                       <Input value={webhookUrl} readOnly className="font-mono text-sm" />
                       <Button
@@ -586,19 +589,19 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
                         onClick={() => {
                           navigator.clipboard.writeText(webhookUrl);
                           toast({
-                            title: "Copied",
-                            description: "Webhook URL copied to clipboard",
+                            title: tCommon('copied'),
+                            description: t('copiedToClipboard'),
                           });
                         }}
                       >
-                        Copy
+                        {tCommon('copy')}
                       </Button>
                     </div>
                   </div>
 
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Setup Instructions</AlertTitle>
+                    <AlertTitle>{t('setupInstructions')}</AlertTitle>
                     <AlertDescription className="space-y-2">
                       <p>Configure this webhook URL in your {providerInfo[selectedProvider].name} dashboard:</p>
                       <ol className="list-decimal list-inside space-y-1 text-sm">
@@ -640,9 +643,9 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
               ) : (
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Save Configuration First</AlertTitle>
+                  <AlertTitle>{t('saveConfigFirst')}</AlertTitle>
                   <AlertDescription>
-                    Save your credentials to get the webhook URL for your channel.
+                    {t('saveCredentialsForWebhook')}
                   </AlertDescription>
                 </Alert>
               )}
@@ -654,26 +657,26 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
       {/* Connection Status */}
       <Card>
         <CardHeader>
-          <CardTitle>Connection Status</CardTitle>
+          <CardTitle>{t('connectionStatus')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-3">
             {connectionStatus === "idle" && (
               <>
                 <div className="h-3 w-3 rounded-full bg-muted" />
-                <span className="text-muted-foreground">Not configured</span>
+                <span className="text-muted-foreground">{t('notConfigured')}</span>
               </>
             )}
             {connectionStatus === "connecting" && (
               <>
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <span>Connecting...</span>
+                <span>{t('connecting')}</span>
               </>
             )}
             {connectionStatus === "connected" && (
               <>
                 <div className="h-3 w-3 rounded-full bg-green-500" />
-                <span className="text-green-600">Connected</span>
+                <span className="text-green-600">{t('connected')}</span>
                 <Badge variant="outline" className="ml-2">
                   {providerInfo[selectedProvider].name}
                 </Badge>
@@ -682,7 +685,7 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
             {connectionStatus === "error" && (
               <>
                 <div className="h-3 w-3 rounded-full bg-destructive" />
-                <span className="text-destructive">Connection failed</span>
+                <span className="text-destructive">{t('connectionFailed')}</span>
               </>
             )}
           </div>
@@ -692,44 +695,44 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
       {/* RCS Features Info */}
       <Card>
         <CardHeader>
-          <CardTitle>RCS Features</CardTitle>
+          <CardTitle>{t('rcsFeatures')}</CardTitle>
           <CardDescription>
-            Rich Communication Services capabilities
+            {t('rcsFeaturesDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl mb-1">💬</div>
-              <div className="text-xs font-medium">Rich Text</div>
+              <div className="text-xs font-medium">{t('richText')}</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl mb-1">🖼️</div>
-              <div className="text-xs font-medium">Rich Cards</div>
+              <div className="text-xs font-medium">{t('richCards')}</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl mb-1">🎠</div>
-              <div className="text-xs font-medium">Carousels</div>
+              <div className="text-xs font-medium">{t('carousels')}</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl mb-1">✅</div>
-              <div className="text-xs font-medium">Read Receipts</div>
+              <div className="text-xs font-medium">{t('readReceipts')}</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl mb-1">📍</div>
-              <div className="text-xs font-medium">Location</div>
+              <div className="text-xs font-medium">{t('location')}</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl mb-1">🔘</div>
-              <div className="text-xs font-medium">Quick Replies</div>
+              <div className="text-xs font-medium">{t('quickReplies')}</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl mb-1">📎</div>
-              <div className="text-xs font-medium">Media</div>
+              <div className="text-xs font-medium">{t('media')}</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl mb-1">⌨️</div>
-              <div className="text-xs font-medium">Typing Indicator</div>
+              <div className="text-xs font-medium">{t('typingIndicator')}</div>
             </div>
           </div>
         </CardContent>

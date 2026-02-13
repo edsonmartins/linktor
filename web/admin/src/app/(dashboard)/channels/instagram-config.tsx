@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useTranslations } from 'next-intl'
 import {
   AlertCircle,
   CheckCircle2,
@@ -62,16 +63,16 @@ import type { Channel } from '@/types'
 /**
  * Instagram Configuration Schema
  */
-const instagramConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
-  instagram_id: z.string().min(1, 'Instagram ID is required'),
-  access_token: z.string().min(1, 'Access Token is required'),
+const createInstagramConfigSchema = (tCommon: (key: string) => string) => z.object({
+  name: z.string().min(1, tCommon('required')),
+  instagram_id: z.string().min(1, tCommon('required')),
+  access_token: z.string().min(1, tCommon('required')),
   app_id: z.string().optional(),
   app_secret: z.string().optional(),
-  verify_token: z.string().min(1, 'Verify Token is required'),
+  verify_token: z.string().min(1, tCommon('required')),
 })
 
-type InstagramConfigForm = z.infer<typeof instagramConfigSchema>
+type InstagramConfigForm = z.infer<ReturnType<typeof createInstagramConfigSchema>>
 
 interface InstagramConfigProps {
   channel?: Channel
@@ -100,6 +101,8 @@ export function InstagramConfig({
   onCancel,
 }: InstagramConfigProps) {
   const { toast } = useToast()
+  const t = useTranslations('channels.config')
+  const tCommon = useTranslations('common')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showAccessToken, setShowAccessToken] = useState(false)
   const [showAppSecret, setShowAppSecret] = useState(false)
@@ -113,6 +116,7 @@ export function InstagramConfig({
   const [oauthAppSecret, setOauthAppSecret] = useState('')
 
   const isEditing = !!channel
+  const instagramConfigSchema = createInstagramConfigSchema(tCommon)
 
   const form = useForm<InstagramConfigForm>({
     resolver: zodResolver(instagramConfigSchema),
@@ -128,7 +132,7 @@ export function InstagramConfig({
 
   const webhookUrl = channel
     ? `${window.location.origin}/api/v1/webhooks/instagram/${channel.id}`
-    : 'Will be generated after creation'
+    : t('webhookPending')
 
   const onSubmit = async (data: InstagramConfigForm) => {
     setIsSubmitting(true)
@@ -155,15 +159,15 @@ export function InstagramConfig({
       }
 
       toast({
-        title: isEditing ? 'Channel updated' : 'Channel created',
-        description: `Instagram channel "${data.name}" has been ${isEditing ? 'updated' : 'created'} successfully.`,
+        title: isEditing ? tCommon('updated') : tCommon('created'),
+        description: isEditing ? t('channelUpdated') : t('channelCreated'),
       })
 
       onSuccess?.(result)
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save channel',
+        title: tCommon('error'),
+        description: error instanceof Error ? error.message : t('saveError'),
         variant: 'error',
       })
     } finally {
@@ -175,8 +179,8 @@ export function InstagramConfig({
     const values = form.getValues()
     if (!values.access_token) {
       toast({
-        title: 'Missing credentials',
-        description: 'Please enter Access Token first',
+        title: t('missingCredentials'),
+        description: t('enterAccessTokenFirst'),
         variant: 'error',
       })
       return
@@ -190,24 +194,24 @@ export function InstagramConfig({
       })
       setTestStatus('success')
       toast({
-        title: 'Connection successful',
-        description: 'Instagram credentials are valid',
+        title: t('connectionSuccess'),
+        description: t('instagramCredentialsValid'),
       })
     } catch {
       setTestStatus('error')
       toast({
-        title: 'Connection failed',
-        description: 'Could not connect to Instagram API. Please check your credentials.',
+        title: t('connectionFailed'),
+        description: t('instagramConnectionError'),
         variant: 'error',
       })
     }
   }
 
-  const copyToClipboard = (text: string, label: string) => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     toast({
-      title: 'Copied',
-      description: `${label} copied to clipboard`,
+      title: tCommon('copied'),
+      description: t('copiedToClipboard'),
     })
   }
 
@@ -215,8 +219,8 @@ export function InstagramConfig({
   const startOAuthFlow = async () => {
     if (!oauthAppId || !oauthAppSecret) {
       toast({
-        title: 'Missing credentials',
-        description: 'Please enter App ID and App Secret first',
+        title: t('missingCredentials'),
+        description: t('enterAppCredentialsFirst'),
         variant: 'error',
       })
       return
@@ -266,8 +270,8 @@ export function InstagramConfig({
     } catch (error) {
       setOauthLoading(false)
       toast({
-        title: 'OAuth Error',
-        description: error instanceof Error ? error.message : 'Failed to start OAuth flow',
+        title: t('oauthError'),
+        description: error instanceof Error ? error.message : t('oauthStartError'),
         variant: 'error',
       })
     }
@@ -296,8 +300,8 @@ export function InstagramConfig({
       }
 
       toast({
-        title: 'Connected successfully',
-        description: `Found ${response.accounts.length} Instagram account(s)`,
+        title: t('connectedSuccessfully'),
+        description: t('foundInstagramAccounts', { count: response.accounts.length }),
       })
 
       // Clean up session storage
@@ -306,8 +310,8 @@ export function InstagramConfig({
       sessionStorage.removeItem('ig_oauth_app_secret')
     } catch (error) {
       toast({
-        title: 'OAuth Error',
-        description: error instanceof Error ? error.message : 'Failed to complete OAuth',
+        title: t('oauthError'),
+        description: error instanceof Error ? error.message : t('oauthCompleteError'),
         variant: 'error',
       })
     } finally {
@@ -319,8 +323,8 @@ export function InstagramConfig({
   const createFromOAuth = async () => {
     if (!selectedAccount) {
       toast({
-        title: 'No account selected',
-        description: 'Please select an Instagram account',
+        title: t('noAccountSelected'),
+        description: t('selectInstagramAccount'),
         variant: 'error',
       })
       return
@@ -339,15 +343,15 @@ export function InstagramConfig({
       })
 
       toast({
-        title: 'Channel created',
-        description: `Instagram @${selectedAccount.username} connected successfully`,
+        title: tCommon('created'),
+        description: t('instagramConnectedSuccessfully', { username: selectedAccount.username }),
       })
 
       onSuccess?.(result.channel)
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create channel',
+        title: tCommon('error'),
+        description: error instanceof Error ? error.message : t('createChannelError'),
         variant: 'error',
       })
     } finally {
@@ -361,10 +365,10 @@ export function InstagramConfig({
         <div className="flex-1 space-y-6">
         <Tabs defaultValue={isEditing ? "credentials" : "oauth"} className="w-full">
           <TabsList className="grid w-full grid-cols-4">
-            {!isEditing && <TabsTrigger value="oauth">Connect</TabsTrigger>}
-            <TabsTrigger value="credentials">Manual</TabsTrigger>
-            <TabsTrigger value="webhook">Webhook</TabsTrigger>
-            <TabsTrigger value="setup">Setup Guide</TabsTrigger>
+            {!isEditing && <TabsTrigger value="oauth">{t('connect')}</TabsTrigger>}
+            <TabsTrigger value="credentials">{t('manual')}</TabsTrigger>
+            <TabsTrigger value="webhook">{t('webhook')}</TabsTrigger>
+            <TabsTrigger value="setup">{t('setupGuide')}</TabsTrigger>
           </TabsList>
 
           {/* OAuth Tab - Recommended for new channels */}
@@ -372,34 +376,34 @@ export function InstagramConfig({
             <TabsContent value="oauth" className="space-y-4 mt-4">
               <Alert>
                 <Instagram className="h-4 w-4" />
-                <AlertTitle>Connect with Instagram</AlertTitle>
+                <AlertTitle>{t('connectWithInstagram')}</AlertTitle>
                 <AlertDescription>
-                  Instagram Business accounts must be connected via Facebook. Enter your Facebook App credentials.
+                  {t('instagramOauthDesc')}
                 </AlertDescription>
               </Alert>
 
               <div className="space-y-4">
                 {/* App ID for OAuth */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Facebook App ID</label>
+                  <label className="text-sm font-medium">{t('facebookAppId')}</label>
                   <Input
                     placeholder="123456789012345"
                     value={oauthAppId}
                     onChange={(e) => setOauthAppId(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    From your Facebook App Dashboard
+                    {t('fromFacebookDashboard')}
                   </p>
                 </div>
 
                 {/* App Secret for OAuth */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Facebook App Secret</label>
+                  <label className="text-sm font-medium">{t('facebookAppSecret')}</label>
                   <div className="relative">
                     <Input
                       type={showAppSecret ? 'text' : 'password'}
                       className="pr-10"
-                      placeholder="Your app secret"
+                      placeholder={t('yourAppSecret')}
                       value={oauthAppSecret}
                       onChange={(e) => setOauthAppSecret(e.target.value)}
                     />
@@ -425,12 +429,12 @@ export function InstagramConfig({
                   {oauthLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Connecting...
+                      {t('connecting')}
                     </>
                   ) : (
                     <>
                       <Facebook className="h-4 w-4 mr-2" />
-                      Connect via Facebook
+                      {t('connectViaFacebook')}
                     </>
                   )}
                 </Button>
@@ -439,9 +443,9 @@ export function InstagramConfig({
                 {oauthAccounts.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Select an Account</CardTitle>
+                      <CardTitle className="text-base">{t('selectAnAccount')}</CardTitle>
                       <CardDescription>
-                        Choose which Instagram account to connect
+                        {t('selectInstagramAccountDesc')}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -470,7 +474,7 @@ export function InstagramConfig({
                             <div className="flex-1">
                               <p className="font-medium">@{account.username}</p>
                               <p className="text-xs text-muted-foreground">
-                                {account.followers_count.toLocaleString()} followers
+                                {account.followers_count.toLocaleString()} {t('followers')}
                               </p>
                             </div>
                             {selectedAccount?.id === account.id && (
@@ -478,7 +482,7 @@ export function InstagramConfig({
                             )}
                           </div>
                           <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
-                            Connected via: {account.page_name}
+                            {t('connectedVia')}: {account.page_name}
                           </div>
                         </div>
                       ))}
@@ -492,10 +496,10 @@ export function InstagramConfig({
                         {isSubmitting ? (
                           <>
                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Creating...
+                            {t('creating')}
                           </>
                         ) : (
-                          'Create Channel'
+                          t('createChannel')
                         )}
                       </Button>
                     </CardContent>
@@ -505,9 +509,9 @@ export function InstagramConfig({
                 {oauthAccounts.length === 0 && !oauthLoading && (
                   <Alert variant="default">
                     <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>No Instagram accounts found?</AlertTitle>
+                    <AlertTitle>{t('noInstagramAccounts')}</AlertTitle>
                     <AlertDescription>
-                      Make sure your Instagram Business account is connected to a Facebook Page.
+                      {t('noInstagramAccountsDesc')}
                     </AlertDescription>
                   </Alert>
                 )}
@@ -522,12 +526,12 @@ export function InstagramConfig({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Channel Name</FormLabel>
+                  <FormLabel>{t('channelName')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="My Instagram Business" {...field} />
+                    <Input placeholder={t('myInstagramBusiness')} {...field} />
                   </FormControl>
                   <FormDescription>
-                    A friendly name to identify this channel
+                    {t('channelNameDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -540,7 +544,7 @@ export function InstagramConfig({
               name="instagram_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Instagram Business Account ID</FormLabel>
+                  <FormLabel>{t('instagramBusinessAccountId')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -548,7 +552,7 @@ export function InstagramConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Your Instagram Business Account ID (not username)
+                    {t('instagramBusinessAccountIdDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -561,7 +565,7 @@ export function InstagramConfig({
               name="access_token"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Access Token</FormLabel>
+                  <FormLabel>{t('accessToken')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Input
@@ -586,7 +590,7 @@ export function InstagramConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Instagram API Access Token with instagram_manage_messages permission
+                    {t('instagramAccessTokenDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -600,14 +604,14 @@ export function InstagramConfig({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    App ID
-                    <Badge variant="outline" className="ml-2">Optional</Badge>
+                    {t('appId')}
+                    <Badge variant="outline" className="ml-2">{tCommon('optional')}</Badge>
                   </FormLabel>
                   <FormControl>
                     <Input placeholder="123456789012345" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Facebook App ID (for webhook signature validation)
+                    {t('appIdDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -621,15 +625,15 @@ export function InstagramConfig({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    App Secret
-                    <Badge variant="outline" className="ml-2">Optional</Badge>
+                    {t('appSecret')}
+                    <Badge variant="outline" className="ml-2">{tCommon('optional')}</Badge>
                   </FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Input
                         type={showAppSecret ? 'text' : 'password'}
                         className="pr-10"
-                        placeholder="Your app secret"
+                        placeholder={t('yourAppSecret')}
                         {...field}
                       />
                       <Button
@@ -648,7 +652,7 @@ export function InstagramConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    App Secret for webhook signature validation
+                    {t('appSecretDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -662,8 +666,8 @@ export function InstagramConfig({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Verify Token
-                    <Badge variant="outline" className="ml-2">Auto-generated</Badge>
+                    {t('verifyToken')}
+                    <Badge variant="outline" className="ml-2">{t('autoGenerated')}</Badge>
                   </FormLabel>
                   <FormControl>
                     <div className="flex gap-2">
@@ -672,14 +676,14 @@ export function InstagramConfig({
                         type="button"
                         variant="outline"
                         size="icon"
-                        onClick={() => copyToClipboard(field.value, 'Verify Token')}
+                        onClick={() => copyToClipboard(field.value)}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Used to verify webhook requests from Instagram
+                    {t('verifyTokenDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -697,20 +701,20 @@ export function InstagramConfig({
                 {testStatus === 'testing' ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Testing...
+                    {t('testing')}
                   </>
                 ) : testStatus === 'success' ? (
                   <>
                     <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
-                    Connection Valid
+                    {t('connectionValid')}
                   </>
                 ) : testStatus === 'error' ? (
                   <>
                     <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
-                    Test Failed
+                    {t('testFailed')}
                   </>
                 ) : (
-                  'Test Connection'
+                  t('testConnection')
                 )}
               </Button>
             </div>
@@ -722,10 +726,10 @@ export function InstagramConfig({
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Webhook className="h-4 w-4" />
-                  Webhook URL
+                  {t('webhookUrl')}
                 </CardTitle>
                 <CardDescription>
-                  Configure this URL in your Instagram App webhooks settings
+                  {t('configureInstagramWebhook')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -738,7 +742,7 @@ export function InstagramConfig({
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={() => copyToClipboard(webhookUrl, 'Webhook URL')}
+                      onClick={() => copyToClipboard(webhookUrl)}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -749,10 +753,9 @@ export function InstagramConfig({
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Webhook Configuration</AlertTitle>
+              <AlertTitle>{t('webhookConfiguration')}</AlertTitle>
               <AlertDescription>
-                In your Facebook App settings, configure the Instagram webhook with this URL
-                and subscribe to: messages, message_reactions, messaging_seen
+                {t('instagramWebhookInstructions')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -760,17 +763,17 @@ export function InstagramConfig({
           <TabsContent value="setup" className="space-y-4 mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Setup Guide</CardTitle>
+                <CardTitle>{t('setupGuide')}</CardTitle>
                 <CardDescription>
-                  Follow these steps to configure Instagram DM integration
+                  {t('instagramSetupDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-4">
                   <SetupStep
                     number={1}
-                    title="Create a Facebook App"
-                    description="Instagram messaging requires a Facebook App with Instagram permissions"
+                    title={t('createFacebookApp')}
+                    description={t('createFacebookAppDesc')}
                   >
                     <Button variant="outline" size="sm" asChild>
                       <a
@@ -778,7 +781,7 @@ export function InstagramConfig({
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        Open Developer Console
+                        {t('openDeveloperConsole')}
                         <ExternalLink className="h-3 w-3 ml-2" />
                       </a>
                     </Button>
@@ -788,32 +791,32 @@ export function InstagramConfig({
 
                   <SetupStep
                     number={2}
-                    title="Add Instagram Messaging"
-                    description="In your app dashboard, add the Instagram Messaging product"
+                    title={t('addInstagramMessaging')}
+                    description={t('addInstagramMessagingDesc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={3}
-                    title="Connect Instagram Business Account"
-                    description="Connect your Instagram Professional account to a Facebook Page"
+                    title={t('connectInstagramBusiness')}
+                    description={t('connectInstagramBusinessDesc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={4}
-                    title="Generate Access Token"
-                    description="Generate an access token with instagram_basic and instagram_manage_messages permissions"
+                    title={t('generateAccessToken')}
+                    description={t('generateAccessTokenDesc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={5}
-                    title="Configure Webhook"
-                    description="Add the webhook URL from the Webhook tab and subscribe to messaging events"
+                    title={t('configureWebhookStep')}
+                    description={t('configureInstagramWebhookStepDesc')}
                   />
                 </div>
               </CardContent>
@@ -821,10 +824,9 @@ export function InstagramConfig({
 
             <Alert>
               <Instagram className="h-4 w-4" />
-              <AlertTitle>Requirements</AlertTitle>
+              <AlertTitle>{t('requirements')}</AlertTitle>
               <AlertDescription>
-                Instagram messaging requires an Instagram Professional account (Business or Creator)
-                connected to a Facebook Page. Personal accounts are not supported.
+                {t('instagramRequirementsDesc')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -834,19 +836,19 @@ export function InstagramConfig({
         <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel}>
-              Cancel
+              {tCommon('cancel')}
             </Button>
           )}
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
+                {tCommon('saving')}
               </>
             ) : isEditing ? (
-              'Update Channel'
+              t('updateChannel')
             ) : (
-              'Create Channel'
+              t('createChannel')
             )}
           </Button>
         </div>
@@ -903,6 +905,7 @@ export function InstagramConfigDialog({
   onSuccess?: (channel: Channel) => void
 }) {
   const [open, setOpen] = useState(false)
+  const t = useTranslations('channels.config')
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -910,10 +913,10 @@ export function InstagramConfigDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>
-            {channel ? 'Configure Instagram DM' : 'Add Instagram DM'}
+            {channel ? t('configureInstagramDm') : t('addInstagramDm')}
           </DialogTitle>
           <DialogDescription>
-            Connect your Instagram Business account to receive direct messages
+            {t('connectInstagramBusinessAccount')}
           </DialogDescription>
         </DialogHeader>
         <InstagramConfig

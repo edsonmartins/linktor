@@ -1,9 +1,13 @@
 /**
  * API Client - Plugin Pattern
- * Centralized HTTP client with interceptors
+ * Centralized HTTP client with interceptors and automatic token refresh
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1'
+
+// Flag to prevent multiple simultaneous refresh attempts
+let isRefreshing = false
+let refreshPromise: Promise<boolean> | null = null
 
 type RequestConfig = {
   method?: string
@@ -13,13 +17,19 @@ type RequestConfig = {
 }
 
 class ApiError extends Error {
+  public code: string
+
   constructor(
     public status: number,
     public statusText: string,
     public data?: unknown
   ) {
-    super(`API Error: ${status} ${statusText}`)
+    // Extract message from backend response
+    const errorData = data as { error?: { message?: string; code?: string }; message?: string } | null
+    const message = errorData?.error?.message || errorData?.message || `API Error: ${status} ${statusText}`
+    super(message)
     this.name = 'ApiError'
+    this.code = errorData?.error?.code || statusText
   }
 }
 
@@ -67,9 +77,60 @@ requestInterceptors.push((config) => {
 })
 
 /**
- * Core fetch wrapper
+ * Refresh the access token using the refresh token
  */
-async function request<T>(endpoint: string, config: RequestConfig = {}): Promise<T> {
+async function refreshAccessToken(): Promise<boolean> {
+  // If already refreshing, wait for the existing promise
+  if (isRefreshing && refreshPromise) {
+    return refreshPromise
+  }
+
+  const refreshToken = tokenStorage.getRefreshToken()
+  if (!refreshToken) {
+    return false
+  }
+
+  isRefreshing = true
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      })
+
+      if (!response.ok) {
+        tokenStorage.clearTokens()
+        return false
+      }
+
+      const data = await response.json()
+      const tokens = data.data || data
+
+      if (tokens.access_token && tokens.refresh_token) {
+        tokenStorage.setTokens(tokens.access_token, tokens.refresh_token)
+        return true
+      }
+
+      return false
+    } catch {
+      tokenStorage.clearTokens()
+      return false
+    } finally {
+      isRefreshing = false
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
+}
+
+/**
+ * Core fetch wrapper with automatic token refresh
+ */
+async function request<T>(endpoint: string, config: RequestConfig = {}, isRetry = false): Promise<T> {
   let finalConfig = { ...config }
 
   // Run request interceptors
@@ -99,7 +160,23 @@ async function request<T>(endpoint: string, config: RequestConfig = {}): Promise
     response = await interceptor(response)
   }
 
-  // Handle errors
+  // Handle 401 - try to refresh token
+  if (response.status === 401 && !isRetry) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) {
+      // Retry the request with new token
+      return request<T>(endpoint, config, true)
+    } else {
+      // Refresh failed - redirect to login
+      if (typeof window !== 'undefined') {
+        tokenStorage.clearTokens()
+        window.location.href = '/login'
+      }
+      throw new ApiError(401, 'Unauthorized', { message: 'Session expired' })
+    }
+  }
+
+  // Handle other errors
   if (!response.ok) {
     const data = await response.json().catch(() => null)
     throw new ApiError(response.status, response.statusText, data)

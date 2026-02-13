@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import {
   Plus,
   Radio,
@@ -47,8 +48,8 @@ import {
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
-import { useToast } from '@/hooks/use-toast'
-import type { Channel, ChannelType } from '@/types'
+import { toastSuccess, toastError } from '@/hooks/use-toast'
+import type { Channel, ChannelType, PaginatedResponse } from '@/types'
 
 // Channel config components
 import { WebchatConfig } from './webchat-config'
@@ -63,118 +64,49 @@ import { RCSConfig } from './rcs-config'
 import { VoiceConfig } from './voice-config'
 
 /**
- * Channel type configurations
+ * Channel type icon config
  */
-const channelConfigs: Record<
-  ChannelType,
-  {
-    label: string
-    description: string
-    icon: React.ReactNode
-    color: string
-    bgColor: string
-  }
-> = {
-  webchat: {
-    label: 'Web Chat',
-    description: 'Embeddable widget for your website',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-primary',
-    bgColor: 'bg-primary/10',
-  },
-  whatsapp: {
-    label: 'WhatsApp',
-    description: 'Unofficial WhatsApp integration',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-green-500',
-    bgColor: 'bg-green-500/10',
-  },
-  whatsapp_official: {
-    label: 'WhatsApp Official',
-    description: 'Meta Business Cloud API',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-green-600',
-    bgColor: 'bg-green-600/10',
-  },
-  telegram: {
-    label: 'Telegram',
-    description: 'Bot API integration',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-500/10',
-  },
-  sms: {
-    label: 'SMS',
-    description: 'Twilio SMS integration',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-purple-500',
-    bgColor: 'bg-purple-500/10',
-  },
-  instagram: {
-    label: 'Instagram',
-    description: 'Meta Graph API integration',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-pink-500',
-    bgColor: 'bg-pink-500/10',
-  },
-  facebook: {
-    label: 'Facebook Messenger',
-    description: 'Meta Messenger Platform',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-600/10',
-  },
-  rcs: {
-    label: 'RCS',
-    description: 'Rich Communication Services',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500/10',
-  },
-  email: {
-    label: 'Email',
-    description: 'Multi-provider email integration',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-amber-500',
-    bgColor: 'bg-amber-500/10',
-  },
-  voice: {
-    label: 'Voice',
-    description: 'VoIP with IVR support',
-    icon: <MessageSquare className="h-6 w-6" />,
-    color: 'text-cyan-500',
-    bgColor: 'bg-cyan-500/10',
-  },
+const channelIcons: Record<ChannelType, { color: string; bgColor: string }> = {
+  webchat: { color: 'text-primary', bgColor: 'bg-primary/10' },
+  whatsapp: { color: 'text-green-500', bgColor: 'bg-green-500/10' },
+  whatsapp_official: { color: 'text-green-600', bgColor: 'bg-green-600/10' },
+  telegram: { color: 'text-blue-500', bgColor: 'bg-blue-500/10' },
+  sms: { color: 'text-purple-500', bgColor: 'bg-purple-500/10' },
+  instagram: { color: 'text-pink-500', bgColor: 'bg-pink-500/10' },
+  facebook: { color: 'text-blue-600', bgColor: 'bg-blue-600/10' },
+  rcs: { color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
+  email: { color: 'text-amber-500', bgColor: 'bg-amber-500/10' },
+  voice: { color: 'text-cyan-500', bgColor: 'bg-cyan-500/10' },
 }
 
 /**
  * Status Badge
  */
-function StatusBadge({ status }: { status: Channel['status'] }) {
+function StatusBadge({ status, tCommon }: { status: Channel['status']; tCommon: (key: string) => string }) {
   const config = {
     active: {
       variant: 'success' as const,
       icon: <Wifi className="h-3 w-3" />,
-      label: 'Active',
+      labelKey: 'active',
     },
     inactive: {
       variant: 'secondary' as const,
       icon: <WifiOff className="h-3 w-3" />,
-      label: 'Inactive',
+      labelKey: 'inactive',
     },
     error: {
       variant: 'error' as const,
       icon: <AlertTriangle className="h-3 w-3" />,
-      label: 'Error',
+      labelKey: 'error',
     },
   }
 
-  const { variant, icon, label } = config[status]
+  const { variant, icon, labelKey } = config[status]
 
   return (
     <Badge variant={variant} className="gap-1">
       {icon}
-      {label}
+      {tCommon(labelKey)}
     </Badge>
   )
 }
@@ -184,16 +116,20 @@ function StatusBadge({ status }: { status: Channel['status'] }) {
  */
 function ChannelCard({
   channel,
+  t,
+  tCommon,
   onConfigure,
   onToggleStatus,
   onDelete,
 }: {
   channel: Channel
+  t: (key: string) => string
+  tCommon: (key: string) => string
   onConfigure: () => void
   onToggleStatus: () => void
   onDelete: () => void
 }) {
-  const config = channelConfigs[channel.type] || channelConfigs.webchat
+  const iconConfig = channelIcons[channel.type] || channelIcons.webchat
 
   return (
     <Card className="hover:border-primary/30 transition-colors">
@@ -203,16 +139,16 @@ function ChannelCard({
             <div
               className={cn(
                 'flex h-12 w-12 items-center justify-center rounded-lg',
-                config.bgColor,
-                config.color
+                iconConfig.bgColor,
+                iconConfig.color
               )}
             >
-              {config.icon}
+              <MessageSquare className="h-6 w-6" />
             </div>
             <div>
               <CardTitle className="text-base">{channel.name}</CardTitle>
               <CardDescription className="text-xs">
-                {config.description}
+                {t(`descriptions.${channel.type}`)}
               </CardDescription>
             </div>
           </div>
@@ -225,25 +161,25 @@ function ChannelCard({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={onConfigure}>
                 <Settings className="h-4 w-4 mr-2" />
-                Configure
+                {t('configure')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onToggleStatus}>
                 {channel.status === 'active' ? (
                   <>
                     <PowerOff className="h-4 w-4 mr-2" />
-                    Deactivate
+                    {t('deactivate')}
                   </>
                 ) : (
                   <>
                     <Power className="h-4 w-4 mr-2" />
-                    Activate
+                    {t('activate')}
                   </>
                 )}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive" onClick={onDelete}>
                 <Trash2 className="h-4 w-4 mr-2" />
-                Delete channel
+                {t('deleteChannel')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -251,9 +187,9 @@ function ChannelCard({
       </CardHeader>
       <CardContent className="pt-0">
         <div className="flex items-center justify-between">
-          <StatusBadge status={channel.status} />
+          <StatusBadge status={channel.status} tCommon={tCommon} />
           <Badge variant="outline" className="font-mono text-xs">
-            {channel.type}
+            {t(`types.${channel.type}`)}
           </Badge>
         </div>
       </CardContent>
@@ -266,14 +202,16 @@ function ChannelCard({
  */
 function AvailableChannelCard({
   type,
+  t,
   disabled,
   onClick,
 }: {
   type: ChannelType
+  t: (key: string) => string
   disabled?: boolean
   onClick?: () => void
 }) {
-  const config = channelConfigs[type]
+  const iconConfig = channelIcons[type]
 
   return (
     <Card
@@ -290,19 +228,19 @@ function AvailableChannelCard({
           <div
             className={cn(
               'flex h-10 w-10 items-center justify-center rounded-lg',
-              config.bgColor,
-              config.color
+              iconConfig.bgColor,
+              iconConfig.color
             )}
           >
-            {config.icon}
+            <MessageSquare className="h-5 w-5" />
           </div>
           <div className="flex-1">
-            <h4 className="text-sm font-medium">{config.label}</h4>
-            <p className="text-xs text-muted-foreground">{config.description}</p>
+            <h4 className="text-sm font-medium">{t(`types.${type}`)}</h4>
+            <p className="text-xs text-muted-foreground">{t(`descriptions.${type}`)}</p>
           </div>
           {disabled ? (
             <Badge variant="secondary" className="text-[10px]">
-              Coming soon
+              {t('comingSoon')}
             </Badge>
           ) : (
             <Plus className="h-4 w-4 text-muted-foreground" />
@@ -321,18 +259,21 @@ function ChannelConfigSheet({
   onOpenChange,
   channelType,
   channel,
+  t,
   onSuccess,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   channelType: ChannelType | null
   channel?: Channel
+  t: (key: string, values?: Record<string, string>) => string
   onSuccess: () => void
 }) {
   if (!channelType) return null
 
-  const config = channelConfigs[channelType]
+  const iconConfig = channelIcons[channelType]
   const isEditing = !!channel
+  const channelLabel = t(`types.${channelType}`)
 
   const handleSuccess = () => {
     onSuccess()
@@ -344,7 +285,6 @@ function ChannelConfigSheet({
   }
 
   const renderConfigComponent = () => {
-    // Common props for most configs
     const commonProps = {
       channel,
       onSuccess: handleSuccess,
@@ -378,7 +318,7 @@ function ChannelConfigSheet({
       case 'voice':
         return <VoiceConfig channel={channel} onClose={handleCancel} />
       default:
-        return <p>Configuration not available for this channel type.</p>
+        return <p>{t('configNotAvailable')}</p>
     }
   }
 
@@ -387,15 +327,15 @@ function ChannelConfigSheet({
       <SheetContent className="sm:max-w-xl flex flex-col h-full p-0">
         <SheetHeader className="px-6 pt-6 pb-4 border-b">
           <SheetTitle className="flex items-center gap-2">
-            <div className={cn('p-2 rounded-lg', config.bgColor, config.color)}>
-              {config.icon}
+            <div className={cn('p-2 rounded-lg', iconConfig.bgColor, iconConfig.color)}>
+              <MessageSquare className="h-5 w-5" />
             </div>
-            {isEditing ? `Configure ${config.label}` : `Add ${config.label}`}
+            {isEditing ? t('configureChannel', { channel: channelLabel }) : t('addChannelType', { channel: channelLabel })}
           </SheetTitle>
           <SheetDescription>
             {isEditing
-              ? `Update your ${config.label} channel settings`
-              : `Set up a new ${config.label} channel`}
+              ? t('updateSettings', { channel: channelLabel })
+              : t('setupNewChannel', { channel: channelLabel })}
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-6 py-4">
@@ -410,8 +350,9 @@ function ChannelConfigSheet({
  * Channels Page
  */
 export default function ChannelsPage() {
+  const t = useTranslations('channels')
+  const tCommon = useTranslations('common')
   const queryClient = useQueryClient()
-  const { toast } = useToast()
 
   // State for dialogs
   const [configSheetOpen, setConfigSheetOpen] = useState(false)
@@ -423,29 +364,22 @@ export default function ChannelsPage() {
   // Fetch channels
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.channels.list(),
-    queryFn: () => api.get<{ data: Channel[] }>('/channels'),
+    queryFn: () => api.get<PaginatedResponse<Channel>>('/channels'),
   })
 
-  const channels = data?.data || []
+  const channels = data?.data ?? []
 
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/channels/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.channels.all })
-      toast({
-        title: 'Channel deleted',
-        description: 'The channel has been removed.',
-      })
+      toastSuccess(t('channelDeleted'), t('channelDeletedDesc'))
       setDeleteDialogOpen(false)
       setChannelToDelete(null)
     },
     onError: (error: Error) => {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to delete channel.',
-        variant: 'error',
-      })
+      toastError(tCommon('error'), error.message)
     },
   })
 
@@ -455,17 +389,10 @@ export default function ChannelsPage() {
       api.put(`/channels/${id}`, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.channels.all })
-      toast({
-        title: 'Status updated',
-        description: 'Channel status has been updated.',
-      })
+      toastSuccess(t('statusUpdated'), t('statusUpdatedDesc'))
     },
     onError: (error: Error) => {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to update channel status.',
-        variant: 'error',
-      })
+      toastError(tCommon('error'), error.message)
     },
   })
 
@@ -504,16 +431,16 @@ export default function ChannelsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Channels" />
+      <Header title={t('title')} />
 
       <div className="p-6 space-y-6 overflow-auto">
         {/* Active Channels */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold">Active Channels</h2>
+              <h2 className="text-lg font-semibold">{t('activeChannels')}</h2>
               <p className="text-sm text-muted-foreground">
-                Manage your connected communication channels
+                {t('manageChannels')}
               </p>
             </div>
           </div>
@@ -543,6 +470,8 @@ export default function ChannelsPage() {
                 <ChannelCard
                   key={channel.id}
                   channel={channel}
+                  t={t}
+                  tCommon={tCommon}
                   onConfigure={() => handleConfigureChannel(channel)}
                   onToggleStatus={() => handleToggleStatus(channel)}
                   onDelete={() => handleDeleteChannel(channel)}
@@ -553,9 +482,9 @@ export default function ChannelsPage() {
             <Card className="border-dashed">
               <CardContent className="py-8 text-center">
                 <Radio className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
-                <p className="mt-4 text-lg font-medium">No channels configured</p>
+                <p className="mt-4 text-lg font-medium">{t('noChannelsConfigured')}</p>
                 <p className="text-sm text-muted-foreground">
-                  Add your first channel to start receiving messages
+                  {t('addFirstChannel')}
                 </p>
               </CardContent>
             </Card>
@@ -565,23 +494,23 @@ export default function ChannelsPage() {
         {/* Available Channels */}
         <section>
           <div className="mb-4">
-            <h2 className="text-lg font-semibold">Add New Channel</h2>
+            <h2 className="text-lg font-semibold">{t('addNewChannel')}</h2>
             <p className="text-sm text-muted-foreground">
-              Connect new communication channels to your account
+              {t('connectNewChannels')}
             </p>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <AvailableChannelCard type="webchat" onClick={() => handleAddChannel('webchat')} />
-            <AvailableChannelCard type="whatsapp_official" onClick={() => handleAddChannel('whatsapp_official')} />
-            <AvailableChannelCard type="telegram" onClick={() => handleAddChannel('telegram')} />
-            <AvailableChannelCard type="sms" onClick={() => handleAddChannel('sms')} />
-            <AvailableChannelCard type="facebook" onClick={() => handleAddChannel('facebook')} />
-            <AvailableChannelCard type="instagram" onClick={() => handleAddChannel('instagram')} />
-            <AvailableChannelCard type="email" onClick={() => handleAddChannel('email')} />
-            <AvailableChannelCard type="whatsapp" onClick={() => handleAddChannel('whatsapp')} />
-            <AvailableChannelCard type="rcs" onClick={() => handleAddChannel('rcs')} />
-            <AvailableChannelCard type="voice" onClick={() => handleAddChannel('voice')} />
+            <AvailableChannelCard type="webchat" t={t} onClick={() => handleAddChannel('webchat')} />
+            <AvailableChannelCard type="whatsapp_official" t={t} onClick={() => handleAddChannel('whatsapp_official')} />
+            <AvailableChannelCard type="telegram" t={t} onClick={() => handleAddChannel('telegram')} />
+            <AvailableChannelCard type="sms" t={t} onClick={() => handleAddChannel('sms')} />
+            <AvailableChannelCard type="facebook" t={t} onClick={() => handleAddChannel('facebook')} />
+            <AvailableChannelCard type="instagram" t={t} onClick={() => handleAddChannel('instagram')} />
+            <AvailableChannelCard type="email" t={t} onClick={() => handleAddChannel('email')} />
+            <AvailableChannelCard type="whatsapp" t={t} onClick={() => handleAddChannel('whatsapp')} />
+            <AvailableChannelCard type="rcs" t={t} onClick={() => handleAddChannel('rcs')} />
+            <AvailableChannelCard type="voice" t={t} onClick={() => handleAddChannel('voice')} />
           </div>
         </section>
       </div>
@@ -592,6 +521,7 @@ export default function ChannelsPage() {
         onOpenChange={setConfigSheetOpen}
         channelType={selectedChannelType}
         channel={selectedChannel}
+        t={t}
         onSuccess={handleConfigSuccess}
       />
 
@@ -599,19 +529,18 @@ export default function ChannelsPage() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Channel</AlertDialogTitle>
+            <AlertDialogTitle>{t('deleteChannelTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{channelToDelete?.name}"? This action cannot be undone.
-              All conversations and messages associated with this channel will be preserved but the channel will no longer receive new messages.
+              {t('deleteChannelDescription', { name: channelToDelete?.name || '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {tCommon('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

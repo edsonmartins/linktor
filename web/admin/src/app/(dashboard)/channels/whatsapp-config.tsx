@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslations } from 'next-intl'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
@@ -65,12 +66,12 @@ import type { Channel } from '@/types'
 /**
  * WhatsApp Official Configuration Schema
  */
-const whatsappConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
-  access_token: z.string().min(1, 'Access token is required'),
-  phone_number_id: z.string().min(1, 'Phone number ID is required'),
-  business_id: z.string().min(1, 'Business ID is required'),
-  verify_token: z.string().min(1, 'Verify token is required'),
+const createSchema = (t: (key: string) => string) => z.object({
+  name: z.string().min(1, t('channelNameRequired')),
+  access_token: z.string().min(1, t('required')),
+  phone_number_id: z.string().min(1, t('required')),
+  business_id: z.string().min(1, t('required')),
+  verify_token: z.string().min(1, t('required')),
   webhook_secret: z.string().optional(),
   api_version: z.string().min(1),
 })
@@ -91,6 +92,8 @@ export function WhatsAppConfig({
   onSuccess,
   onCancel,
 }: WhatsAppConfigProps) {
+  const t = useTranslations('channels.config')
+  const tCommon = useTranslations('common')
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showAccessToken, setShowAccessToken] = useState(false)
@@ -100,7 +103,7 @@ export function WhatsAppConfig({
   const isEditing = !!channel
 
   const form = useForm<WhatsAppConfigForm>({
-    resolver: zodResolver(whatsappConfigSchema),
+    resolver: zodResolver(createSchema(tCommon)),
     defaultValues: {
       name: channel?.name || '',
       access_token: '',
@@ -114,7 +117,7 @@ export function WhatsAppConfig({
 
   const webhookUrl = channel
     ? `${window.location.origin}/api/v1/webhooks/whatsapp/${channel.id}`
-    : 'Will be generated after creation'
+    : t('willBeGenerated')
 
   const onSubmit = async (data: WhatsAppConfigForm) => {
     setIsSubmitting(true)
@@ -142,15 +145,17 @@ export function WhatsAppConfig({
       }
 
       toast({
-        title: isEditing ? 'Channel updated' : 'Channel created',
-        description: `WhatsApp channel "${data.name}" has been ${isEditing ? 'updated' : 'created'} successfully.`,
+        title: isEditing ? t('channelUpdated') : t('channelCreated'),
+        description: isEditing
+          ? t('channelUpdatedDesc', { name: data.name })
+          : t('channelCreatedDesc', { name: data.name }),
       })
 
       onSuccess?.(result)
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save channel',
+        title: t('error'),
+        description: error instanceof Error ? error.message : t('failedToSave'),
         variant: 'error',
       })
     } finally {
@@ -162,8 +167,8 @@ export function WhatsAppConfig({
     const values = form.getValues()
     if (!values.access_token || !values.phone_number_id) {
       toast({
-        title: 'Missing credentials',
-        description: 'Please enter access token and phone number ID first',
+        title: t('missingCredentials'),
+        description: t('enterCredentialsFirst'),
         variant: 'error',
       })
       return
@@ -178,14 +183,14 @@ export function WhatsAppConfig({
       })
       setTestStatus('success')
       toast({
-        title: 'Connection successful',
-        description: 'WhatsApp credentials are valid',
+        title: t('connectionSuccess'),
+        description: t('credentialsValid'),
       })
     } catch {
       setTestStatus('error')
       toast({
-        title: 'Connection failed',
-        description: 'Could not connect to WhatsApp API. Please check your credentials.',
+        title: t('connectionFailed'),
+        description: t('checkCredentials'),
         variant: 'error',
       })
     }
@@ -194,8 +199,8 @@ export function WhatsAppConfig({
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text)
     toast({
-      title: 'Copied',
-      description: `${label} copied to clipboard`,
+      title: t('copied'),
+      description: t('copiedToClipboard', { label }),
     })
   }
 
@@ -205,9 +210,9 @@ export function WhatsAppConfig({
         <div className="flex-1 space-y-6">
         <Tabs defaultValue="credentials" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="credentials">Credentials</TabsTrigger>
-            <TabsTrigger value="webhook">Webhook</TabsTrigger>
-            <TabsTrigger value="setup">Setup Guide</TabsTrigger>
+            <TabsTrigger value="credentials">{t('credentials')}</TabsTrigger>
+            <TabsTrigger value="webhook">{t('webhook')}</TabsTrigger>
+            <TabsTrigger value="setup">{t('setupGuide')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="credentials" className="space-y-4 mt-4">
@@ -217,12 +222,12 @@ export function WhatsAppConfig({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Channel Name</FormLabel>
+                  <FormLabel>{t('channelName')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="My WhatsApp Business" {...field} />
+                    <Input placeholder={t('channelNamePlaceholder')} {...field} />
                   </FormControl>
                   <FormDescription>
-                    A friendly name to identify this channel
+                    {t('channelNameDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -235,12 +240,12 @@ export function WhatsAppConfig({
               name="access_token"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Access Token</FormLabel>
+                  <FormLabel>{t('accessToken')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Input
                         type={showAccessToken ? 'text' : 'password'}
-                        placeholder={isEditing ? '••••••••••••••••' : 'Enter access token'}
+                        placeholder={isEditing ? '••••••••••••••••' : t('accessTokenPlaceholder')}
                         {...field}
                       />
                       <Button
@@ -259,7 +264,7 @@ export function WhatsAppConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Permanent access token from Meta Developer Portal
+                    {t('accessTokenDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -272,7 +277,7 @@ export function WhatsAppConfig({
               name="phone_number_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Phone Number ID</FormLabel>
+                  <FormLabel>{t('phoneNumberId')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -284,7 +289,7 @@ export function WhatsAppConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Found in WhatsApp Business API settings
+                    {t('phoneNumberIdDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -297,12 +302,12 @@ export function WhatsAppConfig({
               name="business_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>WhatsApp Business Account ID</FormLabel>
+                  <FormLabel>{t('businessId')}</FormLabel>
                   <FormControl>
                     <Input placeholder="123456789012345" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Your WhatsApp Business Account ID from Meta Business Suite
+                    {t('businessIdDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -315,12 +320,12 @@ export function WhatsAppConfig({
               name="api_version"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>API Version</FormLabel>
+                  <FormLabel>{t('apiVersion')}</FormLabel>
                   <FormControl>
                     <Input placeholder="v21.0" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Meta Graph API version (e.g., v21.0)
+                    {t('apiVersionDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -338,20 +343,20 @@ export function WhatsAppConfig({
                 {testStatus === 'testing' ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Testing...
+                    {t('testing')}
                   </>
                 ) : testStatus === 'success' ? (
                   <>
                     <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
-                    Connection Valid
+                    {t('connectionValid')}
                   </>
                 ) : testStatus === 'error' ? (
                   <>
                     <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
-                    Test Failed
+                    {t('testFailed')}
                   </>
                 ) : (
-                  'Test Connection'
+                  t('testConnection')
                 )}
               </Button>
             </div>
@@ -363,10 +368,10 @@ export function WhatsAppConfig({
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Webhook className="h-4 w-4" />
-                  Webhook URL
+                  {t('webhookUrl')}
                 </CardTitle>
                 <CardDescription>
-                  Configure this URL in Meta Developer Portal
+                  {t('webhookUrlDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -394,7 +399,7 @@ export function WhatsAppConfig({
               name="verify_token"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Verify Token</FormLabel>
+                  <FormLabel>{t('verifyToken')}</FormLabel>
                   <FormControl>
                     <div className="flex items-center gap-2">
                       <Input {...field} />
@@ -402,14 +407,14 @@ export function WhatsAppConfig({
                         type="button"
                         variant="outline"
                         size="icon"
-                        onClick={() => copyToClipboard(field.value, 'Verify token')}
+                        onClick={() => copyToClipboard(field.value, t('verifyToken'))}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Use this token when configuring the webhook in Meta Developer Portal
+                    {t('verifyTokenDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -423,8 +428,8 @@ export function WhatsAppConfig({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    App Secret
-                    <Badge variant="outline" className="ml-2">Optional</Badge>
+                    {t('appSecret')}
+                    <Badge variant="outline" className="ml-2">{t('optional')}</Badge>
                   </FormLabel>
                   <FormControl>
                     <div className="relative">
@@ -432,7 +437,7 @@ export function WhatsAppConfig({
                       <Input
                         type={showWebhookSecret ? 'text' : 'password'}
                         className="pl-10 pr-10"
-                        placeholder={isEditing ? '••••••••••••••••' : 'Enter app secret'}
+                        placeholder={isEditing ? '••••••••••••••••' : t('appSecretPlaceholder')}
                         {...field}
                       />
                       <Button
@@ -451,7 +456,7 @@ export function WhatsAppConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    App Secret from Meta Developer Portal for webhook signature verification
+                    {t('appSecretDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -460,10 +465,9 @@ export function WhatsAppConfig({
 
             <Alert>
               <Shield className="h-4 w-4" />
-              <AlertTitle>Security Recommendation</AlertTitle>
+              <AlertTitle>{t('securityRecommendation')}</AlertTitle>
               <AlertDescription>
-                Configure the App Secret to enable HMAC-SHA256 signature verification
-                for webhook requests. This ensures messages are genuinely from Meta.
+                {t('securityRecommendationDesc')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -471,17 +475,17 @@ export function WhatsAppConfig({
           <TabsContent value="setup" className="space-y-4 mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Setup Guide</CardTitle>
+                <CardTitle>{t('setupGuideTitle')}</CardTitle>
                 <CardDescription>
-                  Follow these steps to configure WhatsApp Business Cloud API
+                  {t('setupGuideDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-4">
                   <SetupStep
                     number={1}
-                    title="Create Meta Developer App"
-                    description="Go to Meta Developer Portal and create a new app with WhatsApp Business API"
+                    title={t('step1Title')}
+                    description={t('step1Desc')}
                   >
                     <Button variant="outline" size="sm" asChild>
                       <a
@@ -489,7 +493,7 @@ export function WhatsAppConfig({
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        Open Meta Developer Portal
+                        {t('openMetaPortal')}
                         <ExternalLink className="h-3 w-3 ml-2" />
                       </a>
                     </Button>
@@ -499,29 +503,29 @@ export function WhatsAppConfig({
 
                   <SetupStep
                     number={2}
-                    title="Add WhatsApp Product"
-                    description="Add the WhatsApp product to your app and configure a test phone number"
+                    title={t('step2Title')}
+                    description={t('step2Desc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={3}
-                    title="Generate Access Token"
-                    description="Create a permanent access token in the API Setup section"
+                    title={t('step3Title')}
+                    description={t('step3Desc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={4}
-                    title="Configure Webhook"
-                    description="Set up the webhook URL and subscribe to the 'messages' field"
+                    title={t('step4Title')}
+                    description={t('step4Desc')}
                   >
                     <div className="text-sm text-muted-foreground">
-                      <p>Webhook URL: Use the URL from the Webhook tab</p>
-                      <p>Verify Token: Use the token from the Webhook tab</p>
-                      <p>Subscribed Fields: <code>messages</code></p>
+                      <p>{t('step4Details1')}</p>
+                      <p>{t('step4Details2')}</p>
+                      <p>{t('step4Details3')}</p>
                     </div>
                   </SetupStep>
 
@@ -529,8 +533,8 @@ export function WhatsAppConfig({
 
                   <SetupStep
                     number={5}
-                    title="Test the Integration"
-                    description="Send a test message from your phone to verify the setup"
+                    title={t('step5Title')}
+                    description={t('step5Desc')}
                   />
                 </div>
               </CardContent>
@@ -538,11 +542,9 @@ export function WhatsAppConfig({
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>24-Hour Messaging Window</AlertTitle>
+              <AlertTitle>{t('messagingWindow')}</AlertTitle>
               <AlertDescription>
-                WhatsApp enforces a 24-hour customer service window. You can only send
-                free-form messages within 24 hours of the last customer message.
-                Outside this window, you must use pre-approved template messages.
+                {t('messagingWindowDesc')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -552,19 +554,19 @@ export function WhatsAppConfig({
         <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel}>
-              Cancel
+              {t('cancel')}
             </Button>
           )}
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
+                {t('saving')}
               </>
             ) : isEditing ? (
-              'Update Channel'
+              t('updateChannel')
             ) : (
-              'Create Channel'
+              t('createChannel')
             )}
           </Button>
         </div>
@@ -614,6 +616,7 @@ export function WhatsAppConfigDialog({
   onSuccess?: (channel: Channel) => void
 }) {
   const [open, setOpen] = useState(false)
+  const tChannels = useTranslations('channels')
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -621,10 +624,14 @@ export function WhatsAppConfigDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>
-            {channel ? 'Configure WhatsApp Channel' : 'Add WhatsApp Channel'}
+            {channel
+              ? tChannels('configureChannel', { channel: 'WhatsApp Business' })
+              : tChannels('addChannelType', { channel: 'WhatsApp Business' })}
           </DialogTitle>
           <DialogDescription>
-            Connect your WhatsApp Business account using Meta&apos;s Cloud API
+            {channel
+              ? tChannels('updateSettings', { channel: 'WhatsApp Business' })
+              : tChannels('setupNewChannel', { channel: 'WhatsApp Business' })}
           </DialogDescription>
         </DialogHeader>
         <WhatsAppConfig

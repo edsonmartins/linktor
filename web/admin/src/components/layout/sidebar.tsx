@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
+import { useTranslations } from 'next-intl'
 import {
   LayoutDashboard,
   MessageSquare,
@@ -28,6 +29,7 @@ import { SimpleTooltip } from '@/components/ui/tooltip'
 import { Separator } from '@/components/ui/separator'
 import { useAuthStore, useUser } from '@/stores/auth-store'
 import { useUIStore, useSidebarCollapsed, useUnreadCount } from '@/stores/ui-store'
+import { LocaleSwitcher } from '@/components/locale-switcher'
 
 /**
  * Navigation items - Plugin Pattern
@@ -35,53 +37,53 @@ import { useUIStore, useSidebarCollapsed, useUnreadCount } from '@/stores/ui-sto
  */
 const navItems = [
   {
-    label: 'Dashboard',
+    labelKey: 'dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
   },
   {
-    label: 'Conversations',
+    labelKey: 'conversations',
     href: '/conversations',
     icon: MessageSquare,
     badge: true, // Shows unread count
   },
   {
-    label: 'Contacts',
+    labelKey: 'contacts',
     href: '/contacts',
     icon: Users,
   },
   {
-    label: 'Channels',
+    labelKey: 'channels',
     href: '/channels',
     icon: Radio,
   },
   {
-    label: 'Bots',
+    labelKey: 'bots',
     href: '/bots',
     icon: Bot,
   },
   {
-    label: 'Knowledge Base',
+    labelKey: 'knowledgeBase',
     href: '/knowledge-base',
     icon: BookOpen,
   },
   {
-    label: 'Flows',
+    labelKey: 'flows',
     href: '/flows',
     icon: GitBranch,
   },
   {
-    label: 'Analytics',
+    labelKey: 'analytics',
     href: '/analytics',
     icon: BarChart3,
   },
   {
-    label: 'Observability',
+    labelKey: 'observability',
     href: '/observability',
     icon: Activity,
   },
   {
-    label: 'Team',
+    labelKey: 'team',
     href: '/users',
     icon: UsersRound,
   },
@@ -89,7 +91,7 @@ const navItems = [
 
 const bottomNavItems = [
   {
-    label: 'Settings',
+    labelKey: 'settings',
     href: '/settings',
     icon: Settings,
   },
@@ -100,6 +102,7 @@ const bottomNavItems = [
  * Collapsible sidebar with navigation
  */
 export function Sidebar() {
+  const t = useTranslations('nav')
   const pathname = usePathname()
   const user = useUser()
   const { logout } = useAuthStore()
@@ -149,6 +152,7 @@ export function Sidebar() {
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href)
           const Icon = item.icon
+          const label = t(item.labelKey)
 
           const linkContent = (
             <Link
@@ -164,7 +168,7 @@ export function Sidebar() {
               <Icon className="h-5 w-5 shrink-0" />
               {!collapsed && (
                 <>
-                  <span>{item.label}</span>
+                  <span>{label}</span>
                   {item.badge && unreadCount > 0 && (
                     <Badge variant="error" className="ml-auto">
                       {unreadCount > 99 ? '99+' : unreadCount}
@@ -180,7 +184,7 @@ export function Sidebar() {
 
           if (collapsed) {
             return (
-              <SimpleTooltip key={item.href} content={item.label} side="right">
+              <SimpleTooltip key={item.href} content={label} side="right">
                 <div className="relative">{linkContent}</div>
               </SimpleTooltip>
             )
@@ -195,6 +199,7 @@ export function Sidebar() {
         {bottomNavItems.map((item) => {
           const isActive = pathname.startsWith(item.href)
           const Icon = item.icon
+          const label = t(item.labelKey)
 
           const linkContent = (
             <Link
@@ -208,13 +213,13 @@ export function Sidebar() {
               )}
             >
               <Icon className="h-5 w-5 shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              {!collapsed && <span>{label}</span>}
             </Link>
           )
 
           if (collapsed) {
             return (
-              <SimpleTooltip key={item.href} content={item.label} side="right">
+              <SimpleTooltip key={item.href} content={label} side="right">
                 {linkContent}
               </SimpleTooltip>
             )
@@ -250,9 +255,14 @@ export function Sidebar() {
           )}
         </div>
 
+        {/* Language Switcher */}
+        <div className={cn('mt-2', collapsed ? 'flex justify-center' : '')}>
+          <LocaleSwitcher collapsed={collapsed} />
+        </div>
+
         {/* Logout button */}
         {collapsed ? (
-          <SimpleTooltip content="Logout" side="right">
+          <SimpleTooltip content={t('logout')} side="right">
             <Button
               variant="ghost"
               size="icon"
@@ -269,7 +279,7 @@ export function Sidebar() {
             onClick={logout}
           >
             <LogOut className="h-5 w-5" />
-            Logout
+            {t('logout')}
           </Button>
         )}
       </div>

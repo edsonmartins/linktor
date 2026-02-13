@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import { Plus, Search, BookOpen, FileText, Globe, RefreshCw } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -14,35 +15,63 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useToast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
-import type { KnowledgeBase, KnowledgeBaseType, KnowledgeBaseStatus } from '@/types'
+import type { KnowledgeBase, KnowledgeBaseType, KnowledgeBaseStatus, PaginatedResponse } from '@/types'
 import { KnowledgeBaseCard } from './components/knowledge-base-card'
 import { KnowledgeBaseForm } from './components/knowledge-base-form'
 
 export default function KnowledgeBasePage() {
+  const t = useTranslations('knowledgeBase')
+  const tCommon = useTranslations('common')
+  const { toast } = useToast()
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<KnowledgeBaseType | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState<KnowledgeBaseStatus | 'all'>('all')
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingKb, setEditingKb] = useState<KnowledgeBase | null>(null)
+  const [kbToDelete, setKbToDelete] = useState<KnowledgeBase | null>(null)
 
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.knowledgeBases.list({ search: searchQuery, type: typeFilter, status: statusFilter }),
     queryFn: () =>
-      api.get<{ data: KnowledgeBase[]; total: number }>('/knowledge-bases', {
+      api.get<PaginatedResponse<KnowledgeBase>>('/knowledge-bases', {
         ...(searchQuery && { search: searchQuery }),
         ...(typeFilter !== 'all' && { type: typeFilter }),
         ...(statusFilter !== 'all' && { status: statusFilter }),
       }),
   })
 
+  const knowledgeBases = data?.data ?? []
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/knowledge-bases/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeBases.all })
+      setKbToDelete(null)
+      toast({
+        title: tCommon('success'),
+        description: t('deleteKnowledge'),
+      })
+    },
+    onError: () => {
+      toast({
+        title: tCommon('error'),
+        variant: 'destructive',
+      })
     },
   })
 
@@ -53,17 +82,13 @@ export default function KnowledgeBasePage() {
     },
   })
 
-  const knowledgeBases = data?.data || []
-
   const handleEdit = (kb: KnowledgeBase) => {
     setEditingKb(kb)
     setIsFormOpen(true)
   }
 
-  const handleDelete = async (kb: KnowledgeBase) => {
-    if (confirm(`Are you sure you want to delete "${kb.name}"? This will also delete all items in this knowledge base.`)) {
-      await deleteMutation.mutateAsync(kb.id)
-    }
+  const handleDelete = (kb: KnowledgeBase) => {
+    setKbToDelete(kb)
   }
 
   const handleRegenerate = async (kb: KnowledgeBase) => {
@@ -77,7 +102,7 @@ export default function KnowledgeBasePage() {
 
   return (
     <div className="flex h-full flex-col">
-      <Header title="Knowledge Base" />
+      <Header title={t('title')} />
 
       <div className="flex-1 overflow-auto p-6">
         {/* Toolbar */}
@@ -87,7 +112,7 @@ export default function KnowledgeBasePage() {
             <div className="relative max-w-sm flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search knowledge bases..."
+                placeholder={t('searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -97,26 +122,26 @@ export default function KnowledgeBasePage() {
             {/* Type Filter */}
             <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as typeof typeFilter)}>
               <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Type" />
+                <SelectValue placeholder={tCommon('type')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="faq">FAQ</SelectItem>
-                <SelectItem value="documents">Documents</SelectItem>
-                <SelectItem value="website">Website</SelectItem>
+                <SelectItem value="all">{t('allTypes')}</SelectItem>
+                <SelectItem value="faq">{t('faq')}</SelectItem>
+                <SelectItem value="documents">{t('documents')}</SelectItem>
+                <SelectItem value="website">{t('website')}</SelectItem>
               </SelectContent>
             </Select>
 
             {/* Status Filter */}
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
               <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={tCommon('status')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="syncing">Syncing</SelectItem>
-                <SelectItem value="error">Error</SelectItem>
+                <SelectItem value="all">{t('allStatus')}</SelectItem>
+                <SelectItem value="active">{t('active')}</SelectItem>
+                <SelectItem value="syncing">{t('syncing')}</SelectItem>
+                <SelectItem value="error">{t('error')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -124,7 +149,7 @@ export default function KnowledgeBasePage() {
           {/* Add Button */}
           <Button onClick={() => setIsFormOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            New Knowledge Base
+            {t('newKnowledgeBase')}
           </Button>
         </div>
 
@@ -146,13 +171,13 @@ export default function KnowledgeBasePage() {
         ) : knowledgeBases.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <BookOpen className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
-            <h3 className="mb-2 text-lg font-medium">No knowledge bases yet</h3>
+            <h3 className="mb-2 text-lg font-medium">{t('noKnowledgeBases')}</h3>
             <p className="mb-4 text-sm text-muted-foreground">
-              Create your first knowledge base to power AI-assisted responses.
+              {t('noKnowledgeBasesDesc')}
             </p>
             <Button onClick={() => setIsFormOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Create Knowledge Base
+              {t('createKnowledgeBase')}
             </Button>
           </div>
         ) : (
@@ -177,6 +202,27 @@ export default function KnowledgeBasePage() {
         onOpenChange={handleFormClose}
         knowledgeBase={editingKb}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!kbToDelete} onOpenChange={(open) => !open && setKbToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('deleteKnowledge')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('confirmDelete', { name: kbToDelete?.name || '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => kbToDelete && deleteMutation.mutate(kbToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {tCommon('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

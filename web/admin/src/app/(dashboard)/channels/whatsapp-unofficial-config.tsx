@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslations } from 'next-intl'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
@@ -58,8 +59,8 @@ import type { Channel } from '@/types'
 /**
  * WhatsApp Unofficial Configuration Schema
  */
-const whatsappConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
+const createSchema = (t: (key: string) => string) => z.object({
+  name: z.string().min(1, t('channelNameRequired')),
   device_name: z.string().optional(),
   phone_number: z.string().optional(),
 })
@@ -82,6 +83,8 @@ export function WhatsAppUnofficialConfig({
   onSuccess,
   onCancel,
 }: WhatsAppUnofficialConfigProps) {
+  const t = useTranslations('channels.config')
+  const tCommon = useTranslations('common')
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
@@ -94,7 +97,7 @@ export function WhatsAppUnofficialConfig({
   const isEditing = !!channel
 
   const form = useForm<WhatsAppConfigForm>({
-    resolver: zodResolver(whatsappConfigSchema),
+    resolver: zodResolver(createSchema(tCommon)),
     defaultValues: {
       name: channel?.name || '',
       device_name: (channel?.config?.device_name as string) || 'Linktor',
@@ -141,15 +144,17 @@ export function WhatsAppUnofficialConfig({
       }
 
       toast({
-        title: isEditing ? 'Channel updated' : 'Channel created',
-        description: `WhatsApp channel "${data.name}" has been ${isEditing ? 'updated' : 'created'} successfully.`,
+        title: isEditing ? t('channelUpdated') : t('channelCreated'),
+        description: isEditing
+          ? t('channelUpdatedDesc', { name: data.name })
+          : t('channelCreatedDesc', { name: data.name }),
       })
 
       onSuccess?.(result)
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save channel',
+        title: t('error'),
+        description: error instanceof Error ? error.message : t('failedToSave'),
         variant: 'error',
       })
     } finally {
@@ -175,8 +180,8 @@ export function WhatsAppUnofficialConfig({
     } catch (error) {
       setConnectionStatus('disconnected')
       toast({
-        title: 'Error',
-        description: 'Failed to start QR login',
+        title: t('error'),
+        description: t('failedToStartQr'),
         variant: 'error',
       })
     }
@@ -186,8 +191,8 @@ export function WhatsAppUnofficialConfig({
     const phoneNumber = form.getValues('phone_number')
     if (!phoneNumber) {
       toast({
-        title: 'Phone number required',
-        description: 'Please enter your phone number to use pair code login',
+        title: t('phoneNumberRequired'),
+        description: t('enterPhoneForPairCode'),
         variant: 'error',
       })
       return
@@ -209,8 +214,8 @@ export function WhatsAppUnofficialConfig({
     } catch (error) {
       setConnectionStatus('disconnected')
       toast({
-        title: 'Error',
-        description: 'Failed to get pair code',
+        title: t('error'),
+        description: t('failedToGetPairCode'),
         variant: 'error',
       })
     }
@@ -230,13 +235,13 @@ export function WhatsAppUnofficialConfig({
       setConnectionStatus('disconnected')
       setDeviceInfo(null)
       toast({
-        title: 'Disconnected',
-        description: 'WhatsApp has been disconnected',
+        title: t('disconnectedSuccess'),
+        description: t('disconnectedDesc'),
       })
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to disconnect',
+        title: t('error'),
+        description: t('failedToDisconnect'),
         variant: 'error',
       })
     }
@@ -245,15 +250,15 @@ export function WhatsAppUnofficialConfig({
   const getStatusBadge = () => {
     switch (connectionStatus) {
       case 'connected':
-        return <Badge variant="success" className="gap-1"><CheckCircle2 className="h-3 w-3" /> Connected</Badge>
+        return <Badge variant="success" className="gap-1"><CheckCircle2 className="h-3 w-3" /> {t('connected')}</Badge>
       case 'connecting':
-        return <Badge variant="secondary" className="gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Connecting</Badge>
+        return <Badge variant="secondary" className="gap-1"><Loader2 className="h-3 w-3 animate-spin" /> {t('connecting')}</Badge>
       case 'qr_pending':
-        return <Badge variant="warning" className="gap-1"><QrCode className="h-3 w-3" /> Scan QR Code</Badge>
+        return <Badge variant="warning" className="gap-1"><QrCode className="h-3 w-3" /> {t('scanQrCode')}</Badge>
       case 'logged_out':
-        return <Badge variant="error" className="gap-1"><AlertCircle className="h-3 w-3" /> Logged Out</Badge>
+        return <Badge variant="error" className="gap-1"><AlertCircle className="h-3 w-3" /> {t('loggedOut')}</Badge>
       default:
-        return <Badge variant="secondary" className="gap-1">Disconnected</Badge>
+        return <Badge variant="secondary" className="gap-1">{t('disconnected')}</Badge>
     }
   }
 
@@ -263,8 +268,8 @@ export function WhatsAppUnofficialConfig({
         <div className="flex-1 space-y-6">
         <Tabs defaultValue="setup" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="setup">Setup</TabsTrigger>
-            <TabsTrigger value="connection">Connection</TabsTrigger>
+            <TabsTrigger value="setup">{t('setup')}</TabsTrigger>
+            <TabsTrigger value="connection">{t('connection')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="setup" className="space-y-4 mt-4">
@@ -274,12 +279,12 @@ export function WhatsAppUnofficialConfig({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Channel Name</FormLabel>
+                  <FormLabel>{t('channelName')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="My WhatsApp" {...field} />
+                    <Input placeholder={t('channelNamePlaceholder')} {...field} />
                   </FormControl>
                   <FormDescription>
-                    A friendly name to identify this channel
+                    {t('channelNameDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -292,12 +297,12 @@ export function WhatsAppUnofficialConfig({
               name="device_name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Device Name</FormLabel>
+                  <FormLabel>{t('deviceName')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="Linktor" {...field} />
+                    <Input placeholder={t('deviceNamePlaceholder')} {...field} />
                   </FormControl>
                   <FormDescription>
-                    Name shown in WhatsApp linked devices
+                    {t('deviceNameDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -306,10 +311,9 @@ export function WhatsAppUnofficialConfig({
 
             <Alert>
               <Smartphone className="h-4 w-4" />
-              <AlertTitle>Multi-Device Support</AlertTitle>
+              <AlertTitle>{t('multiDeviceSupport')}</AlertTitle>
               <AlertDescription>
-                This connection uses WhatsApp multi-device protocol. Your phone doesn't
-                need to stay online after initial setup.
+                {t('multiDeviceDesc')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -319,13 +323,13 @@ export function WhatsAppUnofficialConfig({
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Connection Status</CardTitle>
+                  <CardTitle className="text-base">{t('connectionStatus')}</CardTitle>
                   {getStatusBadge()}
                 </div>
                 <CardDescription>
                   {connectionStatus === 'connected' && deviceInfo
-                    ? `Connected as ${deviceInfo.phone_number || deviceInfo.jid}`
-                    : 'Connect your WhatsApp account to receive messages'}
+                    ? t('connectedAs', { phone: deviceInfo.phone_number || deviceInfo.jid })
+                    : t('connectAccount')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -334,11 +338,11 @@ export function WhatsAppUnofficialConfig({
                     {deviceInfo && (
                       <div className="bg-muted p-4 rounded-lg space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Phone:</span>
+                          <span className="text-muted-foreground">{t('phone')}:</span>
                           <span>{deviceInfo.phone_number || deviceInfo.jid}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Device:</span>
+                          <span className="text-muted-foreground">{t('device')}:</span>
                           <span>{deviceInfo.display_name || 'Linktor'}</span>
                         </div>
                       </div>
@@ -349,7 +353,7 @@ export function WhatsAppUnofficialConfig({
                       onClick={disconnect}
                       className="w-full"
                     >
-                      Disconnect
+                      {t('disconnect')}
                     </Button>
                   </div>
                 ) : connectionStatus === 'qr_pending' && qrCode ? (
@@ -365,11 +369,11 @@ export function WhatsAppUnofficialConfig({
                       </div>
                       <div className="text-center">
                         <p className="text-sm text-muted-foreground">
-                          Scan with WhatsApp to connect
+                          {t('scanWithWhatsApp')}
                         </p>
                         {qrExpiry > 0 && (
                           <p className="text-xs text-muted-foreground mt-1">
-                            Expires in {qrExpiry}s
+                            {t('expiresIn', { seconds: qrExpiry })}
                           </p>
                         )}
                       </div>
@@ -380,7 +384,7 @@ export function WhatsAppUnofficialConfig({
                         onClick={refreshQR}
                       >
                         <RefreshCw className="h-4 w-4 mr-2" />
-                        Refresh QR
+                        {t('refreshQr')}
                       </Button>
                     </div>
                   </div>
@@ -393,11 +397,11 @@ export function WhatsAppUnofficialConfig({
                       </div>
                       <div className="text-center">
                         <p className="text-sm text-muted-foreground">
-                          Enter this code in WhatsApp &gt; Linked Devices
+                          {t('enterPairCode')}
                         </p>
                         {qrExpiry > 0 && (
                           <p className="text-xs text-muted-foreground mt-1">
-                            Expires in {Math.floor(qrExpiry / 60)}:{(qrExpiry % 60).toString().padStart(2, '0')}
+                            {t('expiresIn', { seconds: `${Math.floor(qrExpiry / 60)}:${(qrExpiry % 60).toString().padStart(2, '0')}` })}
                           </p>
                         )}
                       </div>
@@ -417,12 +421,12 @@ export function WhatsAppUnofficialConfig({
                           {connectionStatus === 'connecting' ? (
                             <>
                               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Connecting...
+                              {t('connecting')}...
                             </>
                           ) : (
                             <>
                               <QrCode className="h-4 w-4 mr-2" />
-                              Connect with QR Code
+                              {t('connectWithQr')}
                             </>
                           )}
                         </Button>
@@ -433,7 +437,7 @@ export function WhatsAppUnofficialConfig({
                           </div>
                           <div className="relative flex justify-center text-xs uppercase">
                             <span className="bg-background px-2 text-muted-foreground">
-                              Or use phone number
+                              {t('orUsePhoneNumber')}
                             </span>
                           </div>
                         </div>
@@ -445,12 +449,12 @@ export function WhatsAppUnofficialConfig({
                             <FormItem>
                               <FormControl>
                                 <Input
-                                  placeholder="+55 11 99999-9999"
+                                  placeholder={t('phoneNumberPlaceholder')}
                                   {...field}
                                 />
                               </FormControl>
                               <FormDescription>
-                                Include country code (e.g., +55 for Brazil)
+                                {t('includeCountryCode')}
                               </FormDescription>
                             </FormItem>
                           )}
@@ -464,7 +468,7 @@ export function WhatsAppUnofficialConfig({
                           className="w-full"
                         >
                           <Smartphone className="h-4 w-4 mr-2" />
-                          Get Pair Code
+                          {t('getPairCode')}
                         </Button>
                       </>
                     )}
@@ -472,9 +476,9 @@ export function WhatsAppUnofficialConfig({
                     {!isEditing && (
                       <Alert>
                         <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>Save First</AlertTitle>
+                        <AlertTitle>{t('saveFirst')}</AlertTitle>
                         <AlertDescription>
-                          Save the channel configuration first, then connect your WhatsApp.
+                          {t('saveFirstDesc')}
                         </AlertDescription>
                       </Alert>
                     )}
@@ -486,32 +490,32 @@ export function WhatsAppUnofficialConfig({
             {/* Setup Guide */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">How to Connect</CardTitle>
+                <CardTitle className="text-base">{t('howToConnect')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <div className="flex gap-3">
                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-medium">
                     1
                   </div>
-                  <p>Open WhatsApp on your phone</p>
+                  <p>{t('howToStep1')}</p>
                 </div>
                 <div className="flex gap-3">
                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-medium">
                     2
                   </div>
-                  <p>Go to Settings &gt; Linked Devices</p>
+                  <p>{t('howToStep2')}</p>
                 </div>
                 <div className="flex gap-3">
                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-medium">
                     3
                   </div>
-                  <p>Tap "Link a Device"</p>
+                  <p>{t('howToStep3')}</p>
                 </div>
                 <div className="flex gap-3">
                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-medium">
                     4
                   </div>
-                  <p>Scan the QR code or enter the pair code</p>
+                  <p>{t('howToStep4')}</p>
                 </div>
               </CardContent>
             </Card>
@@ -522,19 +526,19 @@ export function WhatsAppUnofficialConfig({
         <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel}>
-              Cancel
+              {t('cancel')}
             </Button>
           )}
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
+                {t('saving')}
               </>
             ) : isEditing ? (
-              'Update Channel'
+              t('updateChannel')
             ) : (
-              'Create Channel'
+              t('createChannel')
             )}
           </Button>
         </div>
@@ -556,6 +560,7 @@ export function WhatsAppUnofficialConfigDialog({
   onSuccess?: (channel: Channel) => void
 }) {
   const [open, setOpen] = useState(false)
+  const tChannels = useTranslations('channels')
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -563,10 +568,14 @@ export function WhatsAppUnofficialConfigDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>
-            {channel ? 'Configure WhatsApp' : 'Add WhatsApp (Unofficial)'}
+            {channel
+              ? tChannels('configureChannel', { channel: 'WhatsApp' })
+              : tChannels('addChannelType', { channel: 'WhatsApp' })}
           </DialogTitle>
           <DialogDescription>
-            Connect your WhatsApp account using QR code or phone pairing
+            {channel
+              ? tChannels('updateSettings', { channel: 'WhatsApp' })
+              : tChannels('setupNewChannel', { channel: 'WhatsApp' })}
           </DialogDescription>
         </DialogHeader>
         <WhatsAppUnofficialConfig

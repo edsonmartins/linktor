@@ -2,14 +2,13 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import { format } from 'date-fns'
 import {
   AlertCircle,
   AlertTriangle,
   Info,
   RefreshCw,
-  Search,
-  Filter,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { queryKeys } from '@/lib/query'
@@ -17,7 +16,6 @@ import { api } from '@/lib/api'
 import type { LogsResponse, LogLevel, LogSource } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -55,6 +53,9 @@ const levelBadgeVariants = {
 }
 
 export function ChannelLogsViewer() {
+  const t = useTranslations('observability')
+  const tCommon = useTranslations('common')
+
   const [level, setLevel] = useState<LogLevel | ''>('')
   const [source, setSource] = useState<LogSource | ''>('')
   const [limit] = useState(50)
@@ -71,7 +72,7 @@ export function ChannelLogsViewer() {
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.observability.logs(queryParams),
     queryFn: () => api.get<LogsResponse>('/observability/logs', queryParams),
-    refetchInterval: 10000, // Auto-refresh every 10 seconds
+    refetchInterval: 10000,
   })
 
   const handleRefresh = () => {
@@ -92,7 +93,7 @@ export function ChannelLogsViewer() {
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg flex items-center gap-2">
             <AlertTriangle className="h-5 w-5" />
-            Channel Logs
+            {t('channelLogs')}
           </CardTitle>
           <Button
             variant="outline"
@@ -101,7 +102,7 @@ export function ChannelLogsViewer() {
             disabled={isFetching}
           >
             <RefreshCw className={cn('h-4 w-4 mr-2', isFetching && 'animate-spin')} />
-            Refresh
+            {tCommon('refresh')}
           </Button>
         </div>
 
@@ -115,13 +116,13 @@ export function ChannelLogsViewer() {
             }}
           >
             <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Log Level" />
+              <SelectValue placeholder={t('logLevel')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Levels</SelectItem>
-              <SelectItem value="info">Info</SelectItem>
-              <SelectItem value="warn">Warning</SelectItem>
-              <SelectItem value="error">Error</SelectItem>
+              <SelectItem value="all">{t('allLevels')}</SelectItem>
+              <SelectItem value="info">{t('info')}</SelectItem>
+              <SelectItem value="warn">{t('warning')}</SelectItem>
+              <SelectItem value="error">{t('error')}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -133,14 +134,14 @@ export function ChannelLogsViewer() {
             }}
           >
             <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Source" />
+              <SelectValue placeholder={t('source')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Sources</SelectItem>
-              <SelectItem value="channel">Channel</SelectItem>
-              <SelectItem value="queue">Queue</SelectItem>
-              <SelectItem value="system">System</SelectItem>
-              <SelectItem value="webhook">Webhook</SelectItem>
+              <SelectItem value="all">{t('allSources')}</SelectItem>
+              <SelectItem value="channel">{t('channel')}</SelectItem>
+              <SelectItem value="queue">{t('queue')}</SelectItem>
+              <SelectItem value="system">{t('system')}</SelectItem>
+              <SelectItem value="webhook">{t('webhook')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -154,7 +155,7 @@ export function ChannelLogsViewer() {
         ) : !data?.logs?.length ? (
           <div className="text-center py-10 text-muted-foreground">
             <Info className="h-8 w-8 mx-auto mb-2" />
-            <p>No logs found</p>
+            <p>{t('noLogsFound')}</p>
           </div>
         ) : (
           <>
@@ -162,11 +163,11 @@ export function ChannelLogsViewer() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[100px]">Level</TableHead>
-                    <TableHead className="w-[100px]">Source</TableHead>
-                    <TableHead className="w-[150px]">Channel</TableHead>
-                    <TableHead>Message</TableHead>
-                    <TableHead className="w-[180px]">Time</TableHead>
+                    <TableHead className="w-[100px]">{t('level')}</TableHead>
+                    <TableHead className="w-[100px]">{t('source')}</TableHead>
+                    <TableHead className="w-[150px]">{t('channel')}</TableHead>
+                    <TableHead>{t('message')}</TableHead>
+                    <TableHead className="w-[180px]">{t('time')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -206,7 +207,7 @@ export function ChannelLogsViewer() {
             {/* Pagination */}
             <div className="flex items-center justify-between mt-4">
               <p className="text-sm text-muted-foreground">
-                Showing {offset + 1}-{Math.min(offset + limit, data.total)} of{' '}
+                {tCommon('showing')} {offset + 1}-{Math.min(offset + limit, data.total)} {tCommon('of')}{' '}
                 {data.total} logs
               </p>
               <div className="flex gap-2">
@@ -216,7 +217,7 @@ export function ChannelLogsViewer() {
                   onClick={handlePrevPage}
                   disabled={offset === 0}
                 >
-                  Previous
+                  {tCommon('previous')}
                 </Button>
                 <Button
                   variant="outline"
@@ -224,7 +225,7 @@ export function ChannelLogsViewer() {
                   onClick={handleNextPage}
                   disabled={!data.has_more}
                 >
-                  Next
+                  {tCommon('next')}
                 </Button>
               </div>
             </div>

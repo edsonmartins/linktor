@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useTranslations } from 'next-intl'
 import {
   AlertCircle,
   CheckCircle2,
@@ -62,16 +63,16 @@ import type { Channel } from '@/types'
 /**
  * Facebook Configuration Schema
  */
-const facebookConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
-  app_id: z.string().min(1, 'App ID is required'),
-  app_secret: z.string().min(1, 'App Secret is required'),
-  page_id: z.string().min(1, 'Page ID is required'),
-  page_access_token: z.string().min(1, 'Page Access Token is required'),
-  verify_token: z.string().min(1, 'Verify Token is required'),
+const createFacebookConfigSchema = (tCommon: (key: string) => string) => z.object({
+  name: z.string().min(1, tCommon('required')),
+  app_id: z.string().min(1, tCommon('required')),
+  app_secret: z.string().min(1, tCommon('required')),
+  page_id: z.string().min(1, tCommon('required')),
+  page_access_token: z.string().min(1, tCommon('required')),
+  verify_token: z.string().min(1, tCommon('required')),
 })
 
-type FacebookConfigForm = z.infer<typeof facebookConfigSchema>
+type FacebookConfigForm = z.infer<ReturnType<typeof createFacebookConfigSchema>>
 
 interface FacebookConfigProps {
   channel?: Channel
@@ -104,6 +105,8 @@ export function FacebookConfig({
   onCancel,
 }: FacebookConfigProps) {
   const { toast } = useToast()
+  const t = useTranslations('channels.config')
+  const tCommon = useTranslations('common')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showAppSecret, setShowAppSecret] = useState(false)
   const [showPageToken, setShowPageToken] = useState(false)
@@ -117,6 +120,7 @@ export function FacebookConfig({
   const [oauthAppSecret, setOauthAppSecret] = useState('')
 
   const isEditing = !!channel
+  const facebookConfigSchema = createFacebookConfigSchema(tCommon)
 
   const form = useForm<FacebookConfigForm>({
     resolver: zodResolver(facebookConfigSchema),
@@ -132,7 +136,7 @@ export function FacebookConfig({
 
   const webhookUrl = channel
     ? `${window.location.origin}/api/v1/webhooks/facebook/${channel.id}`
-    : 'Will be generated after creation'
+    : t('webhookPending')
 
   const onSubmit = async (data: FacebookConfigForm) => {
     setIsSubmitting(true)
@@ -159,15 +163,15 @@ export function FacebookConfig({
       }
 
       toast({
-        title: isEditing ? 'Channel updated' : 'Channel created',
-        description: `Facebook Messenger channel "${data.name}" has been ${isEditing ? 'updated' : 'created'} successfully.`,
+        title: isEditing ? tCommon('updated') : tCommon('created'),
+        description: isEditing ? t('channelUpdated') : t('channelCreated'),
       })
 
       onSuccess?.(result)
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save channel',
+        title: tCommon('error'),
+        description: error instanceof Error ? error.message : t('saveError'),
         variant: 'error',
       })
     } finally {
@@ -179,8 +183,8 @@ export function FacebookConfig({
     const values = form.getValues()
     if (!values.page_access_token) {
       toast({
-        title: 'Missing credentials',
-        description: 'Please enter Page Access Token first',
+        title: t('missingCredentials'),
+        description: t('enterPageAccessTokenFirst'),
         variant: 'error',
       })
       return
@@ -194,24 +198,24 @@ export function FacebookConfig({
       })
       setTestStatus('success')
       toast({
-        title: 'Connection successful',
-        description: 'Facebook credentials are valid',
+        title: t('connectionSuccess'),
+        description: t('facebookCredentialsValid'),
       })
     } catch {
       setTestStatus('error')
       toast({
-        title: 'Connection failed',
-        description: 'Could not connect to Facebook API. Please check your credentials.',
+        title: t('connectionFailed'),
+        description: t('facebookConnectionError'),
         variant: 'error',
       })
     }
   }
 
-  const copyToClipboard = (text: string, label: string) => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     toast({
-      title: 'Copied',
-      description: `${label} copied to clipboard`,
+      title: tCommon('copied'),
+      description: t('copiedToClipboard'),
     })
   }
 
@@ -219,8 +223,8 @@ export function FacebookConfig({
   const startOAuthFlow = async () => {
     if (!oauthAppId || !oauthAppSecret) {
       toast({
-        title: 'Missing credentials',
-        description: 'Please enter App ID and App Secret first',
+        title: t('missingCredentials'),
+        description: t('enterAppCredentialsFirst'),
         variant: 'error',
       })
       return
@@ -270,8 +274,8 @@ export function FacebookConfig({
     } catch (error) {
       setOauthLoading(false)
       toast({
-        title: 'OAuth Error',
-        description: error instanceof Error ? error.message : 'Failed to start OAuth flow',
+        title: t('oauthError'),
+        description: error instanceof Error ? error.message : t('oauthStartError'),
         variant: 'error',
       })
     }
@@ -300,8 +304,8 @@ export function FacebookConfig({
       }
 
       toast({
-        title: 'Connected successfully',
-        description: `Found ${response.pages.length} page(s)`,
+        title: t('connectedSuccessfully'),
+        description: t('foundFacebookPages', { count: response.pages.length }),
       })
 
       // Clean up session storage
@@ -310,8 +314,8 @@ export function FacebookConfig({
       sessionStorage.removeItem('fb_oauth_app_secret')
     } catch (error) {
       toast({
-        title: 'OAuth Error',
-        description: error instanceof Error ? error.message : 'Failed to complete OAuth',
+        title: t('oauthError'),
+        description: error instanceof Error ? error.message : t('oauthCompleteError'),
         variant: 'error',
       })
     } finally {
@@ -323,8 +327,8 @@ export function FacebookConfig({
   const createFromOAuth = async () => {
     if (!selectedPage) {
       toast({
-        title: 'No page selected',
-        description: 'Please select a Facebook Page',
+        title: t('noPageSelected'),
+        description: t('selectFacebookPage'),
         variant: 'error',
       })
       return
@@ -342,15 +346,15 @@ export function FacebookConfig({
       })
 
       toast({
-        title: 'Channel created',
-        description: `Facebook Page "${selectedPage.name}" connected successfully`,
+        title: tCommon('created'),
+        description: t('facebookPageConnected', { name: selectedPage.name }),
       })
 
       onSuccess?.(result.channel)
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create channel',
+        title: tCommon('error'),
+        description: error instanceof Error ? error.message : t('createChannelError'),
         variant: 'error',
       })
     } finally {
@@ -364,10 +368,10 @@ export function FacebookConfig({
         <div className="flex-1 space-y-6">
         <Tabs defaultValue={isEditing ? "credentials" : "oauth"} className="w-full">
           <TabsList className="grid w-full grid-cols-4">
-            {!isEditing && <TabsTrigger value="oauth">Connect</TabsTrigger>}
-            <TabsTrigger value="credentials">Manual</TabsTrigger>
-            <TabsTrigger value="webhook">Webhook</TabsTrigger>
-            <TabsTrigger value="setup">Setup Guide</TabsTrigger>
+            {!isEditing && <TabsTrigger value="oauth">{t('connect')}</TabsTrigger>}
+            <TabsTrigger value="credentials">{t('manual')}</TabsTrigger>
+            <TabsTrigger value="webhook">{t('webhook')}</TabsTrigger>
+            <TabsTrigger value="setup">{t('setupGuide')}</TabsTrigger>
           </TabsList>
 
           {/* OAuth Tab - Recommended for new channels */}
@@ -375,34 +379,34 @@ export function FacebookConfig({
             <TabsContent value="oauth" className="space-y-4 mt-4">
               <Alert>
                 <Facebook className="h-4 w-4" />
-                <AlertTitle>Connect with Facebook</AlertTitle>
+                <AlertTitle>{t('connectWithFacebook')}</AlertTitle>
                 <AlertDescription>
-                  The easiest way to connect your Facebook Page. Enter your App credentials and click Connect.
+                  {t('facebookOauthDesc')}
                 </AlertDescription>
               </Alert>
 
               <div className="space-y-4">
                 {/* App ID for OAuth */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">App ID</label>
+                  <label className="text-sm font-medium">{t('appId')}</label>
                   <Input
                     placeholder="123456789012345"
                     value={oauthAppId}
                     onChange={(e) => setOauthAppId(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    From your Facebook App Dashboard
+                    {t('fromFacebookDashboard')}
                   </p>
                 </div>
 
                 {/* App Secret for OAuth */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">App Secret</label>
+                  <label className="text-sm font-medium">{t('appSecret')}</label>
                   <div className="relative">
                     <Input
                       type={showAppSecret ? 'text' : 'password'}
                       className="pr-10"
-                      placeholder="Your app secret"
+                      placeholder={t('yourAppSecret')}
                       value={oauthAppSecret}
                       onChange={(e) => setOauthAppSecret(e.target.value)}
                     />
@@ -428,12 +432,12 @@ export function FacebookConfig({
                   {oauthLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Connecting...
+                      {t('connecting')}
                     </>
                   ) : (
                     <>
                       <Facebook className="h-4 w-4 mr-2" />
-                      Connect with Facebook
+                      {t('connectWithFacebookBtn')}
                     </>
                   )}
                 </Button>
@@ -442,9 +446,9 @@ export function FacebookConfig({
                 {oauthPages.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Select a Page</CardTitle>
+                      <CardTitle className="text-base">{t('selectAPage')}</CardTitle>
                       <CardDescription>
-                        Choose which Facebook Page to connect
+                        {t('selectFacebookPageDesc')}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -480,7 +484,7 @@ export function FacebookConfig({
                           </div>
                           {page.instagram && (
                             <div className="mt-2 pt-2 border-t text-xs text-muted-foreground">
-                              Connected Instagram: @{page.instagram.username}
+                              {t('connectedInstagram')}: @{page.instagram.username}
                             </div>
                           )}
                         </div>
@@ -495,10 +499,10 @@ export function FacebookConfig({
                         {isSubmitting ? (
                           <>
                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Creating...
+                            {t('creating')}
                           </>
                         ) : (
-                          'Create Channel'
+                          t('createChannel')
                         )}
                       </Button>
                     </CardContent>
@@ -515,12 +519,12 @@ export function FacebookConfig({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Channel Name</FormLabel>
+                  <FormLabel>{t('channelName')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="My Facebook Page" {...field} />
+                    <Input placeholder={t('myFacebookPage')} {...field} />
                   </FormControl>
                   <FormDescription>
-                    A friendly name to identify this channel
+                    {t('channelNameDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -533,12 +537,12 @@ export function FacebookConfig({
               name="app_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>App ID</FormLabel>
+                  <FormLabel>{t('appId')}</FormLabel>
                   <FormControl>
                     <Input placeholder="123456789012345" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Your Facebook App ID from the developer dashboard
+                    {t('facebookAppIdDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -551,13 +555,13 @@ export function FacebookConfig({
               name="app_secret"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>App Secret</FormLabel>
+                  <FormLabel>{t('appSecret')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Input
                         type={showAppSecret ? 'text' : 'password'}
                         className="pr-10"
-                        placeholder={isEditing ? '••••••••••••••••' : 'Your app secret'}
+                        placeholder={isEditing ? '••••••••••••••••' : t('yourAppSecret')}
                         {...field}
                       />
                       <Button
@@ -576,7 +580,7 @@ export function FacebookConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    App Secret from Settings &gt; Basic in your Facebook App
+                    {t('appSecretFacebookDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -589,12 +593,12 @@ export function FacebookConfig({
               name="page_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Page ID</FormLabel>
+                  <FormLabel>{t('pageId')}</FormLabel>
                   <FormControl>
                     <Input placeholder="123456789012345" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Your Facebook Page ID
+                    {t('pageIdDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -607,7 +611,7 @@ export function FacebookConfig({
               name="page_access_token"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Page Access Token</FormLabel>
+                  <FormLabel>{t('pageAccessToken')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -633,7 +637,7 @@ export function FacebookConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Page Access Token with messaging permissions
+                    {t('pageAccessTokenDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -647,8 +651,8 @@ export function FacebookConfig({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Verify Token
-                    <Badge variant="outline" className="ml-2">Auto-generated</Badge>
+                    {t('verifyToken')}
+                    <Badge variant="outline" className="ml-2">{t('autoGenerated')}</Badge>
                   </FormLabel>
                   <FormControl>
                     <div className="flex gap-2">
@@ -657,14 +661,14 @@ export function FacebookConfig({
                         type="button"
                         variant="outline"
                         size="icon"
-                        onClick={() => copyToClipboard(field.value, 'Verify Token')}
+                        onClick={() => copyToClipboard(field.value)}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Used to verify webhook requests from Facebook
+                    {t('verifyTokenFacebookDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -682,20 +686,20 @@ export function FacebookConfig({
                 {testStatus === 'testing' ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Testing...
+                    {t('testing')}
                   </>
                 ) : testStatus === 'success' ? (
                   <>
                     <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
-                    Connection Valid
+                    {t('connectionValid')}
                   </>
                 ) : testStatus === 'error' ? (
                   <>
                     <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
-                    Test Failed
+                    {t('testFailed')}
                   </>
                 ) : (
-                  'Test Connection'
+                  t('testConnection')
                 )}
               </Button>
             </div>
@@ -707,10 +711,10 @@ export function FacebookConfig({
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Webhook className="h-4 w-4" />
-                  Webhook URL
+                  {t('webhookUrl')}
                 </CardTitle>
                 <CardDescription>
-                  Configure this URL in your Facebook App webhooks settings
+                  {t('configureFacebookWebhook')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -723,7 +727,7 @@ export function FacebookConfig({
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={() => copyToClipboard(webhookUrl, 'Webhook URL')}
+                      onClick={() => copyToClipboard(webhookUrl)}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -734,10 +738,9 @@ export function FacebookConfig({
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Webhook Configuration</AlertTitle>
+              <AlertTitle>{t('webhookConfiguration')}</AlertTitle>
               <AlertDescription>
-                In your Facebook App settings, add this webhook URL and select the following fields:
-                messages, messaging_postbacks, message_deliveries, message_reads
+                {t('facebookWebhookInstructions')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -745,17 +748,17 @@ export function FacebookConfig({
           <TabsContent value="setup" className="space-y-4 mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Setup Guide</CardTitle>
+                <CardTitle>{t('setupGuide')}</CardTitle>
                 <CardDescription>
-                  Follow these steps to configure Facebook Messenger integration
+                  {t('facebookSetupDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-4">
                   <SetupStep
                     number={1}
-                    title="Create a Facebook App"
-                    description="Go to Facebook for Developers and create a new app"
+                    title={t('createFacebookApp')}
+                    description={t('createFacebookAppSetupDesc')}
                   >
                     <Button variant="outline" size="sm" asChild>
                       <a
@@ -763,7 +766,7 @@ export function FacebookConfig({
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        Open Developer Console
+                        {t('openDeveloperConsole')}
                         <ExternalLink className="h-3 w-3 ml-2" />
                       </a>
                     </Button>
@@ -773,32 +776,32 @@ export function FacebookConfig({
 
                   <SetupStep
                     number={2}
-                    title="Add Messenger Product"
-                    description="In your app dashboard, add the Messenger product"
+                    title={t('addMessengerProduct')}
+                    description={t('addMessengerProductDesc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={3}
-                    title="Generate Page Access Token"
-                    description="In Messenger Settings, connect your Page and generate a Page Access Token"
+                    title={t('generatePageAccessToken')}
+                    description={t('generatePageAccessTokenDesc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={4}
-                    title="Configure Webhook"
-                    description="Add the webhook URL and verify token from the Webhook tab above"
+                    title={t('configureWebhookStep')}
+                    description={t('configureFacebookWebhookStepDesc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={5}
-                    title="Subscribe to Events"
-                    description="Subscribe your webhook to messages, messaging_postbacks, message_deliveries, and message_reads events"
+                    title={t('subscribeToEvents')}
+                    description={t('subscribeToEventsDesc')}
                   />
                 </div>
               </CardContent>
@@ -806,10 +809,9 @@ export function FacebookConfig({
 
             <Alert>
               <MessageSquare className="h-4 w-4" />
-              <AlertTitle>Permissions Required</AlertTitle>
+              <AlertTitle>{t('permissionsRequired')}</AlertTitle>
               <AlertDescription>
-                Your app needs pages_messaging permission. You may need to complete App Review
-                for production use.
+                {t('facebookPermissionsDesc')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -819,19 +821,19 @@ export function FacebookConfig({
         <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel}>
-              Cancel
+              {tCommon('cancel')}
             </Button>
           )}
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
+                {tCommon('saving')}
               </>
             ) : isEditing ? (
-              'Update Channel'
+              t('updateChannel')
             ) : (
-              'Create Channel'
+              t('createChannel')
             )}
           </Button>
         </div>
@@ -888,6 +890,7 @@ export function FacebookConfigDialog({
   onSuccess?: (channel: Channel) => void
 }) {
   const [open, setOpen] = useState(false)
+  const t = useTranslations('channels.config')
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -895,10 +898,10 @@ export function FacebookConfigDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>
-            {channel ? 'Configure Facebook Messenger' : 'Add Facebook Messenger'}
+            {channel ? t('configureFacebookMessenger') : t('addFacebookMessenger')}
           </DialogTitle>
           <DialogDescription>
-            Connect your Facebook Page to receive Messenger conversations
+            {t('connectFacebookPageDesc')}
           </DialogDescription>
         </DialogHeader>
         <FacebookConfig

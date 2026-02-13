@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import {
   Phone,
   PhoneCall,
@@ -45,82 +46,82 @@ interface VoiceConfigProps {
 }
 
 /**
- * Voice Provider configurations
- */
-const voiceProviderConfigs: Record<
-  VoiceProvider,
-  {
-    label: string
-    description: string
-    fields: { key: string; label: string; type: string; placeholder: string; required: boolean }[]
-  }
-> = {
-  twilio: {
-    label: 'Twilio Voice',
-    description: 'Cloud-based voice with TwiML support',
-    fields: [
-      { key: 'account_sid', label: 'Account SID', type: 'text', placeholder: 'ACxxxxxxxx', required: true },
-      { key: 'auth_token', label: 'Auth Token', type: 'password', placeholder: 'Your auth token', required: true },
-      { key: 'phone_number', label: 'Phone Number', type: 'tel', placeholder: '+1234567890', required: true },
-      { key: 'webhook_url', label: 'Webhook URL', type: 'url', placeholder: 'https://your-domain.com/voice/webhook', required: false },
-    ],
-  },
-  vonage: {
-    label: 'Vonage Voice',
-    description: 'Nexmo/Vonage Voice API with NCCO',
-    fields: [
-      { key: 'api_key', label: 'API Key', type: 'text', placeholder: 'Your API key', required: true },
-      { key: 'api_secret', label: 'API Secret', type: 'password', placeholder: 'Your API secret', required: true },
-      { key: 'application_id', label: 'Application ID', type: 'text', placeholder: 'Application UUID', required: true },
-      { key: 'private_key', label: 'Private Key', type: 'password', placeholder: 'Paste private key or path', required: true },
-      { key: 'phone_number', label: 'Phone Number', type: 'tel', placeholder: '+1234567890', required: true },
-    ],
-  },
-  amazon_connect: {
-    label: 'Amazon Connect',
-    description: 'AWS Contact Center service',
-    fields: [
-      { key: 'instance_id', label: 'Instance ID', type: 'text', placeholder: 'Connect instance ID', required: true },
-      { key: 'region', label: 'AWS Region', type: 'text', placeholder: 'us-east-1', required: true },
-      { key: 'access_key_id', label: 'Access Key ID', type: 'text', placeholder: 'AKIAXXXXXXXX', required: true },
-      { key: 'secret_access_key', label: 'Secret Access Key', type: 'password', placeholder: 'Your secret key', required: true },
-      { key: 'contact_flow_id', label: 'Contact Flow ID', type: 'text', placeholder: 'Contact flow UUID', required: true },
-      { key: 'queue_id', label: 'Queue ID', type: 'text', placeholder: 'Queue UUID', required: false },
-    ],
-  },
-  asterisk: {
-    label: 'Asterisk',
-    description: 'Open-source PBX with AMI/ARI',
-    fields: [
-      { key: 'host', label: 'Host', type: 'text', placeholder: 'asterisk.example.com', required: true },
-      { key: 'ami_port', label: 'AMI Port', type: 'number', placeholder: '5038', required: true },
-      { key: 'ami_username', label: 'AMI Username', type: 'text', placeholder: 'admin', required: true },
-      { key: 'ami_password', label: 'AMI Password', type: 'password', placeholder: 'Password', required: true },
-      { key: 'ari_port', label: 'ARI Port', type: 'number', placeholder: '8088', required: false },
-      { key: 'ari_username', label: 'ARI Username', type: 'text', placeholder: 'ari_user', required: false },
-      { key: 'ari_password', label: 'ARI Password', type: 'password', placeholder: 'ARI password', required: false },
-    ],
-  },
-  freeswitch: {
-    label: 'FreeSWITCH',
-    description: 'Scalable open-source telephony platform',
-    fields: [
-      { key: 'esl_host', label: 'ESL Host', type: 'text', placeholder: 'freeswitch.example.com', required: true },
-      { key: 'esl_port', label: 'ESL Port', type: 'number', placeholder: '8021', required: true },
-      { key: 'esl_password', label: 'ESL Password', type: 'password', placeholder: 'ClueCon', required: true },
-      { key: 'gateway', label: 'Gateway Name', type: 'text', placeholder: 'default', required: false },
-      { key: 'socket_port', label: 'Socket Port', type: 'number', placeholder: '8085', required: false },
-      { key: 'recordings_url', label: 'Recordings URL', type: 'url', placeholder: 'http://localhost/recordings', required: false },
-    ],
-  },
-}
-
-/**
  * Voice Channel Configuration Component
  */
 export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
+  const t = useTranslations('channels.config')
+  const tCommon = useTranslations('common')
   const queryClient = useQueryClient()
   const isEditing = !!channel
+
+  // Voice Provider configurations with translations
+  const voiceProviderConfigs: Record<
+    VoiceProvider,
+    {
+      label: string
+      description: string
+      fields: { key: string; label: string; type: string; placeholder: string; required: boolean }[]
+    }
+  > = {
+    twilio: {
+      label: 'Twilio Voice',
+      description: t('twilioVoiceDesc'),
+      fields: [
+        { key: 'account_sid', label: t('accountSid'), type: 'text', placeholder: 'ACxxxxxxxx', required: true },
+        { key: 'auth_token', label: t('authToken'), type: 'password', placeholder: t('authTokenPlaceholder'), required: true },
+        { key: 'phone_number', label: t('phoneNumber'), type: 'tel', placeholder: '+1234567890', required: true },
+        { key: 'webhook_url', label: t('webhookUrl'), type: 'url', placeholder: 'https://your-domain.com/voice/webhook', required: false },
+      ],
+    },
+    vonage: {
+      label: 'Vonage Voice',
+      description: t('vonageVoiceDesc'),
+      fields: [
+        { key: 'api_key', label: t('apiKeyLabel'), type: 'text', placeholder: t('apiKeyPlaceholder'), required: true },
+        { key: 'api_secret', label: t('apiSecretLabel'), type: 'password', placeholder: t('apiSecretPlaceholder'), required: true },
+        { key: 'application_id', label: t('applicationId'), type: 'text', placeholder: t('applicationIdPlaceholder'), required: true },
+        { key: 'private_key', label: t('privateKey'), type: 'password', placeholder: t('privateKeyPlaceholder'), required: true },
+        { key: 'phone_number', label: t('phoneNumber'), type: 'tel', placeholder: '+1234567890', required: true },
+      ],
+    },
+    amazon_connect: {
+      label: 'Amazon Connect',
+      description: t('amazonConnectDesc'),
+      fields: [
+        { key: 'instance_id', label: t('instanceId'), type: 'text', placeholder: t('instanceIdPlaceholder'), required: true },
+        { key: 'region', label: t('awsRegion'), type: 'text', placeholder: 'us-east-1', required: true },
+        { key: 'access_key_id', label: t('accessKeyId'), type: 'text', placeholder: 'AKIAXXXXXXXX', required: true },
+        { key: 'secret_access_key', label: t('secretAccessKey'), type: 'password', placeholder: t('secretKeyPlaceholder'), required: true },
+        { key: 'contact_flow_id', label: t('contactFlowId'), type: 'text', placeholder: t('contactFlowIdPlaceholder'), required: true },
+        { key: 'queue_id', label: t('queueId'), type: 'text', placeholder: t('queueIdPlaceholder'), required: false },
+      ],
+    },
+    asterisk: {
+      label: 'Asterisk',
+      description: t('asteriskDesc'),
+      fields: [
+        { key: 'host', label: t('hostLabel'), type: 'text', placeholder: 'asterisk.example.com', required: true },
+        { key: 'ami_port', label: t('amiPort'), type: 'number', placeholder: '5038', required: true },
+        { key: 'ami_username', label: t('amiUsername'), type: 'text', placeholder: 'admin', required: true },
+        { key: 'ami_password', label: t('amiPassword'), type: 'password', placeholder: t('passwordPlaceholder'), required: true },
+        { key: 'ari_port', label: t('ariPort'), type: 'number', placeholder: '8088', required: false },
+        { key: 'ari_username', label: t('ariUsername'), type: 'text', placeholder: 'ari_user', required: false },
+        { key: 'ari_password', label: t('ariPassword'), type: 'password', placeholder: t('ariPasswordPlaceholder'), required: false },
+      ],
+    },
+    freeswitch: {
+      label: 'FreeSWITCH',
+      description: t('freeswitchDesc'),
+      fields: [
+        { key: 'esl_host', label: t('eslHost'), type: 'text', placeholder: 'freeswitch.example.com', required: true },
+        { key: 'esl_port', label: t('eslPort'), type: 'number', placeholder: '8021', required: true },
+        { key: 'esl_password', label: t('eslPassword'), type: 'password', placeholder: 'ClueCon', required: true },
+        { key: 'gateway', label: t('gatewayName'), type: 'text', placeholder: 'default', required: false },
+        { key: 'socket_port', label: t('socketPort'), type: 'number', placeholder: '8085', required: false },
+        { key: 'recordings_url', label: t('recordingsUrl'), type: 'url', placeholder: 'http://localhost/recordings', required: false },
+      ],
+    },
+  }
 
   const [formData, setFormData] = useState({
     name: channel?.name || '',
@@ -204,7 +205,7 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
 
   const webhookUrl = channel?.id
     ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'}/api/v1/webhooks/voice/${channel.id}`
-    : 'Will be generated after saving'
+    : t('willBeGenerated')
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col h-full">
@@ -213,25 +214,25 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="credentials">
             <Key className="h-4 w-4 mr-2" />
-            Credentials
+            {t('credentials')}
           </TabsTrigger>
           <TabsTrigger value="settings">
             <Settings className="h-4 w-4 mr-2" />
-            Settings
+            {tCommon('settings')}
           </TabsTrigger>
           <TabsTrigger value="webhook">
             <Globe className="h-4 w-4 mr-2" />
-            Webhook
+            {t('webhook')}
           </TabsTrigger>
         </TabsList>
 
         {/* Credentials Tab */}
         <TabsContent value="credentials" className="space-y-4 mt-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Channel Name</Label>
+            <Label htmlFor="name">{t('channelName')}</Label>
             <Input
               id="name"
-              placeholder="e.g., Main Voice Line"
+              placeholder={t('mainVoiceLine')}
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               required
@@ -239,7 +240,7 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="provider">Voice Provider</Label>
+            <Label htmlFor="provider">{t('voiceProvider')}</Label>
             <Select
               value={formData.provider}
               onValueChange={(value: VoiceProvider) =>
@@ -272,7 +273,7 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
           <div className="space-y-4">
             <h4 className="font-medium flex items-center gap-2">
               <Server className="h-4 w-4" />
-              {currentProviderConfig.label} Configuration
+              {t('providerConfiguration', { provider: currentProviderConfig.label })}
             </h4>
 
             {currentProviderConfig.fields.map((field) => (
@@ -305,22 +306,22 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
               {testStatus === 'testing' ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Testing Connection...
+                  {t('testing')}
                 </>
               ) : testStatus === 'success' ? (
                 <>
                   <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
-                  Connection Successful
+                  {t('connectionSuccess')}
                 </>
               ) : testStatus === 'error' ? (
                 <>
                   <XCircle className="h-4 w-4 mr-2 text-destructive" />
-                  Connection Failed
+                  {t('testFailed')}
                 </>
               ) : (
                 <>
                   <TestTube className="h-4 w-4 mr-2" />
-                  Test Connection
+                  {t('testConnection')}
                 </>
               )}
             </Button>
@@ -336,16 +337,16 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Mic className="h-4 w-4" />
-                Recording Settings
+                {t('recordingSettings')}
               </CardTitle>
-              <CardDescription>Configure call recording and transcription</CardDescription>
+              <CardDescription>{t('configureRecording')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>Record Calls</Label>
+                  <Label>{t('recordCalls')}</Label>
                   <p className="text-xs text-muted-foreground">
-                    Automatically record all calls for quality and training
+                    {t('recordCallsDesc')}
                   </p>
                 </div>
                 <Button
@@ -354,15 +355,15 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
                   size="sm"
                   onClick={() => setFormData({ ...formData, record_calls: !formData.record_calls })}
                 >
-                  {formData.record_calls ? 'Enabled' : 'Disabled'}
+                  {formData.record_calls ? tCommon('enabled') : tCommon('disabled')}
                 </Button>
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>Transcribe Calls</Label>
+                  <Label>{t('transcribeCalls')}</Label>
                   <p className="text-xs text-muted-foreground">
-                    Convert speech to text for analysis and search
+                    {t('transcribeCallsDesc')}
                   </p>
                 </div>
                 <Button
@@ -373,7 +374,7 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
                     setFormData({ ...formData, transcribe_calls: !formData.transcribe_calls })
                   }
                 >
-                  {formData.transcribe_calls ? 'Enabled' : 'Disabled'}
+                  {formData.transcribe_calls ? tCommon('enabled') : tCommon('disabled')}
                 </Button>
               </div>
             </CardContent>
@@ -383,35 +384,35 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Volume2 className="h-4 w-4" />
-                IVR Features
+                {t('ivrFeatures')}
               </CardTitle>
-              <CardDescription>Interactive Voice Response capabilities</CardDescription>
+              <CardDescription>{t('ivrFeaturesDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span>Text-to-Speech (TTS)</span>
+                  <span>{t('tts')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span>Speech-to-Text (STT)</span>
+                  <span>{t('stt')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span>DTMF Input</span>
+                  <span>{t('dtmfInput')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span>Call Transfer</span>
+                  <span>{t('callTransfer')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span>Call Queue</span>
+                  <span>{t('callQueue')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span>Conference</span>
+                  <span>{t('conference')}</span>
                 </div>
               </div>
             </CardContent>
@@ -424,15 +425,15 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Globe className="h-4 w-4" />
-                Webhook Configuration
+                {t('voiceWebhookConfig')}
               </CardTitle>
               <CardDescription>
-                Configure your voice provider to send events to this URL
+                {t('configureVoiceProvider')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>Webhook URL</Label>
+                <Label>{t('webhookUrl')}</Label>
                 <div className="flex gap-2">
                   <Input value={webhookUrl} readOnly className="font-mono text-sm" />
                   <Button
@@ -448,10 +449,9 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
 
               <Alert>
                 <Shield className="h-4 w-4" />
-                <AlertTitle>Security</AlertTitle>
+                <AlertTitle>{t('webhookSecurity')}</AlertTitle>
                 <AlertDescription>
-                  Configure webhook signature verification in your provider's dashboard for secure
-                  communication.
+                  {t('webhookSecurityDesc')}
                 </AlertDescription>
               </Alert>
             </CardContent>
@@ -459,54 +459,54 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Setup Guide</CardTitle>
+              <CardTitle className="text-base">{t('setupGuide')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               {formData.provider === 'twilio' && (
                 <ol className="list-decimal list-inside space-y-2">
-                  <li>Log in to your Twilio Console</li>
-                  <li>Go to Phone Numbers → Manage → Active Numbers</li>
-                  <li>Select your phone number</li>
-                  <li>Under Voice & Fax, set "A call comes in" to Webhook</li>
-                  <li>Paste the webhook URL above</li>
-                  <li>Set HTTP method to POST</li>
+                  <li>{t('twilioVoiceSetup1')}</li>
+                  <li>{t('twilioVoiceSetup2')}</li>
+                  <li>{t('twilioVoiceSetup3')}</li>
+                  <li>{t('twilioVoiceSetup4')}</li>
+                  <li>{t('twilioVoiceSetup5')}</li>
+                  <li>{t('twilioVoiceSetup6')}</li>
                 </ol>
               )}
               {formData.provider === 'vonage' && (
                 <ol className="list-decimal list-inside space-y-2">
-                  <li>Log in to your Vonage Dashboard</li>
-                  <li>Go to Applications</li>
-                  <li>Select or create your Voice application</li>
-                  <li>Under Capabilities → Voice, set the Answer URL</li>
-                  <li>Paste the webhook URL above</li>
-                  <li>Set the Event URL for call status updates</li>
+                  <li>{t('vonageSetup1')}</li>
+                  <li>{t('vonageSetup2')}</li>
+                  <li>{t('vonageSetup3')}</li>
+                  <li>{t('vonageSetup4')}</li>
+                  <li>{t('vonageSetup5')}</li>
+                  <li>{t('vonageSetup6')}</li>
                 </ol>
               )}
               {formData.provider === 'amazon_connect' && (
                 <ol className="list-decimal list-inside space-y-2">
-                  <li>Open Amazon Connect in AWS Console</li>
-                  <li>Select your instance</li>
-                  <li>Go to Contact flows</li>
-                  <li>Create or edit a contact flow</li>
-                  <li>Add "Invoke AWS Lambda function" block</li>
-                  <li>Configure Lambda to forward to webhook URL</li>
+                  <li>{t('amazonConnectSetup1')}</li>
+                  <li>{t('amazonConnectSetup2')}</li>
+                  <li>{t('amazonConnectSetup3')}</li>
+                  <li>{t('amazonConnectSetup4')}</li>
+                  <li>{t('amazonConnectSetup5')}</li>
+                  <li>{t('amazonConnectSetup6')}</li>
                 </ol>
               )}
               {formData.provider === 'asterisk' && (
                 <ol className="list-decimal list-inside space-y-2">
-                  <li>Edit your Asterisk dialplan (extensions.conf)</li>
-                  <li>Add AGI or ARI application to handle calls</li>
-                  <li>Configure the application to connect to webhook URL</li>
-                  <li>Enable AMI for management commands</li>
-                  <li>Configure manager.conf with credentials above</li>
+                  <li>{t('asteriskSetup1')}</li>
+                  <li>{t('asteriskSetup2')}</li>
+                  <li>{t('asteriskSetup3')}</li>
+                  <li>{t('asteriskSetup4')}</li>
+                  <li>{t('asteriskSetup5')}</li>
                 </ol>
               )}
               {formData.provider === 'freeswitch' && (
                 <ol className="list-decimal list-inside space-y-2">
-                  <li>Edit /etc/freeswitch/autoload_configs/event_socket.conf.xml</li>
-                  <li>Configure ESL password to match above</li>
-                  <li>Add outbound socket in dialplan for webhook</li>
-                  <li>Restart FreeSWITCH to apply changes</li>
+                  <li>{t('freeswitchSetup1')}</li>
+                  <li>{t('freeswitchSetup2')}</li>
+                  <li>{t('freeswitchSetup3')}</li>
+                  <li>{t('freeswitchSetup4')}</li>
                 </ol>
               )}
               <Button variant="link" className="h-auto p-0 mt-2" asChild>
@@ -526,7 +526,7 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
                   rel="noopener noreferrer"
                 >
                   <ExternalLink className="h-4 w-4 mr-1" />
-                  View Documentation
+                  {t('viewDocumentation')}
                 </a>
               </Button>
             </CardContent>
@@ -538,10 +538,10 @@ export function VoiceConfig({ channel, onClose }: VoiceConfigProps) {
       {/* Form Actions */}
       <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
         <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
+          {tCommon('cancel')}
         </Button>
         <Button type="submit" disabled={saveMutation.isPending || !formData.name}>
-          {saveMutation.isPending ? 'Saving...' : isEditing ? 'Update Channel' : 'Create Channel'}
+          {saveMutation.isPending ? t('saving') : isEditing ? t('updateChannel') : t('createChannel')}
         </Button>
       </div>
     </form>

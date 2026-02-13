@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { GitBranch } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FlowAnalytics } from '@/types'
@@ -9,25 +10,27 @@ interface FlowPerformanceTableProps {
 }
 
 export function FlowPerformanceTable({ data }: FlowPerformanceTableProps) {
+  const t = useTranslations('analytics')
+
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
       <h3 className="mb-4 text-lg font-semibold flex items-center gap-2">
         <GitBranch className="h-5 w-5 text-primary" />
-        Flow Performance
+        {t('flowPerformance')}
       </h3>
       <div className="overflow-x-auto">
         {data.length === 0 ? (
           <div className="flex h-[200px] items-center justify-center text-muted-foreground">
-            No flow data available
+            {t('noFlowData')}
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="border-b text-left text-sm text-muted-foreground">
-                <th className="pb-3 font-medium">Flow Name</th>
-                <th className="pb-3 font-medium text-right">Triggered</th>
-                <th className="pb-3 font-medium text-right">Completed</th>
-                <th className="pb-3 font-medium text-right">Rate</th>
+                <th className="pb-3 font-medium">{t('flowName')}</th>
+                <th className="pb-3 font-medium text-right">{t('triggered')}</th>
+                <th className="pb-3 font-medium text-right">{t('completed')}</th>
+                <th className="pb-3 font-medium text-right">{t('rate')}</th>
               </tr>
             </thead>
             <tbody>

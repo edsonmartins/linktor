@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import {
   MessageSquare,
   Users,
@@ -92,16 +93,17 @@ function formatDuration(ms: number): string {
  * Channel Status Badge
  */
 function ChannelStatusBadge({ status }: { status: Channel['status'] }) {
+  const t = useTranslations('common')
   const config = {
-    active: { variant: 'success' as const, icon: <Wifi className="h-3 w-3" />, label: 'Online' },
-    inactive: { variant: 'secondary' as const, icon: <WifiOff className="h-3 w-3" />, label: 'Offline' },
-    error: { variant: 'error' as const, icon: <AlertTriangle className="h-3 w-3" />, label: 'Error' },
+    active: { variant: 'success' as const, icon: <Wifi className="h-3 w-3" />, labelKey: 'online' },
+    inactive: { variant: 'secondary' as const, icon: <WifiOff className="h-3 w-3" />, labelKey: 'offline' },
+    error: { variant: 'error' as const, icon: <AlertTriangle className="h-3 w-3" />, labelKey: 'error' },
   }
-  const { variant, icon, label } = config[status] || config.inactive
+  const statusConfig = config[status] || config.inactive
   return (
-    <Badge variant={variant} className="gap-1">
-      {icon}
-      {label}
+    <Badge variant={statusConfig.variant} className="gap-1">
+      {statusConfig.icon}
+      {t(statusConfig.labelKey)}
     </Badge>
   )
 }
@@ -123,6 +125,7 @@ const channelTypeConfig: Record<string, { color: string; bgColor: string }> = {
 }
 
 function ConversationItem({ conversation }: { conversation: Conversation }) {
+  const t = useTranslations('dashboard')
   return (
     <div className="flex items-center gap-3 rounded-md p-3 hover:bg-secondary/50 transition-colors">
       <Avatar
@@ -133,14 +136,14 @@ function ConversationItem({ conversation }: { conversation: Conversation }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <p className="truncate text-sm font-medium">
-            {conversation.contact?.name || 'Unknown'}
+            {conversation.contact?.name || t('unknown')}
           </p>
           <Badge variant={conversation.channel?.type as 'webchat' | undefined || 'info'} className="shrink-0">
             {conversation.channel?.type}
           </Badge>
         </div>
         <p className="truncate text-xs text-muted-foreground">
-          {conversation.last_message?.content || 'No messages'}
+          {conversation.last_message?.content || t('noMessages')}
         </p>
       </div>
       <span className="text-xs text-muted-foreground shrink-0">
@@ -156,6 +159,8 @@ function ConversationItem({ conversation }: { conversation: Conversation }) {
  * Dashboard Page
  */
 export default function DashboardPage() {
+  const t = useTranslations('dashboard')
+
   // Fetch analytics overview
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
     queryKey: queryKeys.analytics.overview({ period: 'daily' }),
@@ -198,7 +203,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Dashboard" />
+      <Header title={t('title')} />
 
       <ScrollArea className="flex-1">
         <div className="p-6 space-y-6">
@@ -221,9 +226,9 @@ export default function DashboardPage() {
             ) : (
               <>
                 <StatCard
-                  title="Total Conversations"
+                  title={t('totalConversations')}
                   value={analytics?.total_conversations || 0}
-                  description="this period"
+                  description={t('thisPeriod')}
                   icon={<MessageSquare className="h-5 w-5" />}
                   trend={analytics?.conversations_trend ? {
                     value: Math.abs(analytics.conversations_trend),
@@ -231,9 +236,9 @@ export default function DashboardPage() {
                   } : undefined}
                 />
                 <StatCard
-                  title="Resolution Rate"
+                  title={t('resolutionRate')}
                   value={`${((analytics?.resolution_rate || 0) * 100).toFixed(1)}%`}
-                  description="by bot"
+                  description={t('byBot')}
                   icon={<Bot className="h-5 w-5" />}
                   trend={analytics?.resolution_trend ? {
                     value: Math.abs(analytics.resolution_trend),
@@ -241,15 +246,15 @@ export default function DashboardPage() {
                   } : undefined}
                 />
                 <StatCard
-                  title="Total Contacts"
+                  title={t('totalContacts')}
                   value={totalContacts.toLocaleString()}
-                  description="in database"
+                  description={t('inDatabase')}
                   icon={<Users className="h-5 w-5" />}
                 />
                 <StatCard
-                  title="Avg Response Time"
+                  title={t('avgResponseTime')}
                   value={formatDuration(analytics?.avg_first_response_ms || 0)}
-                  description="first response"
+                  description={t('firstResponse')}
                   icon={<Clock className="h-5 w-5" />}
                 />
               </>
@@ -263,10 +268,10 @@ export default function DashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <MessageSquare className="h-5 w-5 text-primary" />
-                  Recent Conversations
+                  {t('recentConversations')}
                 </CardTitle>
                 <CardDescription>
-                  Latest open conversations requiring attention
+                  {t('latestOpenConversations')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -291,7 +296,7 @@ export default function DashboardPage() {
                 ) : (
                   <div className="py-8 text-center text-muted-foreground">
                     <MessageSquare className="mx-auto h-8 w-8 opacity-50" />
-                    <p className="mt-2 text-sm">No open conversations</p>
+                    <p className="mt-2 text-sm">{t('noOpenConversations')}</p>
                   </div>
                 )}
               </CardContent>
@@ -302,10 +307,10 @@ export default function DashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Radio className="h-5 w-5 text-primary" />
-                  Channel Status
+                  {t('channelStatus')}
                 </CardTitle>
                 <CardDescription>
-                  Active communication channels ({channels.length})
+                  {t('activeChannels')} ({channels.length})
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -352,7 +357,7 @@ export default function DashboardPage() {
                 ) : (
                   <div className="py-6 text-center text-muted-foreground">
                     <Radio className="mx-auto h-8 w-8 opacity-50" />
-                    <p className="mt-2 text-sm">No channels configured</p>
+                    <p className="mt-2 text-sm">{t('noChannelsConfigured')}</p>
                   </div>
                 )}
               </CardContent>
@@ -363,7 +368,7 @@ export default function DashboardPage() {
           <Card variant="terminal">
             <CardHeader>
               <CardTitle className="font-mono text-sm text-primary">
-                {'>'} system.log
+                {'>'} {t('systemLog')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -371,17 +376,17 @@ export default function DashboardPage() {
                 <p>
                   <span className="text-terminal-green">[INFO]</span>{' '}
                   <span className="text-muted-foreground/70">{new Date().toISOString()}</span>{' '}
-                  Dashboard loaded successfully
+                  {t('dashboardLoaded')}
                 </p>
                 <p>
                   <span className="text-terminal-cyan">[CONN]</span>{' '}
                   <span className="text-muted-foreground/70">{new Date().toISOString()}</span>{' '}
-                  WebSocket connection established
+                  {t('websocketConnected')}
                 </p>
                 <p>
                   <span className="text-terminal-yellow">[SYNC]</span>{' '}
                   <span className="text-muted-foreground/70">{new Date().toISOString()}</span>{' '}
-                  Syncing conversations...
+                  {t('syncingConversations')}
                 </p>
               </div>
             </CardContent>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { useTranslations } from 'next-intl'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
@@ -61,9 +62,9 @@ import type { Channel } from '@/types'
 /**
  * Telegram Configuration Schema
  */
-const telegramConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
-  bot_token: z.string().min(1, 'Bot token is required'),
+const createSchema = (t: (key: string) => string) => z.object({
+  name: z.string().min(1, t('channelNameRequired')),
+  bot_token: z.string().min(1, t('required')),
   bot_name: z.string().optional(),
 })
 
@@ -83,6 +84,8 @@ export function TelegramConfig({
   onSuccess,
   onCancel,
 }: TelegramConfigProps) {
+  const t = useTranslations('channels.config')
+  const tCommon = useTranslations('common')
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showBotToken, setShowBotToken] = useState(false)
@@ -91,7 +94,7 @@ export function TelegramConfig({
   const isEditing = !!channel
 
   const form = useForm<TelegramConfigForm>({
-    resolver: zodResolver(telegramConfigSchema),
+    resolver: zodResolver(createSchema(tCommon)),
     defaultValues: {
       name: channel?.name || '',
       bot_token: '',
@@ -101,7 +104,7 @@ export function TelegramConfig({
 
   const webhookUrl = channel
     ? `${window.location.origin}/api/v1/webhooks/telegram/${channel.id}`
-    : 'Will be generated after creation'
+    : t('willBeGenerated')
 
   const onSubmit = async (data: TelegramConfigForm) => {
     setIsSubmitting(true)
@@ -125,15 +128,17 @@ export function TelegramConfig({
       }
 
       toast({
-        title: isEditing ? 'Channel updated' : 'Channel created',
-        description: `Telegram channel "${data.name}" has been ${isEditing ? 'updated' : 'created'} successfully.`,
+        title: isEditing ? t('channelUpdated') : t('channelCreated'),
+        description: isEditing
+          ? t('channelUpdatedDesc', { name: data.name })
+          : t('channelCreatedDesc', { name: data.name }),
       })
 
       onSuccess?.(result)
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save channel',
+        title: t('error'),
+        description: error instanceof Error ? error.message : t('failedToSave'),
         variant: 'error',
       })
     } finally {
@@ -145,8 +150,8 @@ export function TelegramConfig({
     const values = form.getValues()
     if (!values.bot_token) {
       toast({
-        title: 'Missing credentials',
-        description: 'Please enter bot token first',
+        title: t('missingCredentials'),
+        description: t('enterCredentialsFirst'),
         variant: 'error',
       })
       return
@@ -159,14 +164,14 @@ export function TelegramConfig({
       })
       setTestStatus('success')
       toast({
-        title: 'Connection successful',
-        description: 'Telegram bot credentials are valid',
+        title: t('connectionSuccess'),
+        description: t('credentialsValid'),
       })
     } catch {
       setTestStatus('error')
       toast({
-        title: 'Connection failed',
-        description: 'Could not connect to Telegram API. Please check your bot token.',
+        title: t('connectionFailed'),
+        description: t('checkCredentials'),
         variant: 'error',
       })
     }
@@ -175,8 +180,8 @@ export function TelegramConfig({
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text)
     toast({
-      title: 'Copied',
-      description: `${label} copied to clipboard`,
+      title: t('copied'),
+      description: t('copiedToClipboard', { label }),
     })
   }
 
@@ -186,9 +191,9 @@ export function TelegramConfig({
         <div className="flex-1 space-y-6">
         <Tabs defaultValue="credentials" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="credentials">Credentials</TabsTrigger>
-            <TabsTrigger value="webhook">Webhook</TabsTrigger>
-            <TabsTrigger value="setup">Setup Guide</TabsTrigger>
+            <TabsTrigger value="credentials">{t('credentials')}</TabsTrigger>
+            <TabsTrigger value="webhook">{t('webhook')}</TabsTrigger>
+            <TabsTrigger value="setup">{t('setupGuide')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="credentials" className="space-y-4 mt-4">
@@ -198,12 +203,12 @@ export function TelegramConfig({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Channel Name</FormLabel>
+                  <FormLabel>{t('channelName')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="My Telegram Bot" {...field} />
+                    <Input placeholder={t('myTelegramBot')} {...field} />
                   </FormControl>
                   <FormDescription>
-                    A friendly name to identify this channel
+                    {t('channelNameDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -216,14 +221,14 @@ export function TelegramConfig({
               name="bot_token"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Bot Token</FormLabel>
+                  <FormLabel>{t('botToken')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Bot className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         type={showBotToken ? 'text' : 'password'}
                         className="pl-10 pr-10"
-                        placeholder={isEditing ? '••••••••••••••••' : '123456789:ABCdef...'}
+                        placeholder={isEditing ? '••••••••••••••••' : t('botTokenPlaceholder')}
                         {...field}
                       />
                       <Button
@@ -242,7 +247,7 @@ export function TelegramConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Bot token from @BotFather
+                    {t('botTokenDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -256,14 +261,14 @@ export function TelegramConfig({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Bot Username
-                    <Badge variant="outline" className="ml-2">Optional</Badge>
+                    {t('botUsername')}
+                    <Badge variant="outline" className="ml-2">{t('optional')}</Badge>
                   </FormLabel>
                   <FormControl>
-                    <Input placeholder="my_company_bot" {...field} />
+                    <Input placeholder={t('botUsernamePlaceholder')} {...field} />
                   </FormControl>
                   <FormDescription>
-                    Your bot username (without @). Will be auto-detected if not provided.
+                    {t('botUsernameDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -281,20 +286,20 @@ export function TelegramConfig({
                 {testStatus === 'testing' ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Testing...
+                    {t('testing')}
                   </>
                 ) : testStatus === 'success' ? (
                   <>
                     <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
-                    Connection Valid
+                    {t('connectionValid')}
                   </>
                 ) : testStatus === 'error' ? (
                   <>
                     <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
-                    Test Failed
+                    {t('testFailed')}
                   </>
                 ) : (
-                  'Test Connection'
+                  t('testConnection')
                 )}
               </Button>
             </div>
@@ -306,10 +311,10 @@ export function TelegramConfig({
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Webhook className="h-4 w-4" />
-                  Webhook URL
+                  {t('webhookUrl')}
                 </CardTitle>
                 <CardDescription>
-                  This URL will be automatically configured when you save the channel
+                  {t('webhookAutoConfigured')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -322,7 +327,7 @@ export function TelegramConfig({
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={() => copyToClipboard(webhookUrl, 'Webhook URL')}
+                      onClick={() => copyToClipboard(webhookUrl, t('webhookUrl'))}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -333,10 +338,9 @@ export function TelegramConfig({
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Automatic Webhook Setup</AlertTitle>
+              <AlertTitle>{t('webhookAutoSetup')}</AlertTitle>
               <AlertDescription>
-                Linktor will automatically configure the webhook with Telegram when you save this channel.
-                You don&apos;t need to manually set up the webhook.
+                {t('webhookAutoSetupDesc')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -344,17 +348,17 @@ export function TelegramConfig({
           <TabsContent value="setup" className="space-y-4 mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Setup Guide</CardTitle>
+                <CardTitle>{t('setupGuideTitle')}</CardTitle>
                 <CardDescription>
-                  Follow these steps to create a Telegram Bot
+                  {t('telegramSetupGuide')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-4">
                   <SetupStep
                     number={1}
-                    title="Open BotFather"
-                    description="Start a chat with @BotFather on Telegram"
+                    title={t('telegramStep1Title')}
+                    description={t('telegramStep1Desc')}
                   >
                     <Button variant="outline" size="sm" asChild>
                       <a
@@ -362,7 +366,7 @@ export function TelegramConfig({
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        Open BotFather
+                        {t('openBotFather')}
                         <ExternalLink className="h-3 w-3 ml-2" />
                       </a>
                     </Button>
@@ -372,32 +376,32 @@ export function TelegramConfig({
 
                   <SetupStep
                     number={2}
-                    title="Create New Bot"
-                    description="Send /newbot command and follow the prompts to create your bot"
+                    title={t('telegramStep2Title')}
+                    description={t('telegramStep2Desc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={3}
-                    title="Copy Bot Token"
-                    description="BotFather will give you a token that looks like 123456789:ABCdefGHIjklmNOPQrstUVwxyz"
+                    title={t('telegramStep3Title')}
+                    description={t('telegramStep3Desc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={4}
-                    title="Configure Bot Settings (Optional)"
-                    description="Use /setcommands, /setdescription, and /setabouttext to customize your bot"
+                    title={t('telegramStep4Title')}
+                    description={t('telegramStep4Desc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={5}
-                    title="Paste Token Here"
-                    description="Enter the bot token in the Credentials tab above"
+                    title={t('telegramStep5Title')}
+                    description={t('telegramStep5Desc')}
                   />
                 </div>
               </CardContent>
@@ -405,10 +409,9 @@ export function TelegramConfig({
 
             <Alert>
               <Bot className="h-4 w-4" />
-              <AlertTitle>Bot Commands</AlertTitle>
+              <AlertTitle>{t('botCommands')}</AlertTitle>
               <AlertDescription>
-                You can configure bot commands with BotFather using /setcommands.
-                Common commands include /start for greeting new users and /help for assistance.
+                {t('botCommandsDesc')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -418,19 +421,19 @@ export function TelegramConfig({
         <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel}>
-              Cancel
+              {t('cancel')}
             </Button>
           )}
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
+                {t('saving')}
               </>
             ) : isEditing ? (
-              'Update Channel'
+              t('updateChannel')
             ) : (
-              'Create Channel'
+              t('createChannel')
             )}
           </Button>
         </div>
@@ -480,6 +483,7 @@ export function TelegramConfigDialog({
   onSuccess?: (channel: Channel) => void
 }) {
   const [open, setOpen] = useState(false)
+  const tChannels = useTranslations('channels')
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -487,10 +491,14 @@ export function TelegramConfigDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>
-            {channel ? 'Configure Telegram Channel' : 'Add Telegram Channel'}
+            {channel
+              ? tChannels('configureChannel', { channel: 'Telegram' })
+              : tChannels('addChannelType', { channel: 'Telegram' })}
           </DialogTitle>
           <DialogDescription>
-            Connect your Telegram Bot using the Bot API
+            {channel
+              ? tChannels('updateSettings', { channel: 'Telegram' })
+              : tChannels('setupNewChannel', { channel: 'Telegram' })}
           </DialogDescription>
         </DialogHeader>
         <TelegramConfig

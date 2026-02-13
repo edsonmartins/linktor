@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format } from 'date-fns'
+import { useTranslations } from 'next-intl'
 import {
   Database,
   RefreshCw,
@@ -40,18 +40,18 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }
 
-function StreamCard({ stream }: { stream: StreamInfo }) {
+function StreamCard({ stream, t, tCommon }: { stream: StreamInfo; t: (key: string, values?: Record<string, string>) => string; tCommon: (key: string) => string }) {
   const queryClient = useQueryClient()
 
   const resetMutation = useMutation({
     mutationFn: (params: ResetConsumerRequest) =>
       api.post('/observability/queue/reset-consumer', params),
     onSuccess: () => {
-      toastSuccess('Consumer reset', 'The consumer has been reset successfully')
+      toastSuccess(t('resetConsumer'), t('consumerResetSuccess'))
       queryClient.invalidateQueries({ queryKey: queryKeys.observability.queue() })
     },
     onError: (error) => {
-      toastError('Reset failed', error instanceof Error ? error.message : 'Failed to reset consumer')
+      toastError(t('resetFailed'), error instanceof Error ? error.message : t('resetFailed'))
     },
   })
 
@@ -82,15 +82,15 @@ function StreamCard({ stream }: { stream: StreamInfo }) {
         {/* Stream Stats */}
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
-            <p className="text-muted-foreground">Size</p>
+            <p className="text-muted-foreground">{t('size')}</p>
             <p className="font-mono font-medium">{formatBytes(stream.bytes)}</p>
           </div>
           <div>
-            <p className="text-muted-foreground">First Seq</p>
+            <p className="text-muted-foreground">{t('firstSeq')}</p>
             <p className="font-mono font-medium">{stream.first_seq}</p>
           </div>
           <div>
-            <p className="text-muted-foreground">Last Seq</p>
+            <p className="text-muted-foreground">{t('lastSeq')}</p>
             <p className="font-mono font-medium">{stream.last_seq}</p>
           </div>
         </div>
@@ -100,7 +100,7 @@ function StreamCard({ stream }: { stream: StreamInfo }) {
           <div className="space-y-2">
             <p className="text-sm font-medium flex items-center gap-2">
               <Users className="h-4 w-4" />
-              Consumers ({stream.consumers.length})
+              {t('consumers')} ({stream.consumers.length})
             </p>
             <div className="space-y-2">
               {stream.consumers.map((consumer) => (
@@ -112,13 +112,13 @@ function StreamCard({ stream }: { stream: StreamInfo }) {
                     <p className="text-sm font-mono">{consumer.name}</p>
                     <div className="flex gap-3 text-xs text-muted-foreground">
                       <span>
-                        Pending: <strong className={cn(consumer.pending > 100 && 'text-yellow-500')}>{consumer.pending}</strong>
+                        {t('pending')}: <strong className={cn(consumer.pending > 100 && 'text-yellow-500')}>{consumer.pending}</strong>
                       </span>
                       <span>
-                        Ack Pending: <strong className={cn(consumer.ack_pending > 50 && 'text-orange-500')}>{consumer.ack_pending}</strong>
+                        {t('ackPending')}: <strong className={cn(consumer.ack_pending > 50 && 'text-orange-500')}>{consumer.ack_pending}</strong>
                       </span>
                       <span>
-                        Redelivered: <strong className={cn(consumer.redelivered > 10 && 'text-red-500')}>{consumer.redelivered}</strong>
+                        {t('redelivered')}: <strong className={cn(consumer.redelivered > 10 && 'text-red-500')}>{consumer.redelivered}</strong>
                       </span>
                     </div>
                   </div>
@@ -135,19 +135,18 @@ function StreamCard({ stream }: { stream: StreamInfo }) {
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Reset Consumer?</AlertDialogTitle>
+                        <AlertDialogTitle>{t('resetConsumerTitle')}</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will reset the consumer "{consumer.name}" to its initial state.
-                          Pending messages will be reprocessed. This action cannot be undone.
+                          {t('resetConsumerDescription', { name: consumer.name })}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
                         <AlertDialogAction
                           onClick={() => handleResetConsumer(consumer.name)}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                          Reset Consumer
+                          {t('resetConsumer')}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -160,7 +159,7 @@ function StreamCard({ stream }: { stream: StreamInfo }) {
 
         {stream.consumers.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-2">
-            No active consumers
+            {t('noActiveConsumers')}
           </p>
         )}
       </CardContent>
@@ -169,10 +168,13 @@ function StreamCard({ stream }: { stream: StreamInfo }) {
 }
 
 export function MessageQueueMonitor() {
+  const t = useTranslations('observability')
+  const tCommon = useTranslations('common')
+
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.observability.queue(),
     queryFn: () => api.get<QueueStats>('/observability/queue'),
-    refetchInterval: 5000, // Auto-refresh every 5 seconds
+    refetchInterval: 5000,
   })
 
   return (
@@ -183,7 +185,7 @@ export function MessageQueueMonitor() {
           <div className="flex items-center gap-2">
             <Database className="h-5 w-5 text-primary" />
             <div>
-              <p className="text-sm text-muted-foreground">Total Messages</p>
+              <p className="text-sm text-muted-foreground">{t('totalMessages')}</p>
               <p className="text-xl font-bold">
                 {data?.total_messages?.toLocaleString() || 0}
               </p>
@@ -192,7 +194,7 @@ export function MessageQueueMonitor() {
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-yellow-500" />
             <div>
-              <p className="text-sm text-muted-foreground">Total Pending</p>
+              <p className="text-sm text-muted-foreground">{t('totalPending')}</p>
               <p className="text-xl font-bold">
                 {data?.total_pending?.toLocaleString() || 0}
               </p>
@@ -207,7 +209,7 @@ export function MessageQueueMonitor() {
           disabled={isFetching}
         >
           <RefreshCw className={cn('h-4 w-4 mr-2', isFetching && 'animate-spin')} />
-          Refresh
+          {tCommon('refresh')}
         </Button>
       </div>
 
@@ -220,13 +222,13 @@ export function MessageQueueMonitor() {
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
             <HardDrive className="h-8 w-8 mx-auto mb-2" />
-            <p>No streams found</p>
+            <p>{t('noStreamsFound')}</p>
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {data.streams.map((stream) => (
-            <StreamCard key={stream.name} stream={stream} />
+            <StreamCard key={stream.name} stream={stream} t={t} tCommon={tCommon} />
           ))}
         </div>
       )}

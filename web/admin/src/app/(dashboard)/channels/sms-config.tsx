@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useTranslations } from 'next-intl'
 import {
   AlertCircle,
   CheckCircle2,
@@ -65,10 +66,10 @@ import type { Channel } from '@/types'
 /**
  * SMS/Twilio Configuration Schema
  */
-const smsConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
-  account_sid: z.string().min(1, 'Account SID is required'),
-  auth_token: z.string().min(1, 'Auth token is required'),
+const createSmsConfigSchema = (tCommon: (key: string) => string) => z.object({
+  name: z.string().min(1, tCommon('required')),
+  account_sid: z.string().min(1, tCommon('required')),
+  auth_token: z.string().min(1, tCommon('required')),
   sender_type: z.enum(['phone_number', 'messaging_service']),
   phone_number: z.string().optional(),
   messaging_service_sid: z.string().optional(),
@@ -83,12 +84,12 @@ const smsConfigSchema = z.object({
     return false
   },
   {
-    message: 'Phone number or Messaging Service SID is required',
+    message: tCommon('required'),
     path: ['phone_number'],
   }
 )
 
-type SMSConfigForm = z.infer<typeof smsConfigSchema>
+type SMSConfigForm = z.infer<ReturnType<typeof createSmsConfigSchema>>
 
 interface SMSConfigProps {
   channel?: Channel
@@ -105,11 +106,14 @@ export function SMSConfig({
   onCancel,
 }: SMSConfigProps) {
   const { toast } = useToast()
+  const t = useTranslations('channels.config')
+  const tCommon = useTranslations('common')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showAuthToken, setShowAuthToken] = useState(false)
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
 
   const isEditing = !!channel
+  const smsConfigSchema = createSmsConfigSchema(tCommon)
 
   const form = useForm<SMSConfigForm>({
     resolver: zodResolver(smsConfigSchema),
@@ -127,11 +131,11 @@ export function SMSConfig({
 
   const webhookUrl = channel
     ? `${window.location.origin}/api/v1/webhooks/twilio/${channel.id}`
-    : 'Will be generated after creation'
+    : t('webhookPending')
 
   const statusCallbackUrl = channel
     ? `${window.location.origin}/api/v1/webhooks/twilio/${channel.id}`
-    : 'Will be generated after creation'
+    : t('webhookPending')
 
   const onSubmit = async (data: SMSConfigForm) => {
     setIsSubmitting(true)
@@ -157,15 +161,15 @@ export function SMSConfig({
       }
 
       toast({
-        title: isEditing ? 'Channel updated' : 'Channel created',
-        description: `SMS channel "${data.name}" has been ${isEditing ? 'updated' : 'created'} successfully.`,
+        title: isEditing ? tCommon('updated') : tCommon('created'),
+        description: isEditing ? t('channelUpdated') : t('channelCreated'),
       })
 
       onSuccess?.(result)
     } catch (error) {
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save channel',
+        title: tCommon('error'),
+        description: error instanceof Error ? error.message : t('saveError'),
         variant: 'error',
       })
     } finally {
@@ -177,8 +181,8 @@ export function SMSConfig({
     const values = form.getValues()
     if (!values.account_sid || !values.auth_token) {
       toast({
-        title: 'Missing credentials',
-        description: 'Please enter Account SID and Auth Token first',
+        title: t('missingCredentials'),
+        description: t('missingCredentialsDesc'),
         variant: 'error',
       })
       return
@@ -192,24 +196,24 @@ export function SMSConfig({
       })
       setTestStatus('success')
       toast({
-        title: 'Connection successful',
-        description: 'Twilio credentials are valid',
+        title: t('connectionSuccess'),
+        description: t('twilioCredentialsValid'),
       })
     } catch {
       setTestStatus('error')
       toast({
-        title: 'Connection failed',
-        description: 'Could not connect to Twilio API. Please check your credentials.',
+        title: t('connectionFailed'),
+        description: t('twilioConnectionError'),
         variant: 'error',
       })
     }
   }
 
-  const copyToClipboard = (text: string, label: string) => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     toast({
-      title: 'Copied',
-      description: `${label} copied to clipboard`,
+      title: tCommon('copied'),
+      description: t('copiedToClipboard'),
     })
   }
 
@@ -219,9 +223,9 @@ export function SMSConfig({
         <div className="flex-1 space-y-6">
         <Tabs defaultValue="credentials" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="credentials">Credentials</TabsTrigger>
-            <TabsTrigger value="webhook">Webhook</TabsTrigger>
-            <TabsTrigger value="setup">Setup Guide</TabsTrigger>
+            <TabsTrigger value="credentials">{t('credentials')}</TabsTrigger>
+            <TabsTrigger value="webhook">{t('webhook')}</TabsTrigger>
+            <TabsTrigger value="setup">{t('setupGuide')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="credentials" className="space-y-4 mt-4">
@@ -231,12 +235,12 @@ export function SMSConfig({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Channel Name</FormLabel>
+                  <FormLabel>{t('channelName')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="My SMS Channel" {...field} />
+                    <Input placeholder={t('mySmsChannel')} {...field} />
                   </FormControl>
                   <FormDescription>
-                    A friendly name to identify this channel
+                    {t('channelNameDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -249,7 +253,7 @@ export function SMSConfig({
               name="account_sid"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Account SID</FormLabel>
+                  <FormLabel>{t('accountSid')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -261,7 +265,7 @@ export function SMSConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Found on your Twilio Console dashboard
+                    {t('accountSidDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -274,12 +278,12 @@ export function SMSConfig({
               name="auth_token"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Auth Token</FormLabel>
+                  <FormLabel>{t('authToken')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Input
                         type={showAuthToken ? 'text' : 'password'}
-                        placeholder={isEditing ? '••••••••••••••••' : 'Enter auth token'}
+                        placeholder={isEditing ? '••••••••••••••••' : t('enterAuthToken')}
                         {...field}
                       />
                       <Button
@@ -298,7 +302,7 @@ export function SMSConfig({
                     </div>
                   </FormControl>
                   <FormDescription>
-                    Auth Token from your Twilio Console
+                    {t('authTokenDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -311,7 +315,7 @@ export function SMSConfig({
               name="sender_type"
               render={({ field }) => (
                 <FormItem className="space-y-3">
-                  <FormLabel>Sender Type</FormLabel>
+                  <FormLabel>{t('senderType')}</FormLabel>
                   <FormControl>
                     <RadioGroup
                       onValueChange={field.onChange}
@@ -321,19 +325,19 @@ export function SMSConfig({
                       <div className="flex items-center space-x-3">
                         <RadioGroupItem value="phone_number" id="phone_number" />
                         <Label htmlFor="phone_number" className="font-normal">
-                          Phone Number
+                          {t('phoneNumber')}
                         </Label>
                       </div>
                       <div className="flex items-center space-x-3">
                         <RadioGroupItem value="messaging_service" id="messaging_service" />
                         <Label htmlFor="messaging_service" className="font-normal">
-                          Messaging Service
+                          {t('messagingService')}
                         </Label>
                       </div>
                     </RadioGroup>
                   </FormControl>
                   <FormDescription>
-                    Use a Messaging Service for better deliverability and A2P 10DLC compliance
+                    {t('senderTypeDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -347,7 +351,7 @@ export function SMSConfig({
                 name="phone_number"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Phone Number</FormLabel>
+                    <FormLabel>{t('phoneNumber')}</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -359,7 +363,7 @@ export function SMSConfig({
                       </div>
                     </FormControl>
                     <FormDescription>
-                      Your Twilio phone number in E.164 format
+                      {t('phoneNumberDesc')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -374,7 +378,7 @@ export function SMSConfig({
                 name="messaging_service_sid"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Messaging Service SID</FormLabel>
+                    <FormLabel>{t('messagingServiceSid')}</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -386,7 +390,7 @@ export function SMSConfig({
                       </div>
                     </FormControl>
                     <FormDescription>
-                      Messaging Service SID from Twilio Console
+                      {t('messagingServiceSidDesc')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -405,20 +409,20 @@ export function SMSConfig({
                 {testStatus === 'testing' ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Testing...
+                    {t('testing')}
                   </>
                 ) : testStatus === 'success' ? (
                   <>
                     <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
-                    Connection Valid
+                    {t('connectionValid')}
                   </>
                 ) : testStatus === 'error' ? (
                   <>
                     <AlertCircle className="h-4 w-4 mr-2 text-red-500" />
-                    Test Failed
+                    {t('testFailed')}
                   </>
                 ) : (
-                  'Test Connection'
+                  t('testConnection')
                 )}
               </Button>
             </div>
@@ -430,10 +434,10 @@ export function SMSConfig({
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Webhook className="h-4 w-4" />
-                  Incoming Messages Webhook
+                  {t('incomingMessagesWebhook')}
                 </CardTitle>
                 <CardDescription>
-                  Configure this URL in your Twilio phone number settings
+                  {t('configureWebhookInTwilio')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -446,7 +450,7 @@ export function SMSConfig({
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={() => copyToClipboard(webhookUrl, 'Webhook URL')}
+                      onClick={() => copyToClipboard(webhookUrl)}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -460,10 +464,10 @@ export function SMSConfig({
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <AlertCircle className="h-4 w-4" />
-                  Status Callback URL
+                  {t('statusCallbackUrl')}
                 </CardTitle>
                 <CardDescription>
-                  For delivery status updates (optional but recommended)
+                  {t('statusCallbackDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -476,7 +480,7 @@ export function SMSConfig({
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={() => copyToClipboard(statusCallbackUrl, 'Status Callback URL')}
+                      onClick={() => copyToClipboard(statusCallbackUrl)}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -487,10 +491,9 @@ export function SMSConfig({
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Webhook Configuration</AlertTitle>
+              <AlertTitle>{t('webhookConfiguration')}</AlertTitle>
               <AlertDescription>
-                Configure the webhook URL in your Twilio Console under Phone Numbers &gt;
-                Manage Numbers &gt; Active Numbers &gt; [Your Number] &gt; Messaging section.
+                {t('twilioWebhookInstructions')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -498,17 +501,17 @@ export function SMSConfig({
           <TabsContent value="setup" className="space-y-4 mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>Setup Guide</CardTitle>
+                <CardTitle>{t('setupGuide')}</CardTitle>
                 <CardDescription>
-                  Follow these steps to configure Twilio SMS
+                  {t('twilioSetupDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-4">
                   <SetupStep
                     number={1}
-                    title="Create Twilio Account"
-                    description="Sign up for a Twilio account if you don't have one"
+                    title={t('createTwilioAccount')}
+                    description={t('createTwilioAccountDesc')}
                   >
                     <Button variant="outline" size="sm" asChild>
                       <a
@@ -516,7 +519,7 @@ export function SMSConfig({
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        Open Twilio Console
+                        {t('openTwilioConsole')}
                         <ExternalLink className="h-3 w-3 ml-2" />
                       </a>
                     </Button>
@@ -526,28 +529,28 @@ export function SMSConfig({
 
                   <SetupStep
                     number={2}
-                    title="Get Account Credentials"
-                    description="Find your Account SID and Auth Token on the Console Dashboard"
+                    title={t('getAccountCredentials')}
+                    description={t('getAccountCredentialsDesc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={3}
-                    title="Get a Phone Number"
-                    description="Purchase a phone number or use a Messaging Service for sending SMS"
+                    title={t('getPhoneNumber')}
+                    description={t('getPhoneNumberDesc')}
                   />
 
                   <Separator />
 
                   <SetupStep
                     number={4}
-                    title="Configure Webhook (After Channel Creation)"
-                    description="Configure the incoming message webhook URL in your phone number settings"
+                    title={t('configureWebhookStep')}
+                    description={t('configureWebhookStepDesc')}
                   >
                     <div className="text-sm text-muted-foreground">
-                      <p>Navigate to: Phone Numbers &gt; Manage &gt; Active Numbers</p>
-                      <p>Set &quot;A MESSAGE COMES IN&quot; to the Webhook URL</p>
+                      <p>{t('webhookNavigation')}</p>
+                      <p>{t('webhookSetMessage')}</p>
                     </div>
                   </SetupStep>
 
@@ -555,8 +558,8 @@ export function SMSConfig({
 
                   <SetupStep
                     number={5}
-                    title="Test the Integration"
-                    description="Send a test SMS to your Twilio number to verify the setup"
+                    title={t('testIntegration')}
+                    description={t('testIntegrationDesc')}
                   />
                 </div>
               </CardContent>
@@ -564,10 +567,9 @@ export function SMSConfig({
 
             <Alert>
               <Phone className="h-4 w-4" />
-              <AlertTitle>A2P 10DLC Compliance (US)</AlertTitle>
+              <AlertTitle>{t('a2p10dlcCompliance')}</AlertTitle>
               <AlertDescription>
-                If you&apos;re sending SMS to US numbers, consider using a Messaging Service
-                with A2P 10DLC registration for better deliverability and compliance.
+                {t('a2p10dlcComplianceDesc')}
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -577,19 +579,19 @@ export function SMSConfig({
         <div className="sticky bottom-0 flex justify-end gap-3 pt-4 pb-2 mt-4 border-t bg-background">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel}>
-              Cancel
+              {tCommon('cancel')}
             </Button>
           )}
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
+                {tCommon('saving')}
               </>
             ) : isEditing ? (
-              'Update Channel'
+              t('updateChannel')
             ) : (
-              'Create Channel'
+              t('createChannel')
             )}
           </Button>
         </div>
@@ -639,6 +641,7 @@ export function SMSConfigDialog({
   onSuccess?: (channel: Channel) => void
 }) {
   const [open, setOpen] = useState(false)
+  const t = useTranslations('channels.config')
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -646,10 +649,10 @@ export function SMSConfigDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>
-            {channel ? 'Configure SMS Channel' : 'Add SMS Channel'}
+            {channel ? t('configureSmsChannel') : t('addSmsChannel')}
           </DialogTitle>
           <DialogDescription>
-            Connect your Twilio account for SMS messaging
+            {t('connectTwilioAccount')}
           </DialogDescription>
         </DialogHeader>
         <SMSConfig

@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import {
   MessageSquare,
   MessageCircle,
@@ -26,25 +27,27 @@ const CHANNEL_ICONS: Record<string, React.ReactNode> = {
 }
 
 export function ChannelBreakdownTable({ data }: ChannelBreakdownTableProps) {
+  const t = useTranslations('analytics')
+
   return (
     <div className="rounded-lg border bg-card p-4 shadow-sm">
       <h3 className="mb-4 text-lg font-semibold flex items-center gap-2">
         <Globe className="h-5 w-5 text-primary" />
-        Channel Breakdown
+        {t('channelBreakdown')}
       </h3>
       <div className="overflow-x-auto">
         {data.length === 0 ? (
           <div className="flex h-[200px] items-center justify-center text-muted-foreground">
-            No channel data available
+            {t('noChannelData')}
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="border-b text-left text-sm text-muted-foreground">
-                <th className="pb-3 font-medium">Channel</th>
-                <th className="pb-3 font-medium text-right">Convos</th>
-                <th className="pb-3 font-medium text-right">Bot Resolved</th>
-                <th className="pb-3 font-medium text-right">Rate</th>
+                <th className="pb-3 font-medium">{t('channel')}</th>
+                <th className="pb-3 font-medium text-right">{t('convos')}</th>
+                <th className="pb-3 font-medium text-right">{t('botResolved')}</th>
+                <th className="pb-3 font-medium text-right">{t('rate')}</th>
               </tr>
             </thead>
             <tbody>
