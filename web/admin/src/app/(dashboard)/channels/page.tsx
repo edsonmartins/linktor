@@ -50,7 +50,7 @@ import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { toastSuccess, toastError } from '@/hooks/use-toast'
-import type { Channel, ChannelType, PaginatedResponse } from '@/types'
+import type { Channel, ChannelType } from '@/types'
 
 // Channel config components
 import { WebchatConfig } from './webchat-config'
@@ -365,10 +365,10 @@ export default function ChannelsPage() {
   // Fetch channels
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.channels.list(),
-    queryFn: () => api.get<PaginatedResponse<Channel>>('/channels'),
+    queryFn: () => api.get<Channel[]>('/channels'),
   })
 
-  const channels = data?.data ?? []
+  const channels = Array.isArray(data) ? data : []
 
   // Delete mutation
   const deleteMutation = useMutation({
