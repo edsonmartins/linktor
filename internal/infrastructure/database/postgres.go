@@ -83,6 +83,7 @@ func (db *PostgresDB) RunMigrations(ctx context.Context) error {
 		createNewIndexes,
 		addLimitsColumn,
 		addBotsChannelsColumn,
+		refactorChannelStatus,
 	}
 
 	for _, migration := range migrations {
@@ -108,6 +109,48 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bots' AND column_name='channels') THEN
         ALTER TABLE bots ADD COLUMN channels UUID[] DEFAULT '{}';
+    END IF;
+END $$;
+`
+
+// Migration to separate enabled (boolean) from connection_status
+const refactorChannelStatus = `
+DO $$
+BEGIN
+    -- Add enabled column if not exists
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='channels' AND column_name='enabled') THEN
+        ALTER TABLE channels ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT true;
+    END IF;
+
+    -- Add connection_status column if not exists
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='channels' AND column_name='connection_status') THEN
+        ALTER TABLE channels ADD COLUMN connection_status VARCHAR(50) NOT NULL DEFAULT 'disconnected';
+    END IF;
+
+    -- Migrate data from status to new columns if status column exists and connection_status is empty
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='channels' AND column_name='status') THEN
+        -- Set enabled based on old status (active = enabled, inactive = disabled)
+        UPDATE channels SET enabled = (status IN ('active', 'connecting', 'connected')) WHERE enabled = true;
+
+        -- Map old status values to new connection_status
+        UPDATE channels SET connection_status = CASE
+            WHEN status = 'active' THEN 'connected'
+            WHEN status = 'inactive' THEN 'disconnected'
+            WHEN status = 'connecting' THEN 'connecting'
+            WHEN status = 'disconnected' THEN 'disconnected'
+            WHEN status = 'error' THEN 'error'
+            ELSE 'disconnected'
+        END WHERE connection_status = 'disconnected';
+    END IF;
+
+    -- Create index on connection_status
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_channels_connection_status') THEN
+        CREATE INDEX idx_channels_connection_status ON channels(connection_status);
+    END IF;
+
+    -- Create index on enabled
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_channels_enabled') THEN
+        CREATE INDEX idx_channels_enabled ON channels(enabled);
     END IF;
 END $$;
 `

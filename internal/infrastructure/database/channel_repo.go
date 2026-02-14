@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -36,9 +37,9 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 
 	query := `
 		INSERT INTO channels (
-			id, tenant_id, name, type, status, credentials, config,
+			id, tenant_id, name, type, enabled, connection_status, credentials, config,
 			webhook_url, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	_, err = r.db.Pool.Exec(ctx, query,
@@ -46,7 +47,8 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 		channel.TenantID,
 		channel.Name,
 		string(channel.Type),
-		string(channel.Status),
+		channel.Enabled,
+		string(channel.ConnectionStatus),
 		credentials,
 		config,
 		nullString(channel.WebhookURL),
@@ -64,7 +66,7 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 // FindByID finds a channel by ID
 func (r *ChannelRepository) FindByID(ctx context.Context, id string) (*entity.Channel, error) {
 	query := `
-		SELECT id, tenant_id, name, type, status, credentials, config,
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
 		       webhook_url, created_at, updated_at
 		FROM channels
 		WHERE id = $1
@@ -97,7 +99,7 @@ func (r *ChannelRepository) FindByTenant(ctx context.Context, tenantID string, p
 
 	// Get channels
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, name, type, status, credentials, config,
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
 		       webhook_url, created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1
@@ -126,7 +128,7 @@ func (r *ChannelRepository) FindByTenant(ctx context.Context, tenantID string, p
 // FindByType finds channels of a specific type for a tenant
 func (r *ChannelRepository) FindByType(ctx context.Context, tenantID string, channelType entity.ChannelType) ([]*entity.Channel, error) {
 	query := `
-		SELECT id, tenant_id, name, type, status, credentials, config,
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
 		       webhook_url, created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1 AND type = $2
@@ -151,13 +153,41 @@ func (r *ChannelRepository) FindByType(ctx context.Context, tenantID string, cha
 	return channels, nil
 }
 
-// FindActiveByTenant finds active channels for a tenant
-func (r *ChannelRepository) FindActiveByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
+// FindEnabledByTenant finds enabled channels for a tenant
+func (r *ChannelRepository) FindEnabledByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
 	query := `
-		SELECT id, tenant_id, name, type, status, credentials, config,
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
 		       webhook_url, created_at, updated_at
 		FROM channels
-		WHERE tenant_id = $1 AND status = 'active'
+		WHERE tenant_id = $1 AND enabled = true
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Pool.Query(ctx, query, tenantID)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to query channels")
+	}
+	defer rows.Close()
+
+	var channels []*entity.Channel
+	for rows.Next() {
+		channel, err := r.scanChannelFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		channels = append(channels, channel)
+	}
+
+	return channels, nil
+}
+
+// FindActiveByTenant finds channels that are both enabled AND connected
+func (r *ChannelRepository) FindActiveByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
+	query := `
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
+		       webhook_url, created_at, updated_at
+		FROM channels
+		WHERE tenant_id = $1 AND enabled = true AND connection_status = 'connected'
 		ORDER BY created_at DESC
 	`
 
@@ -196,17 +226,19 @@ func (r *ChannelRepository) Update(ctx context.Context, channel *entity.Channel)
 	query := `
 		UPDATE channels SET
 			name = $1,
-			status = $2,
-			credentials = $3,
-			config = $4,
-			webhook_url = $5,
-			updated_at = $6
-		WHERE id = $7
+			enabled = $2,
+			connection_status = $3,
+			credentials = $4,
+			config = $5,
+			webhook_url = $6,
+			updated_at = $7
+		WHERE id = $8
 	`
 
 	result, err := r.db.Pool.Exec(ctx, query,
 		channel.Name,
-		string(channel.Status),
+		channel.Enabled,
+		string(channel.ConnectionStatus),
 		credentials,
 		config,
 		nullString(channel.WebhookURL),
@@ -225,13 +257,13 @@ func (r *ChannelRepository) Update(ctx context.Context, channel *entity.Channel)
 	return nil
 }
 
-// UpdateStatus updates only the channel status
-func (r *ChannelRepository) UpdateStatus(ctx context.Context, id string, status entity.ChannelStatus) error {
-	query := `UPDATE channels SET status = $1, updated_at = $2 WHERE id = $3`
+// UpdateEnabled updates only the channel enabled state
+func (r *ChannelRepository) UpdateEnabled(ctx context.Context, id string, enabled bool) error {
+	query := `UPDATE channels SET enabled = $1, updated_at = $2 WHERE id = $3`
 
-	result, err := r.db.Pool.Exec(ctx, query, string(status), time.Now(), id)
+	result, err := r.db.Pool.Exec(ctx, query, enabled, time.Now(), id)
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeInternal, "failed to update channel status")
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to update channel enabled state")
 	}
 
 	if result.RowsAffected() == 0 {
@@ -239,6 +271,28 @@ func (r *ChannelRepository) UpdateStatus(ctx context.Context, id string, status 
 	}
 
 	return nil
+}
+
+// UpdateConnectionStatus updates only the channel connection status
+func (r *ChannelRepository) UpdateConnectionStatus(ctx context.Context, id string, status entity.ConnectionStatus) error {
+	query := `UPDATE channels SET connection_status = $1, updated_at = $2 WHERE id = $3`
+
+	result, err := r.db.Pool.Exec(ctx, query, string(status), time.Now(), id)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to update channel connection status")
+	}
+
+	if result.RowsAffected() == 0 {
+		return errors.New(errors.ErrCodeChannelNotFound, "channel not found")
+	}
+
+	return nil
+}
+
+// UpdateStatus updates the channel status (deprecated, use UpdateEnabled or UpdateConnectionStatus)
+func (r *ChannelRepository) UpdateStatus(ctx context.Context, id string, status entity.ChannelStatus) error {
+	// For backwards compatibility, map old status to new fields
+	return r.UpdateConnectionStatus(ctx, id, entity.ConnectionStatus(status))
 }
 
 // Delete deletes a channel
@@ -270,11 +324,51 @@ func (r *ChannelRepository) CountByTenant(ctx context.Context, tenantID string) 
 	return count, nil
 }
 
+// FindByTypes finds all channels of specific types across all tenants
+func (r *ChannelRepository) FindByTypes(ctx context.Context, types []entity.ChannelType) ([]*entity.Channel, error) {
+	if len(types) == 0 {
+		return nil, nil
+	}
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(types))
+	args := make([]interface{}, len(types))
+	for i, t := range types {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = string(t)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
+		       webhook_url, created_at, updated_at
+		FROM channels
+		WHERE type IN (%s)
+		ORDER BY created_at DESC
+	`, strings.Join(placeholders, ", "))
+
+	rows, err := r.db.Pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to query channels by types")
+	}
+	defer rows.Close()
+
+	var channels []*entity.Channel
+	for rows.Next() {
+		channel, err := r.scanChannelFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		channels = append(channels, channel)
+	}
+
+	return channels, nil
+}
+
 // FindByConfigValue finds channels that have a specific config key-value pair
 // Useful for finding WhatsApp channels by phone_number_id
 func (r *ChannelRepository) FindByConfigValue(ctx context.Context, key, value string) ([]*entity.Channel, error) {
 	query := `
-		SELECT id, tenant_id, name, type, status, credentials, config,
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
 		       webhook_url, created_at, updated_at
 		FROM channels
 		WHERE config->>$1 = $2
@@ -302,7 +396,7 @@ func (r *ChannelRepository) FindByConfigValue(ctx context.Context, key, value st
 // FindWhatsAppByPhoneNumberID finds a WhatsApp channel by its phone number ID
 func (r *ChannelRepository) FindWhatsAppByPhoneNumberID(ctx context.Context, phoneNumberID string) (*entity.Channel, error) {
 	query := `
-		SELECT id, tenant_id, name, type, status, credentials, config,
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
 		       webhook_url, created_at, updated_at
 		FROM channels
 		WHERE (type = 'whatsapp' OR type = 'whatsapp_official')
@@ -325,12 +419,12 @@ func (r *ChannelRepository) FindWhatsAppByPhoneNumberID(ctx context.Context, pho
 
 func (r *ChannelRepository) scanChannel(row pgx.Row) (*entity.Channel, error) {
 	var c entity.Channel
-	var channelType, status string
+	var channelType, connectionStatus string
 	var credentials, config []byte
 	var webhookURL *string
 
 	err := row.Scan(
-		&c.ID, &c.TenantID, &c.Name, &channelType, &status,
+		&c.ID, &c.TenantID, &c.Name, &channelType, &c.Enabled, &connectionStatus,
 		&credentials, &config, &webhookURL, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
@@ -338,7 +432,7 @@ func (r *ChannelRepository) scanChannel(row pgx.Row) (*entity.Channel, error) {
 	}
 
 	c.Type = entity.ChannelType(channelType)
-	c.Status = entity.ChannelStatus(status)
+	c.ConnectionStatus = entity.ConnectionStatus(connectionStatus)
 
 	if webhookURL != nil {
 		c.WebhookURL = *webhookURL
@@ -357,12 +451,12 @@ func (r *ChannelRepository) scanChannel(row pgx.Row) (*entity.Channel, error) {
 
 func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel, error) {
 	var c entity.Channel
-	var channelType, status string
+	var channelType, connectionStatus string
 	var credentials, config []byte
 	var webhookURL *string
 
 	err := rows.Scan(
-		&c.ID, &c.TenantID, &c.Name, &channelType, &status,
+		&c.ID, &c.TenantID, &c.Name, &channelType, &c.Enabled, &connectionStatus,
 		&credentials, &config, &webhookURL, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
@@ -370,7 +464,7 @@ func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel,
 	}
 
 	c.Type = entity.ChannelType(channelType)
-	c.Status = entity.ChannelStatus(status)
+	c.ConnectionStatus = entity.ConnectionStatus(connectionStatus)
 
 	if webhookURL != nil {
 		c.WebhookURL = *webhookURL
@@ -389,11 +483,12 @@ func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel,
 
 func sanitizeChannelColumn(col string) string {
 	allowed := map[string]bool{
-		"created_at": true,
-		"updated_at": true,
-		"name":       true,
-		"type":       true,
-		"status":     true,
+		"created_at":        true,
+		"updated_at":        true,
+		"name":              true,
+		"type":              true,
+		"enabled":           true,
+		"connection_status": true,
 	}
 	if allowed[col] {
 		return col

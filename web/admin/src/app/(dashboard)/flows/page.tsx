@@ -94,7 +94,7 @@ export default function FlowsPage() {
     onError: () => {
       toast({
         title: tCommon('error'),
-        variant: 'destructive',
+        variant: 'error',
       })
     },
   })

@@ -94,6 +94,13 @@ func (r *Registry) ConfigureChannel(ctx context.Context, channelID string, chann
 	return template, nil
 }
 
+// RegisterChannelAdapter registers an already-initialized adapter instance for a specific channel
+func (r *Registry) RegisterChannelAdapter(channelID string, adapter ChannelAdapter) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.configs[channelID] = adapter
+}
+
 // DisconnectChannel disconnects and removes a channel adapter instance
 func (r *Registry) DisconnectChannel(ctx context.Context, channelID string) error {
 	r.mu.Lock()

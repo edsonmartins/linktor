@@ -59,8 +59,8 @@ import type { Channel } from '@/types'
 /**
  * WhatsApp Unofficial Configuration Schema
  */
-const createSchema = (t: (key: string) => string) => z.object({
-  name: z.string().min(1, t('channelNameRequired')),
+const whatsappConfigSchema = z.object({
+  name: z.string().min(1, 'Channel name is required'),
   device_name: z.string().optional(),
   phone_number: z.string().optional(),
 })
@@ -97,7 +97,7 @@ export function WhatsAppUnofficialConfig({
   const isEditing = !!channel
 
   const form = useForm<WhatsAppConfigForm>({
-    resolver: zodResolver(createSchema(tCommon)),
+    resolver: zodResolver(whatsappConfigSchema),
     defaultValues: {
       name: channel?.name || '',
       device_name: (channel?.config?.device_name as string) || 'Linktor',
@@ -123,6 +123,34 @@ export function WhatsAppUnofficialConfig({
       return () => clearInterval(interval)
     }
   }, [qrExpiry])
+
+  // Poll channel status while QR code is showing
+  useEffect(() => {
+    if (connectionStatus !== 'qr_pending' || !channel?.id) {
+      return
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await api.get<Channel>(`/channels/${channel.id}`)
+        if (response.connection_status === 'connected') {
+          setConnectionStatus('connected')
+          setQrCode(null)
+          setPairCode(null)
+          toast({
+            title: t('channelConnected'),
+            description: t('channelConnectedDesc'),
+          })
+          onSuccess?.(response)
+        }
+      } catch (error) {
+        // Ignore polling errors
+        console.debug('Status poll error:', error)
+      }
+    }, 2000) // Poll every 2 seconds
+
+    return () => clearInterval(pollInterval)
+  }, [connectionStatus, channel?.id, t, toast, onSuccess])
 
   const onSubmit = async (data: WhatsAppConfigForm) => {
     setIsSubmitting(true)
@@ -250,7 +278,7 @@ export function WhatsAppUnofficialConfig({
     if (!channel?.id) return
 
     try {
-      await api.post(`/channels/${channel.id}/whatsapp/logout`)
+      await api.post(`/channels/${channel.id}/disconnect`)
       setConnectionStatus('disconnected')
       setDeviceInfo(null)
       toast({

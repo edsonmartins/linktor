@@ -125,7 +125,9 @@ func (r *Router) Setup() *gin.Engine {
 				channels.PUT("/:id", r.channelHandler.Update)
 				channels.DELETE("/:id", r.channelHandler.Delete)
 				channels.POST("/:id/connect", r.channelHandler.Connect)
+				channels.POST("/:id/pair", r.channelHandler.RequestPairCode)
 				channels.POST("/:id/disconnect", r.channelHandler.Disconnect)
+				channels.PUT("/:id/status", r.channelHandler.UpdateStatus)
 			}
 
 			// Contact management

@@ -31,8 +31,8 @@ import { useToast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
 import type { Channel } from '@/types'
 
-const createSchema = (t: (key: string) => string) => z.object({
-  name: z.string().min(1, t('channelNameRequired')),
+const webchatConfigSchema = z.object({
+  name: z.string().min(1, 'Channel name is required'),
   // Appearance
   primary_color: z.string(),
   text_color: z.string(),
@@ -72,7 +72,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
     setValue,
     formState: { errors },
   } = useForm<WebchatConfigForm>({
-    resolver: zodResolver(createSchema(tCommon)),
+    resolver: zodResolver(webchatConfigSchema),
     defaultValues: {
       name: channel?.name || '',
       primary_color: (channel?.config?.primary_color as string) || '#6366f1',

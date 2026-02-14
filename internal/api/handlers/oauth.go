@@ -449,12 +449,13 @@ func (h *OAuthHandler) CreateChannel(c *gin.Context) {
 
 	// Create channel entity
 	channel := &entity.Channel{
-		TenantID:    tenantID,
-		Name:        req.Name,
-		Type:        channelType,
-		Status:      entity.ChannelStatusActive,
-		Credentials: credentials,
-		Config:      config,
+		TenantID:         tenantID,
+		Name:             req.Name,
+		Type:             channelType,
+		Enabled:          true,
+		ConnectionStatus: entity.ConnectionStatusConnected,
+		Credentials:      credentials,
+		Config:           config,
 	}
 
 	// Save to database

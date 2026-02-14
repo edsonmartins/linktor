@@ -152,13 +152,22 @@ type ChannelRepository interface {
 	// FindByType finds channels of a specific type for a tenant
 	FindByType(ctx context.Context, tenantID string, channelType entity.ChannelType) ([]*entity.Channel, error)
 
-	// FindActiveByTenant finds active channels for a tenant
+	// FindEnabledByTenant finds enabled channels for a tenant
+	FindEnabledByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error)
+
+	// FindActiveByTenant finds channels that are both enabled AND connected
 	FindActiveByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error)
 
 	// Update updates a channel
 	Update(ctx context.Context, channel *entity.Channel) error
 
-	// UpdateStatus updates only the channel status
+	// UpdateEnabled updates only the channel enabled state
+	UpdateEnabled(ctx context.Context, id string, enabled bool) error
+
+	// UpdateConnectionStatus updates only the channel connection status
+	UpdateConnectionStatus(ctx context.Context, id string, status entity.ConnectionStatus) error
+
+	// UpdateStatus updates the channel status (deprecated, use UpdateEnabled or UpdateConnectionStatus)
 	UpdateStatus(ctx context.Context, id string, status entity.ChannelStatus) error
 
 	// Delete deletes a channel
@@ -166,5 +175,8 @@ type ChannelRepository interface {
 
 	// CountByTenant counts channels for a tenant
 	CountByTenant(ctx context.Context, tenantID string) (int64, error)
+
+	// FindByTypes finds all channels of specific types across all tenants
+	FindByTypes(ctx context.Context, types []entity.ChannelType) ([]*entity.Channel, error)
 }
 

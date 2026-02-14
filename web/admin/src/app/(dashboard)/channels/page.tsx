@@ -81,27 +81,22 @@ const channelIcons: Record<ChannelType, { color: string; bgColor: string }> = {
 }
 
 /**
- * Status Badge
+ * Connection Status Badge
  */
-function StatusBadge({ status, tCommon }: { status: Channel['status']; tCommon: (key: string) => string }) {
+function ConnectionStatusBadge({ connectionStatus, tCommon }: { connectionStatus: Channel['connection_status']; tCommon: (key: string) => string }) {
   const config: Record<string, { variant: 'success' | 'secondary' | 'error' | 'warning'; icon: React.ReactNode; labelKey: string }> = {
-    active: {
-      variant: 'success',
-      icon: <Wifi className="h-3 w-3" />,
-      labelKey: 'active',
-    },
     connected: {
       variant: 'success',
       icon: <Wifi className="h-3 w-3" />,
       labelKey: 'connected',
     },
-    inactive: {
-      variant: 'secondary',
-      icon: <WifiOff className="h-3 w-3" />,
-      labelKey: 'inactive',
+    connecting: {
+      variant: 'warning',
+      icon: <RefreshCw className="h-3 w-3 animate-spin" />,
+      labelKey: 'connecting',
     },
     disconnected: {
-      variant: 'warning',
+      variant: 'secondary',
       icon: <WifiOff className="h-3 w-3" />,
       labelKey: 'disconnected',
     },
@@ -112,13 +107,25 @@ function StatusBadge({ status, tCommon }: { status: Channel['status']; tCommon: 
     },
   }
 
-  const statusConfig = config[status] || config.inactive
+  const statusConfig = config[connectionStatus] || config.disconnected
   const { variant, icon, labelKey } = statusConfig
 
   return (
     <Badge variant={variant} className="gap-1">
       {icon}
       {tCommon(labelKey)}
+    </Badge>
+  )
+}
+
+/**
+ * Enabled Badge
+ */
+function EnabledBadge({ enabled, tCommon }: { enabled: boolean; tCommon: (key: string) => string }) {
+  return (
+    <Badge variant={enabled ? 'success' : 'secondary'} className="gap-1">
+      {enabled ? <Power className="h-3 w-3" /> : <PowerOff className="h-3 w-3" />}
+      {tCommon(enabled ? 'enabled' : 'disabled')}
     </Badge>
   )
 }
@@ -176,15 +183,15 @@ function ChannelCard({
                 {t('configure')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onToggleStatus}>
-                {channel.status === 'active' ? (
+                {channel.enabled ? (
                   <>
                     <PowerOff className="h-4 w-4 mr-2" />
-                    {t('deactivate')}
+                    {t('disable')}
                   </>
                 ) : (
                   <>
                     <Power className="h-4 w-4 mr-2" />
-                    {t('activate')}
+                    {t('enable')}
                   </>
                 )}
               </DropdownMenuItem>
@@ -199,7 +206,10 @@ function ChannelCard({
       </CardHeader>
       <CardContent className="pt-0">
         <div className="flex items-center justify-between">
-          <StatusBadge status={channel.status} tCommon={tCommon} />
+          <div className="flex items-center gap-2">
+            <EnabledBadge enabled={channel.enabled} tCommon={tCommon} />
+            <ConnectionStatusBadge connectionStatus={channel.connection_status} tCommon={tCommon} />
+          </div>
           <Badge variant="outline" className="font-mono text-xs">
             {t(`types.${channel.type}`)}
           </Badge>
@@ -395,10 +405,10 @@ export default function ChannelsPage() {
     },
   })
 
-  // Toggle status mutation
-  const toggleStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: 'active' | 'inactive' }) =>
-      api.put(`/channels/${id}`, { status }),
+  // Toggle enabled mutation
+  const toggleEnabledMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api.put(`/channels/${id}/enabled`, { enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.channels.all })
       toastSuccess(t('statusUpdated'), t('statusUpdatedDesc'))
@@ -421,9 +431,8 @@ export default function ChannelsPage() {
     setConfigSheetOpen(true)
   }
 
-  const handleToggleStatus = (channel: Channel) => {
-    const newStatus = channel.status === 'active' ? 'inactive' : 'active'
-    toggleStatusMutation.mutate({ id: channel.id, status: newStatus })
+  const handleToggleEnabled = (channel: Channel) => {
+    toggleEnabledMutation.mutate({ id: channel.id, enabled: !channel.enabled })
   }
 
   const handleDeleteChannel = (channel: Channel) => {
@@ -494,7 +503,7 @@ export default function ChannelsPage() {
                   t={t}
                   tCommon={tCommon}
                   onConfigure={() => handleConfigureChannel(channel)}
-                  onToggleStatus={() => handleToggleStatus(channel)}
+                  onToggleStatus={() => handleToggleEnabled(channel)}
                   onDelete={() => handleDeleteChannel(channel)}
                 />
               ))}

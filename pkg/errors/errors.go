@@ -40,6 +40,9 @@ const (
 
 	// Quota errors
 	ErrCodeQuotaExceeded ErrorCode = "QUOTA_EXCEEDED"
+
+	// Timeout errors
+	ErrCodeTimeout ErrorCode = "TIMEOUT"
 )
 
 // AppError represents an application error

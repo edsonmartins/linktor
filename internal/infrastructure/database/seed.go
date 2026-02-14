@@ -75,11 +75,12 @@ func (db *PostgresDB) Seed(ctx context.Context) error {
 	channelID := uuid.New().String()
 	now := time.Now()
 	channel := &entity.Channel{
-		ID:       channelID,
-		TenantID: tenantID,
-		Name:     "Website Chat",
-		Type:     entity.ChannelTypeWebChat,
-		Status:   entity.ChannelStatusActive,
+		ID:               channelID,
+		TenantID:         tenantID,
+		Name:             "Website Chat",
+		Type:             entity.ChannelTypeWebChat,
+		Enabled:          true,
+		ConnectionStatus: entity.ConnectionStatusConnected,
 		Config: map[string]string{
 			"welcome_message": "Olá! Como posso ajudar?",
 			"primary_color":   "#007bff",

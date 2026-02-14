@@ -440,7 +440,7 @@ export default function BotsPage() {
       toast({
         title: tCommon('error'),
         description: tCommon('error'),
-        variant: 'destructive',
+        variant: 'error',
       })
     },
   })

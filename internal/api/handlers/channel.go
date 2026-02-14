@@ -262,6 +262,129 @@ func (h *ChannelHandler) Disconnect(c *gin.Context) {
 	RespondSuccess(c, gin.H{"message": "Channel disconnected"})
 }
 
+// UpdateStatusRequest represents a request to update channel status
+type UpdateStatusRequest struct {
+	Status string `json:"status" binding:"required,oneof=active inactive"`
+}
+
+// UpdateStatus godoc
+// @Summary      Update channel status
+// @Description  Update a channel's status (active/inactive)
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Param        request body UpdateStatusRequest true "New status"
+// @Success      200 {object} Response{data=entity.Channel}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id}/status [put]
+func (h *ChannelHandler) UpdateStatus(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		RespondValidationError(c, "Channel ID is required", nil)
+		return
+	}
+
+	var req UpdateStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondValidationError(c, "Invalid status. Must be 'active' or 'inactive'", nil)
+		return
+	}
+
+	channel, err := h.channelService.UpdateStatus(c.Request.Context(), id, req.Status)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	RespondSuccess(c, channel)
+}
+
+// UpdateEnabled godoc
+// @Summary      Update channel enabled state
+// @Description  Enable or disable a channel (system-level, independent of connection status)
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Param        request body UpdateEnabledRequest true "Enabled state"
+// @Success      200 {object} Response{data=entity.Channel}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id}/enabled [put]
+func (h *ChannelHandler) UpdateEnabled(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		RespondValidationError(c, "Channel ID is required", nil)
+		return
+	}
+
+	var req UpdateEnabledRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondValidationError(c, "Invalid request body", nil)
+		return
+	}
+
+	channel, err := h.channelService.UpdateEnabled(c.Request.Context(), id, req.Enabled)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	RespondSuccess(c, channel)
+}
+
+// UpdateEnabledRequest represents a request to enable/disable a channel
+type UpdateEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// PairCodeRequest represents a request for WhatsApp pair code
+type PairCodeRequest struct {
+	PhoneNumber string `json:"phone_number" binding:"required"`
+}
+
+// RequestPairCode godoc
+// @Summary      Request pair code
+// @Description  Request a pair code for WhatsApp authentication (alternative to QR code)
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Param        request body PairCodeRequest true "Phone number"
+// @Success      200 {object} Response{data=service.ConnectResult}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id}/pair [post]
+func (h *ChannelHandler) RequestPairCode(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		RespondValidationError(c, "Channel ID is required", nil)
+		return
+	}
+
+	var req PairCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondValidationError(c, "phone_number is required", nil)
+		return
+	}
+
+	result, err := h.channelService.RequestPairCode(c.Request.Context(), id, req.PhoneNumber)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	RespondSuccess(c, result)
+}
+
 // WhatsAppWebhook handles WhatsApp webhooks
 func (h *ChannelHandler) WhatsAppWebhook(c *gin.Context) {
 	channelID := c.Param("channelId")

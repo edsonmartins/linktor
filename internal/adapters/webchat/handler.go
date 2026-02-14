@@ -64,7 +64,7 @@ func (h *Handler) WebSocketHandler(c *gin.Context) {
 		return
 	}
 
-	if channel.Status != entity.ChannelStatusActive {
+	if !channel.IsActive() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "channel not active"})
 		return
 	}
@@ -306,7 +306,8 @@ func (h *Handler) GetWidgetConfig(c *gin.Context) {
 		"allow_attachments": config.AllowAttachments,
 		"require_email":     config.RequireEmail,
 		"require_name":      config.RequireName,
-		"status":            channel.Status,
+		"enabled":           channel.Enabled,
+		"connection_status": channel.ConnectionStatus,
 	})
 }
 

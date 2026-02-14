@@ -14,17 +14,21 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
+// ConnectionHandler is called when connection state changes
+type ConnectionHandler func(ctx context.Context, connected bool, reason string) error
+
 // Adapter implements the WhatsApp (unofficial) channel adapter using whatsmeow
 type Adapter struct {
 	*plugin.BaseAdapter
 
-	mu             sync.RWMutex
-	client         *Client
-	messageHandler plugin.MessageHandler
-	statusHandler  plugin.StatusHandler
-	config         *Config
-	stopCh         chan struct{}
-	eventLoopDone  chan struct{}
+	mu                sync.RWMutex
+	client            *Client
+	messageHandler    plugin.MessageHandler
+	statusHandler     plugin.StatusHandler
+	connectionHandler ConnectionHandler
+	config            *Config
+	stopCh            chan struct{}
+	eventLoopDone     chan struct{}
 }
 
 // NewAdapter creates a new WhatsApp unofficial adapter
@@ -421,6 +425,13 @@ func (a *Adapter) SetStatusHandler(handler plugin.StatusHandler) {
 	a.statusHandler = handler
 }
 
+// SetConnectionHandler sets the handler for connection state changes
+func (a *Adapter) SetConnectionHandler(handler ConnectionHandler) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.connectionHandler = handler
+}
+
 // GetConnectionStatus returns detailed connection status
 func (a *Adapter) GetConnectionStatus() *plugin.ConnectionStatus {
 	a.mu.RLock()
@@ -486,6 +497,7 @@ func (a *Adapter) eventLoop() {
 			a.mu.RLock()
 			msgHandler := a.messageHandler
 			statusHandler := a.statusHandler
+			connHandler := a.connectionHandler
 			a.mu.RUnlock()
 
 			switch v := evt.(type) {
@@ -506,14 +518,29 @@ func (a *Adapter) eventLoop() {
 				}
 
 			case ConnectionEvent:
+				connected := v.State == DeviceStateConnected
 				a.mu.Lock()
-				a.SetConnected(v.State == DeviceStateConnected)
+				a.SetConnected(connected)
 				a.mu.Unlock()
+
+				// Notify connection handler
+				if connHandler != nil {
+					if err := connHandler(context.Background(), connected, string(v.State)); err != nil {
+						// Log error but continue
+					}
+				}
 
 			case LogoutEvent:
 				a.mu.Lock()
 				a.SetConnected(false)
 				a.mu.Unlock()
+
+				// Notify connection handler about logout
+				if connHandler != nil {
+					if err := connHandler(context.Background(), false, v.Reason); err != nil {
+						// Log error but continue
+					}
+				}
 			}
 		}
 	}

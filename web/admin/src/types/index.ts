@@ -43,12 +43,15 @@ export interface TenantLimits {
 }
 
 // Channel
+export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error'
+
 export interface Channel {
   id: string
   tenant_id: string
   name: string
   type: ChannelType
-  status: 'active' | 'inactive' | 'error'
+  enabled: boolean
+  connection_status: ConnectionStatus
   config: Record<string, unknown>
   created_at: string
   updated_at: string

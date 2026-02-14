@@ -432,8 +432,16 @@ func main() {
 	flowHandler := handlers.NewFlowHandler(flowService)
 
 	// Create channel service and handler
-	channelService := service.NewChannelService(channelRepo)
+	channelService := service.NewChannelService(channelRepo, plugin.GetGlobalRegistry(), producer)
 	channelHandler := handlers.NewChannelHandler(channelService, producer)
+
+	// Reconnect WhatsApp channels with stored sessions
+	logger.Info("Reconnecting WhatsApp channels...")
+	if reconnected, err := channelService.ReconnectWhatsAppChannels(context.Background()); err != nil {
+		logger.Warn("Failed to reconnect some WhatsApp channels: " + err.Error())
+	} else if reconnected > 0 {
+		logger.Info(fmt.Sprintf("Reconnected %d WhatsApp channel(s)", reconnected))
+	}
 
 	// Create analytics handler
 	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
@@ -456,6 +464,9 @@ func main() {
 
 	// Create auth handler
 	authHandler := handlers.NewAuthHandler(authService, userService)
+
+	// Create user handler
+	userHandler := handlers.NewUserHandler(userService)
 
 	// Initialize Agent WebSocket Hub
 	logger.Info("Starting Agent WebSocket Hub...")
@@ -643,7 +654,10 @@ func main() {
 				channels.GET("/:id", channelHandler.Get)
 				channels.PUT("/:id", channelHandler.Update)
 				channels.DELETE("/:id", channelHandler.Delete)
+				channels.PUT("/:id/status", channelHandler.UpdateStatus)
+				channels.PUT("/:id/enabled", channelHandler.UpdateEnabled)
 				channels.POST("/:id/connect", channelHandler.Connect)
+				channels.POST("/:id/pair", channelHandler.RequestPairCode)
 				channels.POST("/:id/disconnect", channelHandler.Disconnect)
 			}
 
@@ -763,6 +777,17 @@ func main() {
 				convMgmt.POST("/:id/reopen", conversationHandler.Reopen)
 				convMgmt.POST("/:id/escalate", conversationHandler.Escalate)
 				convMgmt.GET("/:id/escalation-context", conversationHandler.GetEscalationContext)
+			}
+
+			// User management (admin only)
+			users := protected.Group("/users")
+			users.Use(authMiddleware.RequireRole("admin"))
+			{
+				users.GET("", userHandler.List)
+				users.POST("", userHandler.Create)
+				users.GET("/:id", userHandler.Get)
+				users.PUT("/:id", userHandler.Update)
+				users.DELETE("/:id", userHandler.Delete)
 			}
 		}
 

@@ -90,16 +90,17 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Channel Status Badge
+ * Channel Connection Status Badge
  */
-function ChannelStatusBadge({ status }: { status: Channel['status'] }) {
+function ChannelConnectionStatusBadge({ connectionStatus }: { connectionStatus: Channel['connection_status'] }) {
   const t = useTranslations('common')
   const config = {
-    active: { variant: 'success' as const, icon: <Wifi className="h-3 w-3" />, labelKey: 'online' },
-    inactive: { variant: 'secondary' as const, icon: <WifiOff className="h-3 w-3" />, labelKey: 'offline' },
+    connected: { variant: 'success' as const, icon: <Wifi className="h-3 w-3" />, labelKey: 'online' },
+    connecting: { variant: 'warning' as const, icon: <Wifi className="h-3 w-3 animate-pulse" />, labelKey: 'connecting' },
+    disconnected: { variant: 'secondary' as const, icon: <WifiOff className="h-3 w-3" />, labelKey: 'offline' },
     error: { variant: 'error' as const, icon: <AlertTriangle className="h-3 w-3" />, labelKey: 'error' },
   }
-  const statusConfig = config[status] || config.inactive
+  const statusConfig = config[connectionStatus] || config.disconnected
   return (
     <Badge variant={statusConfig.variant} className="gap-1">
       {statusConfig.icon}
@@ -349,7 +350,7 @@ export default function DashboardPage() {
                               </p>
                             </div>
                           </div>
-                          <ChannelStatusBadge status={channel.status} />
+                          <ChannelConnectionStatusBadge connectionStatus={channel.connection_status} />
                         </div>
                       )
                     })}

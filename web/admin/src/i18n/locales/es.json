@@ -701,6 +701,7 @@
       "noAccountSelected": "Ninguna cuenta seleccionada",
       "selectInstagramAccount": "Por favor seleccione una cuenta de Instagram",
       "channelConnected": "Canal conectado",
+      "channelConnectedDesc": "El canal WhatsApp fue conectado exitosamente",
       "connectedSuccessDesc": "{name} conectado exitosamente",
       "creating": "Creando...",
       "manual": "Manual"

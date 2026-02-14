@@ -66,12 +66,12 @@ import type { Channel } from '@/types'
 /**
  * WhatsApp Official Configuration Schema
  */
-const createSchema = (t: (key: string) => string) => z.object({
-  name: z.string().min(1, t('channelNameRequired')),
-  access_token: z.string().min(1, t('required')),
-  phone_number_id: z.string().min(1, t('required')),
-  business_id: z.string().min(1, t('required')),
-  verify_token: z.string().min(1, t('required')),
+const whatsappConfigSchema = z.object({
+  name: z.string().min(1, 'Channel name is required'),
+  access_token: z.string().min(1, 'Access token is required'),
+  phone_number_id: z.string().min(1, 'Phone number ID is required'),
+  business_id: z.string().min(1, 'Business ID is required'),
+  verify_token: z.string().min(1, 'Verify token is required'),
   webhook_secret: z.string().optional(),
   api_version: z.string().min(1),
 })
@@ -103,7 +103,7 @@ export function WhatsAppConfig({
   const isEditing = !!channel
 
   const form = useForm<WhatsAppConfigForm>({
-    resolver: zodResolver(createSchema(tCommon)),
+    resolver: zodResolver(whatsappConfigSchema),
     defaultValues: {
       name: channel?.name || '',
       access_token: '',

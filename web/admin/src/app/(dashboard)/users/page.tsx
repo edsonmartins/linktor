@@ -790,7 +790,7 @@ export default function UsersPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t('confirmDeleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('confirmDeleteDescription', { name: userToDelete?.name })}
+              {t('confirmDeleteDescription', { name: userToDelete?.name || '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

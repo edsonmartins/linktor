@@ -62,9 +62,9 @@ import type { Channel } from '@/types'
 /**
  * Telegram Configuration Schema
  */
-const createSchema = (t: (key: string) => string) => z.object({
-  name: z.string().min(1, t('channelNameRequired')),
-  bot_token: z.string().min(1, t('required')),
+const telegramConfigSchema = z.object({
+  name: z.string().min(1, 'Channel name is required'),
+  bot_token: z.string().min(1, 'Bot token is required'),
   bot_name: z.string().optional(),
 })
 
@@ -94,7 +94,7 @@ export function TelegramConfig({
   const isEditing = !!channel
 
   const form = useForm<TelegramConfigForm>({
-    resolver: zodResolver(createSchema(tCommon)),
+    resolver: zodResolver(telegramConfigSchema),
     defaultValues: {
       name: channel?.name || '',
       bot_token: '',

@@ -94,8 +94,8 @@ func (uc *SendMessageUseCase) Execute(ctx context.Context, input *SendMessageInp
 		return nil, err
 	}
 
-	// Check channel status
-	if channel.Status != entity.ChannelStatusActive {
+	// Check channel is active (enabled + connected)
+	if !channel.IsActive() {
 		return nil, errors.New(errors.ErrCodeChannelDisconnected, "channel is not active")
 	}
 
