@@ -148,7 +148,7 @@ func main() {
 	var producer *nats.Producer
 	var consumer *nats.Consumer
 	if err != nil {
-		logger.Warn("Failed to connect to NATS - messaging features disabled")
+		logger.Warn(fmt.Sprintf("Failed to connect to NATS (%s): %v - messaging features disabled", cfg.NATS.URL, err))
 	} else {
 		defer natsClient.Close()
 		producer = nats.NewProducer(natsClient)
@@ -651,14 +651,16 @@ func main() {
 			{
 				channels.GET("", channelHandler.List)
 				channels.POST("", channelHandler.Create)
-				channels.GET("/:id", channelHandler.Get)
-				channels.PUT("/:id", channelHandler.Update)
-				channels.DELETE("/:id", channelHandler.Delete)
+				// Specific routes must come before generic /:id
 				channels.PUT("/:id/status", channelHandler.UpdateStatus)
 				channels.PUT("/:id/enabled", channelHandler.UpdateEnabled)
 				channels.POST("/:id/connect", channelHandler.Connect)
 				channels.POST("/:id/pair", channelHandler.RequestPairCode)
 				channels.POST("/:id/disconnect", channelHandler.Disconnect)
+				// Generic routes last
+				channels.GET("/:id", channelHandler.Get)
+				channels.PUT("/:id", channelHandler.Update)
+				channels.DELETE("/:id", channelHandler.Delete)
 			}
 
 			// OAuth routes for Facebook/Instagram

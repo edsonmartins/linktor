@@ -95,7 +95,7 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Retention:    jetstream.WorkQueuePolicy,
 			MaxConsumers: -1,
 			MaxMsgs:      -1,
-			MaxBytes:     1024 * 1024 * 1024, // 1GB
+			MaxBytes:     500 * 1024 * 1024, // 500MB
 			MaxAge:       7 * 24 * time.Hour, // 7 days
 			MaxMsgSize:   4 * 1024 * 1024,    // 4MB per message
 			Discard:      jetstream.DiscardOld,
@@ -112,7 +112,7 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Retention:    jetstream.InterestPolicy,
 			MaxConsumers: -1,
 			MaxMsgs:      -1,
-			MaxBytes:     512 * 1024 * 1024, // 512MB
+			MaxBytes:     256 * 1024 * 1024, // 256MB
 			MaxAge:       24 * time.Hour,    // 1 day
 			MaxMsgSize:   1024 * 1024,       // 1MB per message
 			Discard:      jetstream.DiscardOld,
@@ -128,7 +128,7 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Retention:    jetstream.WorkQueuePolicy,
 			MaxConsumers: -1,
 			MaxMsgs:      -1,
-			MaxBytes:     256 * 1024 * 1024, // 256MB
+			MaxBytes:     128 * 1024 * 1024, // 128MB
 			MaxAge:       3 * 24 * time.Hour, // 3 days
 			MaxMsgSize:   1024 * 1024,        // 1MB per message
 			Discard:      jetstream.DiscardOld,

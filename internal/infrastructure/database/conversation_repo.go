@@ -56,10 +56,11 @@ func (r *ConversationRepository) Create(ctx context.Context, conversation *entit
 // FindByID finds a conversation by ID
 func (r *ConversationRepository) FindByID(ctx context.Context, id string) (*entity.Conversation, error) {
 	query := `
-		SELECT id, tenant_id, channel_id, contact_id, assignee_id, status, priority,
-		       subject, unread_count, first_reply_at, resolved_at, created_at, updated_at
-		FROM conversations
-		WHERE id = $1
+		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
+		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
+		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at
+		FROM conversations c
+		WHERE c.id = $1
 	`
 
 	conversation, err := r.scanConversation(r.db.Pool.QueryRow(ctx, query, id))
@@ -75,32 +76,33 @@ func (r *ConversationRepository) FindByID(ctx context.Context, id string) (*enti
 
 // FindByTenant finds conversations for a tenant with pagination
 func (r *ConversationRepository) FindByTenant(ctx context.Context, tenantID string, params *repository.ListParams) ([]*entity.Conversation, int64, error) {
-	return r.findWithFilter(ctx, "tenant_id = $1", []interface{}{tenantID}, params)
+	return r.findWithFilter(ctx, "c.tenant_id = $1", []interface{}{tenantID}, params)
 }
 
 // FindByChannel finds conversations for a channel
 func (r *ConversationRepository) FindByChannel(ctx context.Context, channelID string, params *repository.ListParams) ([]*entity.Conversation, int64, error) {
-	return r.findWithFilter(ctx, "channel_id = $1", []interface{}{channelID}, params)
+	return r.findWithFilter(ctx, "c.channel_id = $1", []interface{}{channelID}, params)
 }
 
 // FindByContact finds conversations for a contact
 func (r *ConversationRepository) FindByContact(ctx context.Context, contactID string, params *repository.ListParams) ([]*entity.Conversation, int64, error) {
-	return r.findWithFilter(ctx, "contact_id = $1", []interface{}{contactID}, params)
+	return r.findWithFilter(ctx, "c.contact_id = $1", []interface{}{contactID}, params)
 }
 
 // FindByAssignee finds conversations assigned to a user
 func (r *ConversationRepository) FindByAssignee(ctx context.Context, assigneeID string, params *repository.ListParams) ([]*entity.Conversation, int64, error) {
-	return r.findWithFilter(ctx, "assignee_id = $1", []interface{}{assigneeID}, params)
+	return r.findWithFilter(ctx, "c.assignee_id = $1", []interface{}{assigneeID}, params)
 }
 
 // FindOpenByContactAndChannel finds open conversation for a contact on a channel
 func (r *ConversationRepository) FindOpenByContactAndChannel(ctx context.Context, contactID, channelID string) (*entity.Conversation, error) {
 	query := `
-		SELECT id, tenant_id, channel_id, contact_id, assignee_id, status, priority,
-		       subject, unread_count, first_reply_at, resolved_at, created_at, updated_at
-		FROM conversations
-		WHERE contact_id = $1 AND channel_id = $2 AND status IN ('open', 'pending')
-		ORDER BY created_at DESC
+		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
+		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
+		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at
+		FROM conversations c
+		WHERE c.contact_id = $1 AND c.channel_id = $2 AND c.status IN ('open', 'pending')
+		ORDER BY c.created_at DESC
 		LIMIT 1
 	`
 
@@ -277,7 +279,7 @@ func (r *ConversationRepository) CountByStatus(ctx context.Context, tenantID str
 
 func (r *ConversationRepository) findWithFilter(ctx context.Context, whereClause string, args []interface{}, params *repository.ListParams) ([]*entity.Conversation, int64, error) {
 	// Count total
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM conversations WHERE %s", whereClause)
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM conversations c WHERE %s", whereClause)
 	var total int64
 	if err := r.db.Pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to count conversations")
@@ -286,11 +288,12 @@ func (r *ConversationRepository) findWithFilter(ctx context.Context, whereClause
 	// Apply filters
 	whereClause, args = applyConversationFilters(whereClause, args, params.Filters)
 
-	// Get conversations
+	// Get conversations with last_message_at computed via subquery
 	query := fmt.Sprintf(`
-		SELECT id, tenant_id, channel_id, contact_id, assignee_id, status, priority,
-		       subject, unread_count, first_reply_at, resolved_at, created_at, updated_at
-		FROM conversations
+		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
+		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
+		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at
+		FROM conversations c
 		WHERE %s
 		ORDER BY %s %s
 		LIMIT $%d OFFSET $%d
@@ -324,6 +327,7 @@ func (r *ConversationRepository) scanConversation(row pgx.Row) (*entity.Conversa
 	err := row.Scan(
 		&c.ID, &c.TenantID, &c.ChannelID, &c.ContactID, &assigneeID, &status, &priority,
 		&subject, &c.UnreadCount, &c.FirstReplyAt, &c.ResolvedAt, &c.CreatedAt, &c.UpdatedAt,
+		&c.LastMessageAt,
 	)
 	if err != nil {
 		return nil, err
@@ -348,6 +352,7 @@ func (r *ConversationRepository) scanConversationFromRows(rows pgx.Rows) (*entit
 	err := rows.Scan(
 		&c.ID, &c.TenantID, &c.ChannelID, &c.ContactID, &assigneeID, &status, &priority,
 		&subject, &c.UnreadCount, &c.FirstReplyAt, &c.ResolvedAt, &c.CreatedAt, &c.UpdatedAt,
+		&c.LastMessageAt,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan conversation")
@@ -365,35 +370,36 @@ func (r *ConversationRepository) scanConversationFromRows(rows pgx.Rows) (*entit
 }
 
 func sanitizeConversationColumn(col string) string {
-	allowed := map[string]bool{
-		"created_at":    true,
-		"updated_at":    true,
-		"status":        true,
-		"priority":      true,
-		"unread_count":  true,
-		"first_reply_at": true,
+	allowed := map[string]string{
+		"created_at":      "c.created_at",
+		"updated_at":      "c.updated_at",
+		"status":          "c.status",
+		"priority":        "c.priority",
+		"unread_count":    "c.unread_count",
+		"first_reply_at":  "c.first_reply_at",
+		"last_message_at": "last_message_at",
 	}
-	if allowed[col] {
-		return col
+	if mappedCol, ok := allowed[col]; ok {
+		return mappedCol
 	}
-	return "updated_at"
+	return "c.updated_at"
 }
 
 func applyConversationFilters(whereClause string, args []interface{}, filters map[string]interface{}) (string, []interface{}) {
 	if status, ok := filters["status"].(string); ok && status != "" {
 		args = append(args, status)
-		whereClause += fmt.Sprintf(" AND status = $%d", len(args))
+		whereClause += fmt.Sprintf(" AND c.status = $%d", len(args))
 	}
 	if priority, ok := filters["priority"].(string); ok && priority != "" {
 		args = append(args, priority)
-		whereClause += fmt.Sprintf(" AND priority = $%d", len(args))
+		whereClause += fmt.Sprintf(" AND c.priority = $%d", len(args))
 	}
 	if assigneeID, ok := filters["assignee_id"].(string); ok && assigneeID != "" {
 		if assigneeID == "unassigned" {
-			whereClause += " AND assignee_id IS NULL"
+			whereClause += " AND c.assignee_id IS NULL"
 		} else {
 			args = append(args, assigneeID)
-			whereClause += fmt.Sprintf(" AND assignee_id = $%d", len(args))
+			whereClause += fmt.Sprintf(" AND c.assignee_id = $%d", len(args))
 		}
 	}
 	return whereClause, args
