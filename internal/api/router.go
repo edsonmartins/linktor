@@ -156,6 +156,7 @@ func (r *Router) Setup() *gin.Engine {
 				// Messages within conversation
 				conversations.GET("/:id/messages", r.messageHandler.List)
 				conversations.POST("/:id/messages", r.messageHandler.Send)
+				conversations.POST("/:id/messages/:messageId/reactions", r.messageHandler.SendReaction)
 			}
 
 			// Message management

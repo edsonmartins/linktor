@@ -39,13 +39,69 @@ type WebhookChange struct {
 }
 
 // WebhookChangeValue represents the value of a webhook change
+// This is a union type that can contain different fields depending on the webhook field type
 type WebhookChangeValue struct {
-	MessagingProduct string           `json:"messaging_product"`
-	Metadata         WebhookMetadata  `json:"metadata"`
-	Contacts         []ContactInfo    `json:"contacts,omitempty"`
-	Messages         []IncomingMessage `json:"messages,omitempty"`
-	Statuses         []StatusUpdate   `json:"statuses,omitempty"`
+	// Common fields
+	MessagingProduct string           `json:"messaging_product,omitempty"`
+	Metadata         WebhookMetadata  `json:"metadata,omitempty"`
 	Errors           []WebhookError   `json:"errors,omitempty"`
+
+	// messages field
+	Contacts         []ContactInfo     `json:"contacts,omitempty"`
+	Messages         []IncomingMessage `json:"messages,omitempty"`
+	Statuses         []StatusUpdate    `json:"statuses,omitempty"`
+
+	// message_template_status_update field
+	Event                   string `json:"event,omitempty"`
+	MessageTemplateID       int64  `json:"message_template_id,omitempty"`
+	MessageTemplateName     string `json:"message_template_name,omitempty"`
+	MessageTemplateLanguage string `json:"message_template_language,omitempty"`
+	Reason                  string `json:"reason,omitempty"`
+	DisableInfo             string `json:"disable_info,omitempty"`
+	OtherInfo               string `json:"other_info,omitempty"`
+
+	// message_template_quality_update field
+	PreviousQualityScore string `json:"previous_quality_score,omitempty"`
+	NewQualityScore      string `json:"new_quality_score,omitempty"`
+
+	// template_category_update field
+	PreviousCategory string `json:"previous_category,omitempty"`
+	NewCategory      string `json:"new_category,omitempty"`
+
+	// account_alerts field
+	Title   string `json:"title,omitempty"`
+	Message string `json:"message,omitempty"`
+
+	// account_update field
+	PhoneNumber     string            `json:"phone_number,omitempty"`
+	BanInfo         *BanInfo          `json:"ban_info,omitempty"`
+	RestrictionInfo []RestrictionInfo `json:"restriction_info,omitempty"`
+
+	// account_review_update field
+	Decision string `json:"decision,omitempty"`
+
+	// phone_number_name_update field
+	DisplayPhoneNumber    string `json:"display_phone_number,omitempty"`
+	RequestedVerifiedName string `json:"requested_verified_name,omitempty"`
+	RejectionReason       string `json:"rejection_reason,omitempty"`
+
+	// phone_number_quality_update field
+	CurrentLimit string `json:"current_limit,omitempty"`
+
+	// flows field
+	FlowID       string                 `json:"flow_id,omitempty"`
+	FlowName     string                 `json:"flow_name,omitempty"`
+	OldStatus    string                 `json:"old_status,omitempty"`
+	NewStatus    string                 `json:"new_status,omitempty"`
+	ErrorType    string                 `json:"error_type,omitempty"`
+	ErrorMessage string                 `json:"error_message,omitempty"`
+	Details      map[string]interface{} `json:"details,omitempty"`
+
+	// business_capability_update field
+	MaxDailyConversationPerPhone int    `json:"max_daily_conversation_per_phone,omitempty"`
+	MaxPhoneNumbersPerBusiness   int    `json:"max_phone_numbers_per_business,omitempty"`
+	MaxPhoneNumbersPerWaba       int    `json:"max_phone_numbers_per_waba,omitempty"`
+	CoexistenceStatus            string `json:"coexistence_status,omitempty"`
 }
 
 // WebhookMetadata represents metadata in the webhook
@@ -92,6 +148,7 @@ type IncomingMessage struct {
 	Context   *MessageContext `json:"context,omitempty"`
 	Reaction  *ReactionContent `json:"reaction,omitempty"`
 	Referral  *ReferralContent `json:"referral,omitempty"`
+	Order     *OrderContent    `json:"order,omitempty"` // Commerce order message
 	Errors    []WebhookError   `json:"errors,omitempty"`
 }
 
@@ -214,13 +271,6 @@ type ContactURL struct {
 	Type string `json:"type,omitempty"`
 }
 
-// InteractiveResponse represents an interactive message response
-type InteractiveResponse struct {
-	Type       string            `json:"type"`
-	ButtonReply *ButtonReplyData `json:"button_reply,omitempty"`
-	ListReply  *ListReplyData    `json:"list_reply,omitempty"`
-}
-
 // ButtonReplyData represents button reply data
 type ButtonReplyData struct {
 	ID    string `json:"id"`
@@ -232,6 +282,22 @@ type ListReplyData struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
+}
+
+// NfmReplyData represents a Native Flow Message (NFM) reply from WhatsApp Flows
+type NfmReplyData struct {
+	Name         string `json:"name"`
+	Body         string `json:"body"`
+	ResponseJSON string `json:"response_json"` // JSON string with Flow data
+	FlowToken    string `json:"flow_token,omitempty"`
+}
+
+// InteractiveResponse represents an interactive message response
+type InteractiveResponse struct {
+	Type        string            `json:"type"` // button_reply, list_reply, nfm_reply
+	ButtonReply *ButtonReplyData  `json:"button_reply,omitempty"`
+	ListReply   *ListReplyData    `json:"list_reply,omitempty"`
+	NfmReply    *NfmReplyData     `json:"nfm_reply,omitempty"` // WhatsApp Flows response
 }
 
 // ButtonResponse represents a button template response
@@ -494,4 +560,213 @@ type RateLimitInfo struct {
 	Limit     int       `json:"limit"`
 	Remaining int       `json:"remaining"`
 	ResetAt   time.Time `json:"reset_at"`
+}
+
+// =============================================================================
+// Webhook Field Types - All 13 subscription fields
+// =============================================================================
+
+// WebhookField represents the different webhook subscription fields
+type WebhookField string
+
+const (
+	WebhookFieldMessages                   WebhookField = "messages"
+	WebhookFieldMessageTemplateStatusUpdate WebhookField = "message_template_status_update"
+	WebhookFieldMessageTemplateQualityUpdate WebhookField = "message_template_quality_update"
+	WebhookFieldAccountAlerts              WebhookField = "account_alerts"
+	WebhookFieldAccountUpdate              WebhookField = "account_update"
+	WebhookFieldAccountReviewUpdate        WebhookField = "account_review_update"
+	WebhookFieldPhoneNumberNameUpdate      WebhookField = "phone_number_name_update"
+	WebhookFieldPhoneNumberQualityUpdate   WebhookField = "phone_number_quality_update"
+	WebhookFieldTemplateCategoryUpdate     WebhookField = "template_category_update"
+	WebhookFieldSecurity                   WebhookField = "security"
+	WebhookFieldFlows                      WebhookField = "flows"
+	WebhookFieldBusinessCapabilityUpdate   WebhookField = "business_capability_update"
+	WebhookFieldMessageEchoes              WebhookField = "message_echoes"
+)
+
+// TemplateStatusUpdateValue represents a template status update webhook value
+type TemplateStatusUpdateValue struct {
+	Event                   string `json:"event"` // APPROVED, REJECTED, PENDING, PAUSED, DISABLED, IN_APPEAL, PENDING_DELETION, DELETED, REINSTATED
+	MessageTemplateID       int64  `json:"message_template_id"`
+	MessageTemplateName     string `json:"message_template_name"`
+	MessageTemplateLanguage string `json:"message_template_language"`
+	Reason                  string `json:"reason,omitempty"`
+	DisableInfo             string `json:"disable_info,omitempty"`
+	OtherInfo               string `json:"other_info,omitempty"`
+}
+
+// TemplateQualityUpdateValue represents a template quality score update
+type TemplateQualityUpdateValue struct {
+	MessageTemplateID       int64  `json:"message_template_id"`
+	MessageTemplateName     string `json:"message_template_name"`
+	MessageTemplateLanguage string `json:"message_template_language"`
+	PreviousQualityScore    string `json:"previous_quality_score"` // GREEN, YELLOW, RED, UNKNOWN
+	NewQualityScore         string `json:"new_quality_score"`
+}
+
+// AccountAlertValue represents an account alert webhook value
+type AccountAlertValue struct {
+	Title   string `json:"title,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// AccountUpdateValue represents an account update webhook value
+type AccountUpdateValue struct {
+	PhoneNumber    string `json:"phone_number,omitempty"`
+	Event          string `json:"event,omitempty"`
+	BanInfo        *BanInfo `json:"ban_info,omitempty"`
+	RestrictionInfo []RestrictionInfo `json:"restriction_info,omitempty"`
+}
+
+// BanInfo represents ban information for an account
+type BanInfo struct {
+	WabaBanState string `json:"waba_ban_state,omitempty"` // SCHEDULE_FOR_DISABLE, DISABLE, REINSTATE
+	WabaBanDate  string `json:"waba_ban_date,omitempty"`
+}
+
+// RestrictionInfo represents restriction information for an account
+type RestrictionInfo struct {
+	RestrictionType string `json:"restriction_type,omitempty"`
+	Expiration      string `json:"expiration,omitempty"`
+}
+
+// AccountReviewUpdateValue represents an account review update webhook value
+type AccountReviewUpdateValue struct {
+	Decision string `json:"decision,omitempty"` // APPROVED, REJECTED
+}
+
+// PhoneNumberNameUpdateValue represents a phone number name update webhook value
+type PhoneNumberNameUpdateValue struct {
+	DisplayPhoneNumber   string `json:"display_phone_number"`
+	Decision             string `json:"decision"`             // APPROVED, REJECTED
+	RequestedVerifiedName string `json:"requested_verified_name"`
+	RejectionReason      string `json:"rejection_reason,omitempty"`
+}
+
+// PhoneNumberQualityUpdateValue represents a phone number quality update webhook value
+type PhoneNumberQualityUpdateValue struct {
+	DisplayPhoneNumber string `json:"display_phone_number"`
+	Event              string `json:"event"` // FLAGGED, UNFLAGGED
+	CurrentLimit       string `json:"current_limit"` // TIER_50, TIER_250, TIER_1K, TIER_10K, TIER_100K, TIER_UNLIMITED
+}
+
+// TemplateCategoryUpdateValue represents a template category update webhook value
+type TemplateCategoryUpdateValue struct {
+	MessageTemplateID       int64  `json:"message_template_id"`
+	MessageTemplateName     string `json:"message_template_name"`
+	MessageTemplateLanguage string `json:"message_template_language"`
+	PreviousCategory        string `json:"previous_category"` // AUTHENTICATION, MARKETING, UTILITY
+	NewCategory             string `json:"new_category"`
+}
+
+// SecurityValue represents a security event webhook value
+type SecurityValue struct {
+	Event          string `json:"event,omitempty"` // TWO_STEP_VERIFICATION_DISABLED, ACCOUNT_LINKED, ACCOUNT_UNLINKED
+	DisplayPhoneNumber string `json:"display_phone_number,omitempty"`
+}
+
+// FlowsValue represents a flow lifecycle event webhook value
+type FlowsValue struct {
+	Event    string `json:"event,omitempty"` // ENDPOINT_UNREACHABLE, ENDPOINT_TIMEOUT, ENDPOINT_ERROR, FLOW_STATUS_CHANGE
+	FlowID   string `json:"flow_id,omitempty"`
+	FlowName string `json:"flow_name,omitempty"`
+	OldStatus string `json:"old_status,omitempty"` // DRAFT, PUBLISHED, DEPRECATED
+	NewStatus string `json:"new_status,omitempty"`
+	ErrorType string `json:"error_type,omitempty"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	Details   map[string]interface{} `json:"details,omitempty"`
+}
+
+// BusinessCapabilityUpdateValue represents a business capability update webhook value
+type BusinessCapabilityUpdateValue struct {
+	MaxDailyConversationPerPhone int    `json:"max_daily_conversation_per_phone,omitempty"`
+	MaxPhoneNumbersPerBusiness   int    `json:"max_phone_numbers_per_business,omitempty"`
+	MaxPhoneNumbersPerWaba       int    `json:"max_phone_numbers_per_waba,omitempty"`
+	CoexistenceStatus            string `json:"coexistence_status,omitempty"`
+}
+
+// MessageEchoValue represents a message echo webhook value (messages sent from WhatsApp Business app)
+type MessageEchoValue struct {
+	MessagingProduct string            `json:"messaging_product"`
+	Metadata         WebhookMetadata   `json:"metadata"`
+	Messages         []IncomingMessage `json:"messages,omitempty"`
+	Statuses         []StatusUpdate    `json:"statuses,omitempty"`
+}
+
+// =============================================================================
+// Parsed Webhook Events for each field type
+// =============================================================================
+
+// ParsedTemplateStatusEvent represents a parsed template status update
+type ParsedTemplateStatusEvent struct {
+	TemplateID   int64     `json:"template_id"`
+	TemplateName string    `json:"template_name"`
+	Language     string    `json:"language"`
+	Event        string    `json:"event"`
+	Reason       string    `json:"reason,omitempty"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+// ParsedTemplateQualityEvent represents a parsed template quality update
+type ParsedTemplateQualityEvent struct {
+	TemplateID       int64     `json:"template_id"`
+	TemplateName     string    `json:"template_name"`
+	Language         string    `json:"language"`
+	PreviousQuality  string    `json:"previous_quality"`
+	NewQuality       string    `json:"new_quality"`
+	Timestamp        time.Time `json:"timestamp"`
+}
+
+// ParsedAccountAlertEvent represents a parsed account alert
+type ParsedAccountAlertEvent struct {
+	Title     string    `json:"title"`
+	Message   string    `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// ParsedPhoneQualityEvent represents a parsed phone quality update
+type ParsedPhoneQualityEvent struct {
+	PhoneNumber  string    `json:"phone_number"`
+	Event        string    `json:"event"`
+	CurrentLimit string    `json:"current_limit"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+// ParsedFlowEvent represents a parsed flow lifecycle event
+type ParsedFlowEvent struct {
+	FlowID       string    `json:"flow_id"`
+	FlowName     string    `json:"flow_name"`
+	Event        string    `json:"event"`
+	OldStatus    string    `json:"old_status,omitempty"`
+	NewStatus    string    `json:"new_status,omitempty"`
+	ErrorType    string    `json:"error_type,omitempty"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+// ParsedSecurityEvent represents a parsed security event
+type ParsedSecurityEvent struct {
+	Event       string    `json:"event"`
+	PhoneNumber string    `json:"phone_number"`
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+// =============================================================================
+// Order Message Types (Commerce)
+// =============================================================================
+
+// OrderContent represents an order message from WhatsApp Commerce
+type OrderContent struct {
+	CatalogID    string      `json:"catalog_id"`
+	Text         string      `json:"text,omitempty"`
+	ProductItems []OrderItem `json:"product_items"`
+}
+
+// OrderItem represents an item in an order
+type OrderItem struct {
+	ProductRetailerID string  `json:"product_retailer_id"`
+	Quantity          int     `json:"quantity"`
+	ItemPrice         float64 `json:"item_price"`
+	Currency          string  `json:"currency"`
 }

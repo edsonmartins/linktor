@@ -50,3 +50,13 @@ func (s *MessageService) UpdateStatus(ctx context.Context, id string, status ent
 	// TODO: Implement
 	return &entity.Message{}, nil
 }
+
+// SendReaction sends a reaction to a message
+// If emoji is empty, the reaction is removed
+func (s *MessageService) SendReaction(ctx context.Context, conversationID, messageID, emoji, senderID string) error {
+	// TODO: Implement
+	// 1. Get the original message to find external_id
+	// 2. Get the conversation to find the channel
+	// 3. Publish reaction to NATS for the adapter to send
+	return nil
+}

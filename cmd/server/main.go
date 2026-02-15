@@ -170,6 +170,7 @@ func main() {
 	kiRepo := database.NewKnowledgeItemRepository(db)
 	flowRepo := database.NewFlowRepository(db)
 	analyticsRepo := database.NewAnalyticsRepository(db)
+	templateRepo := database.NewTemplateRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
@@ -231,6 +232,9 @@ func main() {
 
 	// Initialize analytics service
 	analyticsService := service.NewAnalyticsService(analyticsRepo)
+
+	// Initialize template service
+	templateService := service.NewTemplateService(templateRepo, channelRepo)
 
 	// Initialize VRE (Visual Response Engine) service
 	logger.Info("Initializing VRE service...")
@@ -458,6 +462,9 @@ func main() {
 		baseURL = fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
 	}
 	oauthHandler := handlers.NewOAuthHandler(channelRepo, baseURL)
+
+	// Create template handler
+	templateHandler := handlers.NewTemplateHandler(templateService)
 
 	// Create auth middleware
 	authMiddleware := middleware.NewAuthMiddleware(authService)
@@ -740,6 +747,16 @@ func main() {
 				flows.POST("/:id/activate", flowHandler.Activate)
 				flows.POST("/:id/deactivate", flowHandler.Deactivate)
 				flows.POST("/:id/test", flowHandler.Test)
+			}
+
+			// WhatsApp Templates
+			templates := protected.Group("/templates")
+			{
+				templates.GET("", templateHandler.List)
+				templates.POST("", templateHandler.Create)
+				templates.GET("/:id", templateHandler.Get)
+				templates.DELETE("/:id", templateHandler.Delete)
+				templates.POST("/sync/:channelId", templateHandler.Sync)
 			}
 
 			// Analytics

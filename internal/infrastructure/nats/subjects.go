@@ -146,3 +146,123 @@ func SubjectBotResponse(tenantID string) string {
 func SubjectBotEscalate(tenantID string) string {
 	return fmt.Sprintf(SubjectBotEscalatePattern, tenantID)
 }
+
+// =============================================================================
+// WhatsApp-specific subjects (channel-specific, not generic)
+// =============================================================================
+
+// Stream for WhatsApp-specific events
+const StreamWhatsApp = "LINKTOR_WHATSAPP"
+
+// Subject patterns for WhatsApp-specific events
+const (
+	// Template events
+	SubjectWhatsAppTemplateStatusAll     = "linktor.whatsapp.template.status.>"
+	SubjectWhatsAppTemplateStatusPattern = "linktor.whatsapp.template.status.%s" // %s = tenant_id
+	SubjectWhatsAppTemplateQualityAll     = "linktor.whatsapp.template.quality.>"
+	SubjectWhatsAppTemplateQualityPattern = "linktor.whatsapp.template.quality.%s"
+	SubjectWhatsAppTemplateCategoryAll    = "linktor.whatsapp.template.category.>"
+	SubjectWhatsAppTemplateCategoryPattern = "linktor.whatsapp.template.category.%s"
+
+	// Account events
+	SubjectWhatsAppAccountAlertAll     = "linktor.whatsapp.account.alert.>"
+	SubjectWhatsAppAccountAlertPattern = "linktor.whatsapp.account.alert.%s"
+	SubjectWhatsAppAccountUpdateAll    = "linktor.whatsapp.account.update.>"
+	SubjectWhatsAppAccountUpdatePattern = "linktor.whatsapp.account.update.%s"
+	SubjectWhatsAppAccountReviewAll    = "linktor.whatsapp.account.review.>"
+	SubjectWhatsAppAccountReviewPattern = "linktor.whatsapp.account.review.%s"
+
+	// Phone number events
+	SubjectWhatsAppPhoneNameAll      = "linktor.whatsapp.phone.name.>"
+	SubjectWhatsAppPhoneNamePattern  = "linktor.whatsapp.phone.name.%s"
+	SubjectWhatsAppPhoneQualityAll   = "linktor.whatsapp.phone.quality.>"
+	SubjectWhatsAppPhoneQualityPattern = "linktor.whatsapp.phone.quality.%s"
+
+	// Flow events
+	SubjectWhatsAppFlowAll     = "linktor.whatsapp.flow.>"
+	SubjectWhatsAppFlowPattern = "linktor.whatsapp.flow.%s"
+
+	// Security events
+	SubjectWhatsAppSecurityAll     = "linktor.whatsapp.security.>"
+	SubjectWhatsAppSecurityPattern = "linktor.whatsapp.security.%s"
+
+	// Business capability events
+	SubjectWhatsAppCapabilityAll     = "linktor.whatsapp.capability.>"
+	SubjectWhatsAppCapabilityPattern = "linktor.whatsapp.capability.%s"
+
+	// Message echo events (messages sent via Business app)
+	SubjectWhatsAppEchoAll     = "linktor.whatsapp.echo.>"
+	SubjectWhatsAppEchoPattern = "linktor.whatsapp.echo.%s"
+)
+
+// WhatsApp-specific event types
+const (
+	EventWhatsAppTemplateApproved     = "whatsapp.template.approved"
+	EventWhatsAppTemplateRejected     = "whatsapp.template.rejected"
+	EventWhatsAppTemplatePaused       = "whatsapp.template.paused"
+	EventWhatsAppTemplateDisabled     = "whatsapp.template.disabled"
+	EventWhatsAppTemplateQualityGreen = "whatsapp.template.quality.green"
+	EventWhatsAppTemplateQualityYellow = "whatsapp.template.quality.yellow"
+	EventWhatsAppTemplateQualityRed   = "whatsapp.template.quality.red"
+
+	EventWhatsAppAccountAlert   = "whatsapp.account.alert"
+	EventWhatsAppAccountBanned  = "whatsapp.account.banned"
+	EventWhatsAppAccountReview  = "whatsapp.account.review"
+
+	EventWhatsAppPhoneFlagged   = "whatsapp.phone.flagged"
+	EventWhatsAppPhoneUnflagged = "whatsapp.phone.unflagged"
+	EventWhatsAppPhoneNameApproved = "whatsapp.phone.name.approved"
+	EventWhatsAppPhoneNameRejected = "whatsapp.phone.name.rejected"
+
+	EventWhatsAppFlowStatusChange = "whatsapp.flow.status"
+	EventWhatsAppFlowError        = "whatsapp.flow.error"
+
+	EventWhatsAppSecurity = "whatsapp.security"
+
+	EventWhatsAppCapabilityUpdate = "whatsapp.capability.update"
+
+	EventWhatsAppEcho = "whatsapp.echo"
+)
+
+// Consumer names for WhatsApp-specific events
+const (
+	ConsumerWhatsAppTemplates  = "whatsapp-templates"
+	ConsumerWhatsAppAccount    = "whatsapp-account"
+	ConsumerWhatsAppPhone      = "whatsapp-phone"
+	ConsumerWhatsAppFlows      = "whatsapp-flows"
+	ConsumerWhatsAppSecurity   = "whatsapp-security"
+	ConsumerWhatsAppCapability = "whatsapp-capability"
+	ConsumerWhatsAppEcho       = "whatsapp-echo"
+)
+
+// Helper functions for WhatsApp-specific subjects
+
+// SubjectWhatsAppTemplateStatus returns the subject for template status updates
+func SubjectWhatsAppTemplateStatus(tenantID string) string {
+	return fmt.Sprintf(SubjectWhatsAppTemplateStatusPattern, tenantID)
+}
+
+// SubjectWhatsAppTemplateQuality returns the subject for template quality updates
+func SubjectWhatsAppTemplateQuality(tenantID string) string {
+	return fmt.Sprintf(SubjectWhatsAppTemplateQualityPattern, tenantID)
+}
+
+// SubjectWhatsAppAccountAlert returns the subject for account alerts
+func SubjectWhatsAppAccountAlert(tenantID string) string {
+	return fmt.Sprintf(SubjectWhatsAppAccountAlertPattern, tenantID)
+}
+
+// SubjectWhatsAppPhoneQuality returns the subject for phone quality updates
+func SubjectWhatsAppPhoneQuality(tenantID string) string {
+	return fmt.Sprintf(SubjectWhatsAppPhoneQualityPattern, tenantID)
+}
+
+// SubjectWhatsAppFlow returns the subject for flow events
+func SubjectWhatsAppFlow(tenantID string) string {
+	return fmt.Sprintf(SubjectWhatsAppFlowPattern, tenantID)
+}
+
+// SubjectWhatsAppSecurity returns the subject for security events
+func SubjectWhatsAppSecurity(tenantID string) string {
+	return fmt.Sprintf(SubjectWhatsAppSecurityPattern, tenantID)
+}

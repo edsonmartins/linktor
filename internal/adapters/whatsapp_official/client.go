@@ -164,6 +164,11 @@ func (c *Client) SendReactionMessage(ctx context.Context, to, messageID, emoji s
 	return c.SendMessage(ctx, req)
 }
 
+// RemoveReaction removes a reaction from a message (sends empty emoji)
+func (c *Client) RemoveReaction(ctx context.Context, to, messageID string) (*SendMessageResponse, error) {
+	return c.SendReactionMessage(ctx, to, messageID, "")
+}
+
 // MarkAsRead marks a message as read
 func (c *Client) MarkAsRead(ctx context.Context, messageID string) error {
 	endpoint := c.buildURL(fmt.Sprintf("/%s/messages", c.config.PhoneNumberID))
@@ -483,4 +488,31 @@ func (c *Client) UpdateConfig(config *Config) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.config = config
+}
+
+// SendRawRequest sends a raw JSON request (for advanced templates like carousel)
+func (c *Client) SendRawRequest(ctx context.Context, req map[string]interface{}) (*SendMessageResponse, error) {
+	// Wait for rate limiter
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiter error: %w", err)
+	}
+
+	endpoint := c.buildURL(fmt.Sprintf("/%s/messages", c.config.PhoneNumberID))
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	respBody, err := c.doRequest(ctx, http.MethodPost, endpoint, body, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response SendMessageResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &response, nil
 }

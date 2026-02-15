@@ -25,6 +25,11 @@ type SendMessageRequest struct {
 	Metadata    map[string]string `json:"metadata"`
 }
 
+// SendReactionRequest represents a send reaction request
+type SendReactionRequest struct {
+	Emoji string `json:"emoji"` // Empty string to remove reaction
+}
+
 // List godoc
 // @Summary      List messages
 // @Description  Returns all messages for a conversation
@@ -135,4 +140,62 @@ func (h *MessageHandler) Get(c *gin.Context) {
 	}
 
 	RespondSuccess(c, message)
+}
+
+// SendReaction godoc
+// @Summary      Send reaction
+// @Description  Send a reaction (emoji) to a message. Send empty emoji to remove reaction.
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Param        messageId path string true "Message ID to react to"
+// @Param        request body SendReactionRequest true "Reaction data"
+// @Success      200 {object} Response{data=map[string]string}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id}/messages/{messageId}/reactions [post]
+func (h *MessageHandler) SendReaction(c *gin.Context) {
+	conversationID := c.Param("id")
+	if conversationID == "" {
+		RespondValidationError(c, "Conversation ID is required", nil)
+		return
+	}
+
+	messageID := c.Param("messageId")
+	if messageID == "" {
+		RespondValidationError(c, "Message ID is required", nil)
+		return
+	}
+
+	userID := middleware.MustGetUserID(c)
+	if userID == "" {
+		return
+	}
+
+	var req SendReactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondValidationError(c, "Invalid request body", nil)
+		return
+	}
+
+	// Send reaction using the message service
+	err := h.messageService.SendReaction(c.Request.Context(), conversationID, messageID, req.Emoji, userID)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	action := "added"
+	if req.Emoji == "" {
+		action = "removed"
+	}
+
+	RespondSuccess(c, map[string]string{
+		"message":    "Reaction " + action + " successfully",
+		"message_id": messageID,
+		"emoji":      req.Emoji,
+	})
 }
