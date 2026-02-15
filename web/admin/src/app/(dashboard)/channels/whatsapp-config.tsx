@@ -15,8 +15,11 @@ import {
   Loader2,
   Phone,
   Shield,
+  Smartphone,
   Webhook,
+  Zap,
 } from 'lucide-react'
+import { WhatsAppEmbeddedSignup } from './whatsapp-embedded-signup'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -70,7 +73,7 @@ const whatsappConfigSchema = z.object({
   name: z.string().min(1, 'Channel name is required'),
   access_token: z.string().min(1, 'Access token is required'),
   phone_number_id: z.string().min(1, 'Phone number ID is required'),
-  business_id: z.string().min(1, 'Business ID is required'),
+  business_id: z.string().optional(), // Optional - not used in embedded signup flow
   verify_token: z.string().min(1, 'Verify token is required'),
   webhook_secret: z.string().optional(),
   api_version: z.string().min(1),
@@ -208,12 +211,49 @@ export function WhatsAppConfig({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full">
         <div className="flex-1 space-y-6">
-        <Tabs defaultValue="credentials" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="credentials">{t('credentials')}</TabsTrigger>
+        <Tabs defaultValue={isEditing ? "credentials" : "embedded"} className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="embedded" className="flex items-center gap-1.5">
+              <Zap className="h-3.5 w-3.5" />
+              {t('embeddedSignup')}
+            </TabsTrigger>
+            <TabsTrigger value="credentials" className="flex items-center gap-1.5">
+              <Shield className="h-3.5 w-3.5" />
+              {t('manualSetup')}
+            </TabsTrigger>
             <TabsTrigger value="webhook">{t('webhook')}</TabsTrigger>
             <TabsTrigger value="setup">{t('setupGuide')}</TabsTrigger>
           </TabsList>
+
+          {/* Embedded Signup Tab - Quick setup via OAuth */}
+          <TabsContent value="embedded" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Smartphone className="h-5 w-5" />
+                  {t('connectExistingNumber')}
+                </CardTitle>
+                <CardDescription>
+                  {t('connectExistingNumberDesc')}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <WhatsAppEmbeddedSignup
+                  onSuccess={(channel) => {
+                    onSuccess?.(channel)
+                  }}
+                />
+              </CardContent>
+            </Card>
+
+            <Alert>
+              <Zap className="h-4 w-4" />
+              <AlertTitle>{t('coexistenceMode')}</AlertTitle>
+              <AlertDescription>
+                {t('coexistenceModeDesc')}
+              </AlertDescription>
+            </Alert>
+          </TabsContent>
 
           <TabsContent value="credentials" className="space-y-4 mt-4">
             {/* Channel Name */}

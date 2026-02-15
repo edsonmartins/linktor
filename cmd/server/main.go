@@ -179,6 +179,7 @@ func main() {
 	flowRepo := database.NewFlowRepository(db)
 	analyticsRepo := database.NewAnalyticsRepository(db)
 	templateRepo := database.NewTemplateRepository(db)
+	historyImportRepo := database.NewHistoryImportRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
@@ -243,6 +244,12 @@ func main() {
 
 	// Initialize template service
 	templateService := service.NewTemplateService(templateRepo, channelRepo)
+
+	// Initialize coexistence monitor service
+	coexistenceMonitor := service.NewCoexistenceMonitorService(channelRepo)
+
+	// Initialize history import service for WhatsApp Coexistence
+	_ = service.NewHistoryImportService(channelRepo, conversationRepo, messageRepo, contactRepo, historyImportRepo)
 
 	// Initialize VRE (Visual Response Engine) service
 	logger.Info("Initializing VRE service...")
@@ -495,6 +502,9 @@ func main() {
 	}
 	oauthHandler := handlers.NewOAuthHandler(channelRepo, baseURL)
 
+	// Create WhatsApp Embedded Signup handler for Coexistence
+	waEmbeddedSignupHandler := handlers.NewWhatsAppEmbeddedSignupHandler(channelRepo, baseURL)
+
 	// Create template handler
 	templateHandler := handlers.NewTemplateHandler(templateService)
 
@@ -515,6 +525,30 @@ func main() {
 	// Start message consumers (only if NATS is available)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Start coexistence monitor background job (runs every hour)
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+
+		// Run immediately on startup
+		if err := coexistenceMonitor.MonitorCoexistenceActivity(ctx); err != nil {
+			logger.Warn("Coexistence monitor check failed: " + err.Error())
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				logger.Info("Coexistence monitor stopped")
+				return
+			case <-ticker.C:
+				if err := coexistenceMonitor.MonitorCoexistenceActivity(ctx); err != nil {
+					logger.Warn("Coexistence monitor check failed: " + err.Error())
+				}
+			}
+		}
+	}()
+	logger.Info("Coexistence monitor started (runs every hour)")
 
 	var aiConsumer *nats.AIConsumer
 
@@ -701,6 +735,9 @@ func main() {
 				channels.POST("/:id/connect", channelHandler.Connect)
 				channels.POST("/:id/pair", channelHandler.RequestPairCode)
 				channels.POST("/:id/disconnect", channelHandler.Disconnect)
+				// WhatsApp Coexistence routes
+				channels.GET("/:id/coexistence-status", waEmbeddedSignupHandler.GetCoexistenceStatus)
+				channels.POST("/:id/subscribe-echoes", waEmbeddedSignupHandler.SubscribeMessageEchoes)
 				// Generic routes last
 				channels.GET("/:id", channelHandler.Get)
 				channels.PUT("/:id", channelHandler.Update)
@@ -717,6 +754,14 @@ func main() {
 				// Instagram OAuth
 				oauth.POST("/instagram/login", oauthHandler.InstagramLogin)
 				oauth.POST("/instagram/callback", oauthHandler.InstagramCallback)
+
+				// WhatsApp Embedded Signup (Coexistence)
+				waEmbedded := oauth.Group("/whatsapp/embedded-signup")
+				{
+					waEmbedded.POST("/start", waEmbeddedSignupHandler.StartEmbeddedSignup)
+					waEmbedded.POST("/callback", waEmbeddedSignupHandler.CompleteEmbeddedSignup)
+					waEmbedded.POST("/create-channel", waEmbeddedSignupHandler.CreateCoexistenceChannel)
+				}
 
 				// Channel creation from OAuth
 				oauth.POST("/channels", oauthHandler.CreateChannel)

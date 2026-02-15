@@ -16,6 +16,9 @@ import {
   AlertCircle,
   Wifi,
   WifiOff,
+  Smartphone,
+  Bot,
+  History,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -65,6 +68,50 @@ function MessageStatusIcon({ status }: { status: MessageStatus }) {
 }
 
 /**
+ * Message Source Badge Component
+ * Shows the origin of the message (API, Business App, or Imported)
+ */
+interface MessageSourceBadgeProps {
+  source?: Message['source']
+  isImported?: boolean
+  isOwn: boolean
+}
+
+function MessageSourceBadge({ source, isImported, isOwn }: MessageSourceBadgeProps) {
+  // Only show badge for outgoing messages from non-API sources
+  if (!isOwn) return null
+
+  // Check if it's an imported message
+  if (isImported || source === 'imported') {
+    return (
+      <SimpleTooltip content="Imported from chat history">
+        <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5 gap-0.5">
+          <History className="h-2 w-2" />
+          <span>History</span>
+        </Badge>
+      </SimpleTooltip>
+    )
+  }
+
+  // Check if it's from Business App (echo)
+  if (source === 'business_app') {
+    return (
+      <SimpleTooltip content="Sent via WhatsApp Business App">
+        <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5 gap-0.5">
+          <Smartphone className="h-2 w-2" />
+          <span>App</span>
+        </Badge>
+      </SimpleTooltip>
+    )
+  }
+
+  // Only show API badge when there's mixed sources in conversation
+  // For now, we skip showing the API badge since most messages are from API
+  // and it would add visual noise
+  return null
+}
+
+/**
  * Message Bubble Component
  */
 interface MessageBubbleProps {
@@ -97,10 +144,15 @@ function MessageBubble({ message, isOwn }: MessageBubbleProps) {
         </div>
         <div
           className={cn(
-            'flex items-center gap-1 text-[10px] text-muted-foreground',
+            'flex items-center gap-1.5 text-[10px] text-muted-foreground',
             isOwn && 'justify-end'
           )}
         >
+          <MessageSourceBadge
+            source={message.source}
+            isImported={message.is_imported}
+            isOwn={isOwn}
+          />
           <span>{formatRelativeTime(message.created_at)}</span>
           {isOwn && <MessageStatusIcon status={message.status} />}
         </div>

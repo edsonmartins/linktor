@@ -80,7 +80,7 @@ msgfy (GitHub org: msgfy)
 
 | Canal | Status | Descrição |
 |-------|--------|-----------|
-| WhatsApp Business API | ✅ Completo | Integração oficial Meta Cloud API |
+| WhatsApp Business API | ✅ Completo | Integração oficial Meta Cloud API + **Coexistence (SMB)** |
 | WhatsApp Unofficial | ✅ Completo | Baileys/WhatsApp Web Multi-device |
 | WebChat | ✅ Completo | Widget embeddable para websites |
 | Telegram | ✅ Completo | Bot API com suporte a mídia |
@@ -90,6 +90,68 @@ msgfy (GitHub org: msgfy)
 | Facebook Messenger | ✅ Completo | Meta Graph API |
 | RCS | ✅ Completo | Google RCS Business Messaging |
 | Voice | ✅ Completo | Twilio Voice, Vonage, Amazon Connect, Asterisk, FreeSWITCH |
+
+### WhatsApp Coexistence (SMB)
+
+O Linktor suporta **WhatsApp Coexistence**, uma feature crítica que permite uso simultâneo do WhatsApp Business App (celular) + Cloud API (plataforma) **no mesmo número de telefone**.
+
+#### Vantagens
+
+- **Onboarding em 5 minutos**: Escaneia QR code e está conectado, sem migração de número
+- **Mantém histórico**: Importa até 6 meses de conversas
+- **Híbrido App + API**: Vendedor responde VIPs pelo celular, bot automatiza follow-ups
+- **Sincronização bidirecional**: Mensagens enviadas pelo App aparecem no Linktor (via Message Echoes)
+
+#### Features Implementadas
+
+| Feature | Status | Descrição |
+|---------|--------|-----------|
+| Embedded Signup Flow | ✅ | Conexão via QR code do Facebook SDK |
+| OAuth Token Exchange | ✅ | Troca código por access token seguro |
+| Detecção Coexistence | ✅ | Verifica se número usa Business App |
+| Message Echoes | ✅ | Recebe mensagens enviadas pelo App |
+| History Import | ✅ | Importa conversas dos últimos 6 meses |
+| Activity Monitoring | ✅ | Monitora regra dos 14 dias |
+| Coexistence Status | ✅ | Dashboard com status de sincronização |
+
+#### API Endpoints
+
+```bash
+# Iniciar Embedded Signup (OAuth)
+POST /api/v1/oauth/whatsapp/embedded-signup/start
+
+# Callback do OAuth
+GET /api/v1/oauth/whatsapp/embedded-signup/callback
+
+# Criar canal após OAuth
+POST /api/v1/oauth/whatsapp/embedded-signup/create-channel
+
+# Status de Coexistence
+GET /api/v1/channels/:id/coexistence-status
+
+# Iniciar importação de histórico
+POST /api/v1/channels/:id/import-history
+
+# Progresso da importação
+GET /api/v1/channels/:id/import-history/:importId
+```
+
+#### Regra dos 14 Dias
+
+O WhatsApp Business App deve ser aberto **pelo menos 1x a cada 14 dias** para manter o Coexistence ativo. O Linktor monitora automaticamente:
+
+- Alerta quando inativo por 10+ dias
+- Verifica status quando chega a 14 dias
+- Dashboard widget mostra última atividade do App
+
+#### Limitações do Coexistence
+
+Após ativar Coexistence, algumas features do App são desabilitadas:
+
+- ❌ Broadcast Lists (use templates via API)
+- ❌ View Once Media
+- ❌ WhatsApp for Windows/WearOS
+- ✅ WhatsApp Web e Mac funcionam normalmente
 
 ### Core Features
 
@@ -1437,6 +1499,11 @@ CREATE TABLE flows (
 - [x] Webhooks
 - [x] Templates de mensagem
 - [x] Mídia (imagens, documentos)
+- [x] **Coexistence (SMB)** - Uso simultâneo App + API no mesmo número
+- [x] Embedded Signup Flow (OAuth via QR code)
+- [x] Message Echoes (sincronização do App)
+- [x] History Import (importar 6 meses de histórico)
+- [x] Coexistence Activity Monitoring (regra dos 14 dias)
 
 ### Fase 5: AI/Chatbot ✅
 - [x] Múltiplos provedores de IA (OpenAI, Anthropic, Ollama)

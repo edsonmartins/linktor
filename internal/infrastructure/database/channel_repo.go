@@ -38,8 +38,9 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 	query := `
 		INSERT INTO channels (
 			id, tenant_id, name, type, enabled, connection_status, credentials, config,
-			webhook_url, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+			created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 
 	_, err = r.db.Pool.Exec(ctx, query,
@@ -52,6 +53,10 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 		credentials,
 		config,
 		nullString(channel.WebhookURL),
+		channel.IsCoexistence,
+		nullString(channel.WABAID),
+		channel.LastEchoAt,
+		string(channel.CoexistenceStatus),
 		channel.CreatedAt,
 		channel.UpdatedAt,
 	)
@@ -67,7 +72,8 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 func (r *ChannelRepository) FindByID(ctx context.Context, id string) (*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, created_at, updated_at
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
 		FROM channels
 		WHERE id = $1
 	`
@@ -100,7 +106,8 @@ func (r *ChannelRepository) FindByTenant(ctx context.Context, tenantID string, p
 	// Get channels
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, created_at, updated_at
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1
 		ORDER BY %s %s
@@ -129,7 +136,8 @@ func (r *ChannelRepository) FindByTenant(ctx context.Context, tenantID string, p
 func (r *ChannelRepository) FindByType(ctx context.Context, tenantID string, channelType entity.ChannelType) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, created_at, updated_at
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1 AND type = $2
 		ORDER BY created_at DESC
@@ -157,7 +165,8 @@ func (r *ChannelRepository) FindByType(ctx context.Context, tenantID string, cha
 func (r *ChannelRepository) FindEnabledByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, created_at, updated_at
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1 AND enabled = true
 		ORDER BY created_at DESC
@@ -185,7 +194,8 @@ func (r *ChannelRepository) FindEnabledByTenant(ctx context.Context, tenantID st
 func (r *ChannelRepository) FindActiveByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, created_at, updated_at
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1 AND enabled = true AND connection_status = 'connected'
 		ORDER BY created_at DESC
@@ -231,8 +241,12 @@ func (r *ChannelRepository) Update(ctx context.Context, channel *entity.Channel)
 			credentials = $4,
 			config = $5,
 			webhook_url = $6,
-			updated_at = $7
-		WHERE id = $8
+			is_coexistence = $7,
+			waba_id = $8,
+			last_echo_at = $9,
+			coexistence_status = $10,
+			updated_at = $11
+		WHERE id = $12
 	`
 
 	result, err := r.db.Pool.Exec(ctx, query,
@@ -242,6 +256,10 @@ func (r *ChannelRepository) Update(ctx context.Context, channel *entity.Channel)
 		credentials,
 		config,
 		nullString(channel.WebhookURL),
+		channel.IsCoexistence,
+		nullString(channel.WABAID),
+		channel.LastEchoAt,
+		nullString(string(channel.CoexistenceStatus)),
 		channel.UpdatedAt,
 		channel.ID,
 	)
@@ -340,7 +358,8 @@ func (r *ChannelRepository) FindByTypes(ctx context.Context, types []entity.Chan
 
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, created_at, updated_at
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
 		FROM channels
 		WHERE type IN (%s)
 		ORDER BY created_at DESC
@@ -369,7 +388,8 @@ func (r *ChannelRepository) FindByTypes(ctx context.Context, types []entity.Chan
 func (r *ChannelRepository) FindByConfigValue(ctx context.Context, key, value string) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, created_at, updated_at
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
 		FROM channels
 		WHERE config->>$1 = $2
 		ORDER BY created_at DESC
@@ -397,7 +417,8 @@ func (r *ChannelRepository) FindByConfigValue(ctx context.Context, key, value st
 func (r *ChannelRepository) FindWhatsAppByPhoneNumberID(ctx context.Context, phoneNumberID string) (*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, created_at, updated_at
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
 		FROM channels
 		WHERE (type = 'whatsapp' OR type = 'whatsapp_official')
 		  AND config->>'phone_number_id' = $1
@@ -421,11 +442,12 @@ func (r *ChannelRepository) scanChannel(row pgx.Row) (*entity.Channel, error) {
 	var c entity.Channel
 	var channelType, connectionStatus string
 	var credentials, config []byte
-	var webhookURL *string
+	var webhookURL, wabaID, coexistenceStatus *string
 
 	err := row.Scan(
 		&c.ID, &c.TenantID, &c.Name, &channelType, &c.Enabled, &connectionStatus,
-		&credentials, &config, &webhookURL, &c.CreatedAt, &c.UpdatedAt,
+		&credentials, &config, &webhookURL, &c.IsCoexistence, &wabaID,
+		&c.LastEchoAt, &coexistenceStatus, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -436,6 +458,12 @@ func (r *ChannelRepository) scanChannel(row pgx.Row) (*entity.Channel, error) {
 
 	if webhookURL != nil {
 		c.WebhookURL = *webhookURL
+	}
+	if wabaID != nil {
+		c.WABAID = *wabaID
+	}
+	if coexistenceStatus != nil {
+		c.CoexistenceStatus = entity.CoexistenceStatus(*coexistenceStatus)
 	}
 
 	if err := json.Unmarshal(credentials, &c.Credentials); err != nil {
@@ -453,11 +481,12 @@ func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel,
 	var c entity.Channel
 	var channelType, connectionStatus string
 	var credentials, config []byte
-	var webhookURL *string
+	var webhookURL, wabaID, coexistenceStatus *string
 
 	err := rows.Scan(
 		&c.ID, &c.TenantID, &c.Name, &channelType, &c.Enabled, &connectionStatus,
-		&credentials, &config, &webhookURL, &c.CreatedAt, &c.UpdatedAt,
+		&credentials, &config, &webhookURL, &c.IsCoexistence, &wabaID,
+		&c.LastEchoAt, &coexistenceStatus, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan channel")
@@ -469,6 +498,12 @@ func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel,
 	if webhookURL != nil {
 		c.WebhookURL = *webhookURL
 	}
+	if wabaID != nil {
+		c.WABAID = *wabaID
+	}
+	if coexistenceStatus != nil {
+		c.CoexistenceStatus = entity.CoexistenceStatus(*coexistenceStatus)
+	}
 
 	if err := json.Unmarshal(credentials, &c.Credentials); err != nil {
 		c.Credentials = make(map[string]string)
@@ -479,6 +514,35 @@ func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel,
 	}
 
 	return &c, nil
+}
+
+// FindCoexistenceChannels finds all channels with coexistence enabled
+func (r *ChannelRepository) FindCoexistenceChannels(ctx context.Context) ([]*entity.Channel, error) {
+	query := `
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
+		FROM channels
+		WHERE is_coexistence = true
+		ORDER BY last_echo_at ASC NULLS FIRST
+	`
+
+	rows, err := r.db.Pool.Query(ctx, query)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to query coexistence channels")
+	}
+	defer rows.Close()
+
+	var channels []*entity.Channel
+	for rows.Next() {
+		channel, err := r.scanChannelFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		channels = append(channels, channel)
+	}
+
+	return channels, nil
 }
 
 func sanitizeChannelColumn(col string) string {

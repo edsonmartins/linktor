@@ -178,5 +178,8 @@ type ChannelRepository interface {
 
 	// FindByTypes finds all channels of specific types across all tenants
 	FindByTypes(ctx context.Context, types []entity.ChannelType) ([]*entity.Channel, error)
+
+	// FindCoexistenceChannels finds all channels with coexistence enabled
+	FindCoexistenceChannels(ctx context.Context) ([]*entity.Channel, error)
 }
 

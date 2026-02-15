@@ -44,6 +44,7 @@ export interface TenantLimits {
 
 // Channel
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error'
+export type CoexistenceStatus = 'inactive' | 'active' | 'warning' | 'disconnected'
 
 export interface Channel {
   id: string
@@ -55,6 +56,11 @@ export interface Channel {
   config: Record<string, unknown>
   created_at: string
   updated_at: string
+  // WhatsApp Coexistence fields
+  is_coexistence?: boolean
+  waba_id?: string
+  last_echo_at?: string
+  coexistence_status?: CoexistenceStatus
 }
 
 export type ChannelType =
@@ -124,6 +130,8 @@ export type ConversationStatus =
   | 'snoozed'
 
 // Message
+export type MessageSource = 'api' | 'business_app' | 'imported'
+
 export interface Message {
   id: string
   conversation_id: string
@@ -137,6 +145,10 @@ export interface Message {
   attachments?: MessageAttachment[]
   created_at: string
   updated_at: string
+  // Source tracking for WhatsApp Coexistence
+  source?: MessageSource
+  is_imported?: boolean
+  imported_at?: string
   // Expanded relations
   sender?: User | Contact
 }

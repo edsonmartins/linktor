@@ -31,6 +31,17 @@ const (
 	ConnectionStatusError        ConnectionStatus = "error"
 )
 
+// CoexistenceStatus represents the coexistence status for WhatsApp channels
+type CoexistenceStatus string
+
+const (
+	CoexistenceStatusInactive     CoexistenceStatus = "inactive"
+	CoexistenceStatusPending      CoexistenceStatus = "pending"
+	CoexistenceStatusActive       CoexistenceStatus = "active"
+	CoexistenceStatusWarning      CoexistenceStatus = "warning"
+	CoexistenceStatusDisconnected CoexistenceStatus = "disconnected"
+)
+
 // ChannelStatus is deprecated, use ConnectionStatus instead
 // Kept for backwards compatibility during migration
 type ChannelStatus = ConnectionStatus
@@ -58,6 +69,12 @@ type Channel struct {
 	WebhookURL       string            `json:"webhook_url,omitempty"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
+
+	// WhatsApp Coexistence fields
+	IsCoexistence      bool              `json:"is_coexistence,omitempty"`       // Whether channel uses Business App + Cloud API
+	WABAID             string            `json:"waba_id,omitempty"`              // WhatsApp Business Account ID
+	LastEchoAt         *time.Time        `json:"last_echo_at,omitempty"`         // Last message echo from Business App
+	CoexistenceStatus  CoexistenceStatus `json:"coexistence_status,omitempty"`   // Current coexistence status
 }
 
 // NewChannel creates a new channel
@@ -91,4 +108,68 @@ func (c *Channel) IsConnected() bool {
 // Deprecated: Use IsEnabled() and IsConnected() separately
 func (c *Channel) IsActive() bool {
 	return c.Enabled && c.ConnectionStatus == ConnectionStatusConnected
+}
+
+// IsCoexistenceChannel returns true if the channel supports WhatsApp Coexistence
+func (c *Channel) IsCoexistenceChannel() bool {
+	return c.IsCoexistence && c.Type == ChannelTypeWhatsAppOfficial
+}
+
+// IsCoexistenceActive returns true if coexistence is active and working
+func (c *Channel) IsCoexistenceActive() bool {
+	return c.IsCoexistence && c.CoexistenceStatus == CoexistenceStatusActive
+}
+
+// DaysSinceLastEcho returns the number of days since the last message echo
+// Returns -1 if no echo has been received
+func (c *Channel) DaysSinceLastEcho() int {
+	if c.LastEchoAt == nil {
+		return -1
+	}
+	return int(time.Since(*c.LastEchoAt).Hours() / 24)
+}
+
+// UpdateLastEchoAt updates the last echo timestamp to current time
+func (c *Channel) UpdateLastEchoAt() {
+	now := time.Now()
+	c.LastEchoAt = &now
+	c.UpdatedAt = now
+
+	// Update coexistence status based on echo
+	if c.IsCoexistence {
+		c.CoexistenceStatus = CoexistenceStatusActive
+	}
+}
+
+// SetLastEchoAt sets the last echo timestamp to a specific time
+func (c *Channel) SetLastEchoAt(t time.Time) {
+	c.LastEchoAt = &t
+	c.UpdatedAt = time.Now()
+
+	// Update coexistence status based on echo
+	if c.IsCoexistence {
+		c.CoexistenceStatus = CoexistenceStatusActive
+	}
+}
+
+// CheckCoexistenceStatus evaluates and returns the current coexistence status
+// based on the last echo timestamp
+func (c *Channel) CheckCoexistenceStatus() CoexistenceStatus {
+	if !c.IsCoexistence {
+		return CoexistenceStatusInactive
+	}
+
+	days := c.DaysSinceLastEcho()
+	if days < 0 {
+		return CoexistenceStatusPending
+	}
+
+	switch {
+	case days >= 14:
+		return CoexistenceStatusDisconnected
+	case days >= 10:
+		return CoexistenceStatusWarning
+	default:
+		return CoexistenceStatusActive
+	}
 }

@@ -722,3 +722,227 @@ func IsSecurityWebhook(payload *WebhookPayload) bool {
 	}
 	return false
 }
+
+// =============================================================================
+// Message Echoes - WhatsApp Coexistence Support
+// =============================================================================
+
+// ParsedMessageEcho represents a message sent via WhatsApp Business App (echo)
+type ParsedMessageEcho struct {
+	ExternalID    string
+	To            string            // Recipient phone number
+	RecipientName string            // Recipient contact name (if available)
+	ContentType   plugin.ContentType
+	Content       string
+	Attachments   []*plugin.Attachment
+	Metadata      map[string]string
+	Timestamp     time.Time
+	PhoneNumberID string
+	SenderPhone   string // The business phone that sent the message
+}
+
+// ExtractMessageEchoes extracts message echoes from webhook payload
+// Message echoes are messages sent via WhatsApp Business App that are
+// synced to the Cloud API when using WhatsApp Coexistence
+func (p *WebhookProcessor) ExtractMessageEchoes(payload *WebhookPayload) []*ParsedMessageEcho {
+	var echoes []*ParsedMessageEcho
+
+	for _, entry := range payload.Entry {
+		for _, change := range entry.Changes {
+			if change.Field != string(FieldMessageEchoes) {
+				continue
+			}
+
+			// Build contact map for quick lookup
+			contactMap := make(map[string]ContactInfo)
+			for _, contact := range change.Value.Contacts {
+				contactMap[contact.WaID] = contact
+			}
+
+			// Process echo messages
+			for _, msg := range change.Value.Messages {
+				parsed := p.parseMessageEcho(&msg, contactMap, &change.Value.Metadata)
+				if parsed != nil {
+					echoes = append(echoes, parsed)
+				}
+			}
+		}
+	}
+
+	return echoes
+}
+
+// parseMessageEcho parses a single message echo (message sent via Business App)
+func (p *WebhookProcessor) parseMessageEcho(msg *IncomingMessage, contacts map[string]ContactInfo, metadata *WebhookMetadata) *ParsedMessageEcho {
+	if msg == nil {
+		return nil
+	}
+
+	echo := &ParsedMessageEcho{
+		ExternalID:    msg.ID,
+		To:            msg.From, // In echoes, "from" is the recipient
+		Metadata:      make(map[string]string),
+		PhoneNumberID: metadata.PhoneNumberID,
+		SenderPhone:   metadata.DisplayPhoneNumber, // The business phone that sent the message
+	}
+
+	// Get recipient name from contacts
+	if contact, ok := contacts[msg.From]; ok {
+		echo.RecipientName = contact.Profile.Name
+	}
+
+	// Parse timestamp
+	if ts, err := strconv.ParseInt(msg.Timestamp, 10, 64); err == nil {
+		echo.Timestamp = time.Unix(ts, 0)
+	} else {
+		echo.Timestamp = time.Now()
+	}
+
+	// Mark as echo/business_app source
+	echo.Metadata["source"] = "business_app"
+	echo.Metadata["is_echo"] = "true"
+	echo.Metadata["recipient_phone"] = msg.From
+	echo.Metadata["sender_phone"] = metadata.DisplayPhoneNumber
+	echo.Metadata["phone_number_id"] = metadata.PhoneNumberID
+
+	// Parse message based on type (reusing same logic as regular messages)
+	switch msg.Type {
+	case MessageTypeText:
+		echo.ContentType = plugin.ContentTypeText
+		if msg.Text != nil {
+			echo.Content = msg.Text.Body
+		}
+
+	case MessageTypeImage:
+		echo.ContentType = plugin.ContentTypeImage
+		if msg.Image != nil {
+			echo.Content = msg.Image.Caption
+			echo.Attachments = append(echo.Attachments, &plugin.Attachment{
+				Type:     "image",
+				URL:      msg.Image.ID,
+				MimeType: msg.Image.MimeType,
+				Metadata: map[string]string{
+					"media_id": msg.Image.ID,
+					"sha256":   msg.Image.SHA256,
+				},
+			})
+		}
+
+	case MessageTypeVideo:
+		echo.ContentType = plugin.ContentTypeVideo
+		if msg.Video != nil {
+			echo.Content = msg.Video.Caption
+			echo.Attachments = append(echo.Attachments, &plugin.Attachment{
+				Type:     "video",
+				URL:      msg.Video.ID,
+				MimeType: msg.Video.MimeType,
+				Metadata: map[string]string{
+					"media_id": msg.Video.ID,
+					"sha256":   msg.Video.SHA256,
+				},
+			})
+		}
+
+	case MessageTypeAudio:
+		echo.ContentType = plugin.ContentTypeAudio
+		if msg.Audio != nil {
+			echo.Attachments = append(echo.Attachments, &plugin.Attachment{
+				Type:     "audio",
+				URL:      msg.Audio.ID,
+				MimeType: msg.Audio.MimeType,
+				Metadata: map[string]string{
+					"media_id": msg.Audio.ID,
+					"sha256":   msg.Audio.SHA256,
+				},
+			})
+		}
+
+	case MessageTypeDocument:
+		echo.ContentType = plugin.ContentTypeDocument
+		if msg.Document != nil {
+			echo.Content = msg.Document.Caption
+			echo.Attachments = append(echo.Attachments, &plugin.Attachment{
+				Type:     "document",
+				URL:      msg.Document.ID,
+				Filename: msg.Document.Filename,
+				MimeType: msg.Document.MimeType,
+				Metadata: map[string]string{
+					"media_id": msg.Document.ID,
+					"sha256":   msg.Document.SHA256,
+				},
+			})
+		}
+
+	case MessageTypeSticker:
+		echo.ContentType = plugin.ContentTypeImage
+		echo.Metadata["is_sticker"] = "true"
+		if msg.Sticker != nil {
+			echo.Attachments = append(echo.Attachments, &plugin.Attachment{
+				Type:     "sticker",
+				URL:      msg.Sticker.ID,
+				MimeType: msg.Sticker.MimeType,
+				Metadata: map[string]string{
+					"media_id": msg.Sticker.ID,
+					"sha256":   msg.Sticker.SHA256,
+					"animated": fmt.Sprintf("%t", msg.Sticker.Animated),
+				},
+			})
+		}
+
+	case MessageTypeLocation:
+		echo.ContentType = plugin.ContentTypeLocation
+		if msg.Location != nil {
+			locationData, _ := json.Marshal(msg.Location)
+			echo.Content = string(locationData)
+			echo.Metadata["latitude"] = fmt.Sprintf("%f", msg.Location.Latitude)
+			echo.Metadata["longitude"] = fmt.Sprintf("%f", msg.Location.Longitude)
+			if msg.Location.Name != "" {
+				echo.Metadata["location_name"] = msg.Location.Name
+			}
+			if msg.Location.Address != "" {
+				echo.Metadata["location_address"] = msg.Location.Address
+			}
+		}
+
+	case MessageTypeContacts:
+		echo.ContentType = plugin.ContentTypeContact
+		if len(msg.Contacts) > 0 {
+			contactsData, _ := json.Marshal(msg.Contacts)
+			echo.Content = string(contactsData)
+			echo.Metadata["contact_count"] = fmt.Sprintf("%d", len(msg.Contacts))
+		}
+
+	default:
+		echo.ContentType = plugin.ContentTypeText
+		echo.Metadata["original_type"] = string(msg.Type)
+	}
+
+	return echo
+}
+
+// ToInboundMessage converts a ParsedMessageEcho to plugin.InboundMessage
+// This is used to save the echo as a message in the conversation
+func (pm *ParsedMessageEcho) ToInboundMessage() *plugin.InboundMessage {
+	return &plugin.InboundMessage{
+		ExternalID:  pm.ExternalID,
+		SenderID:    pm.SenderPhone, // The business phone that sent the message
+		SenderName:  pm.SenderPhone, // Use phone as sender name
+		ContentType: pm.ContentType,
+		Content:     pm.Content,
+		Attachments: pm.Attachments,
+		Metadata:    pm.Metadata,
+		Timestamp:   pm.Timestamp,
+	}
+}
+
+// IsMessageEchoWebhook checks if the webhook contains message echoes
+func IsMessageEchoWebhook(payload *WebhookPayload) bool {
+	for _, entry := range payload.Entry {
+		for _, change := range entry.Changes {
+			if change.Field == string(FieldMessageEchoes) && len(change.Value.Messages) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
