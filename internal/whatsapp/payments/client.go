@@ -167,20 +167,19 @@ func (c *Client) CreatePayment(ctx context.Context, req *PaymentRequest) (*Payme
 		UpdatedAt:        time.Now(),
 	}
 
-	c.mu.Lock()
-	c.payments[payment.ID] = payment
-	c.mu.Unlock()
-
 	// Send payment message via WhatsApp
 	messageID, err := c.sendPaymentMessage(ctx, req, gatewayResp)
-	if err != nil {
-		// Payment was created but message failed - non-fatal error
-		// The payment.MessageID will remain empty
-		_ = err // Ignore error, payment was created successfully
-	} else {
+	if err == nil {
 		payment.MessageID = messageID
 		gatewayResp.MessageID = messageID
 	}
+	// Payment was created but message failed - non-fatal error
+	// The payment.MessageID will remain empty if message sending failed
+
+	// Store payment after setting all fields to avoid race condition
+	c.mu.Lock()
+	c.payments[payment.ID] = payment
+	c.mu.Unlock()
 
 	return gatewayResp, nil
 }
@@ -611,8 +610,14 @@ func (g *RazorpayGateway) CreatePayment(ctx context.Context, req *PaymentRequest
 		},
 	}
 
-	body, _ := json.Marshal(orderReq)
-	httpReq, _ := http.NewRequestWithContext(ctx, "POST", g.baseURL+"/orders", bytes.NewReader(body))
+	body, err := json.Marshal(orderReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", g.baseURL+"/orders", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 	httpReq.SetBasicAuth(g.config.APIKey, g.config.APISecret)
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -638,7 +643,10 @@ func (g *RazorpayGateway) CreatePayment(ctx context.Context, req *PaymentRequest
 
 // GetPaymentStatus gets Razorpay payment status
 func (g *RazorpayGateway) GetPaymentStatus(ctx context.Context, paymentID string) (*Payment, error) {
-	httpReq, _ := http.NewRequestWithContext(ctx, "GET", g.baseURL+"/payments/"+paymentID, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", g.baseURL+"/payments/"+paymentID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 	httpReq.SetBasicAuth(g.config.APIKey, g.config.APISecret)
 
 	resp, err := g.httpClient.Do(httpReq)
@@ -682,9 +690,15 @@ func (g *RazorpayGateway) ProcessRefund(ctx context.Context, req *RefundRequest)
 		refundReq["notes"] = map[string]string{"reason": req.Reason}
 	}
 
-	body, _ := json.Marshal(refundReq)
-	httpReq, _ := http.NewRequestWithContext(ctx, "POST",
+	body, err := json.Marshal(refundReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
 		g.baseURL+"/payments/"+req.PaymentID+"/refund", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 	httpReq.SetBasicAuth(g.config.APIKey, g.config.APISecret)
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -767,8 +781,14 @@ func (g *PagSeguroGateway) CreatePayment(ctx context.Context, req *PaymentReques
 		chargeReq["expiration_date"] = time.Now().Add(req.ExpiresIn).Format(time.RFC3339)
 	}
 
-	body, _ := json.Marshal(chargeReq)
-	httpReq, _ := http.NewRequestWithContext(ctx, "POST", g.baseURL+"/charges", bytes.NewReader(body))
+	body, err := json.Marshal(chargeReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", g.baseURL+"/charges", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 	httpReq.Header.Set("Authorization", "Bearer "+g.config.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -822,7 +842,10 @@ func (g *PagSeguroGateway) CreatePayment(ctx context.Context, req *PaymentReques
 
 // GetPaymentStatus gets PagSeguro payment status
 func (g *PagSeguroGateway) GetPaymentStatus(ctx context.Context, paymentID string) (*Payment, error) {
-	httpReq, _ := http.NewRequestWithContext(ctx, "GET", g.baseURL+"/charges/"+paymentID, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", g.baseURL+"/charges/"+paymentID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 	httpReq.Header.Set("Authorization", "Bearer "+g.config.APIKey)
 
 	resp, err := g.httpClient.Do(httpReq)
@@ -865,9 +888,15 @@ func (g *PagSeguroGateway) ProcessRefund(ctx context.Context, req *RefundRequest
 		},
 	}
 
-	body, _ := json.Marshal(refundReq)
-	httpReq, _ := http.NewRequestWithContext(ctx, "POST",
+	body, err := json.Marshal(refundReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
 		g.baseURL+"/charges/"+req.PaymentID+"/cancel", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 	httpReq.Header.Set("Authorization", "Bearer "+g.config.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -900,7 +929,13 @@ func (g *PagSeguroGateway) ProcessRefund(ctx context.Context, req *RefundRequest
 
 // ValidateWebhook validates PagSeguro webhook signature
 func (g *PagSeguroGateway) ValidateWebhook(payload []byte, signature string) bool {
-	// PagSeguro uses a different validation method
-	// For now, basic validation
-	return signature != ""
+	if g.config.WebhookSecret == "" || signature == "" {
+		return false
+	}
+
+	// PagSeguro uses HMAC-SHA256 for webhook validation
+	mac := hmac.New(sha256.New, []byte(g.config.WebhookSecret))
+	mac.Write(payload)
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
 }

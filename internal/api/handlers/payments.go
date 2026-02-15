@@ -130,7 +130,11 @@ func (h *PaymentsHandler) ProcessRefund(c *gin.Context) {
 		Amount int64  `json:"amount"`
 		Reason string `json:"reason"`
 	}
-	c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Non-fatal: amount defaults to 0 (full refund), reason is optional
+		req.Amount = 0
+		req.Reason = ""
+	}
 
 	refundReq := &payments.RefundRequest{
 		PaymentID: paymentID,
