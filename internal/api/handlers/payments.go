@@ -33,9 +33,22 @@ func (h *PaymentsHandler) getClient(channelID string) (*payments.Client, bool) {
 	return client, ok
 }
 
-// CreatePayment handles POST /channels/:channelId/payments
+// CreatePayment godoc
+// @Summary      Create a payment request
+// @Description  Creates a new WhatsApp payment request to send to a customer
+// @Tags         whatsapp-payments
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        request   body payments.PaymentRequest true "Payment request details"
+// @Success      201 {object} payments.PaymentResponse
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/payments [post]
 func (h *PaymentsHandler) CreatePayment(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -75,9 +88,20 @@ func (h *PaymentsHandler) CreatePayment(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// GetPayment handles GET /channels/:channelId/payments/:paymentId
+// GetPayment godoc
+// @Summary      Get payment by ID
+// @Description  Returns a specific payment by its ID
+// @Tags         whatsapp-payments
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        paymentId path string true "Payment ID"
+// @Success      200 {object} payments.Payment
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/payments/{paymentId} [get]
 func (h *PaymentsHandler) GetPayment(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	paymentID := c.Param("paymentId")
 
 	client, ok := h.getClient(channelID)
@@ -95,9 +119,20 @@ func (h *PaymentsHandler) GetPayment(c *gin.Context) {
 	c.JSON(http.StatusOK, payment)
 }
 
-// GetPaymentByReference handles GET /channels/:channelId/payments/reference/:referenceId
+// GetPaymentByReference godoc
+// @Summary      Get payment by reference ID
+// @Description  Returns a payment by its external reference ID
+// @Tags         whatsapp-payments
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId   path string true "Channel ID"
+// @Param        referenceId path string true "Reference ID"
+// @Success      200 {object} payments.Payment
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/payments/reference/{referenceId} [get]
 func (h *PaymentsHandler) GetPaymentByReference(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	referenceID := c.Param("referenceId")
 
 	client, ok := h.getClient(channelID)
@@ -115,9 +150,23 @@ func (h *PaymentsHandler) GetPaymentByReference(c *gin.Context) {
 	c.JSON(http.StatusOK, payment)
 }
 
-// ProcessRefund handles POST /channels/:channelId/payments/:paymentId/refund
+// ProcessRefund godoc
+// @Summary      Process a refund
+// @Description  Initiates a refund for a completed payment
+// @Tags         whatsapp-payments
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        paymentId path string true "Payment ID"
+// @Param        request   body object{amount=int64,reason=string} false "Refund details (empty for full refund)"
+// @Success      200 {object} payments.Refund
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/payments/{paymentId}/refund [post]
 func (h *PaymentsHandler) ProcessRefund(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	paymentID := c.Param("paymentId")
 
 	client, ok := h.getClient(channelID)
@@ -151,9 +200,19 @@ func (h *PaymentsHandler) ProcessRefund(c *gin.Context) {
 	c.JSON(http.StatusOK, refund)
 }
 
-// GetPaymentStats handles GET /channels/:channelId/payments/stats
+// GetPaymentStats godoc
+// @Summary      Get payment statistics
+// @Description  Returns aggregated payment statistics for the channel
+// @Tags         whatsapp-payments
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Success      200 {object} payments.PaymentStats
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/payments/stats [get]
 func (h *PaymentsHandler) GetPaymentStats(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -165,9 +224,20 @@ func (h *PaymentsHandler) GetPaymentStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// GetCustomerPayments handles GET /channels/:channelId/payments/customer/:phone
+// GetCustomerPayments godoc
+// @Summary      Get customer payments
+// @Description  Returns all payments for a specific customer phone number
+// @Tags         whatsapp-payments
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        phone     path string true "Customer phone number"
+// @Success      200 {object} object{payments=[]payments.Payment}
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/payments/customer/{phone} [get]
 func (h *PaymentsHandler) GetCustomerPayments(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	phone := c.Param("phone")
 
 	client, ok := h.getClient(channelID)
@@ -180,9 +250,23 @@ func (h *PaymentsHandler) GetCustomerPayments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"payments": paymentsList})
 }
 
-// HandleWebhook handles POST /webhooks/payments/:channelId
+// HandleWebhook godoc
+// @Summary      Payment webhook endpoint
+// @Description  Receives payment status updates from payment gateways (Razorpay, PagSeguro, etc.)
+// @Tags         webhooks
+// @Accept       json
+// @Produce      json
+// @Param        channelId             path   string true "Channel ID"
+// @Param        X-Webhook-Signature   header string true "Webhook signature"
+// @Param        payload               body   payments.PaymentWebhookPayload true "Webhook payload"
+// @Success      200 {object} object{status=string}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /webhooks/payments/{channelId} [post]
 func (h *PaymentsHandler) HandleWebhook(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {

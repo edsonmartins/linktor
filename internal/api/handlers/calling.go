@@ -33,9 +33,22 @@ func (h *CallingHandler) getClient(channelID string) (*calling.Client, bool) {
 	return client, ok
 }
 
-// InitiateCall handles POST /channels/:channelId/calls
+// InitiateCall godoc
+// @Summary      Initiate a call
+// @Description  Starts a new WhatsApp voice or video call to a customer
+// @Tags         whatsapp-calling
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        request   body calling.InitiateCallRequest true "Call request details"
+// @Success      201 {object} calling.Call
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/calls [post]
 func (h *CallingHandler) InitiateCall(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -67,9 +80,20 @@ func (h *CallingHandler) InitiateCall(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// GetCall handles GET /channels/:channelId/calls/:callId
+// GetCall godoc
+// @Summary      Get call by ID
+// @Description  Returns details of a specific call
+// @Tags         whatsapp-calling
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        callId    path string true "Call ID"
+// @Success      200 {object} calling.Call
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/calls/{callId} [get]
 func (h *CallingHandler) GetCall(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	callID := c.Param("callId")
 
 	client, ok := h.getClient(channelID)
@@ -87,9 +111,21 @@ func (h *CallingHandler) GetCall(c *gin.Context) {
 	c.JSON(http.StatusOK, call)
 }
 
-// EndCall handles POST /channels/:channelId/calls/:callId/end
+// EndCall godoc
+// @Summary      End a call
+// @Description  Terminates an active call
+// @Tags         whatsapp-calling
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        callId    path string true "Call ID"
+// @Success      200 {object} object{status=string}
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/calls/{callId}/end [post]
 func (h *CallingHandler) EndCall(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	callID := c.Param("callId")
 
 	client, ok := h.getClient(channelID)
@@ -106,9 +142,22 @@ func (h *CallingHandler) EndCall(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ended"})
 }
 
-// GetCallStats handles GET /channels/:channelId/calls/stats
+// GetCallStats godoc
+// @Summary      Get call statistics
+// @Description  Returns aggregated call statistics for the channel
+// @Tags         whatsapp-calling
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId  path  string true  "Channel ID"
+// @Param        start_date query string false "Start date (YYYY-MM-DD)"
+// @Param        end_date   query string false "End date (YYYY-MM-DD)"
+// @Success      200 {object} calling.CallStats
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/calls/stats [get]
 func (h *CallingHandler) GetCallStats(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -140,9 +189,21 @@ func (h *CallingHandler) GetCallStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// GetRecentCalls handles GET /channels/:channelId/calls
+// GetRecentCalls godoc
+// @Summary      List recent calls
+// @Description  Returns a paginated list of recent calls
+// @Tags         whatsapp-calling
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path  string  true  "Channel ID"
+// @Param        limit     query integer false "Limit (1-100)" default(20)
+// @Param        offset    query integer false "Offset" default(0)
+// @Success      200 {object} object{calls=[]calling.Call,limit=int,offset=int}
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/calls [get]
 func (h *CallingHandler) GetRecentCalls(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -173,9 +234,20 @@ func (h *CallingHandler) GetRecentCalls(c *gin.Context) {
 	})
 }
 
-// GetCallsByPhone handles GET /channels/:channelId/calls/phone/:phone
+// GetCallsByPhone godoc
+// @Summary      Get calls by phone number
+// @Description  Returns all calls involving a specific phone number
+// @Tags         whatsapp-calling
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        phone     path string true "Phone number"
+// @Success      200 {object} object{calls=[]calling.Call}
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/calls/phone/{phone} [get]
 func (h *CallingHandler) GetCallsByPhone(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	phone := c.Param("phone")
 
 	client, ok := h.getClient(channelID)
@@ -188,9 +260,20 @@ func (h *CallingHandler) GetCallsByPhone(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"calls": calls})
 }
 
-// GetCallQuality handles GET /channels/:channelId/calls/:callId/quality
+// GetCallQuality godoc
+// @Summary      Get call quality metrics
+// @Description  Returns quality metrics for a specific call (score, packet loss, jitter, latency)
+// @Tags         whatsapp-calling
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        callId    path string true "Call ID"
+// @Success      200 {object} calling.CallQuality
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/calls/{callId}/quality [get]
 func (h *CallingHandler) GetCallQuality(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	callID := c.Param("callId")
 
 	client, ok := h.getClient(channelID)
@@ -208,9 +291,20 @@ func (h *CallingHandler) GetCallQuality(c *gin.Context) {
 	c.JSON(http.StatusOK, quality)
 }
 
-// GetCallRecording handles GET /channels/:channelId/calls/:callId/recording
+// GetCallRecording godoc
+// @Summary      Get call recording
+// @Description  Returns the recording URL for a specific call (if available)
+// @Tags         whatsapp-calling
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        callId    path string true "Call ID"
+// @Success      200 {object} object{recording_url=string}
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/calls/{callId}/recording [get]
 func (h *CallingHandler) GetCallRecording(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	callID := c.Param("callId")
 
 	client, ok := h.getClient(channelID)
@@ -228,9 +322,21 @@ func (h *CallingHandler) GetCallRecording(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"recording_url": recordingURL})
 }
 
-// HandleWebhook handles POST /webhooks/calls/:channelId
+// HandleWebhook godoc
+// @Summary      Call webhook endpoint
+// @Description  Receives call status updates from WhatsApp Business API
+// @Tags         webhooks
+// @Accept       json
+// @Produce      json
+// @Param        channelId path string true "Channel ID"
+// @Param        payload   body calling.CallWebhookPayload true "Webhook payload"
+// @Success      200 {object} object{status=string}
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /webhooks/calls/{channelId} [post]
 func (h *CallingHandler) HandleWebhook(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {

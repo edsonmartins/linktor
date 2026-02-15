@@ -72,6 +72,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
@@ -90,6 +91,10 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/whatsapp"
 	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/api/handlers"
+	"github.com/msgfy/linktor/internal/whatsapp/analytics"
+	"github.com/msgfy/linktor/internal/whatsapp/calling"
+	"github.com/msgfy/linktor/internal/whatsapp/ctwa"
+	"github.com/msgfy/linktor/internal/whatsapp/payments"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/application/usecase"
@@ -104,6 +109,9 @@ import (
 )
 
 func main() {
+	// Load .env file (optional - won't fail if not found)
+	_ = godotenv.Load()
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -450,6 +458,30 @@ func main() {
 	// Create analytics handler
 	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
 
+	// Create WhatsApp Analytics handler
+	whatsappAnalyticsHandler := handlers.NewWhatsAppAnalyticsHandler()
+
+	// Create Payments handler
+	paymentsHandler := handlers.NewPaymentsHandler()
+
+	// Create Calling handler
+	callingHandler := handlers.NewCallingHandler()
+
+	// Create CTWA handler
+	ctwaHandler := handlers.NewCTWAHandler()
+
+	// Note: WhatsApp Analytics, Payments, Calling, and CTWA clients are registered per-channel
+	// when channels are connected. The handlers use a channel-based client registry.
+	// Example of registering clients (done when channel connects):
+	// whatsappAnalyticsHandler.RegisterClient(channelID, analytics.NewClient(&analytics.ClientConfig{...}))
+	// paymentsHandler.RegisterClient(channelID, payments.NewClient(&payments.ClientConfig{...}))
+	// callingHandler.RegisterClient(channelID, calling.NewClient(&calling.ClientConfig{...}))
+	// ctwaHandler.RegisterClient(channelID, ctwa.NewClient(&ctwa.ClientConfig{...}))
+	_ = analytics.ClientConfig{} // Ensure import is used
+	_ = payments.ClientConfig{}
+	_ = calling.ClientConfig{}
+	_ = ctwa.ClientConfig{}
+
 	// Create VRE handler (if VRE service is available)
 	var vreHandler *handlers.VREHandler
 	if vreService != nil {
@@ -627,6 +659,11 @@ func main() {
 			webhooks.Any("/email/:channelId/postmark", webhookHandler.EmailWebhook)
 			webhooks.POST("/generic/:channelId", webhookHandler.GenericWebhook)
 			webhooks.POST("/status/:channelId", webhookHandler.StatusCallback)
+
+			// WhatsApp-specific webhooks
+			webhooks.POST("/payments/:channelId", paymentsHandler.HandleWebhook)
+			webhooks.POST("/calls/:channelId", callingHandler.HandleWebhook)
+			webhooks.POST("/ctwa/:channelId", ctwaHandler.ProcessReferralWebhook)
 		}
 
 		// Protected routes
@@ -760,13 +797,64 @@ func main() {
 			}
 
 			// Analytics
-			analytics := protected.Group("/analytics")
+			analyticsRoutes := protected.Group("/analytics")
 			{
-				analytics.GET("/overview", analyticsHandler.GetOverview)
-				analytics.GET("/conversations", analyticsHandler.GetConversations)
-				analytics.GET("/flows", analyticsHandler.GetFlows)
-				analytics.GET("/escalations", analyticsHandler.GetEscalations)
-				analytics.GET("/channels", analyticsHandler.GetChannels)
+				analyticsRoutes.GET("/overview", analyticsHandler.GetOverview)
+				analyticsRoutes.GET("/conversations", analyticsHandler.GetConversations)
+				analyticsRoutes.GET("/flows", analyticsHandler.GetFlows)
+				analyticsRoutes.GET("/escalations", analyticsHandler.GetEscalations)
+				analyticsRoutes.GET("/channels", analyticsHandler.GetChannels)
+			}
+
+			// WhatsApp Analytics (per-channel)
+			waAnalytics := protected.Group("/channels/:id/analytics")
+			{
+				waAnalytics.GET("/conversations", whatsappAnalyticsHandler.GetConversationAnalytics)
+				waAnalytics.GET("/phone", whatsappAnalyticsHandler.GetPhoneNumberAnalytics)
+				waAnalytics.GET("/templates/:templateId", whatsappAnalyticsHandler.GetTemplateAnalytics)
+				waAnalytics.GET("/stats", whatsappAnalyticsHandler.GetAggregatedStats)
+				waAnalytics.GET("/export", whatsappAnalyticsHandler.ExportAnalytics)
+				waAnalytics.GET("/dashboard", whatsappAnalyticsHandler.GetDashboardData)
+			}
+
+			// Payments (per-channel)
+			paymentsRoutes := protected.Group("/channels/:id/payments")
+			{
+				paymentsRoutes.POST("", paymentsHandler.CreatePayment)
+				paymentsRoutes.GET("/stats", paymentsHandler.GetPaymentStats)
+				paymentsRoutes.GET("/:paymentId", paymentsHandler.GetPayment)
+				paymentsRoutes.GET("/reference/:referenceId", paymentsHandler.GetPaymentByReference)
+				paymentsRoutes.POST("/:paymentId/refund", paymentsHandler.ProcessRefund)
+				paymentsRoutes.GET("/customer/:phone", paymentsHandler.GetCustomerPayments)
+			}
+
+			// Calling (per-channel)
+			callingRoutes := protected.Group("/channels/:id/calls")
+			{
+				callingRoutes.GET("", callingHandler.GetRecentCalls)
+				callingRoutes.POST("", callingHandler.InitiateCall)
+				callingRoutes.GET("/stats", callingHandler.GetCallStats)
+				callingRoutes.GET("/phone/:phone", callingHandler.GetCallsByPhone)
+				callingRoutes.GET("/:callId", callingHandler.GetCall)
+				callingRoutes.POST("/:callId/end", callingHandler.EndCall)
+				callingRoutes.GET("/:callId/quality", callingHandler.GetCallQuality)
+				callingRoutes.GET("/:callId/recording", callingHandler.GetCallRecording)
+			}
+
+			// CTWA (Click-to-WhatsApp Ads)
+			ctwaRoutes := protected.Group("/channels/:id/ctwa")
+			{
+				ctwaRoutes.GET("/stats", ctwaHandler.GetStats)
+				ctwaRoutes.GET("/dashboard", ctwaHandler.GetDashboard)
+				ctwaRoutes.GET("/report", ctwaHandler.GenerateReport)
+				ctwaRoutes.GET("/top-ads", ctwaHandler.GetTopAds)
+				ctwaRoutes.GET("/free-window/:phone", ctwaHandler.GetFreeWindow)
+				ctwaRoutes.GET("/referrals/:referralId", ctwaHandler.GetReferral)
+				ctwaRoutes.GET("/referrals/phone/:phone", ctwaHandler.GetReferralByPhone)
+				ctwaRoutes.GET("/referrals/:referralId/conversions", ctwaHandler.GetConversionsByReferral)
+				ctwaRoutes.GET("/campaigns/:campaignId/referrals", ctwaHandler.GetReferralsByCampaign)
+				ctwaRoutes.POST("/conversions", ctwaHandler.TrackConversion)
+				ctwaRoutes.GET("/conversions/:conversionId", ctwaHandler.GetConversion)
 			}
 
 			// VRE (Visual Response Engine)

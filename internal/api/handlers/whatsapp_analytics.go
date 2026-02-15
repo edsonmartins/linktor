@@ -32,9 +32,23 @@ func (h *WhatsAppAnalyticsHandler) getClient(channelID string) (*analytics.Clien
 	return client, ok
 }
 
-// GetConversationAnalytics handles GET /channels/:channelId/analytics/conversations
+// GetConversationAnalytics godoc
+// @Summary      Get conversation analytics
+// @Description  Returns WhatsApp conversation analytics for a channel
+// @Tags         whatsapp-analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId   path     string  true  "Channel ID"
+// @Param        start_date  query    string  false "Start date (YYYY-MM-DD)"
+// @Param        end_date    query    string  false "End date (YYYY-MM-DD)"
+// @Param        granularity query    string  false "Granularity (DAILY, MONTHLY)" default(DAILY)
+// @Success      200 {object} analytics.ConversationAnalytics
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/analytics/conversations [get]
 func (h *WhatsAppAnalyticsHandler) GetConversationAnalytics(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -71,9 +85,20 @@ func (h *WhatsAppAnalyticsHandler) GetConversationAnalytics(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// GetPhoneNumberAnalytics handles GET /channels/:channelId/analytics/phone
+// GetPhoneNumberAnalytics godoc
+// @Summary      Get phone number analytics
+// @Description  Returns WhatsApp phone number quality and limit information
+// @Tags         whatsapp-analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Success      200 {object} analytics.PhoneNumberAnalytics
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/analytics/phone [get]
 func (h *WhatsAppAnalyticsHandler) GetPhoneNumberAnalytics(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -90,9 +115,23 @@ func (h *WhatsAppAnalyticsHandler) GetPhoneNumberAnalytics(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// GetTemplateAnalytics handles GET /channels/:channelId/analytics/templates/:templateId
+// GetTemplateAnalytics godoc
+// @Summary      Get template analytics
+// @Description  Returns performance metrics for a specific WhatsApp template
+// @Tags         whatsapp-analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId   path  string true  "Channel ID"
+// @Param        templateId  path  string true  "Template ID"
+// @Param        start_date  query string false "Start date (YYYY-MM-DD)"
+// @Param        end_date    query string false "End date (YYYY-MM-DD)"
+// @Success      200 {object} analytics.TemplateAnalytics
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/analytics/templates/{templateId} [get]
 func (h *WhatsAppAnalyticsHandler) GetTemplateAnalytics(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	templateID := c.Param("templateId")
 
 	client, ok := h.getClient(channelID)
@@ -121,9 +160,22 @@ func (h *WhatsAppAnalyticsHandler) GetTemplateAnalytics(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// GetAggregatedStats handles GET /channels/:channelId/analytics/stats
+// GetAggregatedStats godoc
+// @Summary      Get aggregated statistics
+// @Description  Returns aggregated WhatsApp conversation statistics with trends
+// @Tags         whatsapp-analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId  path  string true  "Channel ID"
+// @Param        start_date query string false "Start date (YYYY-MM-DD)"
+// @Param        end_date   query string false "End date (YYYY-MM-DD)"
+// @Success      200 {object} analytics.AggregatedStats
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/analytics/stats [get]
 func (h *WhatsAppAnalyticsHandler) GetAggregatedStats(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -158,9 +210,24 @@ func (h *WhatsAppAnalyticsHandler) GetAggregatedStats(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ExportAnalytics handles GET /channels/:channelId/analytics/export
+// ExportAnalytics godoc
+// @Summary      Export analytics data
+// @Description  Export WhatsApp analytics to CSV or JSON format
+// @Tags         whatsapp-analytics
+// @Accept       json
+// @Produce      text/csv,application/json
+// @Security     BearerAuth
+// @Param        channelId  path  string true  "Channel ID"
+// @Param        start_date query string false "Start date (YYYY-MM-DD)"
+// @Param        end_date   query string false "End date (YYYY-MM-DD)"
+// @Param        format     query string false "Export format (csv, json)" default(csv)
+// @Success      200 {file} file
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/analytics/export [get]
 func (h *WhatsAppAnalyticsHandler) ExportAnalytics(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -218,9 +285,20 @@ func (h *WhatsAppAnalyticsHandler) ExportAnalytics(c *gin.Context) {
 	}
 }
 
-// GetDashboardData handles GET /channels/:channelId/analytics/dashboard
+// GetDashboardData godoc
+// @Summary      Get dashboard data
+// @Description  Returns comprehensive dashboard data for WhatsApp analytics (last 30 days)
+// @Tags         whatsapp-analytics
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Success      200 {object} map[string]interface{}
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/analytics/dashboard [get]
 func (h *WhatsAppAnalyticsHandler) GetDashboardData(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {

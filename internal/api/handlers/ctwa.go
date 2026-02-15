@@ -33,9 +33,20 @@ func (h *CTWAHandler) getClient(channelID string) (*ctwa.Client, bool) {
 	return client, ok
 }
 
-// GetReferral handles GET /channels/:channelId/ctwa/referrals/:referralId
+// GetReferral godoc
+// @Summary      Get referral by ID
+// @Description  Returns a specific Click-to-WhatsApp Ads referral
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId  path string true "Channel ID"
+// @Param        referralId path string true "Referral ID"
+// @Success      200 {object} ctwa.Referral
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/referrals/{referralId} [get]
 func (h *CTWAHandler) GetReferral(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	referralID := c.Param("referralId")
 
 	client, ok := h.getClient(channelID)
@@ -53,9 +64,20 @@ func (h *CTWAHandler) GetReferral(c *gin.Context) {
 	c.JSON(http.StatusOK, referral)
 }
 
-// GetReferralByPhone handles GET /channels/:channelId/ctwa/referrals/phone/:phone
+// GetReferralByPhone godoc
+// @Summary      Get referral by phone number
+// @Description  Returns the most recent CTWA referral for a phone number
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        phone     path string true "Customer phone number"
+// @Success      200 {object} ctwa.Referral
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/referrals/phone/{phone} [get]
 func (h *CTWAHandler) GetReferralByPhone(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	phone := c.Param("phone")
 
 	client, ok := h.getClient(channelID)
@@ -73,9 +95,20 @@ func (h *CTWAHandler) GetReferralByPhone(c *gin.Context) {
 	c.JSON(http.StatusOK, referral)
 }
 
-// GetReferralsByCampaign handles GET /channels/:channelId/ctwa/campaigns/:campaignId/referrals
+// GetReferralsByCampaign godoc
+// @Summary      Get referrals by campaign
+// @Description  Returns all CTWA referrals for a specific campaign
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId  path string true "Channel ID"
+// @Param        campaignId path string true "Campaign ID"
+// @Success      200 {object} object{referrals=[]ctwa.Referral}
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/campaigns/{campaignId}/referrals [get]
 func (h *CTWAHandler) GetReferralsByCampaign(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	campaignID := c.Param("campaignId")
 
 	client, ok := h.getClient(channelID)
@@ -88,9 +121,22 @@ func (h *CTWAHandler) GetReferralsByCampaign(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"referrals": referrals})
 }
 
-// TrackConversion handles POST /channels/:channelId/ctwa/conversions
+// TrackConversion godoc
+// @Summary      Track a conversion
+// @Description  Records a conversion event for a CTWA referral (purchase, signup, etc.)
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        request   body object{referral_id=string,conversion_type=string,value=number,currency=string} true "Conversion details"
+// @Success      201 {object} ctwa.AdConversion
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /channels/{channelId}/ctwa/conversions [post]
 func (h *CTWAHandler) TrackConversion(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -123,9 +169,20 @@ func (h *CTWAHandler) TrackConversion(c *gin.Context) {
 	c.JSON(http.StatusCreated, conversion)
 }
 
-// GetConversion handles GET /channels/:channelId/ctwa/conversions/:conversionId
+// GetConversion godoc
+// @Summary      Get conversion by ID
+// @Description  Returns details of a specific conversion event
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId    path string true "Channel ID"
+// @Param        conversionId path string true "Conversion ID"
+// @Success      200 {object} ctwa.AdConversion
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/conversions/{conversionId} [get]
 func (h *CTWAHandler) GetConversion(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	conversionID := c.Param("conversionId")
 
 	client, ok := h.getClient(channelID)
@@ -143,9 +200,20 @@ func (h *CTWAHandler) GetConversion(c *gin.Context) {
 	c.JSON(http.StatusOK, conversion)
 }
 
-// GetConversionsByReferral handles GET /channels/:channelId/ctwa/referrals/:referralId/conversions
+// GetConversionsByReferral godoc
+// @Summary      Get conversions by referral
+// @Description  Returns all conversions for a specific referral
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId  path string true "Channel ID"
+// @Param        referralId path string true "Referral ID"
+// @Success      200 {object} object{conversions=[]ctwa.AdConversion}
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/referrals/{referralId}/conversions [get]
 func (h *CTWAHandler) GetConversionsByReferral(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	referralID := c.Param("referralId")
 
 	client, ok := h.getClient(channelID)
@@ -158,9 +226,20 @@ func (h *CTWAHandler) GetConversionsByReferral(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"conversions": conversions})
 }
 
-// GetFreeWindow handles GET /channels/:channelId/ctwa/free-window/:phone
+// GetFreeWindow godoc
+// @Summary      Get free messaging window
+// @Description  Returns the 72-hour free messaging window status for a customer (CTWA benefit)
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Param        phone     path string true "Customer phone number"
+// @Success      200 {object} object{free_window=ctwa.FreeMessagingWindow,time_remaining=string,is_valid=bool}
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/free-window/{phone} [get]
 func (h *CTWAHandler) GetFreeWindow(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 	phone := c.Param("phone")
 
 	client, ok := h.getClient(channelID)
@@ -182,9 +261,22 @@ func (h *CTWAHandler) GetFreeWindow(c *gin.Context) {
 	})
 }
 
-// GetStats handles GET /channels/:channelId/ctwa/stats
+// GetStats godoc
+// @Summary      Get CTWA statistics
+// @Description  Returns Click-to-WhatsApp Ads statistics and conversion metrics
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId  path  string true  "Channel ID"
+// @Param        start_date query string false "Start date (YYYY-MM-DD)"
+// @Param        end_date   query string false "End date (YYYY-MM-DD)"
+// @Success      200 {object} ctwa.CTWAStats
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/stats [get]
 func (h *CTWAHandler) GetStats(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -216,9 +308,20 @@ func (h *CTWAHandler) GetStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// GetTopAds handles GET /channels/:channelId/ctwa/top-ads
+// GetTopAds godoc
+// @Summary      Get top performing ads
+// @Description  Returns the top performing Click-to-WhatsApp ads by conversions
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path  string  true  "Channel ID"
+// @Param        limit     query integer false "Limit (1-50)" default(10)
+// @Success      200 {object} object{top_ads=[]ctwa.AdPerformance}
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/top-ads [get]
 func (h *CTWAHandler) GetTopAds(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -237,9 +340,21 @@ func (h *CTWAHandler) GetTopAds(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"top_ads": topAds})
 }
 
-// GenerateReport handles GET /channels/:channelId/ctwa/report
+// GenerateReport godoc
+// @Summary      Generate CTWA report
+// @Description  Generates a comprehensive Click-to-WhatsApp Ads performance report
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId  path  string true  "Channel ID"
+// @Param        start_date query string false "Start date (YYYY-MM-DD)" default(last 30 days)
+// @Param        end_date   query string false "End date (YYYY-MM-DD)" default(today)
+// @Success      200 {object} ctwa.CTWAReport
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/report [get]
 func (h *CTWAHandler) GenerateReport(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -269,9 +384,19 @@ func (h *CTWAHandler) GenerateReport(c *gin.Context) {
 	c.JSON(http.StatusOK, report)
 }
 
-// GetDashboard handles GET /channels/:channelId/ctwa/dashboard
+// GetDashboard godoc
+// @Summary      Get CTWA dashboard
+// @Description  Returns comprehensive dashboard data for Click-to-WhatsApp Ads (last 30 days)
+// @Tags         whatsapp-ctwa
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channelId path string true "Channel ID"
+// @Success      200 {object} map[string]interface{}
+// @Failure      404 {object} Response
+// @Router       /channels/{channelId}/ctwa/dashboard [get]
 func (h *CTWAHandler) GetDashboard(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -307,9 +432,21 @@ func (h *CTWAHandler) GetDashboard(c *gin.Context) {
 	c.JSON(http.StatusOK, dashboard)
 }
 
-// ProcessReferralWebhook handles POST /webhooks/ctwa/:channelId
+// ProcessReferralWebhook godoc
+// @Summary      CTWA referral webhook endpoint
+// @Description  Receives referral messages from Click-to-WhatsApp Ads
+// @Tags         webhooks
+// @Accept       json
+// @Produce      json
+// @Param        channelId path string true "Channel ID"
+// @Param        payload   body ctwa.ReferralMessage true "Referral message payload"
+// @Success      200 {object} object{status=string,referral=ctwa.Referral}
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Failure      500 {object} Response
+// @Router       /webhooks/ctwa/{channelId} [post]
 func (h *CTWAHandler) ProcessReferralWebhook(c *gin.Context) {
-	channelID := c.Param("channelId")
+	channelID := c.Param("id")
 
 	client, ok := h.getClient(channelID)
 	if !ok {
