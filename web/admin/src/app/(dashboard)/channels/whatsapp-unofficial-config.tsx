@@ -145,7 +145,7 @@ export function WhatsAppUnofficialConfig({
         }
       } catch (error) {
         // Ignore polling errors
-        console.debug('Status poll error:', error)
+        // Status poll error - silently ignored
       }
     }, 2000) // Poll every 2 seconds
 

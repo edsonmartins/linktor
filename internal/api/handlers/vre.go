@@ -3,22 +3,27 @@ package handlers
 import (
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/infrastructure/nats"
 )
 
 // VREHandler handles VRE endpoints
 type VREHandler struct {
 	vreService *service.VREService
+	producer   *nats.Producer
 }
 
 // NewVREHandler creates a new VRE handler
-func NewVREHandler(vreService *service.VREService) *VREHandler {
+func NewVREHandler(vreService *service.VREService, producer *nats.Producer) *VREHandler {
 	return &VREHandler{
 		vreService: vreService,
+		producer:   producer,
 	}
 }
 
@@ -148,9 +153,36 @@ func (h *VREHandler) RenderAndSend(c *gin.Context) {
 		return
 	}
 
-	// TODO: Send via channel adapter
-	// For now, just return the rendered response
-	response.Delivered = false // Will be true when channel sending is implemented
+	// Send via NATS for channel delivery
+	if h.producer != nil && req.SendTo != "" {
+		tenantID := req.TenantID
+		if tenantID == "" {
+			tenantID = middleware.MustGetTenantID(c)
+		}
+
+		outbound := &nats.OutboundMessage{
+			ID:          uuid.New().String(),
+			TenantID:    tenantID,
+			ContentType: "image",
+			Content:     response.Caption,
+			Metadata: map[string]string{
+				"image_base64": response.ImageBase64,
+				"format":       string(response.Format),
+				"vre_template": req.TemplateID,
+			},
+			RecipientID: req.SendTo,
+			Timestamp:   time.Now(),
+		}
+
+		if err := h.producer.PublishOutbound(c.Request.Context(), outbound); err != nil {
+			response.Delivered = false
+			c.JSON(http.StatusOK, response)
+			return
+		}
+		response.Delivered = true
+	} else {
+		response.Delivered = false
+	}
 
 	c.JSON(http.StatusOK, response)
 }

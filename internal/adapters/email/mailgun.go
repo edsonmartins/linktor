@@ -3,7 +3,10 @@ package email
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -256,15 +259,9 @@ func ValidateMailgunWebhookSignature(signingKey, token, timestamp, signature str
 
 // computeHMACSHA256 computes HMAC-SHA256 and returns hex string
 func computeHMACSHA256(key, data string) string {
-	// Using crypto/hmac and crypto/sha256
-	// This is a placeholder - actual implementation would use those packages
-	_ = key
-	_ = data
-	// In production, this would be:
-	// h := hmac.New(sha256.New, []byte(key))
-	// h.Write([]byte(data))
-	// return hex.EncodeToString(h.Sum(nil))
-	return ""
+	h := hmac.New(sha256.New, []byte(key))
+	h.Write([]byte(data))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // encodeBase64Attachment encodes attachment content to base64

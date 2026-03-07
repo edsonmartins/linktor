@@ -205,29 +205,25 @@ func (s *HistoryImportService) importConversations(ctx context.Context, importJo
 	default:
 	}
 
-	// Note: WhatsApp Cloud API does not provide a direct endpoint to fetch chat history.
-	// This is a placeholder implementation. In practice, you would need to:
-	// 1. Use the WhatsApp Business API to fetch conversations
-	// 2. Process each conversation and its messages
-	// 3. Create/update contacts, conversations, and messages in the database
+	// WhatsApp Cloud API Limitation:
+	// The Meta Cloud API does NOT provide endpoints to export or fetch historical
+	// conversations from the WhatsApp Business App. The available endpoints
+	// (/{phone-number-id}/messages) only allow SENDING messages, not reading history.
+	//
+	// Alternative approaches for importing history:
+	// 1. Manual CSV/JSON export from the Business App and upload via the import API
+	// 2. Use a third-party tool that captures messages via webhooks going forward
+	// 3. If using the On-Premises API, some history may be available via the contacts node
+	//
+	// This method returns an error explaining the limitation rather than silently
+	// returning empty results.
 
-	// For now, we simulate the import process
-	logger.Info("Importing conversations from WhatsApp",
+	logger.Warn("WhatsApp Cloud API does not support historical message export",
 		zap.String("import_id", importJob.ID),
 		zap.String("channel_id", channel.ID),
 	)
 
-	// TODO: Implement actual WhatsApp conversation fetching
-	// The Cloud API typically provides:
-	// - GET /{phone-number-id}/conversations - List conversations
-	// - GET /{phone-number-id}/messages - List messages
-
-	// Set totals (placeholder)
-	importJob.SetTotals(0, 0, 0)
-
-	// Import would happen here with periodic context checks...
-
-	return nil
+	return fmt.Errorf("WhatsApp Cloud API does not provide endpoints for exporting chat history; use CSV/JSON manual import instead")
 }
 
 // GetImportProgress returns the progress of an import job

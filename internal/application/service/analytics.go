@@ -2,20 +2,26 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/internal/whatsapp/analytics"
 )
 
 // AnalyticsService provides analytics operations
 type AnalyticsService struct {
-	repo repository.AnalyticsRepository
+	repo        repository.AnalyticsRepository
+	waAnalytics *analytics.Client
 }
 
 // NewAnalyticsService creates a new analytics service
-func NewAnalyticsService(repo repository.AnalyticsRepository) *AnalyticsService {
-	return &AnalyticsService{repo: repo}
+func NewAnalyticsService(repo repository.AnalyticsRepository, waAnalytics *analytics.Client) *AnalyticsService {
+	return &AnalyticsService{
+		repo:        repo,
+		waAnalytics: waAnalytics,
+	}
 }
 
 // GetOverview returns high-level analytics metrics
@@ -98,4 +104,33 @@ func (s *AnalyticsService) GetDateRange(period entity.AnalyticsPeriod, customSta
 	}
 
 	return startDate, endDate
+}
+
+// GetWhatsAppConversationAnalytics returns WhatsApp conversation analytics
+func (s *AnalyticsService) GetWhatsAppConversationAnalytics(ctx context.Context, phoneNumberID string, startDate, endDate time.Time, granularity string) (*analytics.ConversationAnalytics, error) {
+	if s.waAnalytics == nil {
+		return nil, fmt.Errorf("whatsapp analytics not configured")
+	}
+	return s.waAnalytics.GetConversationAnalytics(ctx, &analytics.AnalyticsRequest{
+		PhoneNumberID: phoneNumberID,
+		StartDate:     startDate,
+		EndDate:       endDate,
+		Granularity:   granularity,
+	})
+}
+
+// GetWhatsAppTemplateAnalytics returns WhatsApp template analytics
+func (s *AnalyticsService) GetWhatsAppTemplateAnalytics(ctx context.Context, templateID string, startDate, endDate time.Time) (*analytics.TemplateAnalytics, error) {
+	if s.waAnalytics == nil {
+		return nil, fmt.Errorf("whatsapp analytics not configured")
+	}
+	return s.waAnalytics.GetTemplateAnalytics(ctx, templateID, startDate, endDate)
+}
+
+// GetWhatsAppPhoneAnalytics returns WhatsApp phone number analytics
+func (s *AnalyticsService) GetWhatsAppPhoneAnalytics(ctx context.Context, phoneNumberID string) (*analytics.PhoneNumberAnalytics, error) {
+	if s.waAnalytics == nil {
+		return nil, fmt.Errorf("whatsapp analytics not configured")
+	}
+	return s.waAnalytics.GetPhoneNumberAnalytics(ctx, phoneNumberID)
 }

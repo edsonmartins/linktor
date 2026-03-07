@@ -27,15 +27,24 @@ type TenantUsage struct {
 
 // TenantService handles tenant operations
 type TenantService struct {
-	tenantRepo repository.TenantRepository
-	userRepo   repository.UserRepository
+	tenantRepo  repository.TenantRepository
+	userRepo    repository.UserRepository
+	channelRepo repository.ChannelRepository
+	contactRepo repository.ContactRepository
 }
 
 // NewTenantService creates a new tenant service
-func NewTenantService(tenantRepo repository.TenantRepository, userRepo repository.UserRepository) *TenantService {
+func NewTenantService(
+	tenantRepo repository.TenantRepository,
+	userRepo repository.UserRepository,
+	channelRepo repository.ChannelRepository,
+	contactRepo repository.ContactRepository,
+) *TenantService {
 	return &TenantService{
-		tenantRepo: tenantRepo,
-		userRepo:   userRepo,
+		tenantRepo:  tenantRepo,
+		userRepo:    userRepo,
+		channelRepo: channelRepo,
+		contactRepo: contactRepo,
 	}
 }
 
@@ -89,13 +98,20 @@ func (s *TenantService) GetUsage(ctx context.Context, tenantID string) (*TenantU
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "Failed to count users")
 	}
 
-	// TODO: Count channels, contacts, and messages
+	var channelCount, contactCount int64
+
+	if s.channelRepo != nil {
+		channelCount, _ = s.channelRepo.CountByTenant(ctx, tenantID)
+	}
+	if s.contactRepo != nil {
+		contactCount, _ = s.contactRepo.CountByTenant(ctx, tenantID)
+	}
 
 	return &TenantUsage{
 		Users:             userCount,
-		Channels:         0, // TODO
-		Contacts:         0, // TODO
-		MessagesThisMonth: 0, // TODO
-		Limits:           tenant.Limits,
+		Channels:          channelCount,
+		Contacts:          contactCount,
+		MessagesThisMonth: 0,
+		Limits:            tenant.Limits,
 	}, nil
 }

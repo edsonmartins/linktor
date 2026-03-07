@@ -2,7 +2,10 @@ package webchat
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -313,7 +316,48 @@ func (h *Handler) GetWidgetConfig(c *gin.Context) {
 
 // UploadMedia handles media uploads from the widget
 func (h *Handler) UploadMedia(c *gin.Context) {
-	// TODO: Implement media upload handling
-	// This would save the file to storage (MinIO/S3) and return the URL
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not implemented"})
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
+		return
+	}
+	defer file.Close()
+
+	// Validate file size (max 10MB)
+	if header.Size > 10*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file too large (max 10MB)"})
+		return
+	}
+
+	// Generate unique filename
+	ext := filepath.Ext(header.Filename)
+	filename := uuid.New().String() + ext
+
+	// Save to uploads directory
+	uploadDir := filepath.Join("uploads", "webchat")
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create upload directory"})
+		return
+	}
+
+	savePath := filepath.Join(uploadDir, filename)
+	if err := c.SaveUploadedFile(header, savePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save file"})
+		return
+	}
+
+	// Build URL for the uploaded file
+	baseURL := c.Request.Host
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	fileURL := fmt.Sprintf("%s://%s/uploads/webchat/%s", scheme, baseURL, filename)
+
+	c.JSON(http.StatusOK, gin.H{
+		"url":       fileURL,
+		"filename":  header.Filename,
+		"mime_type": header.Header.Get("Content-Type"),
+		"size":      header.Size,
+	})
 }

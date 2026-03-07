@@ -231,19 +231,6 @@ func readRecipientsFile(path string) ([]string, error) {
 	return recipients, scanner.Err()
 }
 
-// sendDirectMessage sends a message directly (simplified implementation)
-// In practice, this would either use a direct send API or find/create conversation
 func sendDirectMessage(c *client.Client, channelID, to string, input map[string]interface{}) (*client.Message, error) {
-	// This is a placeholder implementation
-	// The actual implementation would:
-	// 1. Find or create a conversation for this channel/recipient
-	// 2. Send the message to that conversation
-
-	// For now, we'll return a mock response
-	// In real implementation, you'd call the appropriate API endpoint
-	return &client.Message{
-		ID:        "msg_placeholder",
-		Direction: "outbound",
-		Status:    "sent",
-	}, nil
+	return c.SendDirectMessage(channelID, to, input)
 }

@@ -102,6 +102,7 @@ import (
 	"github.com/msgfy/linktor/internal/infrastructure/config"
 	"github.com/msgfy/linktor/internal/infrastructure/database"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
+	storageLib "github.com/msgfy/linktor/internal/infrastructure/storage"
 	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 
@@ -240,13 +241,13 @@ func main() {
 	flowService := service.NewFlowService(flowRepo)
 
 	// Initialize analytics service
-	analyticsService := service.NewAnalyticsService(analyticsRepo)
+	analyticsService := service.NewAnalyticsService(analyticsRepo, nil)
 
 	// Initialize template service
 	templateService := service.NewTemplateService(templateRepo, channelRepo)
 
 	// Initialize coexistence monitor service
-	coexistenceMonitor := service.NewCoexistenceMonitorService(channelRepo)
+	coexistenceMonitor := service.NewCoexistenceMonitorService(channelRepo, producer)
 
 	// Initialize history import service for WhatsApp Coexistence
 	_ = service.NewHistoryImportService(channelRepo, conversationRepo, messageRepo, contactRepo, historyImportRepo)
@@ -288,6 +289,17 @@ func main() {
 		logger.Warn("Failed to initialize VRE service - visual rendering disabled: " + err.Error())
 	} else {
 		logger.Info("VRE service initialized")
+
+		// Configure storage for VRE CDN upload if upload dir is set
+		if uploadDir := os.Getenv("VRE_UPLOAD_DIR"); uploadDir != "" {
+			baseURL := os.Getenv("VRE_UPLOAD_BASE_URL")
+			if baseURL == "" {
+				baseURL = "/uploads/vre"
+			}
+			vreService.SetStorageClient(storageLib.NewLocalClient(uploadDir, baseURL))
+			logger.Info("VRE storage configured: " + uploadDir)
+		}
+
 		// Cleanup VRE on shutdown
 		defer vreService.Close()
 	}
@@ -443,9 +455,17 @@ func main() {
 	// Create knowledge handler
 	knowledgeHandler := handlers.NewKnowledgeHandler(knowledgeService)
 
+	// Create contact service and handler
+	contactService := service.NewContactService(contactRepo)
+	contactHandler := handlers.NewContactHandler(contactService)
+
 	// Create conversation service and handler
-	conversationService := service.NewConversationService()
+	conversationService := service.NewConversationService(conversationRepo, contactRepo, channelRepo)
 	conversationHandler := handlers.NewConversationHandler(conversationService, escalateConversationUC)
+
+	// Create message service and handler
+	messageService := service.NewMessageService(messageRepo, conversationRepo, channelRepo, contactRepo, producer)
+	messageHandler := handlers.NewMessageHandler(messageService)
 
 	// Create flow handler
 	flowHandler := handlers.NewFlowHandler(flowService)
@@ -492,7 +512,7 @@ func main() {
 	// Create VRE handler (if VRE service is available)
 	var vreHandler *handlers.VREHandler
 	if vreService != nil {
-		vreHandler = handlers.NewVREHandler(vreService)
+		vreHandler = handlers.NewVREHandler(vreService, producer)
 	}
 
 	// Create OAuth handler
@@ -710,18 +730,34 @@ func main() {
 			// Conversations
 			conversations := protected.Group("/conversations")
 			{
-				conversations.GET("", createListConversationsHandler(conversationRepo))
-				conversations.GET("/:id", createGetConversationHandler(conversationRepo))
+				conversations.GET("", conversationHandler.List)
+				conversations.POST("", conversationHandler.Create)
+				conversations.GET("/:id", conversationHandler.Get)
+				conversations.PUT("/:id", conversationHandler.Update)
+				conversations.POST("/:id/assign", conversationHandler.Assign)
+				conversations.POST("/:id/resolve", conversationHandler.Resolve)
+				conversations.POST("/:id/reopen", conversationHandler.Reopen)
+				conversations.GET("/:id/escalation-context", conversationHandler.GetEscalationContext)
+				conversations.POST("/:id/escalate", conversationHandler.Escalate)
 				// Messages within a conversation
-				conversations.GET("/:id/messages", createListMessagesHandler(messageRepo))
-				conversations.POST("/:id/messages", createSendMessageHandler(sendMessageUC))
+				conversations.GET("/:id/messages", messageHandler.List)
+				conversations.POST("/:id/messages", messageHandler.Send)
+				conversations.POST("/:id/messages/:messageId/reactions", messageHandler.SendReaction)
 			}
+
+			// Messages (direct access by ID)
+			protected.GET("/messages/:id", messageHandler.Get)
 
 			// Contacts
 			contacts := protected.Group("/contacts")
 			{
-				contacts.GET("", createListContactsHandler(contactRepo))
-				contacts.GET("/:id", createGetContactHandler(contactRepo))
+				contacts.GET("", contactHandler.List)
+				contacts.POST("", contactHandler.Create)
+				contacts.GET("/:id", contactHandler.Get)
+				contacts.PUT("/:id", contactHandler.Update)
+				contacts.DELETE("/:id", contactHandler.Delete)
+				contacts.POST("/:id/identities", contactHandler.AddIdentity)
+				contacts.DELETE("/:id/identities/:identityId", contactHandler.RemoveIdentity)
 			}
 
 			// Channels
@@ -1017,181 +1053,6 @@ func toMessageStatus(status string) entity.MessageStatus {
 		return entity.MessageStatusFailed
 	default:
 		return entity.MessageStatusPending
-	}
-}
-
-// Simplified handlers (in production, these would be in separate handler files)
-
-func createListMessagesHandler(repo *database.MessageRepository) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		conversationID := c.Param("id")
-		params := &database.ListParams{
-			Page:     1,
-			PageSize: 50,
-			SortBy:   "created_at",
-			SortDir:  "desc",
-		}
-
-		messages, total, err := repo.FindByConversation(c.Request.Context(), conversationID, params)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"data":  messages,
-			"total": total,
-		})
-	}
-}
-
-func createSendMessageHandler(uc *usecase.SendMessageUseCase) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		conversationID := c.Param("id")
-		tenantID := c.GetString(middleware.TenantIDKey)
-		userID := c.GetString(middleware.UserIDKey)
-
-		var input struct {
-			ContentType string            `json:"content_type"`
-			Content     string            `json:"content"`
-			Metadata    map[string]string `json:"metadata"`
-		}
-
-		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-			return
-		}
-
-		result, err := uc.Execute(c.Request.Context(), &usecase.SendMessageInput{
-			TenantID:       tenantID,
-			ConversationID: conversationID,
-			SenderID:       userID,
-			SenderType:     entity.SenderTypeUser,
-			ContentType:    entity.ContentType(input.ContentType),
-			Content:        input.Content,
-			Metadata:       input.Metadata,
-		})
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		// Broadcast new message to WebSocket clients
-		handlers.BroadcastNewMessage(tenantID, conversationID, result.Message)
-
-		c.JSON(http.StatusOK, gin.H{"data": result.Message})
-	}
-}
-
-func createListConversationsHandler(repo *database.ConversationRepository) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tenantID := c.GetString(middleware.TenantIDKey)
-		params := &database.ListParams{
-			Page:     1,
-			PageSize: 20,
-			SortBy:   "updated_at",
-			SortDir:  "desc",
-		}
-
-		conversations, total, err := repo.FindByTenant(c.Request.Context(), tenantID, params)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"data":  conversations,
-			"total": total,
-		})
-	}
-}
-
-func createGetConversationHandler(repo *database.ConversationRepository) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-
-		conversation, err := repo.FindByID(c.Request.Context(), id)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"data": conversation})
-	}
-}
-
-func createListContactsHandler(repo *database.ContactRepository) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tenantID := c.GetString(middleware.TenantIDKey)
-		params := &database.ListParams{
-			Page:     1,
-			PageSize: 20,
-			SortBy:   "created_at",
-			SortDir:  "desc",
-		}
-
-		contacts, total, err := repo.FindByTenant(c.Request.Context(), tenantID, params)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"data":  contacts,
-			"total": total,
-		})
-	}
-}
-
-func createGetContactHandler(repo *database.ContactRepository) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-
-		contact, err := repo.FindByID(c.Request.Context(), id)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "contact not found"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"data": contact})
-	}
-}
-
-func createListChannelsHandler(repo *database.ChannelRepository) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tenantID := c.GetString(middleware.TenantIDKey)
-		params := &database.ListParams{
-			Page:     1,
-			PageSize: 20,
-			SortBy:   "created_at",
-			SortDir:  "desc",
-		}
-
-		channels, total, err := repo.FindByTenant(c.Request.Context(), tenantID, params)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"data":  channels,
-			"total": total,
-		})
-	}
-}
-
-func createGetChannelHandler(repo *database.ChannelRepository) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-
-		channel, err := repo.FindByID(c.Request.Context(), id)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"data": channel})
 	}
 }
 

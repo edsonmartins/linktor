@@ -3,24 +3,28 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/infrastructure/storage"
 	"github.com/msgfy/linktor/internal/infrastructure/vre"
 )
 
 // VREService provides visual response engine functionality
 type VREService struct {
-	renderer   *vre.ChromeRenderer
-	registry   *vre.TemplateRegistry
-	captionGen *vre.CaptionGenerator
-	cache      *redis.Client
-	cacheTTL   time.Duration
+	renderer    *vre.ChromeRenderer
+	registry    *vre.TemplateRegistry
+	captionGen  *vre.CaptionGenerator
+	cache       *redis.Client
+	cacheTTL    time.Duration
 	cachePrefix string
+	storage     storage.Client
 }
 
 // VREServiceConfig holds configuration for VREService
@@ -178,11 +182,64 @@ func (s *VREService) RenderHTML(ctx context.Context, tenantID, html string, opts
 	return s.Render(ctx, req)
 }
 
-// RenderToURL renders and returns a URL (for CDN upload)
+// SetStorageClient sets the storage client for CDN uploads
+func (s *VREService) SetStorageClient(storageClient storage.Client) {
+	s.storage = storageClient
+}
+
+// RenderToURL renders and uploads to storage, returning a public URL
 func (s *VREService) RenderToURL(ctx context.Context, req *entity.RenderRequest) (*entity.RenderResponse, error) {
-	// For now, just render to base64
-	// TODO: Implement CDN upload (S3, MinIO, etc.)
-	return s.Render(ctx, req)
+	// Render the image first
+	response, err := s.Render(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no storage client configured, return base64 as fallback
+	if s.storage == nil {
+		return response, nil
+	}
+
+	// Decode base64 image data (strip data URI prefix)
+	b64Data := response.ImageBase64
+	if idx := len("data:image/png;base64,"); len(b64Data) > idx {
+		// Find the comma after the data URI prefix
+		for i, c := range b64Data {
+			if c == ',' {
+				b64Data = b64Data[i+1:]
+				break
+			}
+		}
+	}
+
+	imageData, err := base64.StdEncoding.DecodeString(b64Data)
+	if err != nil {
+		// Fallback to base64 response
+		return response, nil
+	}
+
+	// Determine content type
+	contentType := "image/png"
+	ext := "png"
+	switch response.Format {
+	case entity.OutputFormatWebP:
+		contentType = "image/webp"
+		ext = "webp"
+	case entity.OutputFormatJPEG:
+		contentType = "image/jpeg"
+		ext = "jpg"
+	}
+
+	// Upload to storage
+	key := fmt.Sprintf("vre/%s/%s.%s", req.TenantID, uuid.New().String(), ext)
+	url, err := s.storage.Upload(ctx, key, imageData, contentType)
+	if err != nil {
+		// Fallback to base64 response on upload failure
+		return response, nil
+	}
+
+	response.ImageURL = url
+	return response, nil
 }
 
 // ListTemplates returns available templates for a tenant

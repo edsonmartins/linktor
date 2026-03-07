@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"golang.org/x/term"
@@ -115,10 +116,20 @@ var authTokensCmd = &cobra.Command{
 			return nil
 		}
 
-		// TODO: Render tokens table
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader([]string{"ID", "Name", "Created At", "Last Used"})
+		table.SetBorder(false)
+		table.SetColumnSeparator("  ")
+
 		for _, t := range tokens {
-			fmt.Printf("  %s  %s  %s\n", t.ID, t.Name, t.CreatedAt)
+			table.Append([]string{
+				t.ID,
+				t.Name,
+				t.CreatedAt.Format("2006-01-02 15:04"),
+				t.LastUsed.Format("2006-01-02 15:04"),
+			})
 		}
+		table.Render()
 
 		return nil
 	},

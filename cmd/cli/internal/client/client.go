@@ -760,3 +760,18 @@ func joinStrings(strs []string, sep string) string {
 	}
 	return result
 }
+
+// SendDirectMessage sends a message directly to a recipient
+func (c *Client) SendDirectMessage(channelID, to string, input map[string]interface{}) (*Message, error) {
+	sendInput := map[string]interface{}{
+		"channel_id":   channelID,
+		"to":           to,
+		"content_type": "text",
+	}
+	for k, v := range input {
+		sendInput[k] = v
+	}
+	var result Message
+	err := c.post("/api/v1/messages/send", sendInput, &result)
+	return &result, err
+}

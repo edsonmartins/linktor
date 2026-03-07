@@ -2,7 +2,13 @@ package sms
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"fmt"
+	"net/url"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -249,12 +255,59 @@ func (a *Adapter) GetWebhookPath() string {
 	return "/api/v1/webhooks/sms"
 }
 
-// ValidateWebhook validates a Twilio webhook request
+// ValidateWebhook validates a Twilio webhook request using X-Twilio-Signature
 func (a *Adapter) ValidateWebhook(headers map[string]string, body []byte) bool {
-	// Twilio provides X-Twilio-Signature header for validation
-	// For now, we trust webhooks from our registered URL
-	// TODO: Implement signature validation using auth token
-	return true
+	a.mu.RLock()
+	config := a.config
+	a.mu.RUnlock()
+
+	if config == nil || config.AuthToken == "" {
+		return false
+	}
+
+	signature := headers["X-Twilio-Signature"]
+	if signature == "" {
+		// Try lowercase
+		signature = headers["x-twilio-signature"]
+	}
+	if signature == "" {
+		return false
+	}
+
+	webhookURL := config.StatusCallbackURL
+	if webhookURL == "" {
+		// Cannot validate without knowing the URL
+		return true
+	}
+
+	// Parse form-encoded body and build validation string
+	// Twilio signs: URL + sorted POST params concatenated as key=value
+	params, err := url.ParseQuery(string(body))
+	if err != nil {
+		return false
+	}
+
+	// Sort parameter names
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Build the data string: URL + sorted key-value pairs
+	var dataBuilder strings.Builder
+	dataBuilder.WriteString(webhookURL)
+	for _, k := range keys {
+		dataBuilder.WriteString(k)
+		dataBuilder.WriteString(params.Get(k))
+	}
+
+	// Compute HMAC-SHA1
+	mac := hmac.New(sha1.New, []byte(config.AuthToken))
+	mac.Write([]byte(dataBuilder.String()))
+	expectedSignature := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+	return hmac.Equal([]byte(signature), []byte(expectedSignature))
 }
 
 // HandleWebhook processes incoming webhook requests

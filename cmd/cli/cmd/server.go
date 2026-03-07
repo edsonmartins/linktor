@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 
@@ -141,29 +142,39 @@ var serverMigrateCmd = &cobra.Command{
 	Use:   "migrate",
 	Short: "Run database migrations",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		dbURL := os.Getenv("DATABASE_URL")
+		if dbURL == "" {
+			dbURL = viper.GetString("database.url")
+		}
+		if dbURL == "" {
+			return fmt.Errorf("DATABASE_URL not set. Set it via environment variable or config file")
+		}
+
+		migrationsDir := viper.GetString("migrations.dir")
+		if migrationsDir == "" {
+			migrationsDir = "migrations"
+		}
+
 		if rollbackSteps > 0 {
 			fmt.Printf("Rolling back %d migration(s)...\n", rollbackSteps)
-			// TODO: Actual rollback logic
+			for i := 0; i < rollbackSteps; i++ {
+				gooseCmd := exec.CommandContext(cmd.Context(), "goose", "-dir", migrationsDir, "postgres", dbURL, "down")
+				gooseCmd.Stdout = os.Stdout
+				gooseCmd.Stderr = os.Stderr
+				if err := gooseCmd.Run(); err != nil {
+					return fmt.Errorf("rollback failed: %w", err)
+				}
+			}
 			success("Rollback complete")
 			return nil
 		}
 
 		fmt.Println("Running migrations...")
-
-		// Placeholder migration output
-		migrations := []struct {
-			Name   string
-			Status string
-		}{
-			{"001_create_users", "done"},
-			{"002_create_channels", "done"},
-			{"003_create_conversations", "done"},
-			{"004_create_messages", "done"},
-			{"005_create_contacts", "done"},
-		}
-
-		for i, m := range migrations {
-			fmt.Printf("[%d/%d] %s...%s\n", i+1, len(migrations), m.Name, m.Status)
+		gooseCmd := exec.CommandContext(cmd.Context(), "goose", "-dir", migrationsDir, "postgres", dbURL, "up")
+		gooseCmd.Stdout = os.Stdout
+		gooseCmd.Stderr = os.Stderr
+		if err := gooseCmd.Run(); err != nil {
+			return fmt.Errorf("migration failed: %w", err)
 		}
 
 		success("All migrations complete")

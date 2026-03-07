@@ -7,6 +7,7 @@ import (
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/logger"
 	"go.uber.org/zap"
 )
@@ -16,15 +17,17 @@ import (
 // to maintain coexistence functionality
 type CoexistenceMonitorService struct {
 	channelRepo repository.ChannelRepository
-	// notificationSvc could be added for sending alerts
+	producer    *nats.Producer
 }
 
 // NewCoexistenceMonitorService creates a new coexistence monitor service
 func NewCoexistenceMonitorService(
 	channelRepo repository.ChannelRepository,
+	producer *nats.Producer,
 ) *CoexistenceMonitorService {
 	return &CoexistenceMonitorService{
 		channelRepo: channelRepo,
+		producer:    producer,
 	}
 }
 
@@ -154,23 +157,52 @@ func (s *CoexistenceMonitorService) handleChannelStatus(ctx context.Context, cha
 
 // sendWarningNotification sends a warning notification when coexistence is about to disconnect
 func (s *CoexistenceMonitorService) sendWarningNotification(ctx context.Context, channel *entity.Channel, daysRemaining int) {
-	// TODO: Implement actual notification sending (email, webhook, etc.)
 	logger.Warn("Coexistence warning notification",
 		zap.String("channel_id", channel.ID),
 		zap.String("channel_name", channel.Name),
 		zap.Int("days_remaining", daysRemaining),
-		zap.String("message", "WhatsApp Business App needs to be opened to maintain coexistence"),
 	)
+
+	if s.producer != nil {
+		event := &nats.Event{
+			Type:     "coexistence.warning",
+			TenantID: channel.TenantID,
+			Payload: map[string]interface{}{
+				"channel_id":     channel.ID,
+				"channel_name":   channel.Name,
+				"days_remaining": daysRemaining,
+				"message":        "WhatsApp Business App needs to be opened to maintain coexistence",
+			},
+			Timestamp: time.Now(),
+		}
+		if err := s.producer.PublishEvent(ctx, event); err != nil {
+			logger.Error("Failed to publish coexistence warning event", zap.Error(err))
+		}
+	}
 }
 
 // sendDisconnectedNotification sends a notification when coexistence has been disconnected
 func (s *CoexistenceMonitorService) sendDisconnectedNotification(ctx context.Context, channel *entity.Channel) {
-	// TODO: Implement actual notification sending (email, webhook, etc.)
 	logger.Error("Coexistence disconnected notification",
 		zap.String("channel_id", channel.ID),
 		zap.String("channel_name", channel.Name),
-		zap.String("message", "WhatsApp Coexistence has been disconnected due to inactivity"),
 	)
+
+	if s.producer != nil {
+		event := &nats.Event{
+			Type:     "coexistence.disconnected",
+			TenantID: channel.TenantID,
+			Payload: map[string]interface{}{
+				"channel_id":   channel.ID,
+				"channel_name": channel.Name,
+				"message":      "WhatsApp Coexistence has been disconnected due to inactivity",
+			},
+			Timestamp: time.Now(),
+		}
+		if err := s.producer.PublishEvent(ctx, event); err != nil {
+			logger.Error("Failed to publish coexistence disconnected event", zap.Error(err))
+		}
+	}
 }
 
 // GetChannelCoexistenceStatus returns the current coexistence status for a channel

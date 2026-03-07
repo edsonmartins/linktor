@@ -447,7 +447,16 @@ func (s *BotServiceImpl) handleToolCalls(ctx context.Context, completion *Comple
 func (s *BotServiceImpl) handleVisualToolCall(ctx context.Context, toolCall *entity.ToolCall, tool *entity.Tool, conversation *entity.Conversation, bot *entity.Bot, tokensUsed int, latencyMs int64) (*BotResponse, error) {
 	// Determine channel type from conversation
 	channel := entity.VREChannelWhatsApp // default
-	// TODO: get actual channel type from conversation.ChannelID
+	if ch, err := s.channelRepo.FindByID(ctx, conversation.ChannelID); err == nil {
+		switch ch.Type {
+		case entity.ChannelTypeTelegram:
+			channel = entity.VREChannelTelegram
+		case entity.ChannelTypeWebChat:
+			channel = entity.VREChannelWeb
+		default:
+			channel = entity.VREChannelWhatsApp
+		}
+	}
 
 	// Build render request
 	renderReq := &entity.RenderRequest{

@@ -152,7 +152,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const connect = useCallback(() => {
     const token = tokenStorage.getAccessToken()
     if (!token) {
-      console.warn('[WebSocket] No auth token available')
+      if (process.env.NODE_ENV === 'development') console.warn('[WebSocket] No auth token available')
       return
     }
 
@@ -167,7 +167,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       wsRef.current = new WebSocket(url)
 
       wsRef.current.onopen = () => {
-        console.log('[WebSocket] Connected')
+        if (process.env.NODE_ENV === 'development') console.log('[WebSocket] Connected')
         setConnectionState('connected')
         reconnectCountRef.current = 0
         onConnect?.()
@@ -198,12 +198,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           // Emit to subscribers
           emit(message.type, message.payload)
         } catch (err) {
-          console.error('[WebSocket] Failed to parse message:', err)
+          if (process.env.NODE_ENV === 'development') console.error('[WebSocket] Failed to parse message:', err)
         }
       }
 
       wsRef.current.onclose = () => {
-        console.log('[WebSocket] Disconnected')
+        if (process.env.NODE_ENV === 'development') console.log('[WebSocket] Disconnected')
         setConnectionState('disconnected')
         onDisconnect?.()
 
@@ -211,7 +211,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         if (reconnectCountRef.current < reconnectAttempts) {
           setConnectionState('reconnecting')
           reconnectCountRef.current++
-          console.log(`[WebSocket] Reconnecting (${reconnectCountRef.current}/${reconnectAttempts})...`)
+          if (process.env.NODE_ENV === 'development') console.log(`[WebSocket] Reconnecting (${reconnectCountRef.current}/${reconnectAttempts})...`)
 
           reconnectTimerRef.current = setTimeout(() => {
             connect()
@@ -223,12 +223,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         // Only log error if we have a token (user is authenticated)
         const token = tokenStorage.getAccessToken()
         if (token) {
-          console.warn('[WebSocket] Connection error')
+          if (process.env.NODE_ENV === 'development') console.warn('[WebSocket] Connection error')
           onError?.(error)
         }
       }
     } catch (err) {
-      console.error('[WebSocket] Failed to connect:', err)
+      if (process.env.NODE_ENV === 'development') console.error('[WebSocket] Failed to connect:', err)
       setConnectionState('disconnected')
     }
   }, [reconnectAttempts, reconnectInterval, onConnect, onDisconnect, onError, emit])
