@@ -5,12 +5,89 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
+
+// mockPaymentStore is a mock implementation of PaymentStore for testing
+type mockPaymentStore struct {
+	payments map[string]*Payment
+}
+
+func newMockPaymentStore() *mockPaymentStore {
+	return &mockPaymentStore{payments: make(map[string]*Payment)}
+}
+
+func (m *mockPaymentStore) Create(ctx context.Context, payment *Payment) error {
+	m.payments[payment.ID] = payment
+	return nil
+}
+
+func (m *mockPaymentStore) GetByID(ctx context.Context, id string) (*Payment, error) {
+	p, ok := m.payments[id]
+	if !ok {
+		return nil, fmt.Errorf("payment not found: %s", id)
+	}
+	return p, nil
+}
+
+func (m *mockPaymentStore) GetByReference(ctx context.Context, refID string) (*Payment, error) {
+	for _, p := range m.payments {
+		if p.ReferenceID == refID {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("payment not found for reference: %s", refID)
+}
+
+func (m *mockPaymentStore) Update(ctx context.Context, payment *Payment) error {
+	m.payments[payment.ID] = payment
+	return nil
+}
+
+func (m *mockPaymentStore) GetByCustomer(ctx context.Context, phone string) ([]*Payment, error) {
+	var result []*Payment
+	for _, p := range m.payments {
+		if p.CustomerPhone == phone {
+			result = append(result, p)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockPaymentStore) GetStats(ctx context.Context, orgID string) (*PaymentStats, error) {
+	stats := &PaymentStats{
+		ByStatus: make(map[PaymentStatus]int),
+		ByMethod: make(map[PaymentMethod]int),
+	}
+	for _, p := range m.payments {
+		stats.TotalPayments++
+		stats.ByStatus[p.Status]++
+		if p.Method != "" {
+			stats.ByMethod[p.Method]++
+		}
+		switch p.Status {
+		case PaymentStatusSuccess:
+			stats.SuccessfulPayments++
+			stats.TotalAmount += p.Amount
+			if stats.Currency == "" {
+				stats.Currency = p.Currency
+			}
+		case PaymentStatusFailed:
+			stats.FailedPayments++
+		case PaymentStatusRefunded:
+			stats.RefundedAmount += p.Amount
+		}
+	}
+	if stats.TotalPayments > 0 {
+		stats.SuccessRate = float64(stats.SuccessfulPayments) / float64(stats.TotalPayments) * 100
+	}
+	return stats, nil
+}
 
 // generateTestSignature generates HMAC-SHA256 signature for testing
 func generateTestSignature(secret string, payload []byte) string {
@@ -44,6 +121,7 @@ func (suite *ClientTestSuite) SetupTest() {
 			WebhookSecret: "webhook-secret",
 			SandboxMode:   true,
 		},
+		Store: newMockPaymentStore(),
 	}
 	suite.client = NewClient(config)
 }
@@ -53,13 +131,14 @@ func (suite *ClientTestSuite) TestNewClient_WithValidConfig() {
 	config := &ClientConfig{
 		AccessToken:   "test-token",
 		PhoneNumberID: "test-phone",
+		Store:         newMockPaymentStore(),
 	}
 
 	client := NewClient(config)
 
 	assert.NotNil(suite.T(), client)
 	assert.NotNil(suite.T(), client.httpClient)
-	assert.NotNil(suite.T(), client.payments)
+	assert.NotNil(suite.T(), client.store)
 }
 
 func (suite *ClientTestSuite) TestNewClient_DefaultsAPIVersion() {
@@ -103,16 +182,16 @@ func (suite *ClientTestSuite) TestNewClient_WithoutGateway() {
 
 // Payment storage tests
 func (suite *ClientTestSuite) TestGetPayment_NotFound() {
-	payment, found := suite.client.GetPayment("non-existent")
+	payment, err := suite.client.GetPayment(context.Background(), "non-existent")
 
-	assert.False(suite.T(), found)
+	assert.Error(suite.T(), err)
 	assert.Nil(suite.T(), payment)
 }
 
 func (suite *ClientTestSuite) TestGetPaymentByReference_NotFound() {
-	payment, found := suite.client.GetPaymentByReference("non-existent")
+	payment, err := suite.client.GetPaymentByReference(context.Background(), "non-existent")
 
-	assert.False(suite.T(), found)
+	assert.Error(suite.T(), err)
 	assert.Nil(suite.T(), payment)
 }
 
@@ -123,16 +202,14 @@ func (suite *ClientTestSuite) TestUpdatePaymentStatus() {
 		Status:    PaymentStatusPending,
 		UpdatedAt: time.Now(),
 	}
-	suite.client.mu.Lock()
-	suite.client.payments[payment.ID] = payment
-	suite.client.mu.Unlock()
+	suite.client.store.Create(context.Background(), payment)
 
-	err := suite.client.UpdatePaymentStatus("test-payment", PaymentStatusSuccess)
+	err := suite.client.UpdatePaymentStatus(context.Background(), "test-payment", PaymentStatusSuccess)
 
 	assert.NoError(suite.T(), err)
 
-	updated, found := suite.client.GetPayment("test-payment")
-	assert.True(suite.T(), found)
+	updated, err := suite.client.GetPayment(context.Background(), "test-payment")
+	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), PaymentStatusSuccess, updated.Status)
 	assert.NotNil(suite.T(), updated.PaidAt)
 }
@@ -143,22 +220,20 @@ func (suite *ClientTestSuite) TestUpdatePaymentStatus_Failed() {
 		Status:    PaymentStatusPending,
 		UpdatedAt: time.Now(),
 	}
-	suite.client.mu.Lock()
-	suite.client.payments[payment.ID] = payment
-	suite.client.mu.Unlock()
+	suite.client.store.Create(context.Background(), payment)
 
-	err := suite.client.UpdatePaymentStatus("test-payment-failed", PaymentStatusFailed)
+	err := suite.client.UpdatePaymentStatus(context.Background(), "test-payment-failed", PaymentStatusFailed)
 
 	assert.NoError(suite.T(), err)
 
-	updated, found := suite.client.GetPayment("test-payment-failed")
-	assert.True(suite.T(), found)
+	updated, err := suite.client.GetPayment(context.Background(), "test-payment-failed")
+	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), PaymentStatusFailed, updated.Status)
 	assert.NotNil(suite.T(), updated.FailedAt)
 }
 
 func (suite *ClientTestSuite) TestUpdatePaymentStatus_NotFound() {
-	err := suite.client.UpdatePaymentStatus("non-existent", PaymentStatusSuccess)
+	err := suite.client.UpdatePaymentStatus(context.Background(), "non-existent", PaymentStatusSuccess)
 
 	assert.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "payment not found")
@@ -204,9 +279,7 @@ func (suite *ClientTestSuite) TestProcessWebhook_ExistingPayment() {
 		Status:    PaymentStatusPending,
 		UpdatedAt: time.Now(),
 	}
-	suite.client.mu.Lock()
-	suite.client.payments[payment.ID] = payment
-	suite.client.mu.Unlock()
+	suite.client.store.Create(context.Background(), payment)
 
 	payload := &PaymentWebhookPayload{
 		PaymentID: "test-payment-webhook",
@@ -214,12 +287,12 @@ func (suite *ClientTestSuite) TestProcessWebhook_ExistingPayment() {
 		Method:    PaymentMethodPix,
 	}
 
-	err := suite.client.ProcessWebhook(payload)
+	err := suite.client.ProcessWebhook(context.Background(), payload)
 
 	assert.NoError(suite.T(), err)
 
-	updated, found := suite.client.GetPayment("test-payment-webhook")
-	assert.True(suite.T(), found)
+	updated, err := suite.client.GetPayment(context.Background(), "test-payment-webhook")
+	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), PaymentStatusSuccess, updated.Status)
 	assert.Equal(suite.T(), PaymentMethodPix, updated.Method)
 }
@@ -230,7 +303,7 @@ func (suite *ClientTestSuite) TestProcessWebhook_NotFound() {
 		Status:    PaymentStatusSuccess,
 	}
 
-	err := suite.client.ProcessWebhook(payload)
+	err := suite.client.ProcessWebhook(context.Background(), payload)
 
 	assert.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "payment not found")
@@ -238,8 +311,9 @@ func (suite *ClientTestSuite) TestProcessWebhook_NotFound() {
 
 // Statistics tests
 func (suite *ClientTestSuite) TestGetPaymentStats_Empty() {
-	stats := suite.client.GetPaymentStats()
+	stats, err := suite.client.GetPaymentStats(context.Background())
 
+	assert.NoError(suite.T(), err)
 	assert.NotNil(suite.T(), stats)
 	assert.Equal(suite.T(), 0, stats.TotalPayments)
 	assert.Equal(suite.T(), 0, stats.SuccessfulPayments)
@@ -247,31 +321,30 @@ func (suite *ClientTestSuite) TestGetPaymentStats_Empty() {
 
 func (suite *ClientTestSuite) TestGetPaymentStats_WithPayments() {
 	// Add test payments
-	suite.client.mu.Lock()
-	suite.client.payments["p1"] = &Payment{
+	suite.client.store.Create(context.Background(), &Payment{
 		ID:       "p1",
 		Status:   PaymentStatusSuccess,
 		Amount:   10000,
 		Currency: "BRL",
 		Method:   PaymentMethodPix,
-	}
-	suite.client.payments["p2"] = &Payment{
+	})
+	suite.client.store.Create(context.Background(), &Payment{
 		ID:       "p2",
 		Status:   PaymentStatusFailed,
 		Amount:   5000,
 		Currency: "BRL",
-	}
-	suite.client.payments["p3"] = &Payment{
+	})
+	suite.client.store.Create(context.Background(), &Payment{
 		ID:       "p3",
 		Status:   PaymentStatusSuccess,
 		Amount:   15000,
 		Currency: "BRL",
 		Method:   PaymentMethodPix,
-	}
-	suite.client.mu.Unlock()
+	})
 
-	stats := suite.client.GetPaymentStats()
+	stats, err := suite.client.GetPaymentStats(context.Background())
 
+	assert.NoError(suite.T(), err)
 	assert.Equal(suite.T(), 3, stats.TotalPayments)
 	assert.Equal(suite.T(), 2, stats.SuccessfulPayments)
 	assert.Equal(suite.T(), 1, stats.FailedPayments)
@@ -281,23 +354,22 @@ func (suite *ClientTestSuite) TestGetPaymentStats_WithPayments() {
 
 // Customer payments tests
 func (suite *ClientTestSuite) TestGetPaymentsByCustomer() {
-	suite.client.mu.Lock()
-	suite.client.payments["p1"] = &Payment{
+	suite.client.store.Create(context.Background(), &Payment{
 		ID:            "p1",
 		CustomerPhone: "5511999999999",
-	}
-	suite.client.payments["p2"] = &Payment{
+	})
+	suite.client.store.Create(context.Background(), &Payment{
 		ID:            "p2",
 		CustomerPhone: "5511888888888",
-	}
-	suite.client.payments["p3"] = &Payment{
+	})
+	suite.client.store.Create(context.Background(), &Payment{
 		ID:            "p3",
 		CustomerPhone: "5511999999999",
-	}
-	suite.client.mu.Unlock()
+	})
 
-	payments := suite.client.GetPaymentsByCustomer("5511999999999")
+	payments, err := suite.client.GetPaymentsByCustomer(context.Background(), "5511999999999")
 
+	assert.NoError(suite.T(), err)
 	assert.Len(suite.T(), payments, 2)
 }
 
@@ -306,6 +378,7 @@ func (suite *ClientTestSuite) TestCreatePayment_NoGateway() {
 	config := &ClientConfig{
 		AccessToken:   "test-token",
 		PhoneNumberID: "test-phone",
+		Store:         newMockPaymentStore(),
 	}
 	client := NewClient(config)
 
@@ -337,13 +410,11 @@ func (suite *ClientTestSuite) TestProcessRefund_PaymentNotFound() {
 
 func (suite *ClientTestSuite) TestProcessRefund_InvalidStatus() {
 	// Add payment with pending status
-	suite.client.mu.Lock()
-	suite.client.payments["pending-payment"] = &Payment{
+	suite.client.store.Create(context.Background(), &Payment{
 		ID:     "pending-payment",
 		Status: PaymentStatusPending,
 		Amount: 10000,
-	}
-	suite.client.mu.Unlock()
+	})
 
 	req := &RefundRequest{
 		PaymentID: "pending-payment",

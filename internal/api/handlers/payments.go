@@ -110,8 +110,8 @@ func (h *PaymentsHandler) GetPayment(c *gin.Context) {
 		return
 	}
 
-	payment, found := client.GetPayment(paymentID)
-	if !found {
+	payment, err := client.GetPayment(c.Request.Context(), paymentID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Payment not found"})
 		return
 	}
@@ -141,8 +141,8 @@ func (h *PaymentsHandler) GetPaymentByReference(c *gin.Context) {
 		return
 	}
 
-	payment, found := client.GetPaymentByReference(referenceID)
-	if !found {
+	payment, err := client.GetPaymentByReference(c.Request.Context(), referenceID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Payment not found"})
 		return
 	}
@@ -220,7 +220,11 @@ func (h *PaymentsHandler) GetPaymentStats(c *gin.Context) {
 		return
 	}
 
-	stats := client.GetPaymentStats()
+	stats, err := client.GetPaymentStats(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, stats)
 }
 
@@ -246,7 +250,11 @@ func (h *PaymentsHandler) GetCustomerPayments(c *gin.Context) {
 		return
 	}
 
-	paymentsList := client.GetPaymentsByCustomer(phone)
+	paymentsList, err := client.GetPaymentsByCustomer(c.Request.Context(), phone)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"payments": paymentsList})
 }
 
@@ -303,7 +311,7 @@ func (h *PaymentsHandler) HandleWebhook(c *gin.Context) {
 	}
 
 	// Process webhook
-	if err := client.ProcessWebhook(&payload); err != nil {
+	if err := client.ProcessWebhook(c.Request.Context(), &payload); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

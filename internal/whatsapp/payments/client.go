@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 )
 
@@ -22,19 +21,23 @@ type Client struct {
 	apiVersion    string
 	baseURL       string
 
-	gateway       Gateway
-	gatewayConfig *GatewayConfig
+	gateway        Gateway
+	gatewayConfig  *GatewayConfig
 
-	mu       sync.RWMutex
-	payments map[string]*Payment // In-memory storage, should be replaced with DB
+	store          PaymentStore
+	organizationID string
+	channelID      string
 }
 
 // ClientConfig represents configuration for the payments client
 type ClientConfig struct {
-	AccessToken   string
-	PhoneNumberID string
-	APIVersion    string
-	GatewayConfig *GatewayConfig
+	AccessToken    string
+	PhoneNumberID  string
+	APIVersion     string
+	GatewayConfig  *GatewayConfig
+	OrganizationID string
+	ChannelID      string
+	Store          PaymentStore
 }
 
 // Gateway defines the interface for payment gateways
@@ -56,12 +59,14 @@ func NewClient(config *ClientConfig) *Client {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		accessToken:   config.AccessToken,
-		phoneNumberID: config.PhoneNumberID,
-		apiVersion:    apiVersion,
-		baseURL:       "https://graph.facebook.com",
-		gatewayConfig: config.GatewayConfig,
-		payments:      make(map[string]*Payment),
+		accessToken:    config.AccessToken,
+		phoneNumberID:  config.PhoneNumberID,
+		apiVersion:     apiVersion,
+		baseURL:        "https://graph.facebook.com",
+		gatewayConfig:  config.GatewayConfig,
+		store:          config.Store,
+		organizationID: config.OrganizationID,
+		channelID:      config.ChannelID,
 	}
 
 	// Initialize gateway based on config
@@ -176,10 +181,14 @@ func (c *Client) CreatePayment(ctx context.Context, req *PaymentRequest) (*Payme
 	// Payment was created but message failed - non-fatal error
 	// The payment.MessageID will remain empty if message sending failed
 
-	// Store payment after setting all fields to avoid race condition
-	c.mu.Lock()
-	c.payments[payment.ID] = payment
-	c.mu.Unlock()
+	// Store payment after setting all fields
+	payment.OrganizationID = c.organizationID
+	payment.ChannelID = c.channelID
+	if c.store != nil {
+		if err := c.store.Create(ctx, payment); err != nil {
+			return nil, fmt.Errorf("failed to store payment: %w", err)
+		}
+	}
 
 	return gatewayResp, nil
 }
@@ -287,34 +296,29 @@ func (c *Client) buildPaymentSettings(req *PaymentRequest) map[string]interface{
 }
 
 // GetPayment retrieves a payment by ID
-func (c *Client) GetPayment(paymentID string) (*Payment, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	payment, ok := c.payments[paymentID]
-	return payment, ok
+func (c *Client) GetPayment(ctx context.Context, paymentID string) (*Payment, error) {
+	if c.store == nil {
+		return nil, fmt.Errorf("payment store not configured")
+	}
+	return c.store.GetByID(ctx, paymentID)
 }
 
 // GetPaymentByReference retrieves a payment by reference ID
-func (c *Client) GetPaymentByReference(referenceID string) (*Payment, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	for _, payment := range c.payments {
-		if payment.ReferenceID == referenceID {
-			return payment, true
-		}
+func (c *Client) GetPaymentByReference(ctx context.Context, referenceID string) (*Payment, error) {
+	if c.store == nil {
+		return nil, fmt.Errorf("payment store not configured")
 	}
-	return nil, false
+	return c.store.GetByReference(ctx, referenceID)
 }
 
 // UpdatePaymentStatus updates the status of a payment
-func (c *Client) UpdatePaymentStatus(paymentID string, status PaymentStatus) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Client) UpdatePaymentStatus(ctx context.Context, paymentID string, status PaymentStatus) error {
+	if c.store == nil {
+		return fmt.Errorf("payment store not configured")
+	}
 
-	payment, ok := c.payments[paymentID]
-	if !ok {
+	payment, err := c.store.GetByID(ctx, paymentID)
+	if err != nil {
 		return fmt.Errorf("payment not found: %s", paymentID)
 	}
 
@@ -331,7 +335,7 @@ func (c *Client) UpdatePaymentStatus(paymentID string, status PaymentStatus) err
 		payment.RefundedAt = &now
 	}
 
-	return nil
+	return c.store.Update(ctx, payment)
 }
 
 // =============================================================================
@@ -345,8 +349,8 @@ func (c *Client) ProcessRefund(ctx context.Context, req *RefundRequest) (*Refund
 	}
 
 	// Get payment
-	payment, ok := c.GetPayment(req.PaymentID)
-	if !ok {
+	payment, err := c.GetPayment(ctx, req.PaymentID)
+	if err != nil {
 		return nil, fmt.Errorf("payment not found: %s", req.PaymentID)
 	}
 
@@ -368,7 +372,7 @@ func (c *Client) ProcessRefund(ctx context.Context, req *RefundRequest) (*Refund
 
 	// Update payment status
 	if req.Amount == payment.Amount {
-		c.UpdatePaymentStatus(req.PaymentID, PaymentStatusRefunded)
+		c.UpdatePaymentStatus(ctx, req.PaymentID, PaymentStatusRefunded)
 	}
 
 	// Send refund notification
@@ -402,20 +406,20 @@ func (c *Client) sendRefundNotification(ctx context.Context, payment *Payment, r
 // =============================================================================
 
 // ProcessWebhook processes a payment webhook
-func (c *Client) ProcessWebhook(payload *PaymentWebhookPayload) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Client) ProcessWebhook(ctx context.Context, payload *PaymentWebhookPayload) error {
+	if c.store == nil {
+		return fmt.Errorf("payment store not configured")
+	}
 
 	// Find payment by ID or reference
 	var payment *Payment
-	if p, ok := c.payments[payload.PaymentID]; ok {
+	p, err := c.store.GetByID(ctx, payload.PaymentID)
+	if err == nil {
 		payment = p
-	} else {
-		for _, p := range c.payments {
-			if p.ReferenceID == payload.ReferenceID {
-				payment = p
-				break
-			}
+	} else if payload.ReferenceID != "" {
+		p, err = c.store.GetByReference(ctx, payload.ReferenceID)
+		if err == nil {
+			payment = p
 		}
 	}
 
@@ -442,7 +446,7 @@ func (c *Client) ProcessWebhook(payload *PaymentWebhookPayload) error {
 		payment.RefundedAt = &now
 	}
 
-	return nil
+	return c.store.Update(ctx, payment)
 }
 
 // ValidateWebhookSignature validates a webhook signature
@@ -463,56 +467,19 @@ func (c *Client) ValidateWebhookSignature(payload []byte, signature string) bool
 // =============================================================================
 
 // GetPaymentStats returns payment statistics
-func (c *Client) GetPaymentStats() *PaymentStats {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	stats := &PaymentStats{
-		ByStatus: make(map[PaymentStatus]int),
-		ByMethod: make(map[PaymentMethod]int),
+func (c *Client) GetPaymentStats(ctx context.Context) (*PaymentStats, error) {
+	if c.store == nil {
+		return nil, fmt.Errorf("payment store not configured")
 	}
-
-	for _, payment := range c.payments {
-		stats.TotalPayments++
-		stats.ByStatus[payment.Status]++
-
-		if payment.Method != "" {
-			stats.ByMethod[payment.Method]++
-		}
-
-		switch payment.Status {
-		case PaymentStatusSuccess:
-			stats.SuccessfulPayments++
-			stats.TotalAmount += payment.Amount
-			if stats.Currency == "" {
-				stats.Currency = payment.Currency
-			}
-		case PaymentStatusFailed:
-			stats.FailedPayments++
-		case PaymentStatusRefunded:
-			stats.RefundedAmount += payment.Amount
-		}
-	}
-
-	if stats.TotalPayments > 0 {
-		stats.SuccessRate = float64(stats.SuccessfulPayments) / float64(stats.TotalPayments) * 100
-	}
-
-	return stats
+	return c.store.GetStats(ctx, c.organizationID)
 }
 
 // GetPaymentsByCustomer returns payments for a customer
-func (c *Client) GetPaymentsByCustomer(customerPhone string) []*Payment {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	var result []*Payment
-	for _, payment := range c.payments {
-		if payment.CustomerPhone == customerPhone {
-			result = append(result, payment)
-		}
+func (c *Client) GetPaymentsByCustomer(ctx context.Context, customerPhone string) ([]*Payment, error) {
+	if c.store == nil {
+		return nil, fmt.Errorf("payment store not configured")
 	}
-	return result
+	return c.store.GetByCustomer(ctx, customerPhone)
 }
 
 // =============================================================================

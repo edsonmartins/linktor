@@ -181,6 +181,7 @@ func main() {
 	analyticsRepo := database.NewAnalyticsRepository(db)
 	templateRepo := database.NewTemplateRepository(db)
 	historyImportRepo := database.NewHistoryImportRepository(db)
+	paymentRepo := database.NewPaymentRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
@@ -501,13 +502,14 @@ func main() {
 	// when channels are connected. The handlers use a channel-based client registry.
 	// Example of registering clients (done when channel connects):
 	// whatsappAnalyticsHandler.RegisterClient(channelID, analytics.NewClient(&analytics.ClientConfig{...}))
-	// paymentsHandler.RegisterClient(channelID, payments.NewClient(&payments.ClientConfig{...}))
+	// paymentsHandler.RegisterClient(channelID, payments.NewClient(&payments.ClientConfig{Store: paymentRepo, ...}))
 	// callingHandler.RegisterClient(channelID, calling.NewClient(&calling.ClientConfig{...}))
 	// ctwaHandler.RegisterClient(channelID, ctwa.NewClient(&ctwa.ClientConfig{...}))
 	_ = analytics.ClientConfig{} // Ensure import is used
 	_ = payments.ClientConfig{}
 	_ = calling.ClientConfig{}
 	_ = ctwa.ClientConfig{}
+	_ = paymentRepo // Available for per-channel payment client registration
 
 	// Create VRE handler (if VRE service is available)
 	var vreHandler *handlers.VREHandler
