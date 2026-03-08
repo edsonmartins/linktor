@@ -22,7 +22,7 @@ type Handler struct {
 	channelRepo     repository.ChannelRepository
 	conversationRepo repository.ConversationRepository
 	contactRepo     repository.ContactRepository
-	producer        *nats.Producer
+	producer        nats.Publisher
 	upgrader        websocket.Upgrader
 }
 
@@ -32,7 +32,7 @@ func NewHandler(
 	channelRepo repository.ChannelRepository,
 	conversationRepo repository.ConversationRepository,
 	contactRepo repository.ContactRepository,
-	producer *nats.Producer,
+	producer nats.Publisher,
 ) *Handler {
 	return &Handler{
 		adapter:          adapter,

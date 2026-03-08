@@ -56,11 +56,11 @@ type ConnectResult struct {
 type ChannelService struct {
 	repo     repository.ChannelRepository
 	registry *plugin.Registry
-	producer *nats.Producer
+	producer nats.Publisher
 }
 
 // NewChannelService creates a new channel service
-func NewChannelService(repo repository.ChannelRepository, registry *plugin.Registry, producer *nats.Producer) *ChannelService {
+func NewChannelService(repo repository.ChannelRepository, registry *plugin.Registry, producer nats.Publisher) *ChannelService {
 	return &ChannelService{
 		repo:     repo,
 		registry: registry,

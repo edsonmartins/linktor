@@ -45,7 +45,7 @@ type EscalateConversationUseCase struct {
 	userRepo         repository.UserRepository
 	contextRepo      repository.ConversationContextRepository
 	aiFactory        *service.AIProviderFactory
-	producer         *nats.Producer
+	producer         nats.Publisher
 }
 
 // NewEscalateConversationUseCase creates a new escalate conversation use case
@@ -58,7 +58,7 @@ func NewEscalateConversationUseCase(
 	userRepo repository.UserRepository,
 	contextRepo repository.ConversationContextRepository,
 	aiFactory *service.AIProviderFactory,
-	producer *nats.Producer,
+	producer nats.Publisher,
 ) *EscalateConversationUseCase {
 	return &EscalateConversationUseCase{
 		conversationRepo: conversationRepo,

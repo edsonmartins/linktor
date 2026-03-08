@@ -16,11 +16,11 @@ import (
 // VREHandler handles VRE endpoints
 type VREHandler struct {
 	vreService *service.VREService
-	producer   *nats.Producer
+	producer   nats.Publisher
 }
 
 // NewVREHandler creates a new VRE handler
-func NewVREHandler(vreService *service.VREService, producer *nats.Producer) *VREHandler {
+func NewVREHandler(vreService *service.VREService, producer nats.Publisher) *VREHandler {
 	return &VREHandler{
 		vreService: vreService,
 		producer:   producer,

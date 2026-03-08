@@ -603,7 +603,7 @@ func readLines(path string) ([]string, error) {
 	defer file.Close()
 
 	var lines []string
-	scanner := bufio.Scanner(file)
+	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" && !strings.HasPrefix(line, "#") {

@@ -82,17 +82,21 @@ function useMcpClient(serverUrl, apiKey) {
       const toolsRes = await call("tools/list");
       setTools(toolsRes.result?.tools || []);
 
-      // List resources (may not be supported)
+      // List resources (may not be supported by all servers)
       try {
         const resRes = await call("resources/list");
         setResources(resRes.result?.resources || []);
-      } catch {}
+      } catch (e) {
+        // Resources not supported by this server
+      }
 
-      // List prompts (may not be supported)
+      // List prompts (may not be supported by all servers)
       try {
         const promptsRes = await call("prompts/list");
         setPrompts(promptsRes.result?.prompts || []);
-      } catch {}
+      } catch (e) {
+        // Prompts not supported by this server
+      }
 
       setConnected(true);
     } catch (err) {

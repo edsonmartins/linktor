@@ -24,6 +24,7 @@
   <a href="#mcp-server">MCP</a> •
   <a href="#documentação">Docs</a> •
   <a href="#plugins">Plugins</a> •
+  <a href="#testes">Testes</a> •
   <a href="#contribuição">Contribuição</a>
 </p>
 
@@ -97,7 +98,7 @@ O Linktor suporta **WhatsApp Coexistence**, uma feature crítica que permite uso
 
 #### Vantagens
 
-- **Onboarding em 5 minutos**: Escaneia QR code e está conectado, sem migração de número
+- **Onboarding em 5 minutos**: Escaneie o QR code e está conectado, sem migração de número
 - **Mantém histórico**: Importa até 6 meses de conversas
 - **Híbrido App + API**: Vendedor responde VIPs pelo celular, bot automatiza follow-ups
 - **Sincronização bidirecional**: Mensagens enviadas pelo App aparecem no Linktor (via Message Echoes)
@@ -164,7 +165,7 @@ Após ativar Coexistence, algumas features do App são desabilitadas:
 - WebSocket para atualizações instantâneas
 
 #### 2. Bots com Inteligência Artificial
-- **Múltiplos Provedores**: OpenAI (GPT-4, GPT-3.5), Anthropic (Claude 3), Ollama (modelos locais)
+- **Múltiplos Provedores**: OpenAI (GPT-4o, GPT-4), Anthropic (Claude 4 Opus/Sonnet), Ollama (modelos locais)
 - **Configuração por Bot**: Temperatura, max tokens, system prompt personalizado
 - **Regras de Escalação**: Por confiança baixa, sentimento negativo, keywords ou intenção
 - **Horário de Funcionamento**: Bots ativos apenas em horários configurados
@@ -406,9 +407,16 @@ linktor/
 │   │   │   ├── anthropic/        # Anthropic Claude
 │   │   │   └── ollama/           # Modelos locais
 │   │   ├── whatsapp_official/    # Meta Cloud API
+│   │   ├── whatsapp/             # WhatsApp Unofficial (Baileys)
 │   │   ├── telegram/             # Telegram Bot API
 │   │   ├── webchat/              # WebSocket chat
-│   │   └── sms/                  # SMS providers
+│   │   ├── email/                # Email (SMTP, SendGrid, SES, Mailgun, Postmark)
+│   │   ├── sms/                  # SMS providers (Twilio)
+│   │   ├── instagram/            # Instagram DM (Meta Graph API)
+│   │   ├── facebook/             # Facebook Messenger (Meta Graph API)
+│   │   ├── meta/                 # Meta shared client
+│   │   ├── rcs/                  # RCS Business Messaging
+│   │   └── voice/                # Voice (Twilio, Vonage, Amazon Connect, Asterisk, FreeSWITCH)
 │   │
 │   └── infrastructure/           # Infraestrutura
 │       ├── database/             # PostgreSQL + pgvector
@@ -509,7 +517,7 @@ linktor/
 
 | Tecnologia | Versão | Uso |
 |------------|--------|-----|
-| Go | 1.22+ | Linguagem principal |
+| Go | 1.24+ | Linguagem principal |
 | Gin | 1.9+ | Framework HTTP |
 | PostgreSQL | 16 | Banco de dados principal |
 | pgvector | 0.5+ | Busca vetorial para RAG |
@@ -542,8 +550,8 @@ linktor/
 
 | Provider | Modelos | Uso |
 |----------|---------|-----|
-| OpenAI | GPT-4, GPT-3.5-turbo | Geração de respostas |
-| Anthropic | Claude 3 Opus/Sonnet | Geração de respostas |
+| OpenAI | GPT-4o, GPT-4 | Geração de respostas |
+| Anthropic | Claude 4 Opus/Sonnet | Geração de respostas |
 | Ollama | Llama, Mistral, etc | Modelos locais |
 | OpenAI | text-embedding-ada-002 | Embeddings para RAG |
 
@@ -565,7 +573,7 @@ linktor/
 
 ### Pré-requisitos
 
-- Go 1.22+
+- Go 1.24+
 - Node.js 20+
 - Docker & Docker Compose
 - Make (opcional, mas recomendado)
@@ -592,10 +600,10 @@ Isso inicia:
 ### 3. Configure as variáveis de ambiente
 
 ```bash
-cp config.yaml.example config.yaml
+cp .env.example .env
 ```
 
-Edite `config.yaml`:
+Edite `.env` com suas credenciais, ou configure via `config.yaml`:
 
 ```yaml
 server:
@@ -1540,6 +1548,57 @@ CREATE TABLE flows (
 - [ ] Advanced analytics
 - [ ] White-label
 - [ ] SLA monitoring
+
+---
+
+## Testes
+
+O projeto possui cobertura abrangente de testes automatizados:
+
+| Tipo | Quantidade | Descrição |
+|------|------------|-----------|
+| **Go unit/integration** | 2,610 | Testes unitários e de integração |
+| **Frontend E2E** | 44 | Testes end-to-end com Playwright |
+| **Total** | **2,654** | Across 128 test files, 26 packages |
+
+### Executando os testes
+
+```bash
+# Todos os testes Go
+go test ./... -count=1
+
+# Testes com verbose
+go test ./... -v
+
+# Testes por pacote
+go test ./internal/adapters/telegram/... -v
+go test ./internal/api/handlers/... -v
+go test ./internal/application/service/... -v
+
+# Testes do CLI
+cd cmd/cli && go test ./... -v
+
+# Testes E2E (frontend)
+cd web/admin && npx playwright test
+
+# Testes com coverage
+go test ./... -coverprofile=coverage.out
+go tool cover -html=coverage.out
+```
+
+### Cobertura por camada
+
+| Camada | Pacotes testados | Arquivos de teste |
+|--------|-----------------|-------------------|
+| Adapters (10 canais + 3 AI) | whatsapp, whatsapp_official, telegram, webchat, email, sms, instagram, facebook, meta, rcs, voice, openai, anthropic, ollama | 40 |
+| Handlers (26) | auth, channel, contact, conversation, message, webhook, bot, flow, template, analytics, knowledge, user, tenant, etc. | 20 |
+| Services (23) | auth, bot, channel, contact, conversation, message, ai_provider, analytics, knowledge, template, tenant, user, etc. | 16 |
+| Use Cases (5) | receive_message, send_message, escalate_conversation, analyze_message, generate_ai_response | 5 |
+| Domain entities | contact, conversation, message | 3 |
+| Infrastructure | database, nats, storage, vre | 5 |
+| CLI | client, commands, helpers | 5 |
+| SDKs | Go, TypeScript | 2 |
+| Frontend E2E | auth, dashboard, conversations, channels, contacts, bots, flows, users, knowledge-base, settings, analytics, observability | 12 |
 
 ---
 

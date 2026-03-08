@@ -17,13 +17,13 @@ import (
 // to maintain coexistence functionality
 type CoexistenceMonitorService struct {
 	channelRepo repository.ChannelRepository
-	producer    *nats.Producer
+	producer    nats.Publisher
 }
 
 // NewCoexistenceMonitorService creates a new coexistence monitor service
 func NewCoexistenceMonitorService(
 	channelRepo repository.ChannelRepository,
-	producer *nats.Producer,
+	producer nats.Publisher,
 ) *CoexistenceMonitorService {
 	return &CoexistenceMonitorService{
 		channelRepo: channelRepo,

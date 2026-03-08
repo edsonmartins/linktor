@@ -20,11 +20,11 @@ import (
 // ChannelHandler handles channel endpoints
 type ChannelHandler struct {
 	channelService *service.ChannelService
-	producer       *nats.Producer
+	producer       nats.Publisher
 }
 
 // NewChannelHandler creates a new channel handler
-func NewChannelHandler(channelService *service.ChannelService, producer *nats.Producer) *ChannelHandler {
+func NewChannelHandler(channelService *service.ChannelService, producer nats.Publisher) *ChannelHandler {
 	return &ChannelHandler{
 		channelService: channelService,
 		producer:       producer,

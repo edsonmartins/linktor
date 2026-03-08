@@ -27,7 +27,7 @@ type MessageService struct {
 	conversationRepo repository.ConversationRepository
 	channelRepo      repository.ChannelRepository
 	contactRepo      repository.ContactRepository
-	producer         *nats.Producer
+	producer         nats.Publisher
 }
 
 // NewMessageService creates a new message service
@@ -36,7 +36,7 @@ func NewMessageService(
 	conversationRepo repository.ConversationRepository,
 	channelRepo repository.ChannelRepository,
 	contactRepo repository.ContactRepository,
-	producer *nats.Producer,
+	producer nats.Publisher,
 ) *MessageService {
 	return &MessageService{
 		messageRepo:      messageRepo,

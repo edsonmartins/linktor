@@ -47,7 +47,7 @@ type SendMessageUseCase struct {
 	conversationRepo repository.ConversationRepository
 	channelRepo      repository.ChannelRepository
 	contactRepo      repository.ContactRepository
-	producer         *nats.Producer
+	producer         nats.Publisher
 }
 
 // NewSendMessageUseCase creates a new send message use case
@@ -56,7 +56,7 @@ func NewSendMessageUseCase(
 	conversationRepo repository.ConversationRepository,
 	channelRepo repository.ChannelRepository,
 	contactRepo repository.ContactRepository,
-	producer *nats.Producer,
+	producer nats.Publisher,
 ) *SendMessageUseCase {
 	return &SendMessageUseCase{
 		messageRepo:      messageRepo,

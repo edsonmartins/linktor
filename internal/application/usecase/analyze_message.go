@@ -35,7 +35,7 @@ type AnalyzeMessageUseCase struct {
 	botRepo        repository.BotRepository
 	contextService *service.ConversationContextService
 	intentService  *service.IntentService
-	producer       *nats.Producer
+	producer       nats.Publisher
 }
 
 // NewAnalyzeMessageUseCase creates a new analyze message use case
@@ -43,7 +43,7 @@ func NewAnalyzeMessageUseCase(
 	botRepo repository.BotRepository,
 	contextService *service.ConversationContextService,
 	intentService *service.IntentService,
-	producer *nats.Producer,
+	producer nats.Publisher,
 ) *AnalyzeMessageUseCase {
 	return &AnalyzeMessageUseCase{
 		botRepo:        botRepo,

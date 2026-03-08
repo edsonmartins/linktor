@@ -9,10 +9,22 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+// Publisher defines the interface for publishing messages to NATS
+type Publisher interface {
+	PublishInbound(ctx context.Context, msg *InboundMessage) error
+	PublishOutbound(ctx context.Context, msg *OutboundMessage) error
+	PublishStatusUpdate(ctx context.Context, status *StatusUpdate) error
+	PublishEvent(ctx context.Context, event *Event) error
+	PublishWebhookDelivery(ctx context.Context, webhook *WebhookDelivery) error
+}
+
 // Producer publishes messages to NATS JetStream
 type Producer struct {
 	client *Client
 }
+
+// Ensure Producer implements Publisher
+var _ Publisher = (*Producer)(nil)
 
 // NewProducer creates a new message producer
 func NewProducer(client *Client) *Producer {

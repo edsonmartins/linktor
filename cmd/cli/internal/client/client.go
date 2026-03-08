@@ -154,6 +154,7 @@ type KnowledgeBase struct {
 	ChunkCount    int       `json:"chunkCount"`
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 // Document represents a document in a knowledge base

@@ -28,11 +28,11 @@ import (
 // WebhookHandler handles incoming webhooks from external channels
 type WebhookHandler struct {
 	channelRepo repository.ChannelRepository
-	producer    *nats.Producer
+	producer    nats.Publisher
 }
 
 // NewWebhookHandler creates a new webhook handler
-func NewWebhookHandler(channelRepo repository.ChannelRepository, producer *nats.Producer) *WebhookHandler {
+func NewWebhookHandler(channelRepo repository.ChannelRepository, producer nats.Publisher) *WebhookHandler {
 	return &WebhookHandler{
 		channelRepo: channelRepo,
 		producer:    producer,

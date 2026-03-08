@@ -48,7 +48,7 @@ type GenerateAIResponseUseCase struct {
 	aiResponseRepo   repository.AIResponseRepository
 	contextService   *service.ConversationContextService
 	knowledgeService KnowledgeSearchService
-	producer         *nats.Producer
+	producer         nats.Publisher
 }
 
 // NewGenerateAIResponseUseCase creates a new generate AI response use case
@@ -58,7 +58,7 @@ func NewGenerateAIResponseUseCase(
 	aiResponseRepo repository.AIResponseRepository,
 	contextService *service.ConversationContextService,
 	knowledgeService KnowledgeSearchService,
-	producer *nats.Producer,
+	producer nats.Publisher,
 ) *GenerateAIResponseUseCase {
 	return &GenerateAIResponseUseCase{
 		aiFactory:        aiFactory,

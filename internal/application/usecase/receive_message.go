@@ -26,7 +26,7 @@ type ReceiveMessageUseCase struct {
 	conversationRepo repository.ConversationRepository
 	channelRepo      repository.ChannelRepository
 	contactRepo      repository.ContactRepository
-	producer         *nats.Producer
+	producer         nats.Publisher
 	normalizer       *service.MessageNormalizer
 }
 
@@ -36,7 +36,7 @@ func NewReceiveMessageUseCase(
 	conversationRepo repository.ConversationRepository,
 	channelRepo repository.ChannelRepository,
 	contactRepo repository.ContactRepository,
-	producer *nats.Producer,
+	producer nats.Publisher,
 	normalizer *service.MessageNormalizer,
 ) *ReceiveMessageUseCase {
 	return &ReceiveMessageUseCase{
