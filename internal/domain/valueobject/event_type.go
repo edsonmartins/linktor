@@ -28,6 +28,27 @@ const (
 	EventPresenceTyping = "presence.typing"
 	EventPresenceOnline = "presence.online"
 
+	// Message delivery events
+	EventMessageRead      = "message.read"
+	EventMessageDelivered = "message.delivered"
+
+	// Attachment events
+	EventAttachmentUploaded = "attachment.uploaded"
+
+	// User events
+	EventUserLogin  = "user.login"
+	EventUserLogout = "user.logout"
+
+	// Channel lifecycle events
+	EventChannelConnected    = "channel.connected"
+	EventChannelDisconnected = "channel.disconnected"
+	EventChannelReconnected  = "channel.reconnected"
+	EventChannelError        = "channel.error"
+
+	// Quota/Rate events
+	EventQuotaWarning = "quota.warning"
+	EventRateLimited  = "rate.limited"
+
 	// System events
 	EventSystemHealth = "system.health"
 
@@ -39,11 +60,17 @@ const (
 var allEventTypes = []string{
 	EventMessageInbound, EventMessageOutbound, EventMessageStatus,
 	EventMessageReaction, EventMessageEdit, EventMessageRevoke,
+	EventMessageRead, EventMessageDelivered,
 	EventConversationCreated, EventConversationUpdated,
 	EventConversationClosed, EventConversationEscalated,
 	EventContactCreated, EventContactUpdated,
 	EventConnectionStatus, EventConnectionQRCode,
 	EventPresenceTyping, EventPresenceOnline,
+	EventAttachmentUploaded,
+	EventUserLogin, EventUserLogout,
+	EventChannelConnected, EventChannelDisconnected,
+	EventChannelReconnected, EventChannelError,
+	EventQuotaWarning, EventRateLimited,
 	EventSystemHealth,
 }
 

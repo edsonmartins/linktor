@@ -208,6 +208,173 @@ func (s *MessageService) SendReaction(ctx context.Context, conversationID, messa
 	return nil
 }
 
+// EditMessage edits an existing message's content
+func (s *MessageService) EditMessage(ctx context.Context, messageID, newContent string) (*entity.Message, error) {
+	if messageID == "" {
+		return nil, errors.Validation("message_id is required")
+	}
+	if newContent == "" {
+		return nil, errors.Validation("new content is required")
+	}
+
+	message, err := s.messageRepo.FindByID(ctx, messageID)
+	if err != nil {
+		return nil, errors.New(errors.ErrCodeMessageNotFound, "message not found")
+	}
+
+	if message.IsDeleted {
+		return nil, errors.Validation("cannot edit a deleted message")
+	}
+
+	message.Edit(newContent)
+
+	if err := s.messageRepo.Update(ctx, message); err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to update message")
+	}
+
+	// Publish edit event
+	if s.producer != nil {
+		conversation, _ := s.conversationRepo.FindByID(ctx, message.ConversationID)
+		tenantID := ""
+		if conversation != nil {
+			tenantID = conversation.TenantID
+		}
+		event := &nats.Event{
+			Type:     "message.edit",
+			TenantID: tenantID,
+			Payload: map[string]interface{}{
+				"message_id":      messageID,
+				"conversation_id": message.ConversationID,
+				"new_content":     newContent,
+			},
+			Timestamp: time.Now(),
+		}
+		s.producer.PublishEvent(ctx, event)
+	}
+
+	return message, nil
+}
+
+// DeleteMessage marks a message as deleted/revoked
+func (s *MessageService) DeleteMessage(ctx context.Context, messageID string) error {
+	if messageID == "" {
+		return errors.Validation("message_id is required")
+	}
+
+	message, err := s.messageRepo.FindByID(ctx, messageID)
+	if err != nil {
+		return errors.New(errors.ErrCodeMessageNotFound, "message not found")
+	}
+
+	if message.IsDeleted {
+		return nil // already deleted
+	}
+
+	message.Revoke()
+
+	if err := s.messageRepo.Update(ctx, message); err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to delete message")
+	}
+
+	// Publish revoke event
+	if s.producer != nil {
+		conversation, _ := s.conversationRepo.FindByID(ctx, message.ConversationID)
+		tenantID := ""
+		if conversation != nil {
+			tenantID = conversation.TenantID
+		}
+		event := &nats.Event{
+			Type:     "message.revoke",
+			TenantID: tenantID,
+			Payload: map[string]interface{}{
+				"message_id":      messageID,
+				"conversation_id": message.ConversationID,
+				"external_id":     message.ExternalID,
+			},
+			Timestamp: time.Now(),
+		}
+		s.producer.PublishEvent(ctx, event)
+	}
+
+	return nil
+}
+
+// MarkAsRead marks messages as read in a conversation
+func (s *MessageService) MarkAsRead(ctx context.Context, conversationID string, messageIDs []string) error {
+	if conversationID == "" {
+		return errors.Validation("conversation_id is required")
+	}
+	if len(messageIDs) == 0 {
+		return errors.Validation("at least one message_id is required")
+	}
+
+	for _, id := range messageIDs {
+		message, err := s.messageRepo.FindByID(ctx, id)
+		if err != nil {
+			continue // skip messages that don't exist
+		}
+		if message.ConversationID != conversationID {
+			continue // skip messages from other conversations
+		}
+		message.MarkAsRead()
+		s.messageRepo.Update(ctx, message)
+	}
+
+	// Publish read event
+	if s.producer != nil {
+		conversation, _ := s.conversationRepo.FindByID(ctx, conversationID)
+		tenantID := ""
+		if conversation != nil {
+			tenantID = conversation.TenantID
+		}
+		event := &nats.Event{
+			Type:     "message.read",
+			TenantID: tenantID,
+			Payload: map[string]interface{}{
+				"conversation_id": conversationID,
+				"message_ids":     messageIDs,
+			},
+			Timestamp: time.Now(),
+		}
+		s.producer.PublishEvent(ctx, event)
+	}
+
+	return nil
+}
+
+// SendTypingIndicator sends a typing indicator for a conversation
+func (s *MessageService) SendTypingIndicator(ctx context.Context, conversationID string, isTyping bool) error {
+	if conversationID == "" {
+		return errors.Validation("conversation_id is required")
+	}
+
+	if s.producer != nil {
+		conversation, err := s.conversationRepo.FindByID(ctx, conversationID)
+		if err != nil {
+			return errors.New(errors.ErrCodeConversationNotFound, "conversation not found")
+		}
+
+		state := "composing"
+		if !isTyping {
+			state = "paused"
+		}
+
+		event := &nats.Event{
+			Type:     "presence.typing",
+			TenantID: conversation.TenantID,
+			Payload: map[string]interface{}{
+				"conversation_id": conversationID,
+				"channel_id":      conversation.ChannelID,
+				"state":           state,
+			},
+			Timestamp: time.Now(),
+		}
+		return s.producer.PublishEvent(ctx, event)
+	}
+
+	return nil
+}
+
 // findRecipientForChannel finds the recipient identifier for a given channel type
 func findRecipientForChannel(contact *entity.Contact, channelType string) string {
 	identity := contact.GetIdentityByChannel(channelType)

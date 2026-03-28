@@ -9,7 +9,7 @@ import (
 func TestAllEventTypes_NotEmpty(t *testing.T) {
 	types := AllEventTypes()
 	assert.NotEmpty(t, types)
-	assert.GreaterOrEqual(t, len(types), 17)
+	assert.GreaterOrEqual(t, len(types), 28)
 }
 
 func TestAllEventTypes_ReturnsCopy(t *testing.T) {

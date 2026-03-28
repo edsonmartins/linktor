@@ -28,6 +28,9 @@ const (
 	ContentTypeContact     ContentType = "contact"
 	ContentTypeTemplate    ContentType = "template"
 	ContentTypeInteractive ContentType = "interactive"
+	ContentTypeSticker     ContentType = "sticker"
+	ContentTypePoll        ContentType = "poll"
+	ContentTypeReaction    ContentType = "reaction"
 )
 
 // SenderType represents who sent the message
@@ -85,6 +88,25 @@ type Message struct {
 	Source     MessageSource `json:"source,omitempty"`      // Where the message originated (api, business_app, imported)
 	IsImported bool          `json:"is_imported,omitempty"` // Whether this message was imported from history
 	ImportedAt *time.Time    `json:"imported_at,omitempty"` // When this message was imported
+
+	// Edit/Delete tracking
+	EditedAt  *time.Time `json:"edited_at,omitempty"`  // When the message was last edited
+	DeletedAt *time.Time `json:"deleted_at,omitempty"` // When the message was deleted/revoked
+	IsEdited  bool       `json:"is_edited,omitempty"`  // Whether the message has been edited
+	IsDeleted bool       `json:"is_deleted,omitempty"` // Whether the message has been deleted/revoked
+
+	// Reactions
+	Reactions []Reaction `json:"reactions,omitempty"` // Emoji reactions on this message
+
+	// Reply context
+	ReplyToID string `json:"reply_to_id,omitempty"` // ID of the message being replied to
+}
+
+// Reaction represents an emoji reaction on a message
+type Reaction struct {
+	UserID    string    `json:"user_id"`
+	Emoji     string    `json:"emoji"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // NewMessage creates a new message
@@ -157,6 +179,46 @@ func (m *Message) MarkAsRead() {
 func (m *Message) MarkAsFailed(errorMessage string) {
 	m.Status = MessageStatusFailed
 	m.ErrorMessage = errorMessage
+}
+
+// Edit updates the message content and marks it as edited
+func (m *Message) Edit(newContent string) {
+	now := time.Now()
+	m.Content = newContent
+	m.EditedAt = &now
+	m.IsEdited = true
+}
+
+// Revoke marks the message as deleted/revoked
+func (m *Message) Revoke() {
+	now := time.Now()
+	m.DeletedAt = &now
+	m.IsDeleted = true
+	m.Content = "" // Clear content on revoke
+}
+
+// AddReaction adds or updates a reaction from a user
+func (m *Message) AddReaction(userID, emoji string) {
+	// Remove existing reaction from this user
+	m.RemoveReaction(userID)
+	if emoji != "" {
+		m.Reactions = append(m.Reactions, Reaction{
+			UserID:    userID,
+			Emoji:     emoji,
+			Timestamp: time.Now(),
+		})
+	}
+}
+
+// RemoveReaction removes a reaction from a user
+func (m *Message) RemoveReaction(userID string) {
+	filtered := make([]Reaction, 0, len(m.Reactions))
+	for _, r := range m.Reactions {
+		if r.UserID != userID {
+			filtered = append(filtered, r)
+		}
+	}
+	m.Reactions = filtered
 }
 
 // IsFromContact returns true if the message is from a contact

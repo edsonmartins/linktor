@@ -30,6 +30,21 @@ type SendReactionRequest struct {
 	Emoji string `json:"emoji"` // Empty string to remove reaction
 }
 
+// EditMessageRequest represents an edit message request
+type EditMessageRequest struct {
+	Content string `json:"content" binding:"required"`
+}
+
+// MarkAsReadRequest represents a mark-as-read request
+type MarkAsReadRequest struct {
+	MessageIDs []string `json:"message_ids" binding:"required"`
+}
+
+// TypingIndicatorRequest represents a typing indicator request
+type TypingIndicatorRequest struct {
+	IsTyping bool `json:"is_typing"`
+}
+
 // List godoc
 // @Summary      List messages
 // @Description  Returns all messages for a conversation
@@ -198,4 +213,134 @@ func (h *MessageHandler) SendReaction(c *gin.Context) {
 		"message_id": messageID,
 		"emoji":      req.Emoji,
 	})
+}
+
+// EditMessage godoc
+// @Summary      Edit message
+// @Description  Edit the content of an existing message
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Message ID"
+// @Param        request body EditMessageRequest true "New content"
+// @Success      200 {object} Response{data=entity.Message}
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Router       /messages/{id}/edit [put]
+func (h *MessageHandler) EditMessage(c *gin.Context) {
+	messageID := c.Param("id")
+	if messageID == "" {
+		RespondValidationError(c, "Message ID is required", nil)
+		return
+	}
+
+	var req EditMessageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondValidationError(c, "Invalid request body", nil)
+		return
+	}
+
+	message, err := h.messageService.EditMessage(c.Request.Context(), messageID, req.Content)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	RespondSuccess(c, message)
+}
+
+// DeleteMessage godoc
+// @Summary      Delete message
+// @Description  Delete/revoke a message
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Message ID"
+// @Success      200 {object} Response
+// @Failure      404 {object} Response
+// @Router       /messages/{id} [delete]
+func (h *MessageHandler) DeleteMessage(c *gin.Context) {
+	messageID := c.Param("id")
+	if messageID == "" {
+		RespondValidationError(c, "Message ID is required", nil)
+		return
+	}
+
+	err := h.messageService.DeleteMessage(c.Request.Context(), messageID)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	RespondSuccess(c, map[string]string{"message": "Message deleted successfully"})
+}
+
+// MarkAsRead godoc
+// @Summary      Mark messages as read
+// @Description  Mark one or more messages in a conversation as read
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Param        request body MarkAsReadRequest true "Message IDs to mark as read"
+// @Success      200 {object} Response
+// @Failure      400 {object} Response
+// @Router       /conversations/{id}/messages/read [post]
+func (h *MessageHandler) MarkAsRead(c *gin.Context) {
+	conversationID := c.Param("id")
+	if conversationID == "" {
+		RespondValidationError(c, "Conversation ID is required", nil)
+		return
+	}
+
+	var req MarkAsReadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondValidationError(c, "Invalid request body", nil)
+		return
+	}
+
+	err := h.messageService.MarkAsRead(c.Request.Context(), conversationID, req.MessageIDs)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	RespondSuccess(c, map[string]string{"message": "Messages marked as read"})
+}
+
+// SendTypingIndicator godoc
+// @Summary      Send typing indicator
+// @Description  Send a typing/composing indicator for a conversation
+// @Tags         messages
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Param        request body TypingIndicatorRequest true "Typing state"
+// @Success      200 {object} Response
+// @Failure      400 {object} Response
+// @Router       /conversations/{id}/typing [post]
+func (h *MessageHandler) SendTypingIndicator(c *gin.Context) {
+	conversationID := c.Param("id")
+	if conversationID == "" {
+		RespondValidationError(c, "Conversation ID is required", nil)
+		return
+	}
+
+	var req TypingIndicatorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondValidationError(c, "Invalid request body", nil)
+		return
+	}
+
+	err := h.messageService.SendTypingIndicator(c.Request.Context(), conversationID, req.IsTyping)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	RespondSuccess(c, map[string]string{"message": "Typing indicator sent"})
 }
