@@ -13,6 +13,10 @@ import (
 type Client interface {
 	// Upload uploads data and returns the public URL
 	Upload(ctx context.Context, key string, data []byte, contentType string) (string, error)
+	// Delete removes an object by key
+	Delete(ctx context.Context, key string) error
+	// GetURL returns the public URL for a given key
+	GetURL(ctx context.Context, key string) (string, error)
 }
 
 // LocalClient stores files on the local filesystem and returns a URL
@@ -47,4 +51,21 @@ func (c *LocalClient) Upload(ctx context.Context, key string, data []byte, conte
 
 	url := fmt.Sprintf("%s/%s", c.baseURL, key)
 	return url, nil
+}
+
+// Delete removes a file from the local filesystem
+func (c *LocalClient) Delete(ctx context.Context, key string) error {
+	path := filepath.Join(c.uploadDir, key)
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file not found: %s", key)
+		}
+		return fmt.Errorf("failed to delete file: %w", err)
+	}
+	return nil
+}
+
+// GetURL returns the public URL for a given key
+func (c *LocalClient) GetURL(ctx context.Context, key string) (string, error) {
+	return fmt.Sprintf("%s/%s", c.baseURL, key), nil
 }

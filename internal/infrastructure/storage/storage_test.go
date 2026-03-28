@@ -147,6 +147,40 @@ func TestLocalClient_Upload_MultipleFiles(t *testing.T) {
 	}
 }
 
+func TestLocalClient_Delete_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+	client := NewLocalClient(tmpDir, "http://cdn.example.com")
+
+	// Upload first
+	_, err := client.Upload(context.Background(), "to-delete.txt", []byte("data"), "text/plain")
+	require.NoError(t, err)
+
+	// Delete
+	err = client.Delete(context.Background(), "to-delete.txt")
+	require.NoError(t, err)
+
+	// Verify file is gone
+	_, err = os.ReadFile(filepath.Join(tmpDir, "to-delete.txt"))
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestLocalClient_Delete_NotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	client := NewLocalClient(tmpDir, "http://cdn.example.com")
+
+	err := client.Delete(context.Background(), "nonexistent.txt")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "file not found")
+}
+
+func TestLocalClient_GetURL(t *testing.T) {
+	client := NewLocalClient("/tmp", "http://cdn.example.com")
+
+	url, err := client.GetURL(context.Background(), "test.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "http://cdn.example.com/test.txt", url)
+}
+
 func TestLocalClient_Upload_DifferentBaseURLs(t *testing.T) {
 	tmpDir := t.TempDir()
 
