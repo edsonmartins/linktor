@@ -206,3 +206,45 @@ func (s *ContactService) RemoveIdentity(ctx context.Context, contactID, identity
 
 	return contact, nil
 }
+
+// BlockContact blocks a contact
+func (s *ContactService) BlockContact(ctx context.Context, contactID string) error {
+	contact, err := s.contactRepo.FindByID(ctx, contactID)
+	if err != nil {
+		return errors.New(errors.ErrCodeContactNotFound, "contact not found")
+	}
+
+	contact.Block()
+
+	if err := s.contactRepo.Update(ctx, contact); err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to block contact")
+	}
+
+	return nil
+}
+
+// UnblockContact unblocks a contact
+func (s *ContactService) UnblockContact(ctx context.Context, contactID string) error {
+	contact, err := s.contactRepo.FindByID(ctx, contactID)
+	if err != nil {
+		return errors.New(errors.ErrCodeContactNotFound, "contact not found")
+	}
+
+	contact.Unblock()
+
+	if err := s.contactRepo.Update(ctx, contact); err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to unblock contact")
+	}
+
+	return nil
+}
+
+// IsBlocked checks if a contact is blocked
+func (s *ContactService) IsBlocked(ctx context.Context, contactID string) (bool, error) {
+	contact, err := s.contactRepo.FindByID(ctx, contactID)
+	if err != nil {
+		return false, errors.New(errors.ErrCodeContactNotFound, "contact not found")
+	}
+
+	return contact.IsBlocked(), nil
+}

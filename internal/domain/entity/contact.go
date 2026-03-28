@@ -67,3 +67,54 @@ func (c *Contact) HasTag(tag string) bool {
 	}
 	return false
 }
+
+// ContactPreference represents opt-in/out preferences per channel
+type ContactPreference struct {
+	ChannelType string     `json:"channel_type"`
+	OptedIn     bool       `json:"opted_in"`
+	BlockedAt   *time.Time `json:"blocked_at,omitempty"`
+}
+
+// IsBlocked returns true if the contact is blocked
+func (c *Contact) IsBlocked() bool {
+	if c.CustomFields == nil {
+		return false
+	}
+	return c.CustomFields["_blocked"] == "true"
+}
+
+// Block marks the contact as blocked
+func (c *Contact) Block() {
+	if c.CustomFields == nil {
+		c.CustomFields = make(map[string]string)
+	}
+	c.CustomFields["_blocked"] = "true"
+	c.CustomFields["_blocked_at"] = time.Now().UTC().Format(time.RFC3339)
+	c.UpdatedAt = time.Now()
+}
+
+// Unblock removes the blocked status
+func (c *Contact) Unblock() {
+	if c.CustomFields == nil {
+		return
+	}
+	delete(c.CustomFields, "_blocked")
+	delete(c.CustomFields, "_blocked_at")
+	c.UpdatedAt = time.Now()
+}
+
+// GetBlockedAt returns when the contact was blocked, or nil
+func (c *Contact) GetBlockedAt() *time.Time {
+	if c.CustomFields == nil {
+		return nil
+	}
+	blockedAt, ok := c.CustomFields["_blocked_at"]
+	if !ok {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, blockedAt)
+	if err != nil {
+		return nil
+	}
+	return &t
+}

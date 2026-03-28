@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"strconv"
 	"time"
 )
 
@@ -172,4 +173,99 @@ func (c *Channel) CheckCoexistenceStatus() CoexistenceStatus {
 	default:
 		return CoexistenceStatusActive
 	}
+}
+
+// AdvancedSettings represents configurable per-channel behavior settings
+type AdvancedSettings struct {
+	AlwaysOnline     bool   `json:"always_online"`      // Show online status always
+	RejectCall       bool   `json:"reject_call"`        // Auto-reject incoming calls
+	RejectCallMsg    string `json:"reject_call_msg"`    // Message sent when call is rejected
+	AutoReadMessages bool   `json:"auto_read_messages"` // Auto-mark incoming messages as read
+	IgnoreGroups     bool   `json:"ignore_groups"`      // Ignore group messages
+	IgnoreStatus     bool   `json:"ignore_status"`      // Ignore status/story broadcasts
+	QRCodeMaxCount   int    `json:"qrcode_max_count"`   // Max QR code generation attempts (0=unlimited)
+	ProxyHost        string `json:"proxy_host"`         // SOCKS5 proxy host
+	ProxyPort        int    `json:"proxy_port"`         // Proxy port
+	ProxyUser        string `json:"proxy_user"`         // Proxy username
+	ProxyPass        string `json:"proxy_pass"`         // Proxy password
+}
+
+// DefaultAdvancedSettings returns settings with sensible defaults
+func DefaultAdvancedSettings() *AdvancedSettings {
+	return &AdvancedSettings{
+		QRCodeMaxCount: 5,
+	}
+}
+
+// GetAdvancedSettings parses AdvancedSettings from Channel.Config
+func (c *Channel) GetAdvancedSettings() *AdvancedSettings {
+	if c.Config == nil {
+		return DefaultAdvancedSettings()
+	}
+
+	s := DefaultAdvancedSettings()
+
+	if v, ok := c.Config["always_online"]; ok {
+		s.AlwaysOnline, _ = strconv.ParseBool(v)
+	}
+	if v, ok := c.Config["reject_call"]; ok {
+		s.RejectCall, _ = strconv.ParseBool(v)
+	}
+	if v, ok := c.Config["reject_call_msg"]; ok {
+		s.RejectCallMsg = v
+	}
+	if v, ok := c.Config["auto_read_messages"]; ok {
+		s.AutoReadMessages, _ = strconv.ParseBool(v)
+	}
+	if v, ok := c.Config["ignore_groups"]; ok {
+		s.IgnoreGroups, _ = strconv.ParseBool(v)
+	}
+	if v, ok := c.Config["ignore_status"]; ok {
+		s.IgnoreStatus, _ = strconv.ParseBool(v)
+	}
+	if v, ok := c.Config["qrcode_max_count"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			s.QRCodeMaxCount = n
+		}
+	}
+	if v, ok := c.Config["proxy_host"]; ok {
+		s.ProxyHost = v
+	}
+	if v, ok := c.Config["proxy_port"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			s.ProxyPort = n
+		}
+	}
+	if v, ok := c.Config["proxy_user"]; ok {
+		s.ProxyUser = v
+	}
+	if v, ok := c.Config["proxy_pass"]; ok {
+		s.ProxyPass = v
+	}
+
+	return s
+}
+
+// SetAdvancedSettings serializes AdvancedSettings into Channel.Config
+func (c *Channel) SetAdvancedSettings(settings *AdvancedSettings) {
+	if c.Config == nil {
+		c.Config = make(map[string]string)
+	}
+
+	c.Config["always_online"] = strconv.FormatBool(settings.AlwaysOnline)
+	c.Config["reject_call"] = strconv.FormatBool(settings.RejectCall)
+	c.Config["reject_call_msg"] = settings.RejectCallMsg
+	c.Config["auto_read_messages"] = strconv.FormatBool(settings.AutoReadMessages)
+	c.Config["ignore_groups"] = strconv.FormatBool(settings.IgnoreGroups)
+	c.Config["ignore_status"] = strconv.FormatBool(settings.IgnoreStatus)
+	c.Config["qrcode_max_count"] = strconv.Itoa(settings.QRCodeMaxCount)
+	c.Config["proxy_host"] = settings.ProxyHost
+	c.Config["proxy_port"] = strconv.Itoa(settings.ProxyPort)
+	c.Config["proxy_user"] = settings.ProxyUser
+	c.Config["proxy_pass"] = settings.ProxyPass
+}
+
+// HasProxy returns true if a proxy is configured
+func (s *AdvancedSettings) HasProxy() bool {
+	return s.ProxyHost != ""
 }
