@@ -49,12 +49,14 @@ Empresas enfrentam dificuldades ao gerenciar múltiplos canais de comunicação:
 Linktor oferece:
 
 - **Inbox Unificada**: Todas as conversas em uma única interface
-- **Bots com IA**: Atendimento automatizado com GPT-4, Claude e modelos locais (Ollama)
+- **Bots com IA**: Atendimento automatizado com GPT-4o, Claude 4 e modelos locais (Ollama)
 - **Knowledge Base**: RAG (Retrieval Augmented Generation) para respostas precisas baseadas em documentos
 - **Flow Builder**: Editor visual para criar fluxos conversacionais sem código
 - **Escalação Inteligente**: Transição suave de bot para humano quando necessário
 - **Analytics**: Métricas de performance, resolução e satisfação
 - **Multi-tenant**: Isolamento completo de dados por organização
+- **Event Distribution**: Webhook outbound, NATS JetStream e WebSocket em paralelo
+- **Object Storage**: MinIO/S3 com presigned URLs para mídia
 - **Extensível**: Sistema de plugins para adicionar novos canais
 
 ### Branding
@@ -363,7 +365,7 @@ linktor/
 │   │   │   ├── tenant.go         # Multi-tenancy
 │   │   │   └── user.go           # Usuários
 │   │   ├── repository/           # Interfaces de repositório
-│   │   └── valueobject/          # Value objects
+│   │   └── valueobject/          # Value objects (event types, etc.)
 │   │
 │   ├── application/              # Camada de aplicação
 │   │   ├── service/              # Serviços de aplicação
@@ -427,6 +429,13 @@ linktor/
 │       │   ├── client.go
 │       │   ├── producer.go
 │       │   └── consumer.go
+│       ├── webhook/              # Webhook outbound delivery
+│       │   └── producer.go       # HTTP POST with exponential backoff retry
+│       ├── events/               # Event distribution system
+│       │   └── dispatcher.go     # Multi-producer event dispatcher
+│       ├── storage/              # Object storage
+│       │   ├── storage.go        # Client interface + LocalClient
+│       │   └── minio.go          # MinIO/S3 with presigned URLs
 │       ├── redis/                # Cache
 │       ├── vre/                  # Visual Response Engine
 │       │   ├── renderer.go       # Chrome renderer (chromedp)
@@ -1541,8 +1550,13 @@ CREATE TABLE flows (
 - [x] WhatsApp Unofficial (Baileys)
 - [x] Voice (Twilio, Vonage, Amazon Connect, Asterisk, FreeSWITCH)
 
-### Fase 8: Enterprise 📋
-- [ ] Webhooks outbound
+### Fase 8: Event Distribution & Storage ✅
+- [x] Webhook outbound producer com retry exponencial
+- [x] MinIO/S3 object storage com presigned URLs
+- [x] Event dispatcher multi-producer (NATS, Webhook, WebSocket)
+- [x] Event type constants com subscription filtering
+
+### Fase 9: Enterprise 📋
 - [ ] Audit logs
 - [ ] SSO/SAML
 - [ ] Advanced analytics
@@ -1557,9 +1571,9 @@ O projeto possui cobertura abrangente de testes automatizados:
 
 | Tipo | Quantidade | Descrição |
 |------|------------|-----------|
-| **Go unit/integration** | 2,610 | Testes unitários e de integração |
+| **Go unit/integration** | 2,646 | Testes unitários e de integração |
 | **Frontend E2E** | 44 | Testes end-to-end com Playwright |
-| **Total** | **2,654** | Across 128 test files, 26 packages |
+| **Total** | **2,690** | Across 134 test files, 29 packages |
 
 ### Executando os testes
 
@@ -1595,7 +1609,8 @@ go tool cover -html=coverage.out
 | Services (23) | auth, bot, channel, contact, conversation, message, ai_provider, analytics, knowledge, template, tenant, user, etc. | 16 |
 | Use Cases (5) | receive_message, send_message, escalate_conversation, analyze_message, generate_ai_response | 5 |
 | Domain entities | contact, conversation, message | 3 |
-| Infrastructure | database, nats, storage, vre | 5 |
+| Infrastructure | database, nats, storage, vre, webhook, events | 8 |
+| Domain | valueobject (event types) | 1 |
 | CLI | client, commands, helpers | 5 |
 | SDKs | Go, TypeScript | 2 |
 | Frontend E2E | auth, dashboard, conversations, channels, contacts, bots, flows, users, knowledge-base, settings, analytics, observability | 12 |
