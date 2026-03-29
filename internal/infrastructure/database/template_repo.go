@@ -134,7 +134,7 @@ func (r *TemplateRepository) FindByTenant(ctx context.Context, tenantID string, 
 	countQuery := `SELECT COUNT(*) FROM templates WHERE tenant_id = $1`
 	var total int64
 	if err := r.db.Pool.QueryRow(ctx, countQuery, tenantID).Scan(&total); err != nil {
-		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to count templates")
+		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, fmt.Sprintf("failed to count templates: %v", err))
 	}
 
 	// Get templates
@@ -148,15 +148,17 @@ func (r *TemplateRepository) FindByTenant(ctx context.Context, tenantID string, 
 		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.Pool.Query(ctx, query, tenantID, params.Limit, params.Offset)
+	limit := int32(params.Limit())
+	offset := int32(params.Offset())
+	rows, err := r.db.Pool.Query(ctx, query, tenantID, limit, offset)
 	if err != nil {
-		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to query templates")
+		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, fmt.Sprintf("failed to query templates: %v", err))
 	}
 	defer rows.Close()
 
 	templates, err := r.scanTemplates(rows)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, fmt.Sprintf("failed to scan templates: %v", err))
 	}
 
 	return templates, total, nil
@@ -186,7 +188,7 @@ func (r *TemplateRepository) FindByChannel(ctx context.Context, channelID string
 		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.Pool.Query(ctx, query, channelID, params.Limit, params.Offset)
+	rows, err := r.db.Pool.Query(ctx, query, channelID, params.Limit(), params.Offset())
 	if err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to query templates")
 	}
@@ -224,7 +226,7 @@ func (r *TemplateRepository) FindByStatus(ctx context.Context, tenantID string, 
 		LIMIT $3 OFFSET $4
 	`
 
-	rows, err := r.db.Pool.Query(ctx, query, tenantID, string(status), params.Limit, params.Offset)
+	rows, err := r.db.Pool.Query(ctx, query, tenantID, string(status), params.Limit(), params.Offset())
 	if err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to query templates")
 	}

@@ -38,7 +38,7 @@ func (r *AnalyticsRepository) GetOverview(ctx context.Context, filter entity.Ana
 		bot_stats AS (
 			SELECT
 				COUNT(*) as total_messages,
-				AVG((metadata->>'confidence')::float) as avg_confidence
+				AVG((m.metadata->>'confidence')::float) as avg_confidence
 			FROM messages m
 			JOIN conversations c ON c.id = m.conversation_id
 			WHERE c.tenant_id = $1
