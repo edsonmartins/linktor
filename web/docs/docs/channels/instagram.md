@@ -565,5 +565,5 @@ Current Instagram API limitations:
 
 - [Flows](/flows/overview) - Build automated Instagram flows
 - [AI Bots](/bots/overview) - Add AI to Instagram DMs
-- [Instagram Shopping](/guides/instagram-shopping) - Handle product inquiries
-- [Analytics](/api/analytics) - Track Instagram performance
+- [Instagram Channel](/channels/instagram) - Review Instagram commerce capabilities
+- [API Reference](/api/overview) - Review available API resources

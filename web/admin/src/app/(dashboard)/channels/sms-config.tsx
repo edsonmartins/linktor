@@ -60,7 +60,7 @@ import { Separator } from '@/components/ui/separator'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { api } from '@/lib/api'
+import { api, WEBHOOK_BASE_URL } from '@/lib/api'
 import type { Channel } from '@/types'
 
 /**
@@ -130,11 +130,11 @@ export function SMSConfig({
   const senderType = form.watch('sender_type')
 
   const webhookUrl = channel
-    ? `${window.location.origin}/api/v1/webhooks/twilio/${channel.id}`
+    ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/twilio/${channel.id}`
     : t('webhookPending')
 
   const statusCallbackUrl = channel
-    ? `${window.location.origin}/api/v1/webhooks/twilio/${channel.id}`
+    ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/twilio/${channel.id}`
     : t('webhookPending')
 
   const onSubmit = async (data: SMSConfigForm) => {

@@ -58,7 +58,7 @@
 // @tag.description Webhook endpoints for external integrations
 
 // @tag.name VRE
-// @tag.description Visual Response Engine - render HTML templates to images for channels that don't support interactive elements
+// @tag.description Visual Response Engine - render SVG templates to images for channels that don't support interactive elements
 
 package main
 
@@ -91,10 +91,6 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/whatsapp"
 	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/api/handlers"
-	"github.com/msgfy/linktor/internal/whatsapp/analytics"
-	"github.com/msgfy/linktor/internal/whatsapp/calling"
-	"github.com/msgfy/linktor/internal/whatsapp/ctwa"
-	"github.com/msgfy/linktor/internal/whatsapp/payments"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/application/usecase"
@@ -103,6 +99,10 @@ import (
 	"github.com/msgfy/linktor/internal/infrastructure/database"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	storageLib "github.com/msgfy/linktor/internal/infrastructure/storage"
+	"github.com/msgfy/linktor/internal/whatsapp/analytics"
+	"github.com/msgfy/linktor/internal/whatsapp/calling"
+	"github.com/msgfy/linktor/internal/whatsapp/ctwa"
+	"github.com/msgfy/linktor/internal/whatsapp/payments"
 	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 
@@ -182,6 +182,7 @@ func main() {
 	templateRepo := database.NewTemplateRepository(db)
 	historyImportRepo := database.NewHistoryImportRepository(db)
 	paymentRepo := database.NewPaymentRepository(db)
+	observabilityRepo := database.NewObservabilityRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
@@ -243,6 +244,7 @@ func main() {
 
 	// Initialize analytics service
 	analyticsService := service.NewAnalyticsService(analyticsRepo, nil)
+	observabilityService := service.NewObservabilityService(observabilityRepo, nats.NewMonitor(natsClient))
 
 	// Initialize template service
 	templateService := service.NewTemplateService(templateRepo, channelRepo)
@@ -455,6 +457,7 @@ func main() {
 
 	// Create knowledge handler
 	knowledgeHandler := handlers.NewKnowledgeHandler(knowledgeService)
+	observabilityHandler := handlers.NewObservabilityHandler(observabilityService)
 
 	// Create contact service and handler
 	contactService := service.NewContactService(contactRepo)
@@ -475,14 +478,6 @@ func main() {
 	channelService := service.NewChannelService(channelRepo, plugin.GetGlobalRegistry(), producer)
 	channelHandler := handlers.NewChannelHandler(channelService, producer)
 
-	// Reconnect WhatsApp channels with stored sessions
-	logger.Info("Reconnecting WhatsApp channels...")
-	if reconnected, err := channelService.ReconnectWhatsAppChannels(context.Background()); err != nil {
-		logger.Warn("Failed to reconnect some WhatsApp channels: " + err.Error())
-	} else if reconnected > 0 {
-		logger.Info(fmt.Sprintf("Reconnected %d WhatsApp channel(s)", reconnected))
-	}
-
 	// Create analytics handler
 	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
 
@@ -498,18 +493,37 @@ func main() {
 	// Create CTWA handler
 	ctwaHandler := handlers.NewCTWAHandler()
 
-	// Note: WhatsApp Analytics, Payments, Calling, and CTWA clients are registered per-channel
-	// when channels are connected. The handlers use a channel-based client registry.
-	// Example of registering clients (done when channel connects):
-	// whatsappAnalyticsHandler.RegisterClient(channelID, analytics.NewClient(&analytics.ClientConfig{...}))
-	// paymentsHandler.RegisterClient(channelID, payments.NewClient(&payments.ClientConfig{Store: paymentRepo, ...}))
-	// callingHandler.RegisterClient(channelID, calling.NewClient(&calling.ClientConfig{...}))
-	// ctwaHandler.RegisterClient(channelID, ctwa.NewClient(&ctwa.ClientConfig{...}))
-	_ = analytics.ClientConfig{} // Ensure import is used
-	_ = payments.ClientConfig{}
-	_ = calling.ClientConfig{}
-	_ = ctwa.ClientConfig{}
-	_ = paymentRepo // Available for per-channel payment client registration
+	channelService.SetLifecycleHooks(service.ChannelLifecycleHooks{
+		OnConnected: func(ctx context.Context, channel *entity.Channel) {
+			registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
+		},
+		OnUpdated: func(ctx context.Context, channel *entity.Channel) {
+			if channel.IsConnected() {
+				registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
+			}
+		},
+		OnDisconnected: func(ctx context.Context, channel *entity.Channel) {
+			unregisterWhatsAppAdvancedClient(channel.ID, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
+		},
+	})
+
+	registerWhatsAppAdvancedClients(
+		context.Background(),
+		channelRepo,
+		paymentRepo,
+		whatsappAnalyticsHandler,
+		paymentsHandler,
+		callingHandler,
+		ctwaHandler,
+	)
+
+	// Reconnect WhatsApp channels with stored sessions
+	logger.Info("Reconnecting WhatsApp channels...")
+	if reconnected, err := channelService.ReconnectWhatsAppChannels(context.Background()); err != nil {
+		logger.Warn("Failed to reconnect some WhatsApp channels: " + err.Error())
+	} else if reconnected > 0 {
+		logger.Info(fmt.Sprintf("Reconnected %d WhatsApp channel(s)", reconnected))
+	}
 
 	// Create VRE handler (if VRE service is available)
 	var vreHandler *handlers.VREHandler
@@ -768,6 +782,12 @@ func main() {
 				channels.GET("", channelHandler.List)
 				channels.POST("", channelHandler.Create)
 				// Specific routes must come before generic /:id
+				channels.POST("/test", channelHandler.TestConnection)
+				channels.POST("/test-whatsapp", channelHandler.TestWhatsAppConnection)
+				channels.POST("/test-telegram", channelHandler.TestTelegramConnection)
+				channels.POST("/test-twilio", channelHandler.TestTwilioConnection)
+				channels.POST("/test-facebook", channelHandler.TestFacebookConnection)
+				channels.POST("/test-instagram", channelHandler.TestInstagramConnection)
 				channels.PUT("/:id/status", channelHandler.UpdateStatus)
 				channels.PUT("/:id/enabled", channelHandler.UpdateEnabled)
 				channels.POST("/:id/connect", channelHandler.Connect)
@@ -854,6 +874,17 @@ func main() {
 				knowledge.DELETE("/:id/items/:itemId", knowledgeHandler.DeleteItem)
 				knowledge.POST("/:id/search", knowledgeHandler.Search)
 				knowledge.POST("/:id/regenerate-embeddings", knowledgeHandler.RegenerateEmbeddings)
+			}
+
+			// Observability
+			observability := protected.Group("/observability")
+			{
+				observability.GET("/logs", observabilityHandler.GetLogs)
+				observability.POST("/logs/cleanup", observabilityHandler.CleanupLogs)
+				observability.GET("/queue", observabilityHandler.GetQueueStats)
+				observability.GET("/queue/:stream", observabilityHandler.GetStreamInfo)
+				observability.POST("/queue/reset-consumer", observabilityHandler.ResetConsumer)
+				observability.GET("/stats", observabilityHandler.GetSystemStats)
 			}
 
 			// Flows (Conversational Decision Trees)
@@ -1040,6 +1071,141 @@ func main() {
 	}
 
 	logger.Info("Server exited properly")
+}
+
+func registerWhatsAppAdvancedClients(
+	ctx context.Context,
+	channelRepo *database.ChannelRepository,
+	paymentRepo *database.PaymentRepository,
+	whatsappAnalyticsHandler *handlers.WhatsAppAnalyticsHandler,
+	paymentsHandler *handlers.PaymentsHandler,
+	callingHandler *handlers.CallingHandler,
+	ctwaHandler *handlers.CTWAHandler,
+) {
+	channels, err := channelRepo.FindByTypes(ctx, []entity.ChannelType{
+		entity.ChannelTypeWhatsApp,
+		entity.ChannelTypeWhatsAppOfficial,
+	})
+	if err != nil {
+		logger.Warn("Failed to load WhatsApp channels for advanced clients: " + err.Error())
+		return
+	}
+
+	registered := 0
+	for _, channel := range channels {
+		if registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler) {
+			registered++
+		}
+	}
+
+	if registered > 0 {
+		logger.Info(fmt.Sprintf("Registered advanced WhatsApp clients for %d channel(s)", registered))
+	}
+}
+
+func registerWhatsAppAdvancedClient(
+	channel *entity.Channel,
+	paymentRepo *database.PaymentRepository,
+	whatsappAnalyticsHandler *handlers.WhatsAppAnalyticsHandler,
+	paymentsHandler *handlers.PaymentsHandler,
+	callingHandler *handlers.CallingHandler,
+	ctwaHandler *handlers.CTWAHandler,
+) bool {
+	if channel == nil || !channel.Enabled {
+		return false
+	}
+	if channel.Type != entity.ChannelTypeWhatsApp && channel.Type != entity.ChannelTypeWhatsAppOfficial {
+		return false
+	}
+
+	accessToken := channelConfigValue(channel, "access_token")
+	phoneNumberID := channelConfigValue(channel, "phone_number_id")
+	if accessToken == "" || phoneNumberID == "" {
+		unregisterWhatsAppAdvancedClient(channel.ID, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
+		return false
+	}
+
+	apiVersion := channelConfigValue(channel, "api_version")
+	businessID := channelConfigValue(channel, "business_id")
+	if businessID == "" {
+		businessID = channelConfigValue(channel, "waba_id")
+	}
+	if businessID == "" {
+		businessID = channel.WABAID
+	}
+
+	whatsappAnalyticsHandler.RegisterClient(channel.ID, analytics.NewClient(&analytics.ClientConfig{
+		AccessToken:   accessToken,
+		BusinessID:    businessID,
+		PhoneNumberID: phoneNumberID,
+		APIVersion:    apiVersion,
+	}))
+	paymentsHandler.RegisterClient(channel.ID, payments.NewClient(&payments.ClientConfig{
+		AccessToken:    accessToken,
+		PhoneNumberID:  phoneNumberID,
+		APIVersion:     apiVersion,
+		GatewayConfig:  paymentGatewayConfig(channel.Config),
+		OrganizationID: channel.TenantID,
+		ChannelID:      channel.ID,
+		Store:          paymentRepo,
+	}))
+	callingHandler.RegisterClient(channel.ID, calling.NewClient(&calling.ClientConfig{
+		AccessToken:   accessToken,
+		PhoneNumberID: phoneNumberID,
+		APIVersion:    apiVersion,
+	}))
+	ctwaHandler.RegisterClient(channel.ID, ctwa.NewClient(&ctwa.ClientConfig{}))
+
+	return true
+}
+
+func unregisterWhatsAppAdvancedClient(
+	channelID string,
+	whatsappAnalyticsHandler *handlers.WhatsAppAnalyticsHandler,
+	paymentsHandler *handlers.PaymentsHandler,
+	callingHandler *handlers.CallingHandler,
+	ctwaHandler *handlers.CTWAHandler,
+) {
+	whatsappAnalyticsHandler.UnregisterClient(channelID)
+	paymentsHandler.UnregisterClient(channelID)
+	callingHandler.UnregisterClient(channelID)
+	ctwaHandler.UnregisterClient(channelID)
+}
+
+func channelConfigValue(channel *entity.Channel, key string) string {
+	if channel.Credentials != nil {
+		if value := channel.Credentials[key]; value != "" {
+			return value
+		}
+	}
+	if channel.Config != nil {
+		return channel.Config[key]
+	}
+	return ""
+}
+
+func paymentGatewayConfig(config map[string]string) *payments.GatewayConfig {
+	if config == nil {
+		return nil
+	}
+
+	gatewayType := config["payment_gateway_type"]
+	if gatewayType == "" {
+		gatewayType = config["gateway_type"]
+	}
+	if gatewayType == "" {
+		return nil
+	}
+
+	return &payments.GatewayConfig{
+		Type:          payments.GatewayType(gatewayType),
+		APIKey:        config["payment_api_key"],
+		APISecret:     config["payment_api_secret"],
+		MerchantID:    config["payment_merchant_id"],
+		WebhookSecret: config["payment_webhook_secret"],
+		WebhookURL:    config["payment_webhook_url"],
+		SandboxMode:   config["payment_sandbox_mode"] == "true" || config["sandbox_mode"] == "true",
+	}
 }
 
 // Helper function to convert status string to entity.MessageStatus

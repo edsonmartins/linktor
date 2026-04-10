@@ -19,7 +19,7 @@ The recommended way to authenticate API requests is using API keys:
 4. Use it in the `Authorization` header:
 
 ```bash
-curl -X GET http://localhost:8080/api/v1/conversations \
+curl -X GET http://localhost:8081/api/v1/conversations \
   -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
@@ -29,7 +29,7 @@ For user-based authentication, use JWT tokens:
 
 ```bash
 # Login to get a token
-curl -X POST http://localhost:8080/api/v1/auth/login \
+curl -X POST http://localhost:8081/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -47,7 +47,7 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 }
 
 # Use the token
-curl -X GET http://localhost:8080/api/v1/conversations \
+curl -X GET http://localhost:8081/api/v1/conversations \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..."
 ```
 

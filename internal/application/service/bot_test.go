@@ -349,7 +349,7 @@ func TestBotCreate_Success(t *testing.T) {
 	}
 }
 
-func TestBotCreate_ProviderNotAvailable(t *testing.T) {
+func TestBotCreate_AllowsUnavailableProvider(t *testing.T) {
 	botRepo := NewMockBotRepository()
 	factory := NewAIProviderFactory() // no providers registered
 
@@ -363,9 +363,15 @@ func TestBotCreate_ProviderNotAvailable(t *testing.T) {
 		Model:    "gpt-4",
 	}
 
-	_, err := svc.Create(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for unavailable provider, got nil")
+	bot, err := svc.Create(context.Background(), input)
+	if err != nil {
+		t.Fatalf("expected no error for unavailable provider, got %v", err)
+	}
+	if bot == nil {
+		t.Fatal("expected bot to be created, got nil")
+	}
+	if bot.Provider != entity.AIProviderOpenAI {
+		t.Fatalf("expected provider openai, got %q", bot.Provider)
 	}
 }
 

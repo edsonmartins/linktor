@@ -185,10 +185,12 @@ export interface MessageAttachment {
 // API Response types
 export interface PaginatedResponse<T> {
   data: T[]
-  total: number
-  page: number
-  per_page: number
-  total_pages: number
+  pagination: {
+    total: number
+    page: number
+    page_size: number
+    pages: number
+  }
 }
 
 export interface ApiErrorResponse {

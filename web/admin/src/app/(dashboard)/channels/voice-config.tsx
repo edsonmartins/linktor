@@ -140,15 +140,21 @@ export function VoiceConfig({ channel, onSuccess, onCancel }: VoiceConfigProps) 
   // Create/Update mutation
   const saveMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
+      const config: Record<string, string> = {
+        provider: data.provider,
+        record_calls: String(data.record_calls),
+        transcribe_calls: String(data.transcribe_calls),
+      }
+
+      if (data.credentials.webhook_url) {
+        config.webhook_url = data.credentials.webhook_url
+      }
+
       const payload = {
         name: data.name,
         type: 'voice',
-        config: {
-          provider: data.provider,
-          credentials: data.credentials,
-          record_calls: data.record_calls,
-          transcribe_calls: data.transcribe_calls,
-        },
+        config,
+        credentials: data.credentials,
       }
 
       if (isEditing) {
@@ -169,8 +175,9 @@ export function VoiceConfig({ channel, onSuccess, onCancel }: VoiceConfigProps) 
         type: 'voice',
         config: {
           provider: formData.provider,
-          credentials: formData.credentials,
+          webhook_url: formData.credentials.webhook_url || '',
         },
+        credentials: formData.credentials,
       }
       return api.post('/channels/test', payload)
     },
@@ -204,9 +211,9 @@ export function VoiceConfig({ channel, onSuccess, onCancel }: VoiceConfigProps) 
     })
   }
 
-  const webhookUrl = channel?.id
-    ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081'}/api/v1/webhooks/voice/${channel.id}`
-    : t('willBeGenerated')
+  const configuredWebhookUrl = formData.credentials.webhook_url
+  const webhookUrl = configuredWebhookUrl || t('notConfigured')
+  const canCopyWebhookUrl = !!configuredWebhookUrl
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col h-full">
@@ -441,6 +448,7 @@ export function VoiceConfig({ channel, onSuccess, onCancel }: VoiceConfigProps) 
                     type="button"
                     variant="outline"
                     size="icon"
+                    disabled={!canCopyWebhookUrl}
                     onClick={() => navigator.clipboard.writeText(webhookUrl)}
                   >
                     <Copy className="h-4 w-4" />

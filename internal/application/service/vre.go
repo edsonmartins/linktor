@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -29,21 +30,21 @@ type VREService struct {
 
 // VREServiceConfig holds configuration for VREService
 type VREServiceConfig struct {
-	TemplatesPath   string
-	CacheTTL        time.Duration
-	ChromePoolSize  int
-	DefaultWidth    int
-	DefaultQuality  int
+	TemplatesPath  string
+	CacheTTL       time.Duration
+	ChromePoolSize int
+	DefaultWidth   int
+	DefaultQuality int
 }
 
 // DefaultVREServiceConfig returns sensible defaults
 func DefaultVREServiceConfig() *VREServiceConfig {
 	return &VREServiceConfig{
-		TemplatesPath:   "./templates",
-		CacheTTL:        5 * time.Minute,
-		ChromePoolSize:  3,
-		DefaultWidth:    800,
-		DefaultQuality:  85,
+		TemplatesPath:  "./templates",
+		CacheTTL:       5 * time.Minute,
+		ChromePoolSize: 3,
+		DefaultWidth:   800,
+		DefaultQuality: 85,
 	}
 }
 
@@ -93,8 +94,32 @@ func (s *VREService) Render(ctx context.Context, req *entity.RenderRequest) (*en
 		return nil, err
 	}
 
+	// Determine the visual content to render.
+	var content string
+	var err error
+
+	if req.IsCustomSVG() {
+		// Use custom SVG directly
+		content = req.SVG
+	} else {
+		// Render from predefined template
+		content, err = s.registry.RenderTemplate(req.TenantID, req.TemplateID, req.Data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render template: %w", err)
+		}
+	}
+
+	isSVG := isSVGContent(content)
+
+	// Get rendering defaults based on channel. SVG templates default to PNG to
+	// match the source asset model and avoid JPEG artifacts around vector text.
+	defaults := req.GetDefaults()
+	if isSVG && req.Format == "" {
+		defaults.Format = entity.OutputFormatPNG
+	}
+
 	// Generate cache key
-	cacheKey := s.generateCacheKey(req)
+	cacheKey := s.generateCacheKey(req, content, defaults)
 
 	// Check cache
 	if s.cache != nil {
@@ -105,31 +130,19 @@ func (s *VREService) Render(ctx context.Context, req *entity.RenderRequest) (*en
 		}
 	}
 
-	// Get rendering defaults based on channel
-	defaults := req.GetDefaults()
-
-	// Determine the HTML to render
-	var html string
-	var err error
-
-	if req.IsCustomHTML() {
-		// Use custom HTML directly
-		html = req.HTML
-	} else {
-		// Render from predefined template
-		html, err = s.registry.RenderTemplate(req.TenantID, req.TemplateID, req.Data)
-		if err != nil {
-			return nil, fmt.Errorf("failed to render template: %w", err)
-		}
-	}
-
-	// Render HTML to image
-	imageData, err := s.renderer.RenderHTML(ctx, html, vre.RenderOpts{
+	renderOpts := vre.RenderOpts{
 		Width:   defaults.Width,
 		Format:  defaults.Format,
 		Quality: defaults.Quality,
 		Scale:   defaults.Scale,
-	})
+	}
+
+	if !isSVG {
+		return nil, fmt.Errorf("template did not render SVG content")
+	}
+
+	// Render SVG to image
+	imageData, err := s.renderer.RenderSVG(ctx, content, renderOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render image: %w", err)
 	}
@@ -139,7 +152,7 @@ func (s *VREService) Render(ctx context.Context, req *entity.RenderRequest) (*en
 
 	// Generate caption (only for predefined templates)
 	caption := req.Caption
-	if caption == "" && !req.IsCustomHTML() {
+	if caption == "" && !req.IsCustomSVG() {
 		caption = s.captionGen.Generate(req.TemplateID, req.Data, "")
 	}
 
@@ -164,11 +177,11 @@ func (s *VREService) Render(ctx context.Context, req *entity.RenderRequest) (*en
 	return response, nil
 }
 
-// RenderHTML renders custom HTML directly (shorthand method)
-func (s *VREService) RenderHTML(ctx context.Context, tenantID, html string, opts *entity.RenderRequest) (*entity.RenderResponse, error) {
+// RenderSVG renders custom SVG directly (shorthand method)
+func (s *VREService) RenderSVG(ctx context.Context, tenantID, svg string, opts *entity.RenderRequest) (*entity.RenderResponse, error) {
 	req := &entity.RenderRequest{
 		TenantID: tenantID,
-		HTML:     html,
+		SVG:      svg,
 		Channel:  entity.VREChannelWhatsApp,
 	}
 	if opts != nil {
@@ -293,28 +306,20 @@ func (s *VREService) Close() error {
 }
 
 // generateCacheKey generates a unique cache key for a render request
-func (s *VREService) generateCacheKey(req *entity.RenderRequest) string {
-	var contentToHash []byte
-
-	if req.IsCustomHTML() {
-		// Hash the custom HTML content
-		contentToHash = []byte(req.HTML)
-	} else {
-		// Hash the template ID + data
-		dataBytes, _ := json.Marshal(req.Data)
-		contentToHash = append([]byte(req.TemplateID), dataBytes...)
-	}
-
+func (s *VREService) generateCacheKey(req *entity.RenderRequest, content string, defaults entity.ChannelDefaults) string {
+	dataBytes, _ := json.Marshal(req.Data)
+	contentToHash := append([]byte(content), dataBytes...)
 	hash := sha256.Sum256(contentToHash)
 	contentHash := hex.EncodeToString(hash[:8]) // Use first 8 bytes
 
-	defaults := req.GetDefaults()
-	return fmt.Sprintf("%s%s:%s:%d:%s",
+	return fmt.Sprintf("%s%s:%s:%d:%s:%d:%.2f",
 		s.cachePrefix,
 		req.TenantID,
 		contentHash,
 		defaults.Width,
 		defaults.Format,
+		defaults.Quality,
+		defaults.Scale,
 	)
 }
 
@@ -449,4 +454,9 @@ func encodeBase64Raw(dst, src []byte) int {
 		n += 4
 	}
 	return n
+}
+
+func isSVGContent(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	return strings.HasPrefix(trimmed, "<svg")
 }

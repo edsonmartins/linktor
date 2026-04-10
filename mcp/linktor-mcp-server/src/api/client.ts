@@ -510,9 +510,8 @@ export class LinktorClient {
       height: number;
     }> => {
       return this.request({
-        method: 'POST',
+        method: 'GET',
         path: `/vre/templates/${input.template_id}/preview`,
-        body: input.data ? { data: input.data } : undefined,
       });
     },
   };

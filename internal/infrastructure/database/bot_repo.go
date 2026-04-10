@@ -62,7 +62,7 @@ func (r *BotRepository) Create(ctx context.Context, bot *entity.Bot) error {
 func (r *BotRepository) FindByID(ctx context.Context, id string) (*entity.Bot, error) {
 	query := `
 		SELECT id, tenant_id, name, type, provider, model, config,
-		       status, channels, created_at, updated_at
+		       status, COALESCE(channels::text[], ARRAY[]::text[]), created_at, updated_at
 		FROM bots
 		WHERE id = $1
 	`
@@ -90,7 +90,7 @@ func (r *BotRepository) FindByTenant(ctx context.Context, tenantID string, param
 	// Get bots
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, name, type, provider, model, config,
-		       status, channels, created_at, updated_at
+		       status, COALESCE(channels::text[], ARRAY[]::text[]), created_at, updated_at
 		FROM bots
 		WHERE tenant_id = $1
 		ORDER BY %s %s
@@ -119,7 +119,7 @@ func (r *BotRepository) FindByTenant(ctx context.Context, tenantID string, param
 func (r *BotRepository) FindByChannel(ctx context.Context, channelID string) (*entity.Bot, error) {
 	query := `
 		SELECT id, tenant_id, name, type, provider, model, config,
-		       status, channels, created_at, updated_at
+		       status, COALESCE(channels::text[], ARRAY[]::text[]), created_at, updated_at
 		FROM bots
 		WHERE $1 = ANY(channels) AND status = 'active'
 		LIMIT 1
@@ -140,7 +140,7 @@ func (r *BotRepository) FindByChannel(ctx context.Context, channelID string) (*e
 func (r *BotRepository) FindActiveByTenant(ctx context.Context, tenantID string) ([]*entity.Bot, error) {
 	query := `
 		SELECT id, tenant_id, name, type, provider, model, config,
-		       status, channels, created_at, updated_at
+		       status, COALESCE(channels::text[], ARRAY[]::text[]), created_at, updated_at
 		FROM bots
 		WHERE tenant_id = $1 AND status = 'active'
 		ORDER BY created_at DESC
@@ -296,7 +296,7 @@ func (r *BotRepository) scanBot(row pgx.Row) (*entity.Bot, error) {
 
 	err := row.Scan(
 		&b.ID, &b.TenantID, &b.Name, &botType, &provider, &b.Model,
-		&config, &status, pq.Array(&channels), &b.CreatedAt, &b.UpdatedAt,
+		&config, &status, &channels, &b.CreatedAt, &b.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -322,7 +322,7 @@ func (r *BotRepository) scanBotFromRows(rows pgx.Rows) (*entity.Bot, error) {
 
 	err := rows.Scan(
 		&b.ID, &b.TenantID, &b.Name, &botType, &provider, &b.Model,
-		&config, &status, pq.Array(&channels), &b.CreatedAt, &b.UpdatedAt,
+		&config, &status, &channels, &b.CreatedAt, &b.UpdatedAt,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan bot")

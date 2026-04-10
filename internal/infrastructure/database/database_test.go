@@ -169,6 +169,12 @@ func TestMigrationStringsNotEmpty(t *testing.T) {
 		createFlowsTable,
 		createKnowledgeBasesTable,
 		createKnowledgeItemsTable,
+		createTemplatesTable,
+		createMessageLogsTable,
+		createSystemMetricsTable,
+		createWhatsAppPaymentsTables,
+		createWhatsAppHistoryImportsTable,
+		createWhatsAppCoexistenceTables,
 	}
 
 	for i, sql := range migrations {

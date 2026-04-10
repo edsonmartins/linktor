@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -79,10 +80,31 @@ func (r *ContactRepository) FindByID(ctx context.Context, id string) (*entity.Co
 
 // FindByTenant finds contacts for a tenant with pagination
 func (r *ContactRepository) FindByTenant(ctx context.Context, tenantID string, params *repository.ListParams) ([]*entity.Contact, int64, error) {
+	if params == nil {
+		params = repository.NewListParams()
+	}
+
+	conditions := []string{"tenant_id = $1"}
+	args := []interface{}{tenantID}
+	nextArg := 2
+
+	if rawSearch, ok := params.Filters["search"].(string); ok {
+		search := strings.TrimSpace(rawSearch)
+		if search != "" {
+			conditions = append(conditions,
+				fmt.Sprintf("(name ILIKE $%d OR email ILIKE $%d OR phone ILIKE $%d)",
+					nextArg, nextArg, nextArg))
+			args = append(args, "%"+search+"%")
+			nextArg++
+		}
+	}
+
+	whereClause := "WHERE " + strings.Join(conditions, " AND ")
+
 	// Count total
-	countQuery := `SELECT COUNT(*) FROM contacts WHERE tenant_id = $1`
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM contacts %s", whereClause)
 	var total int64
-	if err := r.db.Pool.QueryRow(ctx, countQuery, tenantID).Scan(&total); err != nil {
+	if err := r.db.Pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to count contacts")
 	}
 
@@ -91,12 +113,13 @@ func (r *ContactRepository) FindByTenant(ctx context.Context, tenantID string, p
 		SELECT id, tenant_id, name, email, phone, avatar_url,
 		       custom_fields, tags, created_at, updated_at
 		FROM contacts
-		WHERE tenant_id = $1
+		%s
 		ORDER BY %s %s
-		LIMIT $2 OFFSET $3
-	`, sanitizeContactColumn(params.SortBy), sanitizeDirection(params.SortDir))
+		LIMIT $%d OFFSET $%d
+	`, whereClause, sanitizeContactColumn(params.SortBy), sanitizeDirection(params.SortDir), nextArg, nextArg+1)
 
-	rows, err := r.db.Pool.Query(ctx, query, tenantID, params.Limit(), params.Offset())
+	queryArgs := append(append([]interface{}{}, args...), params.Limit(), params.Offset())
+	rows, err := r.db.Pool.Query(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to query contacts")
 	}

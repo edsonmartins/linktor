@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,6 +12,7 @@ import (
 
 // WhatsAppAnalyticsHandler handles WhatsApp analytics HTTP requests
 type WhatsAppAnalyticsHandler struct {
+	mu      sync.RWMutex
 	clients map[string]*analytics.Client // key: channel_id
 }
 
@@ -23,11 +25,22 @@ func NewWhatsAppAnalyticsHandler() *WhatsAppAnalyticsHandler {
 
 // RegisterClient registers an analytics client for a channel
 func (h *WhatsAppAnalyticsHandler) RegisterClient(channelID string, client *analytics.Client) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.clients[channelID] = client
+}
+
+// UnregisterClient removes an analytics client for a channel.
+func (h *WhatsAppAnalyticsHandler) UnregisterClient(channelID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.clients, channelID)
 }
 
 // getClient retrieves the analytics client for a channel
 func (h *WhatsAppAnalyticsHandler) getClient(channelID string) (*analytics.Client, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	client, ok := h.clients[channelID]
 	return client, ok
 }
@@ -357,10 +370,10 @@ func (h *WhatsAppAnalyticsHandler) GetDashboardData(c *gin.Context) {
 
 	if phoneAnalytics != nil {
 		dashboard["phone_number"] = gin.H{
-			"quality_rating":   phoneAnalytics.QualityRating,
-			"messaging_limit":  phoneAnalytics.MessagingLimit,
-			"status":           phoneAnalytics.Status,
-			"throughput":       phoneAnalytics.CurrentThroughput,
+			"quality_rating":  phoneAnalytics.QualityRating,
+			"messaging_limit": phoneAnalytics.MessagingLimit,
+			"status":          phoneAnalytics.Status,
+			"throughput":      phoneAnalytics.CurrentThroughput,
 		}
 	}
 

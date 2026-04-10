@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="520" viewBox="0 0 800 520">
+  <rect width="800" height="520" rx="28" fill="{{ .Brand.Background }}"/>
+  <rect x="32" y="32" width="736" height="96" rx="18" fill="{{ .Brand.AccentColor }}"/>
+  <text x="400" y="92" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="30" font-weight="700">{{ if .Data.titulo }}{{ .Data.titulo }}{{ else }}Confirmacao{{ end }}</text>
+  {{ if .Data.previsao_entrega }}<text x="400" y="118" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="16">Entrega prevista: {{ .Data.previsao_entrega }}</text>{{ end }}
+  {{ range $i, $item := .Data.itens }}
+  <g transform="translate(56, {{ add 168 (mul $i 58) }})">
+    <rect width="688" height="46" rx="12" fill="#f8f9fb" stroke="#eef0f3"/>
+    <text x="20" y="30" fill="{{ $.Brand.TextColor }}" font-family="Arial, sans-serif" font-size="17" font-weight="700">{{ $item.nome }}</text>
+    {{ if $item.quantidade }}<text x="360" y="30" fill="{{ $.Brand.MutedColor }}" font-family="Arial, sans-serif" font-size="15">{{ $item.quantidade }}</text>{{ end }}
+    <text x="668" y="30" text-anchor="end" fill="{{ $.Brand.TextColor }}" font-family="Arial, sans-serif" font-size="17" font-weight="700">{{ formatCurrency $item.preco }}</text>
+  </g>
+  {{ end }}
+  <rect x="56" y="428" width="688" height="56" rx="14" fill="{{ .Brand.PrimaryColor }}"/>
+  <text x="84" y="464" fill="#ffffff" font-family="Arial, sans-serif" font-size="20" font-weight="700">Total</text>
+  <text x="720" y="464" text-anchor="end" fill="#ffffff" font-family="Arial, sans-serif" font-size="26" font-weight="700">{{ formatCurrency .Data.valor_total }}</text>
+</svg>

@@ -35,12 +35,12 @@ The Linktor MCP Server allows AI assistants to:
 
 ## Visual Response Engine (VRE)
 
-The VRE enables sending rich visual responses on channels that don't support native buttons (like unofficial WhatsApp). HTML templates are rendered as images and sent with accessible captions.
+The VRE enables sending rich visual responses on channels that don't support native buttons (like unofficial WhatsApp). SVG templates are rendered as images and sent with accessible captions.
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   AI decides    │────▶│  VRE renders    │────▶│  Image sent to  │
-│   visual tool   │     │  HTML → PNG     │     │  WhatsApp/etc   │
+│   visual tool   │     │  SVG → PNG      │     │  WhatsApp/etc   │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
@@ -338,7 +338,7 @@ Payment card with QR code and copy-paste code. Reusable across verticals.
 
 1. **AI Decision**: The LLM decides when a visual response is appropriate
 2. **Tool Call**: AI calls a VRE tool (e.g., `mostrar_menu`) with structured data
-3. **Template Resolution**: VRE loads the HTML template with tenant branding
+3. **Template Resolution**: VRE loads the SVG template with tenant branding
 4. **Rendering**: Template is rendered to PNG via headless Chrome
 5. **Caption Generation**: Accessible text caption is generated
 6. **Delivery**: Image + caption sent to the customer's channel

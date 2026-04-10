@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -74,6 +72,69 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - linktor-network
+
+  # Linktor API Server
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: linktor-backend
+    environment:
+      LINKTOR_SERVER_PORT: 8081
+      LINKTOR_SERVER_HOST: 0.0.0.0
+      LINKTOR_SERVER_MODE: debug
+      LINKTOR_DATABASE_HOST: postgres
+      LINKTOR_DATABASE_PORT: 5432
+      LINKTOR_DATABASE_USER: linktor
+      LINKTOR_DATABASE_PASSWORD: linktor
+      LINKTOR_DATABASE_DATABASE: linktor
+      LINKTOR_DATABASE_SSL_MODE: disable
+      LINKTOR_REDIS_HOST: redis
+      LINKTOR_REDIS_PORT: 6379
+      LINKTOR_NATS_URL: nats://nats:4222
+      LINKTOR_JWT_SECRET: change-me-in-development
+      BASE_URL: http://localhost:8081
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - linktor-network
+
+  # Linktor Admin Dashboard
+  admin:
+    build:
+      context: ./web/admin
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8081/api/v1
+        NEXT_PUBLIC_WS_URL: ws://localhost:8081/api/v1/ws
+        NEXT_PUBLIC_WEBHOOK_BASE_URL: http://localhost:8081
+    container_name: linktor-admin
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8081/api/v1
+      NEXT_PUBLIC_WS_URL: ws://localhost:8081/api/v1/ws
+      NEXT_PUBLIC_WEBHOOK_BASE_URL: http://localhost:8081
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
       - linktor-network
 

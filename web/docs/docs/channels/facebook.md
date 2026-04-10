@@ -601,5 +601,5 @@ Linktor validates all incoming webhooks using:
 
 - [Flows](/flows/overview) - Build automated Messenger flows
 - [AI Bots](/bots/overview) - Add AI to your Messenger experience
-- [Analytics](/api/analytics) - Track Messenger performance
-- [Handover Protocol](/guides/facebook-handover) - Human-bot collaboration
+- [API Reference](/api/overview) - Review available API resources
+- [Facebook Channel](/channels/facebook) - Review human-bot collaboration options

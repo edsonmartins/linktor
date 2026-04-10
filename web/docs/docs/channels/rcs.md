@@ -669,6 +669,6 @@ RCS pricing varies by:
 ## Next Steps
 
 - [Flows](/flows/overview) - Build automated RCS flows
-- [Rich Card Designer](/guides/rcs-rich-cards) - Design rich cards visually
+- [RCS Channel](/channels/rcs) - Review RCS rich card capabilities
 - [SMS Integration](/channels/sms) - Configure SMS fallback
-- [Analytics](/api/analytics) - Track RCS performance
+- [API Reference](/api/overview) - Review available API resources

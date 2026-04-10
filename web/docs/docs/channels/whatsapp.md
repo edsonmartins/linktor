@@ -400,7 +400,7 @@ Linktor validates all incoming webhooks using:
 
 ## Next Steps
 
-- [Message Templates](/api/whatsapp-templates) - Deep dive into templates
+- [Messages API](/api/messages) - Send and manage WhatsApp messages
 - [Flows](/flows/overview) - Build automated WhatsApp flows
 - [Bots](/bots/overview) - Connect AI bots to WhatsApp
-- [Analytics](/api/analytics) - Track WhatsApp performance
+- [API Reference](/api/overview) - Review available API resources

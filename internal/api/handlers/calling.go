@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,7 @@ import (
 
 // CallingHandler handles call-related HTTP requests
 type CallingHandler struct {
+	mu      sync.RWMutex
 	clients map[string]*calling.Client // key: channel_id
 }
 
@@ -24,11 +26,22 @@ func NewCallingHandler() *CallingHandler {
 
 // RegisterClient registers a calling client for a channel
 func (h *CallingHandler) RegisterClient(channelID string, client *calling.Client) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.clients[channelID] = client
+}
+
+// UnregisterClient removes a calling client for a channel.
+func (h *CallingHandler) UnregisterClient(channelID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.clients, channelID)
 }
 
 // getClient retrieves the calling client for a channel
 func (h *CallingHandler) getClient(channelID string) (*calling.Client, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	client, ok := h.clients[channelID]
 	return client, ok
 }

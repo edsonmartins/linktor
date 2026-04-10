@@ -4,20 +4,21 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 )
 
 // TemplateRegistry manages VRE templates with tenant-specific overrides
 type TemplateRegistry struct {
-	basePath   string
-	templates  map[string]*template.Template // cache: tenant_id:template_id -> template
-	configs    map[string]*entity.TenantBrandConfig
-	mu         sync.RWMutex
+	basePath  string
+	templates map[string]*template.Template // cache: tenant_id:template_id -> template
+	configs   map[string]*entity.TenantBrandConfig
+	mu        sync.RWMutex
 }
 
 // NewTemplateRegistry creates a new template registry
@@ -38,8 +39,8 @@ func NewTemplateRegistry(basePath string) (*TemplateRegistry, error) {
 
 // Resolve returns the template for a tenant and template ID
 // Resolution order:
-//   1. tenants/{tenant_id}/{template_id}.html (custom tenant template)
-//   2. default/{template_id}.html (default template)
+//  1. tenants/{tenant_id}/{template_id}.svg (custom tenant SVG template)
+//  2. default/{template_id}.svg (default SVG template)
 func (r *TemplateRegistry) Resolve(tenantID, templateID string) (*template.Template, error) {
 	cacheKey := fmt.Sprintf("%s:%s", tenantID, templateID)
 
@@ -67,20 +68,9 @@ func (r *TemplateRegistry) Resolve(tenantID, templateID string) (*template.Templ
 
 // loadTemplate loads a template from disk
 func (r *TemplateRegistry) loadTemplate(tenantID, templateID string) (*template.Template, error) {
-	var templatePath string
-
-	// 1. Try tenant-specific template
-	tenantPath := filepath.Join(r.basePath, "tenants", tenantID, templateID+".html")
-	if _, err := os.Stat(tenantPath); err == nil {
-		templatePath = tenantPath
-	} else {
-		// 2. Fall back to default template
-		defaultPath := filepath.Join(r.basePath, "default", templateID+".html")
-		if _, err := os.Stat(defaultPath); err == nil {
-			templatePath = defaultPath
-		} else {
-			return nil, fmt.Errorf("template not found: %s (checked %s and %s)", templateID, tenantPath, defaultPath)
-		}
+	templatePath, checked := r.resolveTemplatePath(tenantID, templateID)
+	if templatePath == "" {
+		return nil, fmt.Errorf("template not found: %s (checked %s)", templateID, strings.Join(checked, ", "))
 	}
 
 	// Read template content
@@ -98,6 +88,21 @@ func (r *TemplateRegistry) loadTemplate(tenantID, templateID string) (*template.
 	}
 
 	return tmpl, nil
+}
+
+func (r *TemplateRegistry) resolveTemplatePath(tenantID, templateID string) (string, []string) {
+	candidates := []string{
+		filepath.Join(r.basePath, "tenants", tenantID, templateID+".svg"),
+		filepath.Join(r.basePath, "default", templateID+".svg"),
+	}
+
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, candidates
+		}
+	}
+
+	return "", candidates
 }
 
 // GetBrandConfig returns the brand configuration for a tenant
@@ -219,25 +224,11 @@ func (r *TemplateRegistry) ListTemplates(tenantID string) ([]string, error) {
 
 	// List default templates
 	defaultPath := filepath.Join(r.basePath, "default")
-	if entries, err := os.ReadDir(defaultPath); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() && filepath.Ext(entry.Name()) == ".html" {
-				name := entry.Name()[:len(entry.Name())-5] // Remove .html
-				templates[name] = true
-			}
-		}
-	}
+	addTemplatesFromDir(defaultPath, templates)
 
 	// List tenant-specific templates (override defaults)
 	tenantPath := filepath.Join(r.basePath, "tenants", tenantID)
-	if entries, err := os.ReadDir(tenantPath); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() && filepath.Ext(entry.Name()) == ".html" {
-				name := entry.Name()[:len(entry.Name())-5]
-				templates[name] = true
-			}
-		}
-	}
+	addTemplatesFromDir(tenantPath, templates)
 
 	// Convert to slice
 	result := make([]string, 0, len(templates))
@@ -246,6 +237,25 @@ func (r *TemplateRegistry) ListTemplates(tenantID string) ([]string, error) {
 	}
 
 	return result, nil
+}
+
+func addTemplatesFromDir(path string, templates map[string]bool) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := filepath.Ext(entry.Name())
+		if ext != ".svg" {
+			continue
+		}
+		name := strings.TrimSuffix(entry.Name(), ext)
+		templates[name] = true
+	}
 }
 
 // SaveBrandConfig saves the brand configuration for a tenant
@@ -289,8 +299,12 @@ func (r *TemplateRegistry) SaveTemplate(tenantID, templateID, content string) er
 		return fmt.Errorf("invalid template: %w", err)
 	}
 
+	if !isSVGTemplate(content) {
+		return fmt.Errorf("template must be SVG")
+	}
+
 	// Write file
-	templatePath := filepath.Join(tenantPath, templateID+".html")
+	templatePath := filepath.Join(tenantPath, templateID+".svg")
 	if err := os.WriteFile(templatePath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write template: %w", err)
 	}
@@ -299,4 +313,9 @@ func (r *TemplateRegistry) SaveTemplate(tenantID, templateID, content string) er
 	r.InvalidateCache(tenantID)
 
 	return nil
+}
+
+func isSVGTemplate(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	return strings.HasPrefix(trimmed, "<svg") || strings.HasPrefix(trimmed, `{{`) && strings.Contains(trimmed, "<svg")
 }

@@ -66,7 +66,7 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
-import type { User, PaginatedResponse } from '@/types'
+import type { User } from '@/types'
 
 type UserRole = 'admin' | 'agent' | 'supervisor'
 type UserStatus = 'active' | 'inactive'
@@ -596,7 +596,7 @@ export default function UsersPage() {
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.users.list({ search, role: roleFilter }),
     queryFn: () =>
-      api.get<PaginatedResponse<User>>('/users', {
+      api.getEnvelope<User[]>('/users', {
         ...(search && { search }),
         ...(roleFilter !== 'all' && { role: roleFilter }),
       }),

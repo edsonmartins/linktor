@@ -56,7 +56,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
-import { api } from '@/lib/api'
+import { api, WEBHOOK_BASE_URL } from '@/lib/api'
 import type { Channel } from '@/types'
 
 /**
@@ -103,7 +103,7 @@ export function TelegramConfig({
   })
 
   const webhookUrl = channel
-    ? `${window.location.origin}/api/v1/webhooks/telegram/${channel.id}`
+    ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/telegram/${channel.id}`
     : t('willBeGenerated')
 
   const onSubmit = async (data: TelegramConfigForm) => {

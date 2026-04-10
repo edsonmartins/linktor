@@ -513,5 +513,5 @@ await client.messages.send({
 
 - [Flows](/flows/overview) - Build automated Telegram flows
 - [Bots](/bots/overview) - Connect AI bots to Telegram
-- [Inline Mode](/api/telegram-inline) - Enable inline queries
-- [Payments](/api/telegram-payments) - Accept payments via Telegram
+- [Telegram Channel](/channels/telegram) - Review Telegram capabilities and limits
+- [API Reference](/api/overview) - Connect Telegram through the API

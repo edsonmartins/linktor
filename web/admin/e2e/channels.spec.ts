@@ -67,7 +67,7 @@ test.describe('Channels Page', () => {
   test('shows channel status', async ({ page }) => {
     await page.goto('/channels')
 
-    await expect(page.getByText('WhatsApp Business')).toBeVisible({ timeout: 15000 })
+    await expect(page.locator('h3').filter({ hasText: 'WhatsApp Business' })).toBeVisible({ timeout: 15000 })
     await expect(page.getByText(/connected/i).first()).toBeVisible()
   })
 })

@@ -18,16 +18,19 @@ const config: Config = {
   projectName: 'linktor',
 
   onBrokenLinks: 'warn',
-  onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
 
   i18n: {
     defaultLocale: 'en',
     locales: ['en'],
   },
 
-  // Note: @scalar/docusaurus requires React 18, but this project uses React 19.
-  // The Scalar plugin is temporarily disabled until compatibility is resolved.
-  // To re-enable, install @scalar/docusaurus with --legacy-peer-deps and uncomment below.
+  // The Scalar plugin is temporarily disabled until an OpenAPI spec is published
+  // under static/openapi.json or another stable URL.
   plugins: [
     // [
     //   '@scalar/docusaurus',

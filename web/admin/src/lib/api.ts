@@ -4,6 +4,11 @@
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1'
+const WEBHOOK_BASE_URL = (
+  process.env.NEXT_PUBLIC_WEBHOOK_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/v1\/?$/, '') ||
+  'http://localhost:8081'
+).replace(/\/$/, '')
 
 // Flag to prevent multiple simultaneous refresh attempts
 let isRefreshing = false
@@ -16,6 +21,27 @@ type RequestConfig = {
   params?: Record<string, string>
 }
 
+type ErrorPayload = {
+  error?: { message?: string; code?: string }
+  message?: string
+}
+
+type MetaResponse = {
+  page: number
+  page_size: number
+  total_pages: number
+  total_items: number
+  has_next: boolean
+  has_previous: boolean
+}
+
+type ApiEnvelope<T> = {
+  success: boolean
+  data?: T
+  error?: ErrorPayload['error']
+  meta?: MetaResponse
+}
+
 class ApiError extends Error {
   public code: string
 
@@ -25,7 +51,7 @@ class ApiError extends Error {
     public data?: unknown
   ) {
     // Extract message from backend response
-    const errorData = data as { error?: { message?: string; code?: string }; message?: string } | null
+    const errorData = data as ErrorPayload | null
     const message = errorData?.error?.message || errorData?.message || `API Error: ${status} ${statusText}`
     super(message)
     this.name = 'ApiError'
@@ -130,7 +156,7 @@ async function refreshAccessToken(): Promise<boolean> {
 /**
  * Core fetch wrapper with automatic token refresh
  */
-async function request<T>(endpoint: string, config: RequestConfig = {}, isRetry = false): Promise<T> {
+async function request<T>(endpoint: string, config: RequestConfig = {}, isRetry = false, unwrapEnvelope = true): Promise<T> {
   let finalConfig = { ...config }
 
   // Run request interceptors
@@ -165,7 +191,7 @@ async function request<T>(endpoint: string, config: RequestConfig = {}, isRetry 
     const refreshed = await refreshAccessToken()
     if (refreshed) {
       // Retry the request with new token
-      return request<T>(endpoint, config, true)
+      return request<T>(endpoint, config, true, unwrapEnvelope)
     } else {
       // Refresh failed - redirect to login
       if (typeof window !== 'undefined') {
@@ -190,11 +216,15 @@ async function request<T>(endpoint: string, config: RequestConfig = {}, isRetry 
 
   // Backend wraps responses in { success: true, data: ... }
   // Unwrap the data if present
-  if (json && typeof json === 'object' && 'success' in json && 'data' in json) {
+  if (unwrapEnvelope && json && typeof json === 'object' && 'success' in json && 'data' in json) {
     return json.data as T
   }
 
   return json as T
+}
+
+async function requestEnvelope<T>(endpoint: string, config: RequestConfig = {}, isRetry = false): Promise<ApiEnvelope<T>> {
+  return request<ApiEnvelope<T>>(endpoint, config, isRetry, false)
 }
 
 /**
@@ -215,7 +245,10 @@ export const api = {
 
   delete: <T>(endpoint: string) =>
     request<T>(endpoint, { method: 'DELETE' }),
+
+  getEnvelope: <T>(endpoint: string, params?: Record<string, string>) =>
+    requestEnvelope<T>(endpoint, { method: 'GET', params }),
 }
 
-export { tokenStorage, ApiError }
-export type { RequestConfig, RequestInterceptor, ResponseInterceptor }
+export { tokenStorage, ApiError, API_BASE_URL, WEBHOOK_BASE_URL }
+export type { ApiEnvelope, MetaResponse, RequestConfig, RequestInterceptor, ResponseInterceptor }

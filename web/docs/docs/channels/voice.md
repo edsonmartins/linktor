@@ -71,8 +71,8 @@ Before configuring Voice in Linktor, you'll need:
 1. Go to **Phone Numbers → Manage → Active Numbers**
 2. Select your phone number
 3. Under **Voice & Fax**:
-   - **A Call Comes In**: Webhook, `https://api.your-domain.com/webhooks/voice/{channelId}`
-   - **Call Status Changes**: `https://api.your-domain.com/webhooks/voice/{channelId}/status`
+   - **A Call Comes In**: configure this only after exposing a voice inbound callback in your deployment
+   - **Call Status Changes**: configure this only after exposing a voice status callback in your deployment
 
 ### Vonage Voice Setup
 
@@ -305,7 +305,7 @@ const call = await client.voice.calls.create({
   channelId: 'ch_voice_123',
   to: '+5511999999999',
   record: true,
-  recordingStatusCallback: 'https://api.your-domain.com/webhooks/voice/recording',
+  recordingStatusCallback: 'https://api.your-domain.com/your-voice-recording-callback',
   flow: 'outbound_call'
 })
 ```
@@ -459,7 +459,7 @@ client.voice.on('call.answered', async (call) => {
 ### Webhook URL Format
 
 ```
-https://api.your-domain.com/webhooks/voice/{channelId}
+Voice inbound callbacks are not exposed by the default API routes yet. Use a deployment-specific callback URL only if you add that route.
 ```
 
 ### Webhook Security
@@ -585,7 +585,7 @@ Voice calls are billed by:
 
 ## Next Steps
 
-- [IVR Flows](/flows/ivr) - Build complex IVR systems
-- [AI Voice Bots](/bots/voice) - Create AI-powered voice assistants
-- [Call Analytics](/api/analytics) - Track voice metrics
-- [Recording Guide](/guides/call-recording) - Recording best practices
+- [Flows](/flows/overview) - Build complex IVR systems
+- [AI Bots](/bots/overview) - Create AI-powered voice assistants
+- [API Reference](/api/overview) - Review available API resources
+- [Voice Channel](/channels/voice) - Review recording best practices

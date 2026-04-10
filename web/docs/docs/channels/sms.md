@@ -475,6 +475,6 @@ console.log(`Estimated cost: $${estimate.cost} (${estimate.segments} segments)`)
 ## Next Steps
 
 - [Flows](/flows/overview) - Build SMS automation flows
-- [Bulk Messaging](/api/bulk-messaging) - Send campaigns at scale
-- [Analytics](/api/analytics) - Track SMS performance
-- [Compliance Guide](/guides/sms-compliance) - Detailed compliance information
+- [Messages API](/api/messages) - Send SMS messages through the API
+- [API Reference](/api/overview) - Review available API resources
+- [SMS Channel](/channels/sms) - Review compliance considerations

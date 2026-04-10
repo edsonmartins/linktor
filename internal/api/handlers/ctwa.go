@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,7 @@ import (
 
 // CTWAHandler handles Click-to-WhatsApp Ads HTTP requests
 type CTWAHandler struct {
+	mu      sync.RWMutex
 	clients map[string]*ctwa.Client // key: channel_id
 }
 
@@ -24,11 +26,22 @@ func NewCTWAHandler() *CTWAHandler {
 
 // RegisterClient registers a CTWA client for a channel
 func (h *CTWAHandler) RegisterClient(channelID string, client *ctwa.Client) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.clients[channelID] = client
+}
+
+// UnregisterClient removes a CTWA client for a channel.
+func (h *CTWAHandler) UnregisterClient(channelID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.clients, channelID)
 }
 
 // getClient retrieves the CTWA client for a channel
 func (h *CTWAHandler) getClient(channelID string) (*ctwa.Client, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	client, ok := h.clients[channelID]
 	return client, ok
 }

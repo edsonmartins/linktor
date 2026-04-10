@@ -52,11 +52,20 @@ type ConnectResult struct {
 	PairCode  string          `json:"pair_code,omitempty"`
 }
 
+// ChannelLifecycleHooks lets composition roots react to channel lifecycle changes
+// without coupling the channel service to transport-specific handlers.
+type ChannelLifecycleHooks struct {
+	OnConnected    func(ctx context.Context, channel *entity.Channel)
+	OnDisconnected func(ctx context.Context, channel *entity.Channel)
+	OnUpdated      func(ctx context.Context, channel *entity.Channel)
+}
+
 // ChannelService handles channel operations
 type ChannelService struct {
 	repo     repository.ChannelRepository
 	registry *plugin.Registry
 	producer nats.Publisher
+	hooks    ChannelLifecycleHooks
 }
 
 // NewChannelService creates a new channel service
@@ -66,6 +75,11 @@ func NewChannelService(repo repository.ChannelRepository, registry *plugin.Regis
 		registry: registry,
 		producer: producer,
 	}
+}
+
+// SetLifecycleHooks configures callbacks for channel lifecycle changes.
+func (s *ChannelService) SetLifecycleHooks(hooks ChannelLifecycleHooks) {
+	s.hooks = hooks
 }
 
 // List returns all channels for a tenant
@@ -138,6 +152,7 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 		return nil, err
 	}
 
+	s.notifyChannelUpdated(ctx, channel)
 	return channel, nil
 }
 
@@ -221,6 +236,7 @@ func (s *ChannelService) Connect(ctx context.Context, id string) (*ConnectResult
 		return nil, err
 	}
 
+	s.notifyChannelConnected(ctx, channel)
 	return &ConnectResult{
 		Channel: channel,
 	}, nil
@@ -242,6 +258,7 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 				channel.ConnectionStatus = entity.ConnectionStatusConnected
 				channel.UpdatedAt = time.Now()
 				s.repo.UpdateConnectionStatus(ctx, channel.ID, entity.ConnectionStatusConnected)
+				s.notifyChannelConnected(ctx, channel)
 				return &ConnectResult{
 					Channel: channel,
 				}, nil
@@ -304,6 +321,7 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 			s.registry.RegisterChannelAdapter(channel.ID, adapter)
 		}
 
+		s.notifyChannelConnected(ctx, channel)
 		return &ConnectResult{
 			Channel: channel,
 		}, nil
@@ -428,6 +446,20 @@ func (s *ChannelService) updateChannelConnectionStatus(channelID string, status 
 		logger.Info("Channel connection status updated",
 			zap.String("channel_id", channelID),
 			zap.String("connection_status", string(status)))
+	}
+
+	channel, err := s.repo.FindByID(ctx, channelID)
+	if err != nil {
+		logger.Warn("Failed to load channel after connection status update",
+			zap.String("channel_id", channelID),
+			zap.Error(err))
+		return
+	}
+	channel.ConnectionStatus = status
+	if status == entity.ConnectionStatusConnected {
+		s.notifyChannelConnected(ctx, channel)
+	} else if status == entity.ConnectionStatusDisconnected {
+		s.notifyChannelDisconnected(ctx, channel)
 	}
 }
 
@@ -554,6 +586,12 @@ func (s *ChannelService) setupWhatsAppHandlers(adapter *whatsapp.Adapter, channe
 				zap.Error(err))
 			return err
 		}
+		channel.ConnectionStatus = newStatus
+		if connected {
+			s.notifyChannelConnected(ctx, channel)
+		} else {
+			s.notifyChannelDisconnected(ctx, channel)
+		}
 
 		// Optionally publish connection event to NATS
 		if s.producer != nil {
@@ -611,6 +649,7 @@ func (s *ChannelService) Disconnect(ctx context.Context, id string) error {
 	channel.ConnectionStatus = entity.ConnectionStatusDisconnected
 	channel.UpdatedAt = time.Now()
 
+	s.notifyChannelDisconnected(ctx, channel)
 	logger.Info("Channel disconnected successfully", zap.String("channel_id", id))
 	return nil
 }
@@ -828,5 +867,24 @@ func (s *ChannelService) reconnectWhatsAppChannel(ctx context.Context, channel *
 		s.registry.RegisterChannelAdapter(channel.ID, adapter)
 	}
 
+	s.notifyChannelConnected(ctx, channel)
 	return nil
+}
+
+func (s *ChannelService) notifyChannelConnected(ctx context.Context, channel *entity.Channel) {
+	if s.hooks.OnConnected != nil {
+		s.hooks.OnConnected(ctx, channel)
+	}
+}
+
+func (s *ChannelService) notifyChannelDisconnected(ctx context.Context, channel *entity.Channel) {
+	if s.hooks.OnDisconnected != nil {
+		s.hooks.OnDisconnected(ctx, channel)
+	}
+}
+
+func (s *ChannelService) notifyChannelUpdated(ctx context.Context, channel *entity.Channel) {
+	if s.hooks.OnUpdated != nil {
+		s.hooks.OnUpdated(ctx, channel)
+	}
 }

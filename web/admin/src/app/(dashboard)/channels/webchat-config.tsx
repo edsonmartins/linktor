@@ -56,6 +56,25 @@ interface WebchatConfigProps {
   onCancel?: () => void
 }
 
+const toBoolean = (value: unknown, fallback: boolean): boolean => {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true') return true
+    if (normalized === 'false') return false
+  }
+  return fallback
+}
+
+const toNumber = (value: unknown, fallback: number): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
 export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigProps) {
   const t = useTranslations('channels.config')
   const tCommon = useTranslations('common')
@@ -80,9 +99,9 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
       position: (channel?.config?.position as 'bottom-right' | 'bottom-left') || 'bottom-right',
       welcome_message: (channel?.config?.welcome_message as string) || '',
       placeholder_text: (channel?.config?.placeholder_text as string) || 'Type a message...',
-      auto_open: (channel?.config?.auto_open as boolean) || false,
-      auto_open_delay: (channel?.config?.auto_open_delay as number) || 3,
-      show_typing_indicator: (channel?.config?.show_typing_indicator as boolean) ?? true,
+      auto_open: toBoolean(channel?.config?.auto_open, false),
+      auto_open_delay: toNumber(channel?.config?.auto_open_delay, 3),
+      show_typing_indicator: toBoolean(channel?.config?.show_typing_indicator, true),
       allowed_domains: (channel?.config?.allowed_domains as string) || '',
     },
   })
@@ -102,12 +121,12 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
           primary_color: data.primary_color,
           text_color: data.text_color,
           position: data.position,
-          welcome_message: data.welcome_message,
-          placeholder_text: data.placeholder_text,
-          auto_open: data.auto_open,
-          auto_open_delay: data.auto_open_delay,
-          show_typing_indicator: data.show_typing_indicator,
-          allowed_domains: data.allowed_domains,
+          welcome_message: data.welcome_message || '',
+          placeholder_text: data.placeholder_text || '',
+          auto_open: String(data.auto_open),
+          auto_open_delay: String(data.auto_open_delay),
+          show_typing_indicator: String(data.show_typing_indicator),
+          allowed_domains: data.allowed_domains || '',
         },
       }
 

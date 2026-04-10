@@ -74,6 +74,10 @@ func (h *WebhookHandler) WhatsAppWebhook(c *gin.Context) {
 	// Process messages
 	for _, entry := range payload.Entry {
 		for _, change := range entry.Changes {
+			if change.Field == "message_echoes" && channel.IsCoexistenceChannel() {
+				h.updateCoexistenceLastEcho(c.Request.Context(), channel)
+			}
+
 			if change.Field == "messages" {
 				for _, msg := range change.Value.Messages {
 					if err := h.processWhatsAppMessage(c.Request.Context(), channel, msg, change.Value.Contacts); err != nil {
@@ -90,6 +94,17 @@ func (h *WebhookHandler) WhatsAppWebhook(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *WebhookHandler) updateCoexistenceLastEcho(ctx context.Context, channel *entity.Channel) {
+	channel.UpdateLastEchoAt()
+	if channel.CoexistenceStatus == entity.CoexistenceStatusWarning ||
+		channel.CoexistenceStatus == entity.CoexistenceStatusDisconnected ||
+		channel.CoexistenceStatus == entity.CoexistenceStatusPending {
+		channel.CoexistenceStatus = entity.CoexistenceStatusActive
+	}
+
+	_ = h.channelRepo.Update(ctx, channel)
 }
 
 // TelegramWebhook handles Telegram Bot API webhooks
@@ -1310,7 +1325,7 @@ type WhatsAppMessage struct {
 		Name      string  `json:"name"`
 		Address   string  `json:"address"`
 	} `json:"location,omitempty"`
-	Contacts []interface{} `json:"contacts,omitempty"`
+	Contacts    []interface{} `json:"contacts,omitempty"`
 	Interactive *struct {
 		Type        string `json:"type"`
 		ButtonReply *struct {
@@ -1366,9 +1381,9 @@ type TelegramMessage struct {
 		ID   int64  `json:"id"`
 		Type string `json:"type"`
 	} `json:"chat"`
-	Text     string `json:"text,omitempty"`
-	Caption  string `json:"caption,omitempty"`
-	Photo    []struct {
+	Text    string `json:"text,omitempty"`
+	Caption string `json:"caption,omitempty"`
+	Photo   []struct {
 		FileID   string `json:"file_id"`
 		Width    int    `json:"width"`
 		Height   int    `json:"height"`

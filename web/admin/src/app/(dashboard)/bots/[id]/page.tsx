@@ -56,6 +56,7 @@ import type {
   BotTestResult,
   Channel,
   KnowledgeBase,
+  PaginatedResponse,
   EscalationRule,
   EscalationRuleType,
   AIProvider,
@@ -111,16 +112,16 @@ export default function BotDetailPage() {
   // Fetch channels for assignment
   const { data: channelsData } = useQuery({
     queryKey: queryKeys.channels.list(),
-    queryFn: () => api.get<{ data: Channel[] }>('/channels'),
+    queryFn: () => api.get<Channel[]>('/channels'),
   })
 
   // Fetch knowledge bases
   const { data: kbData } = useQuery({
     queryKey: queryKeys.knowledgeBases.list({}),
-    queryFn: () => api.get<{ data: KnowledgeBase[] }>('/knowledge-bases'),
+    queryFn: () => api.get<PaginatedResponse<KnowledgeBase>>('/knowledge-bases'),
   })
 
-  const channels = channelsData?.data || []
+  const channels = channelsData || []
   const knowledgeBases = kbData?.data || []
 
   // Local state for editing

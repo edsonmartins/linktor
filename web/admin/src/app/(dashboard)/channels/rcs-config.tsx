@@ -40,6 +40,7 @@ import {
   Shield,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
 // Provider types
 type RCSProvider = "zenvia" | "infobip" | "pontaltech" | "google";
@@ -152,22 +153,34 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
     setTestStatus("idle");
   };
 
+  const buildChannelPayload = (data: FormData) => ({
+    type: "rcs",
+    name: `RCS ${providerInfo[data.provider].name}`,
+    identifier: data.agentId,
+    config: {
+      provider: data.provider,
+      agent_id: data.agentId,
+      api_key: data.apiKey,
+      api_secret: "apiSecret" in data ? data.apiSecret || "" : "",
+      base_url: "baseUrl" in data ? data.baseUrl || "" : "",
+      sender_id: "senderId" in data ? data.senderId || "" : "",
+    },
+    credentials: {
+      api_key: data.apiKey,
+      api_secret: "apiSecret" in data ? data.apiSecret || "" : "",
+    },
+  });
+
   const onSubmit = async (data: FormData) => {
     setConnectionStatus("connecting");
 
     try {
-      const response = await fetch(`/api/channels/rcs${channelId ? `/${channelId}` : ""}`, {
-        method: channelId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
+      const payload = buildChannelPayload(data);
+      const result = channelId
+        ? await api.put<{ webhook_url?: string; webhookUrl?: string }>(`/channels/${channelId}`, payload)
+        : await api.post<{ webhook_url?: string; webhookUrl?: string }>("/channels", payload);
 
-      if (!response.ok) {
-        throw new Error("Failed to save configuration");
-      }
-
-      const result = await response.json();
-      setWebhookUrl(result.webhookUrl || "");
+      setWebhookUrl(result.webhookUrl || result.webhook_url || "");
       setConnectionStatus("connected");
 
       toast({
@@ -193,15 +206,10 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
 
     try {
       const values = form.getValues();
-      const response = await fetch("/api/channels/rcs/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+      await api.post("/channels/test", {
+        type: "rcs",
+        config: buildChannelPayload(values).config,
       });
-
-      if (!response.ok) {
-        throw new Error(t('connectionTestFailed'));
-      }
 
       setTestStatus("success");
       toast({

@@ -31,6 +31,7 @@ The `@linktor/mcp-server` package provides full access to Linktor's capabilities
 | **Bots** | Configure and test AI bots |
 | **Analytics** | Access metrics, reports, and performance data |
 | **Knowledge** | Search and manage knowledge base articles |
+| **VRE** | Render visual response templates and send rich image responses |
 
 ### Resources (6)
 

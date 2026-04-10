@@ -16,7 +16,7 @@ http://localhost:3000
 ```
 
 Create an account or log in with the default credentials:
-- Email: `admin@linktor.io`
+- Email: `admin@demo.com`
 - Password: `admin123`
 
 ## 2. Create a Channel
@@ -79,7 +79,7 @@ You can also interact programmatically:
 # Get an API key from Settings → API Keys
 
 # Send a message
-curl -X POST http://localhost:8080/api/v1/messages \
+curl -X POST http://localhost:8081/api/v1/messages \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{

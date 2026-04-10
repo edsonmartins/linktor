@@ -6,10 +6,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/msgfy/linktor/internal/adapters/facebook"
+	"github.com/msgfy/linktor/internal/adapters/instagram"
+	"github.com/msgfy/linktor/internal/adapters/rcs"
 	"github.com/msgfy/linktor/internal/adapters/sms"
 	"github.com/msgfy/linktor/internal/adapters/telegram"
 	"github.com/msgfy/linktor/internal/api/middleware"
@@ -36,6 +40,12 @@ type CreateChannelRequest struct {
 	Type        string            `json:"type" binding:"required"`
 	Name        string            `json:"name" binding:"required"`
 	Identifier  string            `json:"identifier"`
+	Config      map[string]string `json:"config"`
+	Credentials map[string]string `json:"credentials"`
+}
+
+type TestChannelRequest struct {
+	Type        string            `json:"type"`
 	Config      map[string]string `json:"config"`
 	Credentials map[string]string `json:"credentials"`
 }
@@ -105,6 +115,62 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 	}
 
 	RespondCreated(c, channel)
+}
+
+// TestConnection validates channel credentials without creating a channel.
+func (h *ChannelHandler) TestConnection(c *gin.Context) {
+	h.testConnection(c, "")
+}
+
+func (h *ChannelHandler) TestWhatsAppConnection(c *gin.Context) {
+	h.testConnection(c, "whatsapp_official")
+}
+
+func (h *ChannelHandler) TestTelegramConnection(c *gin.Context) {
+	h.testConnection(c, "telegram")
+}
+
+func (h *ChannelHandler) TestTwilioConnection(c *gin.Context) {
+	h.testConnection(c, "sms")
+}
+
+func (h *ChannelHandler) TestFacebookConnection(c *gin.Context) {
+	h.testConnection(c, "facebook")
+}
+
+func (h *ChannelHandler) TestInstagramConnection(c *gin.Context) {
+	h.testConnection(c, "instagram")
+}
+
+func (h *ChannelHandler) testConnection(c *gin.Context, forcedType string) {
+	var raw map[string]interface{}
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		RespondValidationError(c, "Invalid request body", nil)
+		return
+	}
+
+	channelType := forcedType
+	if channelType == "" {
+		channelType = stringFromMap(raw, "type")
+	}
+	channelType = strings.ToLower(strings.TrimSpace(channelType))
+	if channelType == "" {
+		RespondValidationError(c, "type is required", nil)
+		return
+	}
+
+	config := flattenChannelTestConfig(raw)
+	if err := validateChannelTestConfig(channelType, config); err != nil {
+		RespondValidationError(c, err.Error(), nil)
+		return
+	}
+
+	RespondSuccess(c, gin.H{
+		"status":  "ok",
+		"type":    channelType,
+		"valid":   true,
+		"message": "configuration accepted",
+	})
 }
 
 // Get godoc
@@ -383,6 +449,134 @@ func (h *ChannelHandler) RequestPairCode(c *gin.Context) {
 	}
 
 	RespondSuccess(c, result)
+}
+
+func flattenChannelTestConfig(raw map[string]interface{}) map[string]string {
+	config := make(map[string]string)
+
+	for key, value := range raw {
+		switch key {
+		case "type", "config", "credentials":
+			continue
+		default:
+			if str, ok := value.(string); ok {
+				config[normalizeConfigKey(key)] = str
+			}
+		}
+	}
+
+	mergeStringMap(config, raw["config"])
+	mergeStringMap(config, raw["credentials"])
+
+	return config
+}
+
+func mergeStringMap(dst map[string]string, value interface{}) {
+	values, ok := value.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	for key, rawValue := range values {
+		if str, ok := rawValue.(string); ok {
+			dst[normalizeConfigKey(key)] = str
+		}
+	}
+}
+
+func normalizeConfigKey(key string) string {
+	replacements := map[string]string{
+		"accessToken":         "access_token",
+		"phoneNumberId":       "phone_number_id",
+		"phoneNumberID":       "phone_number_id",
+		"apiVersion":          "api_version",
+		"botToken":            "bot_token",
+		"accountSid":          "account_sid",
+		"accountSID":          "account_sid",
+		"authToken":           "auth_token",
+		"apiKeySid":           "api_key_sid",
+		"apiKeySID":           "api_key_sid",
+		"apiKeySecret":        "api_key_secret",
+		"messagingServiceSid": "messaging_service_sid",
+		"messagingServiceSID": "messaging_service_sid",
+		"pageId":              "page_id",
+		"pageID":              "page_id",
+		"pageAccessToken":     "page_access_token",
+		"instagramId":         "instagram_id",
+		"instagramID":         "instagram_id",
+		"appId":               "app_id",
+		"appID":               "app_id",
+		"appSecret":           "app_secret",
+		"verifyToken":         "verify_token",
+		"agentId":             "agent_id",
+		"agentID":             "agent_id",
+		"apiKey":              "api_key",
+		"apiSecret":           "api_secret",
+		"baseUrl":             "base_url",
+		"baseURL":             "base_url",
+		"senderId":            "sender_id",
+		"senderID":            "sender_id",
+		"webhookUrl":          "webhook_url",
+		"webhookURL":          "webhook_url",
+		"webhookSecret":       "webhook_secret",
+		"statusCallbackUrl":   "status_callback_url",
+		"statusCallbackURL":   "status_callback_url",
+		"userAccessToken":     "user_access_token",
+	}
+	if replacement, ok := replacements[key]; ok {
+		return replacement
+	}
+	return key
+}
+
+func stringFromMap(values map[string]interface{}, key string) string {
+	value, ok := values[key].(string)
+	if !ok {
+		return ""
+	}
+	return value
+}
+
+func validateChannelTestConfig(channelType string, config map[string]string) error {
+	switch channelType {
+	case "whatsapp", "whatsapp_official":
+		if strings.TrimSpace(config["access_token"]) == "" {
+			return fmt.Errorf("access_token is required")
+		}
+		if strings.TrimSpace(config["phone_number_id"]) == "" {
+			return fmt.Errorf("phone_number_id is required")
+		}
+		return nil
+	case "telegram":
+		return telegram.NewAdapter().Initialize(config)
+	case "sms", "twilio":
+		return sms.NewAdapter().Initialize(config)
+	case "facebook":
+		cfg := &facebook.FacebookConfig{
+			PageID:          config["page_id"],
+			PageAccessToken: config["page_access_token"],
+		}
+		return cfg.Validate()
+	case "instagram":
+		cfg := &instagram.InstagramConfig{
+			InstagramID:     config["instagram_id"],
+			AccessToken:     config["access_token"],
+			PageAccessToken: config["page_access_token"],
+		}
+		return cfg.Validate()
+	case "rcs":
+		cfg := &rcs.Config{
+			Provider: rcs.Provider(config["provider"]),
+			AgentID:  config["agent_id"],
+			APIKey:   config["api_key"],
+		}
+		if cfg.Provider == "" {
+			cfg.Provider = rcs.ProviderZenvia
+		}
+		return cfg.Validate()
+	default:
+		return fmt.Errorf("unsupported channel type: %s", channelType)
+	}
 }
 
 // WhatsAppWebhook handles WhatsApp webhooks

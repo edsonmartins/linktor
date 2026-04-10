@@ -31,7 +31,7 @@ func NewVREHandler(vreService *service.VREService, producer nats.Publisher) *VRE
 type RenderRequest struct {
 	TenantID     string                 `json:"tenant_id"`
 	TemplateID   string                 `json:"template_id,omitempty"`
-	HTML         string                 `json:"html,omitempty"`
+	SVG          string                 `json:"svg,omitempty"`
 	Data         map[string]interface{} `json:"data,omitempty"`
 	Channel      string                 `json:"channel,omitempty"`
 	Caption      string                 `json:"caption,omitempty"`
@@ -44,8 +44,8 @@ type RenderRequest struct {
 }
 
 // Render handles POST /api/v1/vre/render
-// @Summary Render HTML to image
-// @Description Renders HTML content or a predefined template to an image
+// @Summary Render visual template to image
+// @Description Renders SVG content or a predefined SVG template to an image
 // @Tags VRE
 // @Accept json
 // @Produce json
@@ -72,7 +72,7 @@ func (h *VREHandler) Render(c *gin.Context) {
 	renderReq := &entity.RenderRequest{
 		TenantID:     tenantID,
 		TemplateID:   req.TemplateID,
-		HTML:         req.HTML,
+		SVG:          req.SVG,
 		Data:         req.Data,
 		Channel:      entity.VREChannelType(req.Channel),
 		Caption:      req.Caption,
@@ -99,7 +99,7 @@ func (h *VREHandler) Render(c *gin.Context) {
 
 // RenderAndSend handles POST /api/v1/vre/render-and-send
 // @Summary Render and send to channel
-// @Description Renders HTML and sends the image directly to a recipient
+// @Description Renders SVG and sends the image directly to a recipient
 // @Tags VRE
 // @Accept json
 // @Produce json
@@ -131,7 +131,7 @@ func (h *VREHandler) RenderAndSend(c *gin.Context) {
 	renderReq := &entity.RenderRequest{
 		TenantID:     tenantID,
 		TemplateID:   req.TemplateID,
-		HTML:         req.HTML,
+		SVG:          req.SVG,
 		Data:         req.Data,
 		Channel:      entity.VREChannelType(req.Channel),
 		Caption:      req.Caption,
@@ -285,12 +285,12 @@ func (h *VREHandler) UpdateBrandConfig(c *gin.Context) {
 
 // UploadTemplate handles POST /api/v1/vre/templates/:id
 // @Summary Upload custom template
-// @Description Uploads a custom HTML template for the tenant
+// @Description Uploads a custom SVG template for the tenant
 // @Tags VRE
-// @Accept text/html
+// @Accept text/plain
 // @Produce json
 // @Param id path string true "Template ID"
-// @Param template body string true "HTML template content"
+// @Param template body string true "SVG template content"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
@@ -300,7 +300,7 @@ func (h *VREHandler) UploadTemplate(c *gin.Context) {
 	tenantID := middleware.MustGetTenantID(c)
 	templateID := c.Param("id")
 
-	// Read body as HTML
+	// Read body as SVG
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read body: " + err.Error()})

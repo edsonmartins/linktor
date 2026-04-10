@@ -2,8 +2,8 @@ package vre
 
 import (
 	"fmt"
-	"html/template"
 	"strings"
+	"text/template"
 	"time"
 )
 
@@ -153,16 +153,6 @@ var TemplateFuncs = template.FuncMap{
 		default:
 			return "step-icon"
 		}
-	},
-
-	// Safe HTML (for trusted content)
-	"safeHTML": func(s string) template.HTML {
-		return template.HTML(s)
-	},
-
-	// Safe CSS
-	"safeCSS": func(s string) template.CSS {
-		return template.CSS(s)
 	},
 
 	// String functions

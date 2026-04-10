@@ -699,5 +699,5 @@ linktor('init', {
 
 - [Flows](/flows/overview) - Build automated WebChat flows
 - [AI Bots](/bots/overview) - Add AI to your WebChat
-- [Customization](/guides/webchat-customization) - Advanced customization guide
-- [Analytics](/api/analytics) - Track WebChat metrics
+- [WebChat Channel](/channels/webchat) - Review customization options
+- [API Reference](/api/overview) - Review available API resources

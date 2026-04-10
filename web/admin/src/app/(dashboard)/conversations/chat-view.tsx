@@ -368,7 +368,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const { data: messagesData, isLoading: messagesLoading } = useQuery({
     queryKey: queryKeys.messages.list(conversationId),
     queryFn: () =>
-      api.get<{ data: Message[] }>(`/conversations/${conversationId}/messages`),
+      api.getEnvelope<Message[]>(`/conversations/${conversationId}/messages`),
   })
 
   const messages = messagesData?.data || []

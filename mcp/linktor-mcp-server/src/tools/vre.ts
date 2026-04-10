@@ -34,9 +34,9 @@ export const vreToolDefinitions: Tool[] = [
         },
         format: {
           type: 'string',
-          enum: ['webp', 'png', 'jpeg'],
-          description: 'Output image format (default: webp)',
-          default: 'webp',
+          enum: ['png', 'jpeg'],
+          description: 'Output image format (default: png)',
+          default: 'png',
         },
       },
       required: ['tenant_id', 'template_id', 'data'],

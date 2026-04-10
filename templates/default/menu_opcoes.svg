@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="520" viewBox="0 0 800 520">
+  <rect width="800" height="520" rx="28" fill="{{ .Brand.Background }}"/>
+  <rect x="32" y="32" width="736" height="104" rx="18" fill="{{ .Brand.PrimaryColor }}"/>
+  <text x="64" y="78" fill="#ffffff" font-family="Arial, sans-serif" font-size="22" font-weight="700">{{ .Brand.Name }}</text>
+  <text x="64" y="112" fill="#ffffff" font-family="Arial, sans-serif" font-size="30" font-weight="700">{{ .Data.titulo }}</text>
+  {{ if .Data.subtitulo }}<text x="64" y="154" fill="{{ .Brand.MutedColor }}" font-family="Arial, sans-serif" font-size="18">{{ .Data.subtitulo }}</text>{{ end }}
+  {{ range $i, $opt := .Data.opcoes }}
+  <g transform="translate(48, {{ add 176 (mul $i 68) }})">
+    <rect width="704" height="56" rx="14" fill="#f8f9fb" stroke="#eef0f3"/>
+    <circle cx="30" cy="28" r="18" fill="{{ $.Brand.PrimaryColor }}"/>
+    <text x="30" y="35" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="16" font-weight="700">{{ add $i 1 }}</text>
+    <text x="64" y="25" fill="{{ $.Brand.TextColor }}" font-family="Arial, sans-serif" font-size="18" font-weight="700">{{ $opt.label }}</text>
+    {{ if $opt.descricao }}<text x="64" y="45" fill="{{ $.Brand.MutedColor }}" font-family="Arial, sans-serif" font-size="14">{{ $opt.descricao }}</text>{{ end }}
+  </g>
+  {{ end }}
+  <text x="400" y="494" text-anchor="middle" fill="{{ .Brand.MutedColor }}" font-family="Arial, sans-serif" font-size="14">Responda com o numero da opcao desejada</text>
+</svg>

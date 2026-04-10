@@ -24,7 +24,7 @@ import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { useUIStore, useActiveConversation } from '@/stores/ui-store'
 import { ChatView } from './chat-view'
-import type { Conversation, ConversationStatus, PaginatedResponse } from '@/types'
+import type { Conversation, ConversationStatus } from '@/types'
 
 /**
  * Conversation List Item
@@ -126,7 +126,7 @@ export default function ConversationsPage() {
       status: statusFilter,
     }),
     queryFn: () =>
-      api.get<PaginatedResponse<Conversation>>('/conversations', {
+      api.getEnvelope<Conversation[]>('/conversations', {
         ...(searchQuery && { search: searchQuery }),
         ...(statusFilter !== 'all' && { status: statusFilter }),
       }),

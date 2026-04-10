@@ -64,6 +64,8 @@ func (db *PostgresDB) Ping(ctx context.Context) error {
 // RunMigrations runs database migrations
 func (db *PostgresDB) RunMigrations(ctx context.Context) error {
 	migrations := []string{
+		createExtensions,
+		createUpdatedAtFunction,
 		createTenantsTable,
 		createUsersTable,
 		createChannelsTable,
@@ -78,12 +80,23 @@ func (db *PostgresDB) RunMigrations(ctx context.Context) error {
 		createConversationContextsTable,
 		createKnowledgeBasesTable,
 		createKnowledgeItemsTable,
+		alignConversationAnalyticsSchema,
+		alignKnowledgeItemsSchema,
+		alignChannelCoexistenceStatusSchema,
 		createAIResponsesTable,
 		createIndexes,
 		createNewIndexes,
 		addLimitsColumn,
 		addBotsChannelsColumn,
 		refactorChannelStatus,
+		addMessageCoexistenceColumns,
+		addChannelCoexistenceColumns,
+		createTemplatesTable,
+		createMessageLogsTable,
+		createSystemMetricsTable,
+		createWhatsAppPaymentsTables,
+		createWhatsAppHistoryImportsTable,
+		createWhatsAppCoexistenceTables,
 	}
 
 	for _, migration := range migrations {
@@ -94,6 +107,21 @@ func (db *PostgresDB) RunMigrations(ctx context.Context) error {
 
 	return nil
 }
+
+const createExtensions = `
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+`
+
+const createUpdatedAtFunction = `
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+`
 
 const addLimitsColumn = `
 DO $$
@@ -111,6 +139,27 @@ BEGIN
         ALTER TABLE bots ADD COLUMN channels UUID[] DEFAULT '{}';
     END IF;
 END $$;
+`
+
+const addMessageCoexistenceColumns = `
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'api';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_imported BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP WITH TIME ZONE;
+
+CREATE INDEX IF NOT EXISTS idx_messages_source ON messages(source);
+CREATE INDEX IF NOT EXISTS idx_messages_is_imported ON messages(is_imported);
+CREATE INDEX IF NOT EXISTS idx_messages_imported_at ON messages(imported_at);
+`
+
+const addChannelCoexistenceColumns = `
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS is_coexistence BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS waba_id VARCHAR(64);
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS last_echo_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS coexistence_status VARCHAR(32) NOT NULL DEFAULT 'inactive';
+
+CREATE INDEX IF NOT EXISTS idx_channels_is_coexistence ON channels(is_coexistence);
+CREATE INDEX IF NOT EXISTS idx_channels_waba_id ON channels(waba_id);
+CREATE INDEX IF NOT EXISTS idx_channels_coexistence_status ON channels(coexistence_status);
 `
 
 // Migration to separate enabled (boolean) from connection_status
@@ -357,13 +406,70 @@ const createKnowledgeItemsTable = `
 CREATE TABLE IF NOT EXISTS knowledge_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     knowledge_base_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
-    title VARCHAR(500) NOT NULL,
-    content TEXT NOT NULL,
-    content_type VARCHAR(50) DEFAULT 'text',
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    keywords TEXT[] DEFAULT '{}',
+    embedding TEXT,
+    source VARCHAR(255),
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+`
+
+const alignConversationAnalyticsSchema = `
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_conversations_escalated_at ON conversations(escalated_at);
+`
+
+const alignKnowledgeItemsSchema = `
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_items' AND column_name='question') THEN
+        ALTER TABLE knowledge_items ADD COLUMN question TEXT;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_items' AND column_name='answer') THEN
+        ALTER TABLE knowledge_items ADD COLUMN answer TEXT;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_items' AND column_name='keywords') THEN
+        ALTER TABLE knowledge_items ADD COLUMN keywords TEXT[] DEFAULT '{}';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_items' AND column_name='embedding') THEN
+        ALTER TABLE knowledge_items ADD COLUMN embedding TEXT;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_items' AND column_name='source') THEN
+        ALTER TABLE knowledge_items ADD COLUMN source VARCHAR(255);
+    END IF;
+
+	IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_items' AND column_name='title') THEN
+		UPDATE knowledge_items SET question = COALESCE(question, title) WHERE question IS NULL;
+		ALTER TABLE knowledge_items ALTER COLUMN title DROP NOT NULL;
+	END IF;
+
+	IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='knowledge_items' AND column_name='content') THEN
+		UPDATE knowledge_items SET answer = COALESCE(answer, content) WHERE answer IS NULL;
+		ALTER TABLE knowledge_items ALTER COLUMN content DROP NOT NULL;
+	END IF;
+
+    UPDATE knowledge_items SET question = '' WHERE question IS NULL;
+    UPDATE knowledge_items SET answer = '' WHERE answer IS NULL;
+
+    ALTER TABLE knowledge_items ALTER COLUMN question SET NOT NULL;
+    ALTER TABLE knowledge_items ALTER COLUMN answer SET NOT NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_items_keywords ON knowledge_items USING GIN(keywords);
+CREATE INDEX IF NOT EXISTS idx_knowledge_items_source ON knowledge_items(source);
+`
+
+const alignChannelCoexistenceStatusSchema = `
+UPDATE channels
+SET coexistence_status = 'inactive'
+WHERE coexistence_status IS NULL OR coexistence_status = '';
 `
 
 const createAIResponsesTable = `
@@ -450,10 +556,183 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_bases_status ON knowledge_bases(status)
 
 -- Knowledge item indexes
 CREATE INDEX IF NOT EXISTS idx_knowledge_items_knowledge_base_id ON knowledge_items(knowledge_base_id);
-CREATE INDEX IF NOT EXISTS idx_knowledge_items_content_type ON knowledge_items(content_type);
+CREATE INDEX IF NOT EXISTS idx_knowledge_items_source ON knowledge_items(source);
+CREATE INDEX IF NOT EXISTS idx_knowledge_items_keywords ON knowledge_items USING GIN(keywords);
 
 -- AI response indexes
 CREATE INDEX IF NOT EXISTS idx_ai_responses_conversation_id ON ai_responses(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_ai_responses_bot_id ON ai_responses(bot_id);
 CREATE INDEX IF NOT EXISTS idx_ai_responses_created_at ON ai_responses(created_at DESC);
+`
+
+const createTemplatesTable = `
+CREATE TABLE IF NOT EXISTS templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    external_id VARCHAR(255),
+    name VARCHAR(512) NOT NULL,
+    language VARCHAR(20) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    quality_score VARCHAR(50) NOT NULL DEFAULT 'UNKNOWN',
+    components JSONB NOT NULL DEFAULT '[]',
+    rejection_reason TEXT,
+    last_synced_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_templates_external_id_unique ON templates(external_id) WHERE external_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_templates_tenant_id ON templates(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_templates_channel_id ON templates(channel_id);
+CREATE INDEX IF NOT EXISTS idx_templates_status ON templates(status);
+CREATE INDEX IF NOT EXISTS idx_templates_name_language ON templates(tenant_id, channel_id, name, language);
+CREATE INDEX IF NOT EXISTS idx_templates_last_synced_at ON templates(last_synced_at);
+
+DROP TRIGGER IF EXISTS update_templates_updated_at ON templates;
+CREATE TRIGGER update_templates_updated_at
+    BEFORE UPDATE ON templates
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+`
+
+const createMessageLogsTable = `
+CREATE TABLE IF NOT EXISTS message_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    channel_id UUID REFERENCES channels(id) ON DELETE SET NULL,
+    level VARCHAR(20) NOT NULL,
+    source VARCHAR(50) NOT NULL,
+    message TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_logs_tenant_id ON message_logs(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_message_logs_channel_id ON message_logs(channel_id);
+CREATE INDEX IF NOT EXISTS idx_message_logs_level ON message_logs(level);
+CREATE INDEX IF NOT EXISTS idx_message_logs_source ON message_logs(source);
+CREATE INDEX IF NOT EXISTS idx_message_logs_created_at ON message_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_message_logs_tenant_created_at ON message_logs(tenant_id, created_at DESC);
+`
+
+const createSystemMetricsTable = `
+CREATE TABLE IF NOT EXISTS system_metrics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    metric_name VARCHAR(100) NOT NULL,
+    metric_value DOUBLE PRECISION NOT NULL,
+    labels JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_system_metrics_tenant_id ON system_metrics(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_system_metrics_name ON system_metrics(metric_name);
+CREATE INDEX IF NOT EXISTS idx_system_metrics_created_at ON system_metrics(created_at DESC);
+`
+
+const createWhatsAppPaymentsTables = `
+CREATE TABLE IF NOT EXISTS whatsapp_payments (
+    id VARCHAR(128) PRIMARY KEY,
+    organization_id VARCHAR(64) NOT NULL,
+    channel_id VARCHAR(64) NOT NULL,
+    order_id VARCHAR(128),
+    reference_id VARCHAR(255) NOT NULL,
+    customer_phone VARCHAR(50) NOT NULL,
+    amount BIGINT NOT NULL,
+    currency VARCHAR(10) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    method VARCHAR(50),
+    gateway_payment_id VARCHAR(255),
+    gateway_order_id VARCHAR(255),
+    description TEXT,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    paid_at TIMESTAMP WITH TIME ZONE,
+    failed_at TIMESTAMP WITH TIME ZONE,
+    refunded_at TIMESTAMP WITH TIME ZONE,
+    failure_reason TEXT,
+    message_id VARCHAR(255),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wa_payments_organization ON whatsapp_payments(organization_id);
+CREATE INDEX IF NOT EXISTS idx_wa_payments_channel ON whatsapp_payments(channel_id);
+CREATE INDEX IF NOT EXISTS idx_wa_payments_customer ON whatsapp_payments(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_wa_payments_reference ON whatsapp_payments(reference_id);
+CREATE INDEX IF NOT EXISTS idx_wa_payments_status ON whatsapp_payments(status);
+CREATE INDEX IF NOT EXISTS idx_wa_payments_created ON whatsapp_payments(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wa_payments_gateway ON whatsapp_payments(gateway_payment_id);
+
+DROP TRIGGER IF EXISTS update_whatsapp_payments_updated_at ON whatsapp_payments;
+CREATE TRIGGER update_whatsapp_payments_updated_at
+    BEFORE UPDATE ON whatsapp_payments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+`
+
+const createWhatsAppHistoryImportsTable = `
+CREATE TABLE IF NOT EXISTS whatsapp_history_imports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    total_conversations INT NOT NULL DEFAULT 0,
+    imported_conversations INT NOT NULL DEFAULT 0,
+    total_messages INT NOT NULL DEFAULT 0,
+    imported_messages INT NOT NULL DEFAULT 0,
+    total_contacts INT NOT NULL DEFAULT 0,
+    imported_contacts INT NOT NULL DEFAULT 0,
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    error_message TEXT,
+    error_details JSONB DEFAULT '{}',
+    import_since TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wa_history_imports_channel ON whatsapp_history_imports(channel_id);
+CREATE INDEX IF NOT EXISTS idx_wa_history_imports_tenant ON whatsapp_history_imports(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_wa_history_imports_status ON whatsapp_history_imports(status);
+CREATE INDEX IF NOT EXISTS idx_wa_history_imports_created ON whatsapp_history_imports(created_at DESC);
+
+DROP TRIGGER IF EXISTS update_whatsapp_history_imports_updated_at ON whatsapp_history_imports;
+CREATE TRIGGER update_whatsapp_history_imports_updated_at
+    BEFORE UPDATE ON whatsapp_history_imports
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+`
+
+const createWhatsAppCoexistenceTables = `
+CREATE TABLE IF NOT EXISTS whatsapp_coexistence_activity (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    activity_type VARCHAR(50) NOT NULL,
+    details JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS whatsapp_coexistence_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    severity VARCHAR(20) NOT NULL DEFAULT 'info',
+    read_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wa_coexistence_activity_channel ON whatsapp_coexistence_activity(channel_id);
+CREATE INDEX IF NOT EXISTS idx_wa_coexistence_activity_tenant ON whatsapp_coexistence_activity(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_wa_coexistence_activity_created ON whatsapp_coexistence_activity(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wa_coexistence_notifications_channel ON whatsapp_coexistence_notifications(channel_id);
+CREATE INDEX IF NOT EXISTS idx_wa_coexistence_notifications_tenant ON whatsapp_coexistence_notifications(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_wa_coexistence_notifications_read_at ON whatsapp_coexistence_notifications(read_at);
 `

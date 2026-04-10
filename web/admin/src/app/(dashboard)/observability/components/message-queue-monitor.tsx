@@ -42,6 +42,7 @@ function formatBytes(bytes: number): string {
 
 function StreamCard({ stream, t, tCommon }: { stream: StreamInfo; t: (key: string, values?: Record<string, string>) => string; tCommon: (key: string) => string }) {
   const queryClient = useQueryClient()
+  const consumers = stream.consumers || []
 
   const resetMutation = useMutation({
     mutationFn: (params: ResetConsumerRequest) =>
@@ -96,14 +97,14 @@ function StreamCard({ stream, t, tCommon }: { stream: StreamInfo; t: (key: strin
         </div>
 
         {/* Consumers */}
-        {stream.consumers.length > 0 && (
+        {consumers.length > 0 && (
           <div className="space-y-2">
             <p className="text-sm font-medium flex items-center gap-2">
               <Users className="h-4 w-4" />
-              {t('consumers')} ({stream.consumers.length})
+              {t('consumers')} ({consumers.length})
             </p>
             <div className="space-y-2">
-              {stream.consumers.map((consumer) => (
+              {consumers.map((consumer) => (
                 <div
                   key={consumer.name}
                   className="flex items-center justify-between p-3 rounded-lg border bg-secondary/30"
@@ -157,7 +158,7 @@ function StreamCard({ stream, t, tCommon }: { stream: StreamInfo; t: (key: strin
           </div>
         )}
 
-        {stream.consumers.length === 0 && (
+        {consumers.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-2">
             {t('noActiveConsumers')}
           </p>

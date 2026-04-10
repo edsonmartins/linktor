@@ -13,7 +13,26 @@
       "Bash(ls:*)",
       "Bash(wc:*)",
       "Bash(git -C /Users/edsonmartins/desenvolvimento/linktor/mcp/linktor-mcp-server log --oneline)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(grep:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(npm install:*)",
+      "Bash(npx playwright:*)",
+      "Bash(node:*)",
+      "Bash(lsof:*)",
+      "Bash(python3:*)",
+      "Bash(npx tsc:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker run:*)",
+      "Bash(docker ps:*)",
+      "Bash(kill %2)",
+      "Bash(curl -s http://localhost:8081/health)",
+      "Bash(curl -s http://localhost:8081/api/v1/auth/login -X POST -H 'Content-Type: application/json' -d {})",
+      "Bash(pkill -9 -f linktor-server 2)",
+      "Bash(/dev/null sleep:*)",
+      "Bash(xargs kill:*)",
+      "Bash(head -1 pgrep -fa \"next-server\\\\|next dev\")"
     ]
   }
 }

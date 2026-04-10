@@ -70,11 +70,6 @@ func (s *BotServiceImpl) SetVREService(vreService *VREService) {
 
 // Create creates a new bot
 func (s *BotServiceImpl) Create(ctx context.Context, input *CreateBotInput) (*entity.Bot, error) {
-	// Validate provider is available
-	if _, err := s.aiFactory.Get(input.Provider); err != nil {
-		return nil, errors.New(errors.ErrCodeBadRequest, "AI provider not available: "+string(input.Provider))
-	}
-
 	bot := entity.NewBot(input.TenantID, input.Name, input.Type, input.Provider, input.Model)
 	bot.ID = uuid.New().String()
 

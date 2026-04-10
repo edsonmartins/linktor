@@ -101,7 +101,7 @@ O Linktor suporta **WhatsApp Coexistence**, uma feature crítica que permite uso
 #### Vantagens
 
 - **Onboarding em 5 minutos**: Escaneie o QR code e está conectado, sem migração de número
-- **Mantém histórico**: Importa até 6 meses de conversas
+- **Histórico assistido**: Permite importar arquivos/exportações de conversas quando disponíveis
 - **Híbrido App + API**: Vendedor responde VIPs pelo celular, bot automatiza follow-ups
 - **Sincronização bidirecional**: Mensagens enviadas pelo App aparecem no Linktor (via Message Echoes)
 
@@ -113,7 +113,7 @@ O Linktor suporta **WhatsApp Coexistence**, uma feature crítica que permite uso
 | OAuth Token Exchange | ✅ | Troca código por access token seguro |
 | Detecção Coexistence | ✅ | Verifica se número usa Business App |
 | Message Echoes | ✅ | Recebe mensagens enviadas pelo App |
-| History Import | ✅ | Importa conversas dos últimos 6 meses |
+| History Import | Parcial | Importação manual por arquivo/export, sem importação automática de 6 meses pela Cloud API |
 | Activity Monitoring | ✅ | Monitora regra dos 14 dias |
 | Coexistence Status | ✅ | Dashboard com status de sincronização |
 
@@ -132,11 +132,8 @@ POST /api/v1/oauth/whatsapp/embedded-signup/create-channel
 # Status de Coexistence
 GET /api/v1/channels/:id/coexistence-status
 
-# Iniciar importação de histórico
-POST /api/v1/channels/:id/import-history
-
-# Progresso da importação
-GET /api/v1/channels/:id/import-history/:importId
+# Histórico legado
+# A Cloud API não expõe importação automática de 6 meses; use importação manual quando disponível.
 ```
 
 #### Regra dos 14 Dias
@@ -582,7 +579,7 @@ linktor/
 
 ### Pré-requisitos
 
-- Go 1.24+
+- Go 1.25+
 - Node.js 20+
 - Docker & Docker Compose
 - Make (opcional, mas recomendado)
@@ -594,10 +591,11 @@ git clone https://github.com/msgfy/linktor.git
 cd linktor
 ```
 
-### 2. Inicie os serviços de infraestrutura
+### 2. Inicie o ambiente local
 
 ```bash
-docker-compose up -d
+cp .env.example .env
+docker compose up --build
 ```
 
 Isso inicia:
@@ -605,6 +603,8 @@ Isso inicia:
 - **Redis** (porta 6379) - Cache e sessions
 - **NATS** (porta 4222, monitoring 8222) - Message broker
 - **MinIO** (portas 9000, 9001) - Object storage
+- **API** (porta 8081) - Backend Go
+- **Admin Dashboard** (porta 3000) - Frontend Next.js
 
 ### 3. Configure as variáveis de ambiente
 
@@ -693,7 +693,7 @@ npm run dev
 ### Credenciais padrão
 
 ```
-Email: admin@linktor.io
+Email: admin@demo.com
 Senha: admin123
 Tenant: default
 ```
@@ -784,7 +784,7 @@ Para obter um token:
 ```bash
 curl -X POST http://localhost:8081/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "admin@linktor.io", "password": "admin123"}'
+  -d '{"email": "admin@demo.com", "password": "admin123"}'
 ```
 
 Resposta:
@@ -794,7 +794,7 @@ Resposta:
   "refresh_token": "eyJhbG...",
   "user": {
     "id": "...",
-    "email": "admin@linktor.io",
+    "email": "admin@demo.com",
     "name": "Admin",
     "role": "admin"
   }
@@ -1519,7 +1519,7 @@ CREATE TABLE flows (
 - [x] **Coexistence (SMB)** - Uso simultâneo App + API no mesmo número
 - [x] Embedded Signup Flow (OAuth via QR code)
 - [x] Message Echoes (sincronização do App)
-- [x] History Import (importar 6 meses de histórico)
+- [x] History Import manual por arquivo/export
 - [x] Coexistence Activity Monitoring (regra dos 14 dias)
 
 ### Fase 5: AI/Chatbot ✅

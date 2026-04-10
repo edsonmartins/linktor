@@ -28,7 +28,7 @@ git clone https://github.com/linktor/linktor.git
 cd linktor
 
 # Start with Docker Compose
-docker-compose up -d
+docker compose up --build
 
 # Access the dashboard
 open http://localhost:3000

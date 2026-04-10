@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,6 +13,7 @@ import (
 
 // PaymentsHandler handles payment-related HTTP requests
 type PaymentsHandler struct {
+	mu      sync.RWMutex
 	clients map[string]*payments.Client // key: channel_id
 }
 
@@ -24,11 +26,22 @@ func NewPaymentsHandler() *PaymentsHandler {
 
 // RegisterClient registers a payments client for a channel
 func (h *PaymentsHandler) RegisterClient(channelID string, client *payments.Client) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.clients[channelID] = client
+}
+
+// UnregisterClient removes a payments client for a channel.
+func (h *PaymentsHandler) UnregisterClient(channelID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.clients, channelID)
 }
 
 // getClient retrieves the payments client for a channel
 func (h *PaymentsHandler) getClient(channelID string) (*payments.Client, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	client, ok := h.clients[channelID]
 	return client, ok
 }

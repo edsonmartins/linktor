@@ -6,6 +6,7 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 const nextConfig: NextConfig = {
   output: 'standalone',
   reactStrictMode: true,
+  allowedDevOrigins: ['http://localhost:3001'],
   // API proxy para o backend Go
   async rewrites() {
     return [

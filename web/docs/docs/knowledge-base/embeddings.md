@@ -67,7 +67,7 @@ Use your own embedding models:
 {
   settings: {
     embeddingProvider: 'custom',
-    embeddingEndpoint: 'http://localhost:8080/embeddings',
+    embeddingEndpoint: 'http://localhost:8081/embeddings',
     embeddingModel: 'all-MiniLM-L6-v2',
     embeddingDimensions: 384
   }

@@ -25,7 +25,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { formatDistanceToNow } from '@/lib/utils'
-import type { KnowledgeBase, KnowledgeItem } from '@/types'
+import type { KnowledgeBase, KnowledgeItem, PaginatedResponse } from '@/types'
 import { KnowledgeItemTable } from '../components/knowledge-item-table'
 import { KnowledgeItemForm } from '../components/knowledge-item-form'
 import { BulkImportDialog } from '../components/bulk-import-dialog'
@@ -64,7 +64,7 @@ export default function KnowledgeBaseDetailPage() {
   const { data: itemsData, isLoading: isLoadingItems } = useQuery({
     queryKey: queryKeys.knowledgeItems.list(id, { page, search: searchQuery }),
     queryFn: () =>
-      api.get<{ data: KnowledgeItem[]; total: number }>(`/knowledge-bases/${id}/items`, {
+      api.get<PaginatedResponse<KnowledgeItem>>(`/knowledge-bases/${id}/items`, {
         page: String(page),
         page_size: '20',
         ...(searchQuery && { search: searchQuery }),
@@ -90,7 +90,7 @@ export default function KnowledgeBaseDetailPage() {
 
   const kb = kbData
   const items = itemsData?.data || []
-  const totalItems = itemsData?.total || 0
+  const totalItems = itemsData?.pagination.total || 0
   const totalPages = Math.ceil(totalItems / 20)
 
   const Icon = kb ? typeIcons[kb.type] : BookOpen

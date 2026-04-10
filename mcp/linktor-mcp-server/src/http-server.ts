@@ -26,6 +26,7 @@ import { channelToolDefinitions, registerChannelTools } from './tools/channels.j
 import { botToolDefinitions, registerBotTools } from './tools/bots.js';
 import { analyticsToolDefinitions, registerAnalyticsTools } from './tools/analytics.js';
 import { knowledgeToolDefinitions, registerKnowledgeTools } from './tools/knowledge.js';
+import { vreToolDefinitions, registerVRETools } from './tools/vre.js';
 import { resourceDefinitions, handleResourceRead } from './resources/handlers.js';
 import { promptDefinitions, handlePromptGet } from './prompts/templates.js';
 
@@ -65,6 +66,7 @@ function createSession(): Session {
   registerBotTools(toolHandlers, client);
   registerAnalyticsTools(toolHandlers, client);
   registerKnowledgeTools(toolHandlers, client);
+  registerVRETools(toolHandlers, client);
 
   const session: Session = {
     id,
@@ -87,6 +89,7 @@ const allTools = [
   ...botToolDefinitions,
   ...analyticsToolDefinitions,
   ...knowledgeToolDefinitions,
+  ...vreToolDefinitions,
 ];
 
 // ─── JSON-RPC Types ───────────────────────────────────────────────

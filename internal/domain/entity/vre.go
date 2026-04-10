@@ -10,7 +10,7 @@ type OutputFormat string
 
 const (
 	OutputFormatPNG  OutputFormat = "png"
-	OutputFormatWebP OutputFormat = "webp"  // Recommended: smaller file size
+	OutputFormatWebP OutputFormat = "webp"
 	OutputFormatJPEG OutputFormat = "jpeg"
 )
 
@@ -35,9 +35,9 @@ type ChannelDefaults struct {
 
 // DefaultChannelSettings provides optimized defaults per channel
 var DefaultChannelSettings = map[VREChannelType]ChannelDefaults{
-	VREChannelWhatsApp: {Width: 800, MaxHeight: 1200, Format: OutputFormatWebP, Quality: 85, Scale: 1.5},
-	VREChannelTelegram: {Width: 800, MaxHeight: 1200, Format: OutputFormatWebP, Quality: 85, Scale: 1.5},
-	VREChannelWeb:      {Width: 600, MaxHeight: 0, Format: OutputFormatWebP, Quality: 80, Scale: 1.0},
+	VREChannelWhatsApp: {Width: 800, MaxHeight: 1200, Format: OutputFormatJPEG, Quality: 85, Scale: 1.5},
+	VREChannelTelegram: {Width: 800, MaxHeight: 1200, Format: OutputFormatJPEG, Quality: 85, Scale: 1.5},
+	VREChannelWeb:      {Width: 600, MaxHeight: 0, Format: OutputFormatJPEG, Quality: 80, Scale: 1.0},
 	VREChannelEmail:    {Width: 600, MaxHeight: 0, Format: OutputFormatPNG, Quality: 90, Scale: 1.0},
 }
 
@@ -45,11 +45,11 @@ var DefaultChannelSettings = map[VREChannelType]ChannelDefaults{
 type RenderRequest struct {
 	TenantID   string                 `json:"tenant_id" validate:"required"`
 	TemplateID string                 `json:"template_id,omitempty"` // Optional: use predefined template
-	HTML       string                 `json:"html,omitempty"`        // Optional: custom HTML (takes precedence)
+	SVG        string                 `json:"svg,omitempty"`         // Optional: custom SVG
 	Data       map[string]interface{} `json:"data"`
-	Channel    VREChannelType         `json:"channel,omitempty"`  // whatsapp, telegram, web
-	Caption    string                 `json:"caption,omitempty"`  // Optional: LLM can provide
-	SendTo     string                 `json:"send_to,omitempty"`  // Optional: send directly to this recipient
+	Channel    VREChannelType         `json:"channel,omitempty"` // whatsapp, telegram, web
+	Caption    string                 `json:"caption,omitempty"` // Optional: LLM can provide
+	SendTo     string                 `json:"send_to,omitempty"` // Optional: send directly to this recipient
 	SessionID  string                 `json:"session_id,omitempty"`
 
 	// FollowUpText is an optional text message to send after the image
@@ -63,9 +63,9 @@ type RenderRequest struct {
 	Scale   float64      `json:"scale,omitempty"`   // Override scale (1.0-2.0)
 }
 
-// IsCustomHTML returns true if the request uses custom HTML
-func (r *RenderRequest) IsCustomHTML() bool {
-	return r.HTML != ""
+// IsCustomSVG returns true if the request uses custom SVG
+func (r *RenderRequest) IsCustomSVG() bool {
+	return r.SVG != ""
 }
 
 // Validate validates the render request
@@ -73,8 +73,8 @@ func (r *RenderRequest) Validate() error {
 	if r.TenantID == "" {
 		return fmt.Errorf("tenant_id is required")
 	}
-	if r.HTML == "" && r.TemplateID == "" {
-		return fmt.Errorf("either html or template_id is required")
+	if r.SVG == "" && r.TemplateID == "" {
+		return fmt.Errorf("svg or template_id is required")
 	}
 	return nil
 }
@@ -163,12 +163,12 @@ func DefaultBrandConfig() *TenantBrandConfig {
 type TemplateType string
 
 const (
-	TemplateTypeMenuOpcoes     TemplateType = "menu_opcoes"
-	TemplateTypeCardProduto    TemplateType = "card_produto"
-	TemplateTypeStatusPedido   TemplateType = "status_pedido"
-	TemplateTypeListaProdutos  TemplateType = "lista_produtos"
-	TemplateTypeConfirmacao    TemplateType = "confirmacao"
-	TemplateTypeCobrancaPix    TemplateType = "cobranca_pix"
+	TemplateTypeMenuOpcoes    TemplateType = "menu_opcoes"
+	TemplateTypeCardProduto   TemplateType = "card_produto"
+	TemplateTypeStatusPedido  TemplateType = "status_pedido"
+	TemplateTypeListaProdutos TemplateType = "lista_produtos"
+	TemplateTypeConfirmacao   TemplateType = "confirmacao"
+	TemplateTypeCobrancaPix   TemplateType = "cobranca_pix"
 )
 
 // MenuOpcaoData represents a single menu option
@@ -207,13 +207,13 @@ type StatusPedidoStep struct {
 
 // StatusPedidoData represents data for the status_pedido template
 type StatusPedidoData struct {
-	NumeroPedido     string `json:"numero_pedido"`
-	StatusAtual      string `json:"status_atual"` // recebido, separacao, faturado, transporte, entregue
-	ItensResumo      string `json:"itens_resumo,omitempty"`
-	ValorTotal       float64 `json:"valor_total,omitempty"`
-	PrevisaoEntrega  string `json:"previsao_entrega,omitempty"`
-	Motorista        string `json:"motorista,omitempty"`
-	Mensagem         string `json:"mensagem,omitempty"`
+	NumeroPedido    string  `json:"numero_pedido"`
+	StatusAtual     string  `json:"status_atual"` // recebido, separacao, faturado, transporte, entregue
+	ItensResumo     string  `json:"itens_resumo,omitempty"`
+	ValorTotal      float64 `json:"valor_total,omitempty"`
+	PrevisaoEntrega string  `json:"previsao_entrega,omitempty"`
+	Motorista       string  `json:"motorista,omitempty"`
+	Mensagem        string  `json:"mensagem,omitempty"`
 }
 
 // GetTimelineSteps returns the timeline steps based on current status
@@ -300,7 +300,7 @@ type ConfirmacaoData struct {
 type CobrancaPixData struct {
 	Valor        float64 `json:"valor"`
 	NumeroPedido string  `json:"numero_pedido,omitempty"`
-	PixPayload   string  `json:"pix_payload"` // EMV/BRCode payload
+	PixPayload   string  `json:"pix_payload"`         // EMV/BRCode payload
 	Expiracao    string  `json:"expiracao,omitempty"` // "30 minutos"
 	Mensagem     string  `json:"mensagem,omitempty"`
 }

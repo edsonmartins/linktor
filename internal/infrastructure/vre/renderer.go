@@ -3,23 +3,22 @@ package vre
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
+	"net/url"
 	"os/exec"
 	"time"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/msgfy/linktor/internal/domain/entity"
-	"golang.org/x/image/webp"
 )
 
-// Renderer defines the interface for HTML to image rendering
+// Renderer defines the interface for SVG to image rendering
 type Renderer interface {
-	RenderHTML(ctx context.Context, html string, opts RenderOpts) ([]byte, error)
+	RenderSVG(ctx context.Context, svg string, opts RenderOpts) ([]byte, error)
 	Close() error
 }
 
@@ -41,27 +40,27 @@ type ChromeRenderer struct {
 
 // RendererConfig holds configuration for the renderer
 type RendererConfig struct {
-	ChromePoolSize  int
-	DefaultWidth    int
-	DefaultFormat   entity.OutputFormat
-	DefaultQuality  int
-	DefaultScale    float64
-	RenderTimeout   time.Duration
-	Headless        bool
-	DisableGPU      bool
+	ChromePoolSize int
+	DefaultWidth   int
+	DefaultFormat  entity.OutputFormat
+	DefaultQuality int
+	DefaultScale   float64
+	RenderTimeout  time.Duration
+	Headless       bool
+	DisableGPU     bool
 }
 
 // DefaultRendererConfig returns sensible defaults
 func DefaultRendererConfig() *RendererConfig {
 	return &RendererConfig{
-		ChromePoolSize:  3,
-		DefaultWidth:    800,
-		DefaultFormat:   entity.OutputFormatWebP, // WebP is smaller
-		DefaultQuality:  85,
-		DefaultScale:    1.5,
-		RenderTimeout:   10 * time.Second,
-		Headless:        true,
-		DisableGPU:      true,
+		ChromePoolSize: 3,
+		DefaultWidth:   800,
+		DefaultFormat:  entity.OutputFormatJPEG,
+		DefaultQuality: 85,
+		DefaultScale:   1.5,
+		RenderTimeout:  10 * time.Second,
+		Headless:       true,
+		DisableGPU:     true,
 	}
 }
 
@@ -103,8 +102,13 @@ func NewChromeRenderer(cfg *RendererConfig) (*ChromeRenderer, error) {
 	}, nil
 }
 
-// RenderHTML renders HTML content to an image
-func (r *ChromeRenderer) RenderHTML(ctx context.Context, html string, opts RenderOpts) ([]byte, error) {
+// RenderSVG renders SVG content to an image. The SVG is used directly as the
+// browser document, avoiding an intermediate markup layout.
+func (r *ChromeRenderer) RenderSVG(ctx context.Context, svg string, opts RenderOpts) ([]byte, error) {
+	return r.renderDataURL(ctx, "data:image/svg+xml;charset=utf-8,"+url.QueryEscape(svg), "svg", opts)
+}
+
+func (r *ChromeRenderer) renderDataURL(ctx context.Context, dataURL, readySelector string, opts RenderOpts) ([]byte, error) {
 	// Apply defaults
 	if opts.Width == 0 {
 		opts.Width = r.config.DefaultWidth
@@ -133,21 +137,16 @@ func (r *ChromeRenderer) RenderHTML(ctx context.Context, html string, opts Rende
 	taskCtx, taskCancel := chromedp.NewContext(tabCtx)
 	defer taskCancel()
 
-	// Render the HTML
 	var buf []byte
-
-	// Navigate to HTML via data URL
-	dataURL := "data:text/html;charset=utf-8," + html
 
 	err = chromedp.Run(taskCtx,
 		// Set viewport with scaling for better quality
 		chromedp.EmulateViewport(int64(float64(opts.Width)*opts.Scale), 1, chromedp.EmulateScale(opts.Scale)),
 
-		// Navigate to the HTML
 		chromedp.Navigate(dataURL),
 
 		// Wait for content to be ready
-		chromedp.WaitReady("body"),
+		chromedp.WaitReady(readySelector),
 
 		// Small delay for fonts/images to load
 		chromedp.Sleep(100*time.Millisecond),
@@ -156,8 +155,15 @@ func (r *ChromeRenderer) RenderHTML(ctx context.Context, html string, opts Rende
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			// Get the page dimensions
 			var contentHeight int64
-			if err := chromedp.Evaluate(`document.body.scrollHeight`, &contentHeight).Do(ctx); err != nil {
+			if err := chromedp.Evaluate(`Math.ceil(Math.max(
+				document.body ? document.body.scrollHeight : 0,
+				document.documentElement ? document.documentElement.scrollHeight : 0,
+				document.documentElement && document.documentElement.getBoundingClientRect ? document.documentElement.getBoundingClientRect().height : 0
+			))`, &contentHeight).Do(ctx); err != nil {
 				return err
+			}
+			if contentHeight <= 0 {
+				contentHeight = 1
 			}
 
 			// Capture screenshot with exact dimensions
@@ -183,7 +189,7 @@ func (r *ChromeRenderer) RenderHTML(ctx context.Context, html string, opts Rende
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to render HTML: %w", err)
+		return nil, fmt.Errorf("failed to render SVG: %w", err)
 	}
 
 	// Convert to desired format with optimization
@@ -207,15 +213,7 @@ func (r *ChromeRenderer) convertFormat(pngData []byte, opts RenderOpts) ([]byte,
 
 	switch opts.Format {
 	case entity.OutputFormatWebP:
-		// For WebP, we need to use an encoder
-		// Note: Go's standard library doesn't have a WebP encoder
-		// We'll use lossy JPEG as a fallback for now and can add WebP later
-		// TODO: Add WebP support via github.com/nickalie/go-webpbin or cgo
-
-		// For now, fall back to JPEG with good quality
-		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: opts.Quality}); err != nil {
-			return nil, fmt.Errorf("failed to encode JPEG: %w", err)
-		}
+		return nil, fmt.Errorf("webp output is not supported by the current renderer")
 
 	case entity.OutputFormatJPEG:
 		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: opts.Quality}); err != nil {
@@ -227,15 +225,6 @@ func (r *ChromeRenderer) convertFormat(pngData []byte, opts RenderOpts) ([]byte,
 	}
 
 	return buf.Bytes(), nil
-}
-
-// RenderHTMLToBase64 renders HTML and returns base64-encoded image
-func (r *ChromeRenderer) RenderHTMLToBase64(ctx context.Context, html string, opts RenderOpts) (string, error) {
-	data, err := r.RenderHTML(ctx, html, opts)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(data), nil
 }
 
 // Close releases all resources
@@ -257,9 +246,6 @@ func GetImageDimensions(data []byte) (width, height int, err error) {
 	}
 	return img.Width, img.Height, nil
 }
-
-// Ensure webp import is used (for future decoding)
-var _ = webp.Decode
 
 // compressPNG compresses PNG data using pngquant if available
 // Falls back to original if pngquant is not installed

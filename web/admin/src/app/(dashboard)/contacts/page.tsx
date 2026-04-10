@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
 import { Search, Plus, Filter, Users, Mail, Phone, MoreVertical, RefreshCw } from 'lucide-react'
 import { Header } from '@/components/layout/header'
@@ -12,6 +12,25 @@ import { Avatar } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,7 +40,8 @@ import {
 import { cn, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
-import type { Contact, PaginatedResponse } from '@/types'
+import { useToast } from '@/hooks/use-toast'
+import type { Contact } from '@/types'
 
 /**
  * Contact Card Component
@@ -30,10 +50,14 @@ function ContactCard({
   contact,
   t,
   tCommon,
+  onEdit,
+  onDelete,
 }: {
   contact: Contact
   t: (key: string) => string
   tCommon: (key: string) => string
+  onEdit: () => void
+  onDelete: () => void
 }) {
   return (
     <Card className="hover:border-primary/30 transition-colors">
@@ -52,8 +76,8 @@ function ContactCard({
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem>{t('viewDetails')}</DropdownMenuItem>
                   <DropdownMenuItem>{t('startConversation')}</DropdownMenuItem>
-                  <DropdownMenuItem>{t('editContact')}</DropdownMenuItem>
-                  <DropdownMenuItem className="text-destructive">
+                  <DropdownMenuItem onClick={onEdit}>{t('editContact')}</DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive" onClick={onDelete}>
                     {tCommon('delete')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -115,18 +139,116 @@ function ContactCard({
 export default function ContactsPage() {
   const t = useTranslations('contacts')
   const tCommon = useTranslations('common')
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState('')
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [contactToDelete, setContactToDelete] = useState<Contact | null>(null)
+  const [editingContact, setEditingContact] = useState<Contact | null>(null)
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    tags: '',
+  })
 
   // Fetch contacts
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.contacts.list({ search: searchQuery }),
     queryFn: () =>
-      api.get<PaginatedResponse<Contact>>('/contacts', {
+      api.getEnvelope<Contact[]>('/contacts', {
         ...(searchQuery && { search: searchQuery }),
       }),
   })
 
   const contacts = data?.data ?? []
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      tags: '',
+    })
+    setEditingContact(null)
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (payload: { name: string; email: string; phone: string; tags: string[] }) =>
+      api.post<Contact>('/contacts', payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      setIsDialogOpen(false)
+      resetForm()
+      toast({
+        title: tCommon('created'),
+        description: t('addContact'),
+      })
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: { id: string; body: { name: string; email: string; phone: string; tags: string[] } }) =>
+      api.put<Contact>(`/contacts/${payload.id}`, payload.body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      setIsDialogOpen(false)
+      resetForm()
+      toast({
+        title: tCommon('updated'),
+        description: t('editContact'),
+      })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/contacts/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      setContactToDelete(null)
+      toast({
+        title: tCommon('deleted'),
+        description: t('deleteContact'),
+      })
+    },
+  })
+
+  const openCreateDialog = () => {
+    resetForm()
+    setIsDialogOpen(true)
+  }
+
+  const openEditDialog = (contact: Contact) => {
+    setEditingContact(contact)
+    setFormData({
+      name: contact.name || '',
+      email: contact.email || '',
+      phone: contact.phone || '',
+      tags: (contact.tags || []).join(', '),
+    })
+    setIsDialogOpen(true)
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+
+    const payload = {
+      name: formData.name.trim(),
+      email: formData.email.trim(),
+      phone: formData.phone.trim(),
+      tags: formData.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    }
+
+    if (editingContact) {
+      updateMutation.mutate({ id: editingContact.id, body: payload })
+      return
+    }
+
+    createMutation.mutate(payload)
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -155,7 +277,7 @@ export default function ContactsPage() {
             >
               <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
             </Button>
-            <Button>
+            <Button onClick={openCreateDialog}>
               <Plus className="h-4 w-4 mr-2" />
               {t('addContact')}
             </Button>
@@ -227,6 +349,8 @@ export default function ContactsPage() {
                   contact={contact}
                   t={t}
                   tCommon={tCommon}
+                  onEdit={() => openEditDialog(contact)}
+                  onDelete={() => setContactToDelete(contact)}
                 />
               ))}
             </div>
@@ -235,7 +359,7 @@ export default function ContactsPage() {
               <Users className="mx-auto h-12 w-12 opacity-50" />
               <p className="mt-4 text-lg font-medium">{t('noContacts')}</p>
               <p className="text-sm">{t('noContactsDescription')}</p>
-              <Button className="mt-4">
+              <Button className="mt-4" onClick={openCreateDialog}>
                 <Plus className="h-4 w-4 mr-2" />
                 {t('addContact')}
               </Button>
@@ -243,6 +367,97 @@ export default function ContactsPage() {
           )}
         </ScrollArea>
       </div>
+
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open)
+          if (!open) {
+            resetForm()
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          <form onSubmit={handleSubmit}>
+            <DialogHeader>
+              <DialogTitle>{editingContact ? t('editContact') : t('addContact')}</DialogTitle>
+              <DialogDescription>
+                {editingContact ? t('editContact') : t('noContactsDescription')}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="contact-name">{t('name')}</Label>
+                <Input
+                  id="contact-name"
+                  value={formData.name}
+                  onChange={(e) => setFormData((current) => ({ ...current, name: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="contact-email">{t('email')}</Label>
+                <Input
+                  id="contact-email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData((current) => ({ ...current, email: e.target.value }))}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="contact-phone">{t('phone')}</Label>
+                <Input
+                  id="contact-phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData((current) => ({ ...current, phone: e.target.value }))}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="contact-tags">{t('tags')}</Label>
+                <Input
+                  id="contact-tags"
+                  value={formData.tags}
+                  onChange={(e) => setFormData((current) => ({ ...current, tags: e.target.value }))}
+                  placeholder="vip, lead"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                {tCommon('cancel')}
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending || !formData.name.trim()}>
+                {editingContact ? t('editContact') : t('addContact')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!contactToDelete} onOpenChange={(open) => !open && setContactToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('deleteContact')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {contactToDelete ? `${t('deleteContact')}: ${contactToDelete.name}` : t('deleteContact')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => contactToDelete && deleteMutation.mutate(contactToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {tCommon('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

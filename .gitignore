@@ -58,6 +58,11 @@ web/dist/
 web/build/
 web/admin/.next/
 web/admin/out/
+web/admin/playwright-report/
+web/admin/test-results/
+web/landing/.next/
+web/landing/out/
+server
 
 # Test
 coverage/

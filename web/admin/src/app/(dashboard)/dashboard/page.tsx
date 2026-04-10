@@ -24,7 +24,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn, formatRelativeTime } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
-import type { Conversation, DashboardStats, Channel, Bot as BotType, OverviewAnalytics } from '@/types'
+import type { Conversation, Channel, Bot as BotType, OverviewAnalytics, PaginatedResponse } from '@/types'
 
 /**
  * Stats Card Component
@@ -172,7 +172,7 @@ export default function DashboardPage() {
   const { data: conversations, isLoading: conversationsLoading } = useQuery({
     queryKey: queryKeys.conversations.list({ limit: '5', status: 'open' }),
     queryFn: () =>
-      api.get<{ data: Conversation[] }>('/conversations', {
+      api.getEnvelope<Conversation[]>('/conversations', {
         limit: '5',
         status: 'open',
       }),
@@ -181,24 +181,24 @@ export default function DashboardPage() {
   // Fetch channels
   const { data: channelsData, isLoading: channelsLoading } = useQuery({
     queryKey: queryKeys.channels.list(),
-    queryFn: () => api.get<{ data: Channel[] }>('/channels'),
+    queryFn: () => api.get<Channel[]>('/channels'),
   })
 
   // Fetch active bots
   const { data: botsData } = useQuery({
     queryKey: queryKeys.bots.list({ is_active: true }),
-    queryFn: () => api.get<{ data: BotType[] }>('/bots', { is_active: 'true' }),
+    queryFn: () => api.get<PaginatedResponse<BotType>>('/bots', { is_active: 'true' }),
   })
 
   // Fetch contacts count
   const { data: contactsData } = useQuery({
     queryKey: queryKeys.contacts.list({ limit: '1' }),
-    queryFn: () => api.get<{ data: unknown[], total: number }>('/contacts', { limit: '1' }),
+    queryFn: () => api.getEnvelope<unknown[]>('/contacts', { limit: '1' }),
   })
 
-  const channels = channelsData?.data || []
-  const activeBots = botsData?.data?.length || 0
-  const totalContacts = contactsData?.total || 0
+  const channels = channelsData || []
+  const activeBots = botsData?.pagination.total || botsData?.data?.length || 0
+  const totalContacts = contactsData?.meta?.total_items || contactsData?.data?.length || 0
 
   const statsLoading = analyticsLoading
 

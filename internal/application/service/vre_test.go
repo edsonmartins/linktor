@@ -13,10 +13,10 @@ func TestRenderRequest_Validate(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid with html",
+			name: "valid with svg",
 			req: &entity.RenderRequest{
 				TenantID: "tenant-1",
-				HTML:     "<div>Hello</div>",
+				SVG:      `<svg xmlns="http://www.w3.org/2000/svg"></svg>`,
 			},
 			wantErr: false,
 		},
@@ -31,12 +31,12 @@ func TestRenderRequest_Validate(t *testing.T) {
 		{
 			name: "missing tenant_id",
 			req: &entity.RenderRequest{
-				HTML: "<div>Hello</div>",
+				SVG: `<svg xmlns="http://www.w3.org/2000/svg"></svg>`,
 			},
 			wantErr: true,
 		},
 		{
-			name: "missing html and template_id",
+			name: "missing svg and template_id",
 			req: &entity.RenderRequest{
 				TenantID: "tenant-1",
 			},
@@ -54,16 +54,16 @@ func TestRenderRequest_Validate(t *testing.T) {
 	}
 }
 
-func TestRenderRequest_IsCustomHTML(t *testing.T) {
+func TestRenderRequest_IsCustomSVG(t *testing.T) {
 	tests := []struct {
 		name     string
 		req      *entity.RenderRequest
 		expected bool
 	}{
 		{
-			name: "custom html",
+			name: "custom svg",
 			req: &entity.RenderRequest{
-				HTML: "<div>Custom</div>",
+				SVG: `<svg xmlns="http://www.w3.org/2000/svg"></svg>`,
 			},
 			expected: true,
 		},
@@ -75,9 +75,9 @@ func TestRenderRequest_IsCustomHTML(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "both html and template (html takes precedence)",
+			name: "both svg and template",
 			req: &entity.RenderRequest{
-				HTML:       "<div>Custom</div>",
+				SVG:        `<svg xmlns="http://www.w3.org/2000/svg"></svg>`,
 				TemplateID: "menu_opcoes",
 			},
 			expected: true,
@@ -86,9 +86,9 @@ func TestRenderRequest_IsCustomHTML(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.req.IsCustomHTML()
+			result := tt.req.IsCustomSVG()
 			if result != tt.expected {
-				t.Errorf("IsCustomHTML() = %v, want %v", result, tt.expected)
+				t.Errorf("IsCustomSVG() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
@@ -108,7 +108,7 @@ func TestRenderRequest_GetDefaults(t *testing.T) {
 			channel:     entity.VREChannelWhatsApp,
 			overrides:   nil,
 			wantWidth:   800,
-			wantFormat:  entity.OutputFormatWebP,
+			wantFormat:  entity.OutputFormatJPEG,
 			wantQuality: 85,
 		},
 		{
@@ -116,7 +116,7 @@ func TestRenderRequest_GetDefaults(t *testing.T) {
 			channel:     entity.VREChannelTelegram,
 			overrides:   nil,
 			wantWidth:   800,
-			wantFormat:  entity.OutputFormatWebP,
+			wantFormat:  entity.OutputFormatJPEG,
 			wantQuality: 85,
 		},
 		{
@@ -134,7 +134,7 @@ func TestRenderRequest_GetDefaults(t *testing.T) {
 				Width: 1200,
 			},
 			wantWidth:   1200,
-			wantFormat:  entity.OutputFormatWebP,
+			wantFormat:  entity.OutputFormatJPEG,
 			wantQuality: 85,
 		},
 		{
@@ -154,7 +154,7 @@ func TestRenderRequest_GetDefaults(t *testing.T) {
 				Quality: 95,
 			},
 			wantWidth:   800,
-			wantFormat:  entity.OutputFormatWebP,
+			wantFormat:  entity.OutputFormatJPEG,
 			wantQuality: 95,
 		},
 		{
@@ -162,7 +162,7 @@ func TestRenderRequest_GetDefaults(t *testing.T) {
 			channel:     "unknown",
 			overrides:   nil,
 			wantWidth:   800,
-			wantFormat:  entity.OutputFormatWebP,
+			wantFormat:  entity.OutputFormatJPEG,
 			wantQuality: 85,
 		},
 	}
@@ -249,7 +249,7 @@ func TestGenerateCacheKey(t *testing.T) {
 
 	req3 := &entity.RenderRequest{
 		TenantID: "tenant-1",
-		HTML:     "<div>Custom HTML</div>",
+		SVG:      `<svg xmlns="http://www.w3.org/2000/svg"></svg>`,
 		Channel:  entity.VREChannelWhatsApp,
 	}
 
@@ -259,9 +259,9 @@ func TestGenerateCacheKey(t *testing.T) {
 		// This is a conceptual test - actual key generation is in service
 	}
 
-	// Custom HTML should be recognized
-	if !req3.IsCustomHTML() {
-		t.Error("req3 should be recognized as custom HTML")
+	// Custom SVG should be recognized
+	if !req3.IsCustomSVG() {
+		t.Error("req3 should be recognized as custom SVG")
 	}
 }
 

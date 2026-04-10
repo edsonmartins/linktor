@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
+	"github.com/msgfy/linktor/internal/domain/repository"
 )
 
 // ContactHandler handles contact endpoints
@@ -47,16 +51,30 @@ func (h *ContactHandler) List(c *gin.Context) {
 		return
 	}
 
-	contacts, total, err := h.contactService.List(c.Request.Context(), tenantID, nil)
+	params := repository.NewListParams()
+	if page, err := strconv.Atoi(c.DefaultQuery("page", "1")); err == nil && page > 0 {
+		params.Page = page
+	}
+	if pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "20")); err == nil && pageSize > 0 {
+		params.PageSize = pageSize
+	}
+	if search := strings.TrimSpace(c.Query("search")); search != "" {
+		params.Filters["search"] = search
+	}
+
+	contacts, total, err := h.contactService.List(c.Request.Context(), tenantID, params)
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 
 	RespondWithMeta(c, contacts, &MetaResponse{
-		Page:       1,
-		PageSize:   20,
+		Page:       params.Page,
+		PageSize:   params.PageSize,
 		TotalItems: total,
+		TotalPages: int((total + int64(params.PageSize) - 1) / int64(params.PageSize)),
+		HasNext:    int64(params.Page*params.PageSize) < total,
+		HasPrev:    params.Page > 1,
 	})
 }
 

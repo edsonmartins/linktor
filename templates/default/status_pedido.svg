@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420">
+  <rect width="800" height="420" rx="28" fill="{{ .Brand.Background }}"/>
+  <rect x="32" y="32" width="736" height="96" rx="18" fill="{{ .Brand.PrimaryColor }}"/>
+  <text x="64" y="76" fill="#ffffff" font-family="Arial, sans-serif" font-size="18">Pedido</text>
+  <text x="64" y="110" fill="#ffffff" font-family="Arial, sans-serif" font-size="34" font-weight="700">#{{ .Data.numero_pedido }}</text>
+  <text x="736" y="92" text-anchor="end" fill="#ffffff" font-family="Arial, sans-serif" font-size="20" font-weight="700">{{ .Data.status_atual }}</text>
+  <line x1="104" y1="210" x2="696" y2="210" stroke="#e8ecf1" stroke-width="8" stroke-linecap="round"/>
+  {{ range $i, $step := list "Recebido" "Separacao" "Faturado" "Transporte" "Entregue" }}
+  <g transform="translate({{ add 104 (mul $i 148) }}, 210)">
+    <circle r="28" fill="{{ if lt $i 3 }}{{ $.Brand.AccentColor }}{{ else }}#e8ecf1{{ end }}"/>
+    <text y="8" text-anchor="middle" fill="{{ if lt $i 3 }}#ffffff{{ else }}{{ $.Brand.MutedColor }}{{ end }}" font-family="Arial, sans-serif" font-size="18" font-weight="700">{{ add $i 1 }}</text>
+    <text y="58" text-anchor="middle" fill="{{ $.Brand.TextColor }}" font-family="Arial, sans-serif" font-size="14">{{ $step }}</text>
+  </g>
+  {{ end }}
+  <rect x="48" y="304" width="704" height="72" rx="14" fill="#f8f9fb" stroke="#eef0f3"/>
+  <text x="76" y="334" fill="{{ .Brand.MutedColor }}" font-family="Arial, sans-serif" font-size="14">Resumo</text>
+  <text x="76" y="362" fill="{{ .Brand.TextColor }}" font-family="Arial, sans-serif" font-size="20" font-weight="700">{{ if .Data.itens_resumo }}{{ .Data.itens_resumo }}{{ else }}Pedido em acompanhamento{{ end }}</text>
+  {{ if .Data.previsao_entrega }}<text x="724" y="352" text-anchor="end" fill="{{ .Brand.PrimaryColor }}" font-family="Arial, sans-serif" font-size="18" font-weight="700">{{ .Data.previsao_entrega }}</text>{{ end }}
+</svg>

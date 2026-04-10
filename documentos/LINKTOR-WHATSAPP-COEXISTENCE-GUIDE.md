@@ -83,7 +83,7 @@ Cliente quer testar VendaX.ai:
 Cliente quer testar VendaX.ai:
 1. "Escaneia QR code"
 2. "Pronto! Já está conectado"
-3. "Histórico de 6 meses importado"
+3. "Histórico pode ser importado manualmente quando houver export do cliente"
 → CONVERTE (taxa 10x maior)
 ```
 
@@ -321,7 +321,7 @@ export function WhatsAppOnboarding() {
         <div className="coex-flow">
           <p>
             ✅ Mantém seu número atual<br/>
-            ✅ Importa 6 meses de histórico<br/>
+            ✅ Permite importar histórico manual quando houver arquivo/export<br/>
             ✅ Continua usando o App no celular
           </p>
           
@@ -657,11 +657,11 @@ export function ConversationThread({ messages }: { messages: Message[] }) {
 
 ---
 
-### Fase 3: Chat History Import (Semana 3)
+### Fase 3: Chat History Import Manual (Semana 3)
 
-#### Importar 6 Meses de Histórico
+#### Importar Histórico por Arquivo/Export
 
-Durante o Embedded Signup, Meta oferece importar até **6 meses** de histórico.
+A Cloud API não expõe um endpoint público para exportar conversas antigas do WhatsApp Business App após o Embedded Signup. Portanto, o caminho suportado no produto deve ser importação manual a partir de arquivo/export fornecido pelo cliente, marcando mensagens com `is_imported=true`.
 
 ```go
 // internal/whatsapp/historyImport.go
@@ -673,52 +673,7 @@ type ChatHistoryImportRequest struct {
 }
 
 func (s *WhatsAppService) ImportChatHistory(ctx context.Context, req ChatHistoryImportRequest) error {
-    // 1. Request chat history export
-    url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s/conversations", req.PhoneNumberID)
-    
-    httpReq, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-    httpReq.Header.Set("Authorization", "Bearer "+req.AccessToken)
-    
-    resp, err := http.DefaultClient.Do(httpReq)
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
-    
-    var conversations struct {
-        Data []Conversation `json:"data"`
-    }
-    json.NewDecoder(resp.Body).Decode(&conversations)
-    
-    // 2. Process each conversation
-    for _, conv := range conversations.Data {
-        // Fetch messages for this conversation
-        messages := s.fetchConversationMessages(ctx, conv.ID, req.AccessToken)
-        
-        // Import messages
-        for _, msg := range messages {
-            s.importMessage(msg)
-        }
-    }
-    
-    return nil
-}
-
-func (s *WhatsAppService) fetchConversationMessages(ctx context.Context, conversationID, accessToken string) []Message {
-    url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s/messages", conversationID)
-    
-    req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-    req.Header.Set("Authorization", "Bearer "+accessToken)
-    
-    resp, _ := http.DefaultClient.Do(req)
-    defer resp.Body.Close()
-    
-    var data struct {
-        Data []Message `json:"data"`
-    }
-    json.NewDecoder(resp.Body).Decode(&data)
-    
-    return data.Data
+    return errors.New("Cloud API does not provide historical conversation export; use manual CSV/JSON import")
 }
 
 func (s *WhatsAppService) importMessage(msg Message) {
@@ -742,7 +697,8 @@ export function HistoryImportProgress() {
   const startImport = async () => {
     setStatus('importing');
     
-    const eventSource = new EventSource('/api/whatsapp/import-history/progress');
+    // Integre este componente ao endpoint real de importação manual quando ele estiver habilitado.
+    const eventSource = new EventSource('/api/v1/channels/{channelId}/history-imports/{importId}/progress');
     
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -759,7 +715,7 @@ export function HistoryImportProgress() {
     <div className="import-progress">
       {status === 'idle' && (
         <button onClick={startImport}>
-          Importar Histórico (6 meses)
+          Importar Histórico
         </button>
       )}
       
@@ -1078,15 +1034,15 @@ func (s *Service) VerifyEchoSubscription(wabaID, token string) error {
 - Embedded Signup completo mas histórico vazio
 
 **Causas:**
-1. Usuário não autorizou sync no QR code
-2. Histórico > 6 meses
-3. App não tinha backup habilitado
+1. Nenhum arquivo/export manual foi enviado
+2. Arquivo enviado está em formato inválido
+3. Importação manual ainda não foi executada
 
 **Solução:**
 ```
-1. Refazer Embedded Signup
-2. Certificar que usuário clica "Permitir" no sync
-3. Explicar limite de 6 meses
+1. Solicitar export/arquivo ao cliente
+2. Validar CSV/JSON antes da importação
+3. Executar importação manual e marcar mensagens como importadas
 ```
 
 ### Problema 4: Coexistence Desconectado

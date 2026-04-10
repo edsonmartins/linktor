@@ -25,11 +25,11 @@ cd linktor
 cp .env.example .env
 
 # Start all services
-docker-compose up -d
+docker compose up --build
 ```
 
 This will start:
-- API Server on `http://localhost:8080`
+- API Server on `http://localhost:8081`
 - Admin Dashboard on `http://localhost:3000`
 - PostgreSQL on port `5432`
 - Redis on port `6379`
@@ -42,13 +42,19 @@ Configure Linktor by editing the `.env` file:
 
 ```bash
 # Database
-DATABASE_URL=postgres://linktor:linktor@localhost:5432/linktor?sslmode=disable
+LINKTOR_DATABASE_HOST=localhost
+LINKTOR_DATABASE_PORT=5432
+LINKTOR_DATABASE_USER=linktor
+LINKTOR_DATABASE_PASSWORD=linktor
+LINKTOR_DATABASE_DATABASE=linktor
+LINKTOR_DATABASE_SSL_MODE=disable
 
 # Redis
-REDIS_URL=redis://localhost:6379
+LINKTOR_REDIS_HOST=localhost
+LINKTOR_REDIS_PORT=6379
 
 # NATS
-NATS_URL=nats://localhost:4222
+LINKTOR_NATS_URL=nats://localhost:4222
 
 # MinIO
 MINIO_ENDPOINT=localhost:9000
@@ -56,7 +62,12 @@ MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 
 # JWT Secret (generate a strong secret)
-JWT_SECRET=your-super-secret-key-change-in-production
+LINKTOR_JWT_SECRET=your-super-secret-key-change-in-production
+
+# Admin frontend
+NEXT_PUBLIC_API_URL=http://localhost:8081/api/v1
+NEXT_PUBLIC_WS_URL=ws://localhost:8081/api/v1/ws
+NEXT_PUBLIC_WEBHOOK_BASE_URL=http://localhost:8081
 
 # AI Providers (optional)
 OPENAI_API_KEY=sk-...
@@ -121,7 +132,7 @@ Verify the installation:
 
 ```bash
 # Check API health
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 
 # Expected response
 {"status": "healthy"}

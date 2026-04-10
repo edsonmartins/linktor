@@ -56,7 +56,7 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 		channel.IsCoexistence,
 		nullString(channel.WABAID),
 		channel.LastEchoAt,
-		string(channel.CoexistenceStatus),
+		normalizeCoexistenceStatus(channel.CoexistenceStatus),
 		channel.CreatedAt,
 		channel.UpdatedAt,
 	)
@@ -259,7 +259,7 @@ func (r *ChannelRepository) Update(ctx context.Context, channel *entity.Channel)
 		channel.IsCoexistence,
 		nullString(channel.WABAID),
 		channel.LastEchoAt,
-		nullString(string(channel.CoexistenceStatus)),
+		normalizeCoexistenceStatus(channel.CoexistenceStatus),
 		channel.UpdatedAt,
 		channel.ID,
 	)
@@ -465,6 +465,9 @@ func (r *ChannelRepository) scanChannel(row pgx.Row) (*entity.Channel, error) {
 	if coexistenceStatus != nil {
 		c.CoexistenceStatus = entity.CoexistenceStatus(*coexistenceStatus)
 	}
+	if c.CoexistenceStatus == "" {
+		c.CoexistenceStatus = entity.CoexistenceStatusInactive
+	}
 
 	if err := json.Unmarshal(credentials, &c.Credentials); err != nil {
 		c.Credentials = make(map[string]string)
@@ -504,6 +507,9 @@ func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel,
 	if coexistenceStatus != nil {
 		c.CoexistenceStatus = entity.CoexistenceStatus(*coexistenceStatus)
 	}
+	if c.CoexistenceStatus == "" {
+		c.CoexistenceStatus = entity.CoexistenceStatusInactive
+	}
 
 	if err := json.Unmarshal(credentials, &c.Credentials); err != nil {
 		c.Credentials = make(map[string]string)
@@ -514,6 +520,13 @@ func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel,
 	}
 
 	return &c, nil
+}
+
+func normalizeCoexistenceStatus(status entity.CoexistenceStatus) string {
+	if status == "" {
+		return string(entity.CoexistenceStatusInactive)
+	}
+	return string(status)
 }
 
 // FindCoexistenceChannels finds all channels with coexistence enabled

@@ -20,7 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { api } from '@/lib/api'
+import { api, WEBHOOK_BASE_URL } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 
 // Combined schema with all fields (provider-specific fields are optional for form handling)
@@ -235,8 +235,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
   }
 
   const copyWebhookUrl = (provider: string) => {
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-    const webhookUrl = `${baseUrl}/api/v1/webhooks/email/${provider}/{channelId}`
+    const webhookUrl = `${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/${provider}`
     navigator.clipboard.writeText(webhookUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -817,25 +816,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     <div className="flex gap-2">
                       <Input
                         readOnly
-                        value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/webhooks/email/sendgrid/{channelId}`}
-                        className="font-mono text-sm"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => copyWebhookUrl('sendgrid')}
-                      >
-                        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t('eventWebhook')}</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        readOnly
-                        value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/webhooks/email/sendgrid/{channelId}/events`}
+                        value={`${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/sendgrid`}
                         className="font-mono text-sm"
                       />
                       <Button
@@ -857,7 +838,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                   <div className="flex gap-2">
                     <Input
                       readOnly
-                      value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/webhooks/email/mailgun/{channelId}`}
+                      value={`${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/mailgun`}
                       className="font-mono text-sm"
                     />
                     <Button
@@ -878,7 +859,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                   <div className="flex gap-2">
                     <Input
                       readOnly
-                      value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/webhooks/email/ses/{channelId}`}
+                      value={`${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/ses`}
                       className="font-mono text-sm"
                     />
                     <Button
@@ -902,7 +883,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                   <div className="flex gap-2">
                     <Input
                       readOnly
-                      value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/webhooks/email/postmark/{channelId}`}
+                      value={`${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/postmark`}
                       className="font-mono text-sm"
                     />
                     <Button

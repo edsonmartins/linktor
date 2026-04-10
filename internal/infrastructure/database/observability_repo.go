@@ -200,8 +200,8 @@ func (r *ObservabilityRepository) GetSystemStats(ctx context.Context, filter ent
 	channelQuery := `
 		SELECT
 			COUNT(*) as total,
-			COUNT(*) FILTER (WHERE status = 'connected') as connected,
-			COUNT(*) FILTER (WHERE status != 'connected') as disconnected
+			COUNT(*) FILTER (WHERE connection_status = 'connected') as connected,
+			COUNT(*) FILTER (WHERE connection_status != 'connected') as disconnected
 		FROM channels
 		WHERE tenant_id = $1
 	`

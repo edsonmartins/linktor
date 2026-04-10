@@ -38,7 +38,7 @@ Essential variables to configure:
 ```bash
 # Application
 APP_URL=http://localhost:3000
-API_URL=http://localhost:8080
+API_URL=http://localhost:8081
 
 # Database
 POSTGRES_USER=linktor
@@ -62,14 +62,14 @@ ADMIN_PASSWORD=your-admin-password
 ### 3. Start Services
 
 ```bash
-docker-compose up -d
+docker compose up --build
 ```
 
 ### 4. Access Linktor
 
 - **Admin Dashboard**: http://localhost:3000
-- **API**: http://localhost:8080
-- **API Documentation**: http://localhost:8080/docs
+- **API**: http://localhost:8081
+- **API Documentation**: http://localhost:8081/docs
 
 ## Architecture
 
@@ -191,9 +191,9 @@ services:
       APP_URL: ${APP_URL}
       API_URL: ${API_URL}
     ports:
-      - "8080:8080"
+      - "8081:8081"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -364,7 +364,7 @@ http {
 Scale background workers for higher throughput:
 
 ```bash
-docker-compose up -d --scale worker=3
+docker compose up -d --scale worker=3
 ```
 
 Or in docker-compose.yml:
@@ -538,13 +538,13 @@ scrape_configs:
 
 ```bash
 # Check all services
-docker-compose ps
+docker compose ps
 
 # Check specific service logs
-docker-compose logs -f api
+docker compose logs -f api
 
 # Check service health
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 ```
 
 ## Updating
@@ -553,10 +553,10 @@ curl http://localhost:8080/health
 
 ```bash
 # Pull latest images
-docker-compose pull
+docker compose pull
 
 # Restart with new images
-docker-compose up -d
+docker compose up -d
 
 # Clean up old images
 docker image prune -f
@@ -566,9 +566,9 @@ docker image prune -f
 
 ```bash
 # Update API with rolling restart
-docker-compose up -d --no-deps --scale api=2 api
+docker compose up -d --no-deps --scale api=2 api
 sleep 30
-docker-compose up -d --no-deps --scale api=1 api
+docker compose up -d --no-deps --scale api=1 api
 ```
 
 ## Troubleshooting

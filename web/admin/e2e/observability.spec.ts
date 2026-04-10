@@ -91,13 +91,13 @@ test.describe('Observability Page', () => {
     await queueTab.click()
 
     // The queue tab panel content should now be visible
-    await expect(page.locator('[role="tabpanel"]').first()).toBeVisible()
+    await expect(page.getByRole('tabpanel', { name: /Message Queues/i })).toBeVisible()
 
     // Click on Statistics tab
     const statsTab = page.getByRole('tab', { name: /Statistics/i })
     await statsTab.click()
 
     // The stats tab panel content should now be visible
-    await expect(page.locator('[role="tabpanel"]').first()).toBeVisible()
+    await expect(page.getByRole('tabpanel', { name: /Statistics/i })).toBeVisible()
   })
 })

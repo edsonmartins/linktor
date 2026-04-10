@@ -531,6 +531,6 @@ _dmarc.yourdomain.com TXT "v=DMARC1; p=quarantine; pct=100; rua=mailto:dmarc-rep
 ## Next Steps
 
 - [Flows](/flows/overview) - Build email automation flows
-- [Templates](/api/templates) - Create reusable email templates
-- [Inboxes](/guides/inboxes) - Manage team email inboxes
-- [Analytics](/api/analytics) - Track email performance
+- [Messages API](/api/messages) - Send email messages through the API
+- [Email Channel](/channels/email) - Manage team email inboxes
+- [API Reference](/api/overview) - Review available API resources

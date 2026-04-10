@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="460" viewBox="0 0 800 460">
+  <rect width="800" height="460" rx="28" fill="{{ .Brand.Background }}"/>
+  <rect x="32" y="32" width="736" height="180" rx="20" fill="#f0f4f8"/>
+  <text x="400" y="126" text-anchor="middle" fill="{{ .Brand.MutedColor }}" font-family="Arial, sans-serif" font-size="56" font-weight="700">PRODUTO</text>
+  {{ if .Data.destaque }}<rect x="588" y="56" width="140" height="36" rx="10" fill="{{ .Brand.SecondaryColor }}"/><text x="658" y="80" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="14" font-weight="700">{{ .Data.destaque }}</text>{{ end }}
+  <text x="56" y="264" fill="{{ .Brand.TextColor }}" font-family="Arial, sans-serif" font-size="32" font-weight="700">{{ .Data.nome }}</text>
+  {{ if .Data.sku }}<text x="56" y="294" fill="{{ .Brand.MutedColor }}" font-family="Arial, sans-serif" font-size="16">SKU: {{ .Data.sku }}</text>{{ end }}
+  <line x1="56" y1="326" x2="744" y2="326" stroke="#eef0f3" stroke-width="2"/>
+  <text x="56" y="376" fill="{{ .Brand.PrimaryColor }}" font-family="Arial, sans-serif" font-size="42" font-weight="700">{{ formatCurrency .Data.preco }}</text>
+  <text x="250" y="376" fill="{{ .Brand.MutedColor }}" font-family="Arial, sans-serif" font-size="18">{{ formatUnit .Data.unidade }}</text>
+  {{ if .Data.estoque }}<rect x="560" y="342" width="184" height="44" rx="12" fill="#e6f9f1"/><text x="652" y="371" text-anchor="middle" fill="{{ .Brand.AccentColor }}" font-family="Arial, sans-serif" font-size="18" font-weight="700">{{ .Data.estoque }} em estoque</text>{{ end }}
+</svg>
