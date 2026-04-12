@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 )
@@ -238,6 +239,18 @@ func (s *TemplateService) ProcessTemplateQualityWebhook(ctx context.Context, eve
 	return s.templateRepo.Update(ctx, template)
 }
 
+// ProcessTemplateCategoryWebhook processes a template category webhook event
+func (s *TemplateService) ProcessTemplateCategoryWebhook(ctx context.Context, event *TemplateCategoryEvent) error {
+	template, err := s.templateRepo.FindByExternalID(ctx, fmt.Sprintf("%d", event.TemplateID))
+	if err != nil {
+		return nil
+	}
+
+	template.Category = mapMetaCategoryToEntity(event.NewCategory)
+	template.UpdatedAt = time.Now()
+	return s.templateRepo.Update(ctx, template)
+}
+
 // --- Meta Graph API integration ---
 
 type metaCredentials struct {
@@ -251,8 +264,17 @@ func (s *TemplateService) getChannelCredentials(ctx context.Context, channelID s
 		return nil
 	}
 
-	accessToken := channel.Config["access_token"]
-	wabaID := channel.Config["waba_id"]
+	accessToken := firstNonEmpty(
+		channel.Credentials["access_token"],
+		channel.Config["access_token"],
+	)
+	wabaID := firstNonEmpty(
+		channel.WABAID,
+		channel.Credentials["waba_id"],
+		channel.Config["waba_id"],
+		channel.Config["business_id"],
+		channel.Credentials["business_id"],
+	)
 	if accessToken == "" || wabaID == "" {
 		return nil
 	}
@@ -264,7 +286,7 @@ func (s *TemplateService) getChannelCredentials(ctx context.Context, channelID s
 }
 
 func (s *TemplateService) createTemplateOnMeta(ctx context.Context, creds *metaCredentials, template *entity.Template) (string, error) {
-	url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s/message_templates", creds.wabaID)
+	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates", whatsappofficial.DefaultAPIVersion, creds.wabaID)
 
 	payload := map[string]interface{}{
 		"name":     template.Name,
@@ -292,7 +314,7 @@ func (s *TemplateService) createTemplateOnMeta(ctx context.Context, creds *metaC
 }
 
 func (s *TemplateService) deleteTemplateOnMeta(ctx context.Context, creds *metaCredentials, templateName string) error {
-	url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s/message_templates?name=%s", creds.wabaID, templateName)
+	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates?name=%s", whatsappofficial.DefaultAPIVersion, creds.wabaID, templateName)
 	_, err := s.metaRequest(ctx, "DELETE", url, creds.accessToken, nil)
 	return err
 }
@@ -306,7 +328,7 @@ type metaTemplateInfo struct {
 }
 
 func (s *TemplateService) listTemplatesFromMeta(ctx context.Context, creds *metaCredentials) ([]metaTemplateInfo, error) {
-	url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s/message_templates?limit=250", creds.wabaID)
+	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates?limit=250", whatsappofficial.DefaultAPIVersion, creds.wabaID)
 
 	respBody, err := s.metaRequest(ctx, "GET", url, creds.accessToken, nil)
 	if err != nil {
@@ -388,6 +410,15 @@ type TemplateQualityEvent struct {
 	NewQuality      string
 }
 
+// TemplateCategoryEvent represents a template category webhook event
+type TemplateCategoryEvent struct {
+	TemplateID       int64
+	TemplateName     string
+	Language         string
+	PreviousCategory string
+	NewCategory      string
+}
+
 // --- Status/Quality mapping ---
 
 func mapMetaStatusToEntity(status string) entity.TemplateStatus {
@@ -426,6 +457,28 @@ func mapMetaQualityToEntity(quality string) entity.TemplateQuality {
 	default:
 		return entity.TemplateQualityUnknown
 	}
+}
+
+func mapMetaCategoryToEntity(category string) entity.TemplateCategory {
+	switch category {
+	case "AUTHENTICATION":
+		return entity.TemplateCategoryAuthentication
+	case "MARKETING":
+		return entity.TemplateCategoryMarketing
+	case "UTILITY":
+		return entity.TemplateCategoryUtility
+	default:
+		return entity.TemplateCategoryUtility
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func generateID() string {

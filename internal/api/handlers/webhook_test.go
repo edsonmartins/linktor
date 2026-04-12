@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/pkg/testutil"
 )
@@ -24,10 +25,12 @@ func init() {
 }
 
 // setupWebhookTest creates a WebhookHandler with mock dependencies and a default WhatsApp channel.
-func setupWebhookTest() (*WebhookHandler, *testutil.MockChannelRepository, *testutil.MockProducer) {
+func setupWebhookTest() (*WebhookHandler, *testutil.MockChannelRepository, *testutil.MockProducer, *mockTemplateRepository) {
 	channelRepo := testutil.NewMockChannelRepository()
 	producer := testutil.NewMockProducer()
-	handler := NewWebhookHandler(channelRepo, producer)
+	templateRepo := newMockTemplateRepository()
+	templateSvc := service.NewTemplateService(templateRepo, channelRepo)
+	handler := NewWebhookHandler(channelRepo, producer, templateSvc)
 
 	channel := &entity.Channel{
 		ID:               "ch-1",
@@ -43,7 +46,7 @@ func setupWebhookTest() (*WebhookHandler, *testutil.MockChannelRepository, *test
 	}
 	channelRepo.Channels["ch-1"] = channel
 
-	return handler, channelRepo, producer
+	return handler, channelRepo, producer, templateRepo
 }
 
 // buildWhatsAppPayload constructs a WhatsApp webhook payload with the given messages, contacts, and statuses.
@@ -52,7 +55,7 @@ func buildWhatsAppPayload(messages []WhatsAppMessage, contacts []WhatsAppContact
 		"messaging_product": "whatsapp",
 		"metadata": map[string]string{
 			"display_phone_number": "551199999999",
-			"phone_number_id":     "phone-id-1",
+			"phone_number_id":      "phone-id-1",
 		},
 	}
 	if messages != nil {
@@ -73,6 +76,23 @@ func buildWhatsAppPayload(messages []WhatsAppMessage, contacts []WhatsAppContact
 				"changes": []map[string]interface{}{
 					{
 						"field": "messages",
+						"value": value,
+					},
+				},
+			},
+		},
+	}
+}
+
+func buildWhatsAppFieldPayload(field string, value map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"object": "whatsapp_business_account",
+		"entry": []map[string]interface{}{
+			{
+				"id": "entry-1",
+				"changes": []map[string]interface{}{
+					{
+						"field": field,
 						"value": value,
 					},
 				},
@@ -106,7 +126,7 @@ func postWhatsAppJSON(c *gin.Context, payload interface{}, secret string) []byte
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppVerification_CorrectToken(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -127,7 +147,7 @@ func TestWebhookWhatsAppVerification_CorrectToken(t *testing.T) {
 }
 
 func TestWebhookWhatsAppVerification_WrongToken(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -147,7 +167,7 @@ func TestWebhookWhatsAppVerification_WrongToken(t *testing.T) {
 }
 
 func TestWebhookWhatsAppVerification_WrongMode(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -167,7 +187,7 @@ func TestWebhookWhatsAppVerification_WrongMode(t *testing.T) {
 }
 
 func TestWebhookWhatsAppVerification_ChannelNotFound(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -191,7 +211,7 @@ func TestWebhookWhatsAppVerification_ChannelNotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppPost_TextMessage(t *testing.T) {
-	handler, _, producer := setupWebhookTest()
+	handler, _, producer, _ := setupWebhookTest()
 
 	payload := buildWhatsAppPayload(
 		[]WhatsAppMessage{
@@ -241,7 +261,7 @@ func TestWebhookWhatsAppPost_TextMessage(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppPost_ImageMessage(t *testing.T) {
-	handler, _, producer := setupWebhookTest()
+	handler, _, producer, _ := setupWebhookTest()
 
 	payload := buildWhatsAppPayload(
 		[]WhatsAppMessage{
@@ -292,7 +312,7 @@ func TestWebhookWhatsAppPost_ImageMessage(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppPost_InvalidJSON(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	// Remove webhook_secret so signature check is bypassed and we reach JSON parsing
 	handler.channelRepo.(*testutil.MockChannelRepository).Channels["ch-1"].Credentials = map[string]string{
@@ -318,7 +338,7 @@ func TestWebhookWhatsAppPost_InvalidJSON(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppPost_ChannelNotFound(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	payload := buildWhatsAppPayload(nil, nil, nil)
 
@@ -341,7 +361,7 @@ func TestWebhookWhatsAppPost_ChannelNotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppPost_ValidSignature(t *testing.T) {
-	handler, _, producer := setupWebhookTest()
+	handler, _, producer, _ := setupWebhookTest()
 
 	payload := buildWhatsAppPayload(
 		[]WhatsAppMessage{
@@ -369,7 +389,7 @@ func TestWebhookWhatsAppPost_ValidSignature(t *testing.T) {
 }
 
 func TestWebhookWhatsAppPost_InvalidSignature(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	payload := buildWhatsAppPayload(nil, nil, nil)
 
@@ -388,8 +408,110 @@ func TestWebhookWhatsAppPost_InvalidSignature(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
+func TestWebhookWhatsAppPost_TemplateStatusWebhook(t *testing.T) {
+	handler, _, _, templateRepo := setupWebhookTest()
+	templateRepo.Templates["tpl-1"] = &entity.Template{
+		ID:         "tpl-1",
+		ExternalID: "12345",
+		Status:     entity.TemplateStatusPending,
+	}
+
+	payload := buildWhatsAppFieldPayload("message_template_status_update", map[string]interface{}{
+		"message_template_id":       12345,
+		"message_template_name":     "welcome_template",
+		"message_template_language": "pt_BR",
+		"event":                     "APPROVED",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	postWhatsAppJSON(c, payload, "test-secret")
+
+	handler.WhatsAppWebhook(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, entity.TemplateStatusApproved, templateRepo.Templates["tpl-1"].Status)
+}
+
+func TestWebhookWhatsAppPost_TemplateQualityWebhook(t *testing.T) {
+	handler, _, _, templateRepo := setupWebhookTest()
+	templateRepo.Templates["tpl-1"] = &entity.Template{
+		ID:           "tpl-1",
+		ExternalID:   "12345",
+		QualityScore: entity.TemplateQualityUnknown,
+	}
+
+	payload := buildWhatsAppFieldPayload("message_template_quality_update", map[string]interface{}{
+		"message_template_id":       12345,
+		"message_template_name":     "welcome_template",
+		"message_template_language": "pt_BR",
+		"previous_quality_score":    "UNKNOWN",
+		"new_quality_score":         "GREEN",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	postWhatsAppJSON(c, payload, "test-secret")
+
+	handler.WhatsAppWebhook(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, entity.TemplateQualityGreen, templateRepo.Templates["tpl-1"].QualityScore)
+}
+
+func TestWebhookWhatsAppPost_TemplateCategoryWebhook(t *testing.T) {
+	handler, _, _, templateRepo := setupWebhookTest()
+	templateRepo.Templates["tpl-1"] = &entity.Template{
+		ID:         "tpl-1",
+		ExternalID: "12345",
+		Category:   entity.TemplateCategoryUtility,
+	}
+
+	payload := buildWhatsAppFieldPayload("template_category_update", map[string]interface{}{
+		"message_template_id":       12345,
+		"message_template_name":     "welcome_template",
+		"message_template_language": "pt_BR",
+		"previous_category":         "UTILITY",
+		"new_category":              "MARKETING",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	postWhatsAppJSON(c, payload, "test-secret")
+
+	handler.WhatsAppWebhook(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, entity.TemplateCategoryMarketing, templateRepo.Templates["tpl-1"].Category)
+}
+
+func TestWebhookWhatsAppPost_PhoneNumberQualityWebhook(t *testing.T) {
+	handler, channelRepo, _, _ := setupWebhookTest()
+
+	payload := buildWhatsAppFieldPayload("phone_number_quality_update", map[string]interface{}{
+		"display_phone_number": "+5511999999999",
+		"event":                "FLAGGED",
+		"current_limit":        "TIER_1K",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	postWhatsAppJSON(c, payload, "test-secret")
+
+	handler.WhatsAppWebhook(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	updatedChannel := channelRepo.Channels["ch-1"]
+	require.NotNil(t, updatedChannel)
+	assert.Equal(t, "RED", updatedChannel.Config["quality_rating"])
+	assert.Equal(t, "FLAGGED", updatedChannel.Config["quality_rating_event"])
+	assert.Equal(t, "TIER_1K", updatedChannel.Config["messaging_limit_tier"])
+	assert.Equal(t, "+5511999999999", updatedChannel.Config["phone_number"])
+}
+
 func TestWebhookWhatsAppPost_NoSecretConfigured(t *testing.T) {
-	handler, channelRepo, producer := setupWebhookTest()
+	handler, channelRepo, producer, _ := setupWebhookTest()
 
 	// Remove webhook_secret from credentials
 	delete(channelRepo.Channels["ch-1"].Credentials, "webhook_secret")
@@ -429,7 +551,7 @@ func TestWebhookWhatsAppPost_NoSecretConfigured(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppPost_StatusUpdates(t *testing.T) {
-	handler, _, producer := setupWebhookTest()
+	handler, _, producer, _ := setupWebhookTest()
 
 	payload := buildWhatsAppPayload(
 		nil,
@@ -464,7 +586,7 @@ func TestWebhookWhatsAppPost_StatusUpdates(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppPost_InteractiveMessage(t *testing.T) {
-	handler, _, producer := setupWebhookTest()
+	handler, _, producer, _ := setupWebhookTest()
 
 	messages := []map[string]interface{}{
 		{
@@ -519,7 +641,7 @@ func TestWebhookWhatsAppPost_InteractiveMessage(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppPost_LocationMessage(t *testing.T) {
-	handler, _, producer := setupWebhookTest()
+	handler, _, producer, _ := setupWebhookTest()
 
 	messages := []map[string]interface{}{
 		{
@@ -573,7 +695,7 @@ func TestWebhookWhatsAppPost_LocationMessage(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookWhatsAppPost_ReplyToContext(t *testing.T) {
-	handler, _, producer := setupWebhookTest()
+	handler, _, producer, _ := setupWebhookTest()
 
 	messages := []map[string]interface{}{
 		{
@@ -625,7 +747,7 @@ func TestWebhookWhatsAppPost_ReplyToContext(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookGeneric_ValidPayload(t *testing.T) {
-	handler, channelRepo, producer := setupWebhookTest()
+	handler, channelRepo, producer, _ := setupWebhookTest()
 
 	// Add a generic channel
 	channelRepo.Channels["ch-gen"] = &entity.Channel{
@@ -683,7 +805,7 @@ func TestWebhookGeneric_ValidPayload(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookGeneric_ChannelNotFound(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	payload := GenericWebhookPayload{
 		MessageID:   "ext-1",
@@ -711,7 +833,7 @@ func TestWebhookGeneric_ChannelNotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookGeneric_InvalidJSON(t *testing.T) {
-	handler, channelRepo, _ := setupWebhookTest()
+	handler, channelRepo, _, _ := setupWebhookTest()
 
 	channelRepo.Channels["ch-gen"] = &entity.Channel{
 		ID:               "ch-gen",
@@ -740,7 +862,7 @@ func TestWebhookGeneric_InvalidJSON(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookStatusCallback_ValidPayload(t *testing.T) {
-	handler, _, producer := setupWebhookTest()
+	handler, _, producer, _ := setupWebhookTest()
 
 	payload := StatusCallbackPayload{
 		MessageID:    "msg-100",
@@ -774,7 +896,7 @@ func TestWebhookStatusCallback_ValidPayload(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookStatusCallback_ChannelNotFound(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	payload := StatusCallbackPayload{
 		MessageID: "msg-100",
@@ -800,7 +922,7 @@ func TestWebhookStatusCallback_ChannelNotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookTelegram_TextMessage(t *testing.T) {
-	handler, channelRepo, producer := setupWebhookTest()
+	handler, channelRepo, producer, _ := setupWebhookTest()
 
 	channelRepo.Channels["ch-tg"] = &entity.Channel{
 		ID:               "ch-tg",
@@ -856,7 +978,7 @@ func TestWebhookTelegram_TextMessage(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWebhookTelegram_ChannelNotFound(t *testing.T) {
-	handler, _, _ := setupWebhookTest()
+	handler, _, _, _ := setupWebhookTest()
 
 	payload := map[string]interface{}{
 		"update_id": 12345,

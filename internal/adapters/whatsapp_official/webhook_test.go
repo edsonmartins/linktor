@@ -767,11 +767,11 @@ func TestExtractMessages_TimestampInvalid(t *testing.T) {
 
 func TestExtractStatuses(t *testing.T) {
 	tests := []struct {
-		name           string
-		waStatus       MessageStatus
-		wantStatus     plugin.MessageStatus
-		errors         []WebhookError
-		wantErrMsg     string
+		name       string
+		waStatus   MessageStatus
+		wantStatus plugin.MessageStatus
+		errors     []WebhookError
+		wantErrMsg string
 	}{
 		{"sent", StatusSent, plugin.MessageStatusSent, nil, ""},
 		{"delivered", StatusDelivered, plugin.MessageStatusDelivered, nil, ""},
@@ -960,6 +960,24 @@ func TestExtractTemplateQualityUpdates(t *testing.T) {
 	assert.Equal(t, "YELLOW", e.NewQuality)
 }
 
+func TestExtractTemplateCategoryUpdates(t *testing.T) {
+	proc := testProcessor()
+	payload := buildFieldPayload("template_category_update", WebhookChangeValue{
+		MessageTemplateID:       44,
+		MessageTemplateName:     "promo",
+		MessageTemplateLanguage: "pt_BR",
+		PreviousCategory:        "UTILITY",
+		NewCategory:             "MARKETING",
+	})
+
+	events := proc.ExtractTemplateCategoryUpdates(payload)
+	require.Len(t, events, 1)
+	e := events[0]
+	assert.Equal(t, int64(44), e.TemplateID)
+	assert.Equal(t, "UTILITY", e.PreviousCategory)
+	assert.Equal(t, "MARKETING", e.NewCategory)
+}
+
 func TestExtractAccountAlerts(t *testing.T) {
 	proc := testProcessor()
 	payload := buildFieldPayload("account_alerts", WebhookChangeValue{
@@ -1074,6 +1092,14 @@ func TestIsFlowWebhook(t *testing.T) {
 
 	payloadOther := buildFieldPayload("messages", WebhookChangeValue{})
 	assert.False(t, IsFlowWebhook(payloadOther))
+}
+
+func TestIsTemplateCategoryWebhook(t *testing.T) {
+	payload := buildFieldPayload("template_category_update", WebhookChangeValue{})
+	assert.True(t, IsTemplateCategoryWebhook(payload))
+
+	payloadOther := buildFieldPayload("messages", WebhookChangeValue{})
+	assert.False(t, IsTemplateCategoryWebhook(payloadOther))
 }
 
 func TestIsAccountAlertWebhook(t *testing.T) {

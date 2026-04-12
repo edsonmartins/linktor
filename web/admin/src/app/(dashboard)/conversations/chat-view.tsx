@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Send,
@@ -78,16 +79,17 @@ interface MessageSourceBadgeProps {
 }
 
 function MessageSourceBadge({ source, isImported, isOwn }: MessageSourceBadgeProps) {
+  const t = useTranslations('conversations')
   // Only show badge for outgoing messages from non-API sources
   if (!isOwn) return null
 
   // Check if it's an imported message
   if (isImported || source === 'imported') {
     return (
-      <SimpleTooltip content="Imported from chat history">
+      <SimpleTooltip content={t('importedHistory')}>
         <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5 gap-0.5">
           <History className="h-2 w-2" />
-          <span>History</span>
+          <span>{t('history')}</span>
         </Badge>
       </SimpleTooltip>
     )
@@ -96,10 +98,10 @@ function MessageSourceBadge({ source, isImported, isOwn }: MessageSourceBadgePro
   // Check if it's from Business App (echo)
   if (source === 'business_app') {
     return (
-      <SimpleTooltip content="Sent via WhatsApp Business App">
+      <SimpleTooltip content={t('sentViaApp')}>
         <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5 gap-0.5">
           <Smartphone className="h-2 w-2" />
-          <span>App</span>
+          <span>{t('app')}</span>
         </Badge>
       </SimpleTooltip>
     )
@@ -169,6 +171,7 @@ interface ChatHeaderProps {
 }
 
 function ChatHeader({ conversation }: ChatHeaderProps) {
+  const t = useTranslations('conversations')
   return (
     <div className="flex h-16 items-center justify-between border-b border-border bg-card px-4">
       <div className="flex items-center gap-3">
@@ -178,7 +181,7 @@ function ChatHeader({ conversation }: ChatHeaderProps) {
         />
         <div>
           <h2 className="font-medium">
-            {conversation.contact?.name || 'Unknown Contact'}
+            {conversation.contact?.name || t('unknownContact')}
           </h2>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Badge
@@ -188,24 +191,24 @@ function ChatHeader({ conversation }: ChatHeaderProps) {
               {conversation.channel?.type}
             </Badge>
             <span>
-              {conversation.contact?.phone || conversation.contact?.email || 'No contact info'}
+              {conversation.contact?.phone || conversation.contact?.email || t('noContactInfo')}
             </span>
           </div>
         </div>
       </div>
 
       <div className="flex items-center gap-1">
-        <SimpleTooltip content="Voice call">
+        <SimpleTooltip content={t('voiceCall')}>
           <Button variant="ghost" size="icon">
             <Phone className="h-4 w-4" />
           </Button>
         </SimpleTooltip>
-        <SimpleTooltip content="Video call">
+        <SimpleTooltip content={t('videoCall')}>
           <Button variant="ghost" size="icon">
             <Video className="h-4 w-4" />
           </Button>
         </SimpleTooltip>
-        <SimpleTooltip content="Contact info">
+        <SimpleTooltip content={t('contactInfo')}>
           <Button variant="ghost" size="icon">
             <User className="h-4 w-4" />
           </Button>
@@ -217,12 +220,12 @@ function ChatHeader({ conversation }: ChatHeaderProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>Resolve conversation</DropdownMenuItem>
-            <DropdownMenuItem>Assign to agent</DropdownMenuItem>
-            <DropdownMenuItem>Snooze</DropdownMenuItem>
+            <DropdownMenuItem>{t('resolveConversation')}</DropdownMenuItem>
+            <DropdownMenuItem>{t('assignToAgent')}</DropdownMenuItem>
+            <DropdownMenuItem>{t('snooze')}</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive">
-              Delete conversation
+              {t('deleteConversation')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -239,6 +242,7 @@ interface TypingIndicatorProps {
 }
 
 function TypingIndicator({ typingUsers }: TypingIndicatorProps) {
+  const t = useTranslations('conversations')
   if (typingUsers.length === 0) return null
 
   const names = typingUsers.map((u) => u.user_name || 'Someone').join(', ')
@@ -249,7 +253,7 @@ function TypingIndicator({ typingUsers }: TypingIndicatorProps) {
         <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:-0.15s]" />
         <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" />
       </div>
-      <span>{names} {typingUsers.length === 1 ? 'is' : 'are'} typing...</span>
+      <span>{names} {typingUsers.length === 1 ? t('isTyping') : t('areTyping')}</span>
     </div>
   )
 }
@@ -265,6 +269,7 @@ interface ComposerProps {
 }
 
 function Composer({ conversationId, onSend, onTyping, isSending }: ComposerProps) {
+  const t = useTranslations('conversations')
   const [content, setContent] = useState('')
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -306,7 +311,7 @@ function Composer({ conversationId, onSend, onTyping, isSending }: ComposerProps
       className="border-t border-border bg-card p-4"
     >
       <div className="flex items-end gap-2">
-        <SimpleTooltip content="Attach file">
+        <SimpleTooltip content={t('attachFile')}>
           <Button type="button" variant="ghost" size="icon">
             <Paperclip className="h-5 w-5" />
           </Button>
@@ -314,7 +319,7 @@ function Composer({ conversationId, onSend, onTyping, isSending }: ComposerProps
 
         <div className="flex-1">
           <Input
-            placeholder="Type a message..."
+            placeholder={t('typeMessage')}
             value={content}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
@@ -323,7 +328,7 @@ function Composer({ conversationId, onSend, onTyping, isSending }: ComposerProps
           />
         </div>
 
-        <SimpleTooltip content="Emoji">
+        <SimpleTooltip content={t('emoji')}>
           <Button type="button" variant="ghost" size="icon">
             <Smile className="h-5 w-5" />
           </Button>
@@ -350,6 +355,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ conversationId }: ChatViewProps) {
+  const t = useTranslations('conversations')
   const queryClient = useQueryClient()
   const user = useUser()
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -479,7 +485,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   if (!conversation) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-muted-foreground">Conversation not found</p>
+        <p className="text-muted-foreground">{t('conversationNotFound')}</p>
       </div>
     )
   }
@@ -501,12 +507,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
           {connectionState === 'connecting' || connectionState === 'reconnecting' ? (
             <>
               <Wifi className="h-3 w-3 animate-pulse" />
-              <span>Connecting...</span>
+              <span>{t('connectingStatus')}</span>
             </>
           ) : (
             <>
               <WifiOff className="h-3 w-3" />
-              <span>Disconnected - Messages may be delayed</span>
+              <span>{t('disconnectedStatus')}</span>
             </>
           )}
         </div>
@@ -548,8 +554,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
             ))
           ) : (
             <div className="py-8 text-center text-muted-foreground">
-              <p className="text-sm">No messages yet</p>
-              <p className="text-xs">Start the conversation by sending a message</p>
+              <p className="text-sm">{t('noMessagesYet')}</p>
+              <p className="text-xs">{t('startByMessage')}</p>
             </div>
           )}
 

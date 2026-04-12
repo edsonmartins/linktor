@@ -8,6 +8,7 @@ import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
   SelectContent,
@@ -105,7 +106,7 @@ export default function KnowledgeBasePage() {
     <div className="flex h-full flex-col">
       <Header title={t('title')} />
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex min-h-0 flex-1 flex-col p-6">
         {/* Toolbar */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 items-center gap-4">
@@ -165,46 +166,48 @@ export default function KnowledgeBasePage() {
         </div>
 
         {/* Content */}
-        {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="rounded-lg border border-border bg-card p-4">
-                <Skeleton className="mb-4 h-10 w-10 rounded-lg" />
-                <Skeleton className="mb-2 h-5 w-3/4" />
-                <Skeleton className="mb-4 h-4 w-full" />
-                <div className="flex gap-2">
-                  <Skeleton className="h-5 w-16" />
-                  <Skeleton className="h-5 w-20" />
+        <ScrollArea className="min-h-0 flex-1 pr-4">
+          {isLoading ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="rounded-lg border border-border bg-card p-4">
+                  <Skeleton className="mb-4 h-10 w-10 rounded-lg" />
+                  <Skeleton className="mb-2 h-5 w-3/4" />
+                  <Skeleton className="mb-4 h-4 w-full" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-5 w-16" />
+                    <Skeleton className="h-5 w-20" />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : knowledgeBases.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <BookOpen className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
-            <h3 className="mb-2 text-lg font-medium">{t('noKnowledgeBases')}</h3>
-            <p className="mb-4 text-sm text-muted-foreground">
-              {t('noKnowledgeBasesDesc')}
-            </p>
-            <Button onClick={() => setIsFormOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              {t('createKnowledgeBase')}
-            </Button>
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {knowledgeBases.map((kb) => (
-              <KnowledgeBaseCard
-                key={kb.id}
-                knowledgeBase={kb}
-                onEdit={() => handleEdit(kb)}
-                onDelete={() => handleDelete(kb)}
-                onRegenerate={() => handleRegenerate(kb)}
-                isRegenerating={regenerateMutation.isPending && regenerateMutation.variables === kb.id}
-              />
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          ) : knowledgeBases.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <BookOpen className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
+              <h3 className="mb-2 text-lg font-medium">{t('noKnowledgeBases')}</h3>
+              <p className="mb-4 text-sm text-muted-foreground">
+                {t('noKnowledgeBasesDesc')}
+              </p>
+              <Button onClick={() => setIsFormOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                {t('createKnowledgeBase')}
+              </Button>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {knowledgeBases.map((kb) => (
+                <KnowledgeBaseCard
+                  key={kb.id}
+                  knowledgeBase={kb}
+                  onEdit={() => handleEdit(kb)}
+                  onDelete={() => handleDelete(kb)}
+                  onRegenerate={() => handleRegenerate(kb)}
+                  isRegenerating={regenerateMutation.isPending && regenerateMutation.variables === kb.id}
+                />
+              ))}
+            </div>
+          )}
+        </ScrollArea>
       </div>
 
       {/* Form Dialog */}

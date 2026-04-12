@@ -30,6 +30,8 @@ import {
   getObservabilityLogs,
   getObservabilityQueue,
   getObservabilityStats,
+  deleteApiKeyByID,
+  listApiKeys,
   listBots,
   listChannels,
   listMessagesByConversation,
@@ -282,6 +284,30 @@ test.describe('Admin Full Stack', () => {
     }
   })
 
+  test('generates an API key in settings via UI', async ({ page, request }) => {
+    await loginWithRealApi(page)
+    await page.goto('/settings')
+
+    await page.getByRole('button', { name: /API Keys/i }).click()
+    await page.getByRole('button', { name: /Generate new key/i }).click()
+
+    const rawKey = page.getByText(/^lk_[A-Za-z0-9]+$/)
+    await expect(rawKey).toBeVisible()
+    await expect(page.getByRole('button', { name: /Copy/i })).toBeVisible()
+
+    const keyValue = await rawKey.textContent()
+    const prefix = keyValue?.slice(0, 12)
+    expect(prefix).toBeTruthy()
+
+    const apiKeys = await listApiKeys(request)
+    const created = apiKeys.find((apiKey) => apiKey.key_prefix === prefix)
+    expect(created).toBeTruthy()
+
+    if (created) {
+      await deleteApiKeyByID(request, created.id)
+    }
+  })
+
   test('loads bots page against the real API', async ({ page, request }) => {
     const bots = await listBots(request)
     await loginWithRealApi(page)
@@ -389,6 +415,12 @@ test.describe('Admin Full Stack', () => {
     await expect(page.getByRole('tab', { name: /Channels/i })).toBeVisible()
     await expect(page.getByRole('tab', { name: /Knowledge/i })).toBeVisible()
     await assertNoApplicationError(page)
+
+    const deleteButton = page.getByRole('button', { name: /Delete Bot/i })
+    for (const tabName of [/General/i, /Prompts/i, /Channels/i, /Knowledge/i, /Escalation/i]) {
+      await page.getByRole('tab', { name: tabName }).click()
+      await expect(deleteButton).toBeInViewport()
+    }
 
     await deleteBotByName(request, botName)
   })
@@ -517,6 +549,34 @@ test.describe('Admin Full Stack', () => {
 
     const createdContact = await findContactByEmail(request, email)
     expect(createdContact?.name).toBe(name)
+
+    await deleteContactByEmail(request, email)
+  })
+
+  test('opens contact details from the contacts page against the real API', async ({ page, request }) => {
+    const suffix = Date.now()
+    const email = `playwright.contact.details.${suffix}@example.com`
+    const name = `Detail Contact ${suffix}`
+    const phone = `+1555${String(suffix).slice(-7)}`
+
+    await deleteContactByEmail(request, email)
+    await createContactByApi(request, { name, email, phone })
+
+    await loginWithRealApi(page)
+    await page.goto('/contacts')
+    await page.getByPlaceholder(/search contacts/i).fill(email)
+
+    const card = page.getByRole('heading', { name }).locator('xpath=ancestor::div[contains(@class, "hover:border-primary/30")]')
+    await expect(card.getByRole('heading', { name })).toBeVisible({ timeout: 15000 })
+    await card.getByRole('button').click()
+    await page.getByRole('menuitem', { name: /view details/i }).click()
+
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByRole('heading', { name, level: 2 })).toBeVisible()
+    await expect(dialog.getByText(email)).toBeVisible()
+    await expect(dialog.getByText(phone)).toBeVisible()
+    await dialog.getByRole('button', { name: /close/i }).first().click()
+    await expect(dialog).toHaveCount(0)
 
     await deleteContactByEmail(request, email)
   })
@@ -1030,6 +1090,53 @@ test.describe('Admin Full Stack', () => {
       await deleteChannelByID(request, createdChannel.id)
     })
   }
+
+  test('shows the official WhatsApp webhook namespace in channel configuration', async ({ page, request }) => {
+    const channelName = `Official Webhook Channel ${Date.now()}`
+
+    await deleteChannelByName(request, channelName)
+    await loginWithRealApi(page)
+    await page.goto('/channels')
+
+    const createdChannel = await createChannelAndGetNewRecord(page, request, {
+      channelHeading: 'WhatsApp Business',
+      expectedType: 'whatsapp_official',
+      fill: async (dialog, uniqueName) => {
+        await dialog.getByRole('tab').nth(1).click()
+        await dialog.locator('input[name="name"]').fill(uniqueName)
+        await dialog.locator('input[name="access_token"]').fill('test-access-token')
+        await dialog.locator('input[name="phone_number_id"]').fill('123456789012345')
+      },
+      explicitName: channelName,
+      uniqueName: false,
+    })
+
+    const card = page.getByRole('heading', { name: channelName }).locator('xpath=ancestor::div[contains(@class, "hover:border-primary/30")]')
+    await expect(card.getByRole('heading', { name: channelName })).toBeVisible({ timeout: 15000 })
+    await card.getByRole('button').click()
+    await page.getByRole('menuitem', { name: /Configure/i }).click()
+
+    const sheet = page.getByRole('dialog')
+    await expect(sheet).toBeVisible()
+    await sheet.getByRole('tab', { name: /Webhook/i }).click()
+    await expect(sheet.getByText(`/api/v1/webhooks/whatsapp_official/${createdChannel.id}`)).toBeVisible()
+
+    await deleteChannelByID(request, createdChannel.id)
+  })
+
+  test('shows Embedded Signup without browser app secret and without 6-month history claim', async ({ page }) => {
+    await loginWithRealApi(page)
+    await page.goto('/channels')
+
+    const dialog = await openAddChannelDialog(page, 'WhatsApp Business')
+
+    await expect(dialog.getByText(/Connect Existing WhatsApp Number/i)).toBeVisible()
+    await expect(dialog.getByLabel(/Facebook App ID/i)).toBeVisible()
+    await expect(dialog.getByText(/Server-side app secret required/i)).toBeVisible()
+    await expect(dialog.getByLabel(/App Secret/i)).toHaveCount(0)
+    await expect(dialog.getByText(/Import up to 6 months of chat history/i)).toHaveCount(0)
+    await expect(dialog.getByText(/Keep your existing number connected without migration/i)).toBeVisible()
+  })
 
   test('sends a message in a conversation via UI against the real API', async ({ page, request }) => {
     const suffix = Date.now()

@@ -62,11 +62,11 @@ export function WhatsAppEmbeddedSignup({
   onCancel,
 }: EmbeddedSignupProps) {
   const t = useTranslations('channels.config')
+  const tSignup = useTranslations('channels.config.embeddedSignup')
   const { toast } = useToast()
 
   // Form state
   const [appId, setAppId] = useState('')
-  const [appSecret, setAppSecret] = useState('')
   const [configId, setConfigId] = useState('')
   const [channelName, setChannelName] = useState('')
 
@@ -80,10 +80,10 @@ export function WhatsAppEmbeddedSignup({
 
   // Start OAuth flow
   const startEmbeddedSignup = async () => {
-    if (!appId || !appSecret) {
+    if (!appId) {
       toast({
         title: t('error'),
-        description: t('enterAppCredentialsFirst'),
+        description: tSignup('enterAppIdFirst'),
         variant: 'error',
       })
       return
@@ -103,8 +103,6 @@ export function WhatsAppEmbeddedSignup({
         }
       )
 
-      // Store only state and app_id in session storage (NOT app_secret)
-      // App secret remains only in component state
       sessionStorage.setItem('wa_embedded_signup_state', response.state)
       sessionStorage.setItem('wa_embedded_signup_app_id', appId)
 
@@ -121,7 +119,7 @@ export function WhatsAppEmbeddedSignup({
       )
 
       if (!popup) {
-        throw new Error('Popup blocked. Please allow popups for this site.')
+        throw new Error(tSignup('popupBlocked'))
       }
 
       setStep('connecting')
@@ -134,7 +132,7 @@ export function WhatsAppEmbeddedSignup({
         }
       }, 500)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start OAuth flow')
+      setError(err instanceof Error ? err.message : tSignup('failedStartOauth'))
       setIsLoading(false)
     }
   }
@@ -149,17 +147,14 @@ export function WhatsAppEmbeddedSignup({
     const savedState = sessionStorage.getItem('wa_embedded_signup_state')
     const savedAppId = sessionStorage.getItem('wa_embedded_signup_app_id')
 
-    // Use appSecret from component state (more secure than sessionStorage)
-    if (code && state === savedState && savedAppId && appSecret) {
+    if (code && state === savedState && savedAppId) {
       try {
-        // Exchange code for token
         const response = await api.post<EmbeddedSignupResponse>(
           '/oauth/whatsapp/embedded-signup/callback',
           {
             code,
             state,
             app_id: savedAppId,
-            app_secret: appSecret, // From component state, not sessionStorage
           }
         )
 
@@ -177,15 +172,10 @@ export function WhatsAppEmbeddedSignup({
             : 'WhatsApp connected successfully.',
         })
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to complete OAuth')
+        setError(err instanceof Error ? err.message : tSignup('failedCompleteOauth'))
         setStep('credentials')
       }
-    } else if (code && state === savedState && savedAppId && !appSecret) {
-      // App secret was lost (page reload) - need to re-enter
-      setError('Session expired. Please enter your App Secret again and retry.')
-      setStep('credentials')
     } else {
-      // OAuth was cancelled or failed
       setStep('credentials')
     }
 
@@ -194,7 +184,7 @@ export function WhatsAppEmbeddedSignup({
     // Clean up session storage (no app_secret stored)
     sessionStorage.removeItem('wa_embedded_signup_state')
     sessionStorage.removeItem('wa_embedded_signup_app_id')
-  }, [t, toast, appSecret])
+  }, [t, tSignup, toast])
 
   // Check for OAuth callback on mount
   useEffect(() => {
@@ -208,9 +198,8 @@ export function WhatsAppEmbeddedSignup({
   const createChannel = async () => {
     if (!oauthData || !channelName) return
 
-    // Validate app credentials are still available
-    if (!appId || !appSecret) {
-      setError('App credentials are required. Please go back and re-enter them.')
+    if (!appId) {
+      setError(tSignup('appIdRequired'))
       setStep('credentials')
       return
     }
@@ -228,9 +217,9 @@ export function WhatsAppEmbeddedSignup({
           phone_number_id: oauthData.phone_number_id,
           phone_number: oauthData.phone_number,
           app_id: appId,
-          app_secret: appSecret,
           verify_token: oauthData.verify_token,
           is_coexistence: oauthData.is_coexistence,
+          quality_rating: oauthData.quality_rating,
         }
       )
 
@@ -238,13 +227,9 @@ export function WhatsAppEmbeddedSignup({
         title: t('channelCreated'),
         description: t('channelCreatedDesc', { name: channelName }),
       })
-
-      // Clear sensitive data from state after successful creation
-      setAppSecret('')
-
       onSuccess?.(response.channel)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create channel')
+      setError(err instanceof Error ? err.message : tSignup('failedCreateChannel'))
       setStep('connected')
     } finally {
       setIsLoading(false)
@@ -268,32 +253,32 @@ export function WhatsAppEmbeddedSignup({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Smartphone className="h-5 w-5" />
-              Connect Existing WhatsApp Number
+              {tSignup('connectExistingNumber')}
             </CardTitle>
             <CardDescription>
-              Connect your existing WhatsApp Business App number to use both the app and API simultaneously (Coexistence).
+              {tSignup('connectExistingDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Benefits */}
             <div className="bg-muted/50 p-4 rounded-lg space-y-2">
-              <h4 className="font-medium text-sm">Benefits of Coexistence:</h4>
+              <h4 className="font-medium text-sm">{tSignup('benefitsTitle')}</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  Keep using WhatsApp Business App on your phone
+                  {tSignup('benefitKeepUsing')}
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  Import up to 6 months of chat history
+                  {tSignup('benefitKeepNumber')}
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  Messages sync between App and API
+                  {tSignup('benefitSync')}
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  No number migration required
+                  {tSignup('benefitNoMigration')}
                 </li>
               </ul>
             </div>
@@ -314,22 +299,14 @@ export function WhatsAppEmbeddedSignup({
               </p>
             </div>
 
-            {/* App Secret */}
-            <div className="space-y-2">
-              <Label htmlFor="appSecret">{t('appSecret')}</Label>
-              <Input
-                id="appSecret"
-                type="password"
-                value={appSecret}
-                onChange={(e) => setAppSecret(e.target.value)}
-                placeholder="••••••••••••••••"
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('appSecretDesc')}
-              </p>
-            </div>
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>{tSignup('appSecretServerSide')}</AlertTitle>
+              <AlertDescription>
+                {tSignup('appSecretServerSideDesc')}
+              </AlertDescription>
+            </Alert>
 
-            {/* Config ID (Optional) */}
             <div className="space-y-2">
               <Label htmlFor="configId">
                 Embedded Signup Config ID
@@ -339,7 +316,7 @@ export function WhatsAppEmbeddedSignup({
                 id="configId"
                 value={configId}
                 onChange={(e) => setConfigId(e.target.value)}
-                placeholder="Optional - from Meta dashboard"
+                placeholder={tSignup('optionalFromMeta')}
               />
             </div>
           </CardContent>
@@ -353,12 +330,12 @@ export function WhatsAppEmbeddedSignup({
               {isLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Connecting...
+                  {tSignup('connecting')}
                 </>
               ) : (
                 <>
                   <ExternalLink className="h-4 w-4 mr-2" />
-                  Connect with Facebook
+                  {tSignup('connectWithFacebook')}
                 </>
               )}
             </Button>
@@ -372,10 +349,10 @@ export function WhatsAppEmbeddedSignup({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Loader2 className="h-5 w-5 animate-spin" />
-              Connecting to WhatsApp...
+              {tSignup('connectingToWhatsApp')}
             </CardTitle>
             <CardDescription>
-              Complete the login in the popup window. This window will update automatically.
+              {tSignup('completeLoginPopup')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -386,13 +363,13 @@ export function WhatsAppEmbeddedSignup({
                 <div className="h-3 w-3 bg-primary rounded-full animation-delay-400"></div>
               </div>
               <p className="text-sm text-muted-foreground">
-                Waiting for authentication...
+                {tSignup('waitingForAuth')}
               </p>
             </div>
           </CardContent>
           <CardFooter>
             <Button variant="outline" onClick={() => setStep('credentials')} className="w-full">
-              Cancel
+              {t('cancel')}
             </Button>
           </CardFooter>
         </Card>
@@ -404,44 +381,44 @@ export function WhatsAppEmbeddedSignup({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-green-500" />
-              WhatsApp Connected!
+              {tSignup('whatsappConnected')}
             </CardTitle>
             <CardDescription>
-              Your WhatsApp account has been connected. Configure your channel below.
+              {tSignup('accountConnectedDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Connection Details */}
             <div className="bg-muted/50 p-4 rounded-lg space-y-3">
               <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Phone Number:</span>
+                <span className="text-sm text-muted-foreground">{tSignup('phoneNumberLabel')}</span>
                 <span className="text-sm font-medium">{oauthData.phone_number}</span>
               </div>
               {oauthData.business_name && (
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Business Name:</span>
+                  <span className="text-sm text-muted-foreground">{tSignup('businessNameLabel')}</span>
                   <span className="text-sm font-medium">{oauthData.business_name}</span>
                 </div>
               )}
               <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Coexistence:</span>
+                <span className="text-sm text-muted-foreground">{tSignup('coexistenceLabel')}</span>
                 <Badge variant={oauthData.is_coexistence ? 'default' : 'secondary'}>
                   {oauthData.is_coexistence ? (
                     <>
                       <Wifi className="h-3 w-3 mr-1" />
-                      Enabled
+                      {tSignup('enabled')}
                     </>
                   ) : (
                     <>
                       <WifiOff className="h-3 w-3 mr-1" />
-                      Not Available
+                      {tSignup('notAvailable')}
                     </>
                   )}
                 </Badge>
               </div>
               {oauthData.quality_rating && (
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Quality Rating:</span>
+                  <span className="text-sm text-muted-foreground">{tSignup('qualityRatingLabel')}</span>
                   <Badge variant="outline">{oauthData.quality_rating}</Badge>
                 </div>
               )}
@@ -450,10 +427,9 @@ export function WhatsAppEmbeddedSignup({
             {oauthData.is_coexistence && (
               <Alert>
                 <Smartphone className="h-4 w-4" />
-                <AlertTitle>Coexistence Mode Active</AlertTitle>
+                <AlertTitle>{tSignup('coexistenceModeActive')}</AlertTitle>
                 <AlertDescription>
-                  Messages sent from the WhatsApp Business App will sync to this platform.
-                  Remember to open the app at least once every 14 days to maintain the connection.
+                  {tSignup('coexistenceModeActiveDesc')}
                 </AlertDescription>
               </Alert>
             )}
@@ -476,7 +452,7 @@ export function WhatsAppEmbeddedSignup({
           </CardContent>
           <CardFooter className="flex justify-between">
             <Button variant="outline" onClick={() => setStep('credentials')}>
-              Back
+              {tSignup('back')}
             </Button>
             <Button onClick={createChannel} disabled={!channelName || isLoading}>
               {isLoading ? (
@@ -499,7 +475,7 @@ export function WhatsAppEmbeddedSignup({
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <p className="text-sm text-muted-foreground">
-                Creating channel and configuring webhooks...
+                {tSignup('creatingChannelWebhooks')}
               </p>
             </div>
           </CardContent>

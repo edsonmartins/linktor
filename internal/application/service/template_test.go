@@ -3,8 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
+	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/pkg/testutil"
@@ -273,4 +277,66 @@ func TestTemplateService_GetByName(t *testing.T) {
 	template, err := svc.GetByName(context.Background(), "tenant-1", "ch-1", "welcome", "en")
 	require.NoError(t, err)
 	assert.Equal(t, "welcome", template.Name)
+}
+
+func TestTemplateService_SyncFromMeta_UsesChannelCredentialsFallback(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID:       "ch-1",
+		TenantID: "tenant-1",
+		Type:     entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{
+			"access_token": "test-token",
+			"waba_id":      "waba-123",
+		},
+	}
+
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		assert.Equal(t, "/"+whatsappofficial.DefaultAPIVersion+"/waba-123/message_templates", r.URL.Path)
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"data":[{"id":"tpl-1","name":"welcome","language":"pt_BR","status":"APPROVED","category":"UTILITY"}]}`,
+			)),
+		}, nil
+	})
+
+	err := svc.SyncFromMeta(context.Background(), "ch-1")
+	require.NoError(t, err)
+
+	require.Len(t, templateRepo.Templates, 1)
+	for _, template := range templateRepo.Templates {
+		assert.Equal(t, "tpl-1", template.ExternalID)
+		assert.Equal(t, entity.TemplateStatusApproved, template.Status)
+		assert.Equal(t, entity.TemplateCategoryUtility, template.Category)
+	}
+}
+
+func TestTemplateService_ProcessTemplateCategoryWebhook(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID:         "t1",
+		ExternalID: "42",
+		Category:   entity.TemplateCategoryUtility,
+	}
+
+	err := svc.ProcessTemplateCategoryWebhook(context.Background(), &TemplateCategoryEvent{
+		TemplateID:       42,
+		TemplateName:     "welcome",
+		Language:         "pt_BR",
+		PreviousCategory: "UTILITY",
+		NewCategory:      "MARKETING",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, entity.TemplateCategoryMarketing, templateRepo.Templates["t1"].Category)
+}
+
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

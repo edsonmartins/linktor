@@ -183,12 +183,14 @@ func main() {
 	historyImportRepo := database.NewHistoryImportRepository(db)
 	paymentRepo := database.NewPaymentRepository(db)
 	observabilityRepo := database.NewObservabilityRepository(db)
+	apiKeyRepo := database.NewAPIKeyRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
 	normalizer := service.NewMessageNormalizer()
 	authService := service.NewAuthService(userRepo, &cfg.JWT)
 	userService := service.NewUserService(userRepo, tenantRepo)
+	apiKeyService := service.NewAPIKeyService(apiKeyRepo)
 
 	// Initialize AI services
 	logger.Info("Initializing AI services...")
@@ -441,7 +443,7 @@ func main() {
 	)
 
 	// Create webhook handler
-	webhookHandler := handlers.NewWebhookHandler(channelRepo, producer)
+	webhookHandler := handlers.NewWebhookHandler(channelRepo, producer, templateService)
 
 	// Create bot handler
 	botHandler := handlers.NewBotHandler(botService)
@@ -477,6 +479,10 @@ func main() {
 	// Create channel service and handler
 	channelService := service.NewChannelService(channelRepo, plugin.GetGlobalRegistry(), producer)
 	channelHandler := handlers.NewChannelHandler(channelService, producer)
+
+	// Create tenant service and handler
+	tenantService := service.NewTenantService(tenantRepo, userRepo, channelRepo, contactRepo)
+	tenantHandler := handlers.NewTenantHandler(tenantService)
 
 	// Create analytics handler
 	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
@@ -552,6 +558,9 @@ func main() {
 
 	// Create user handler
 	userHandler := handlers.NewUserHandler(userService)
+
+	// Create API key handler
+	apiKeyHandler := handlers.NewAPIKeyHandler(apiKeyService)
 
 	// Initialize Agent WebSocket Hub
 	logger.Info("Starting Agent WebSocket Hub...")
@@ -742,6 +751,13 @@ func main() {
 		{
 			// User info
 			protected.GET("/me", authHandler.Me)
+			protected.PUT("/me", authHandler.UpdateMe)
+			protected.PUT("/me/password", authHandler.ChangePassword)
+
+			// Tenant/Organization
+			protected.GET("/tenant", tenantHandler.Get)
+			protected.PUT("/tenant", tenantHandler.Update)
+			protected.GET("/tenant/usage", tenantHandler.GetUsage)
 
 			// Conversations
 			conversations := protected.Group("/conversations")
@@ -1009,6 +1025,15 @@ func main() {
 				users.GET("/:id", userHandler.Get)
 				users.PUT("/:id", userHandler.Update)
 				users.DELETE("/:id", userHandler.Delete)
+			}
+
+			// API keys (admin only)
+			apiKeys := protected.Group("/api-keys")
+			apiKeys.Use(authMiddleware.RequireRole("admin"))
+			{
+				apiKeys.GET("", apiKeyHandler.List)
+				apiKeys.POST("", apiKeyHandler.Create)
+				apiKeys.DELETE("/:id", apiKeyHandler.Delete)
 			}
 		}
 

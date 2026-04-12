@@ -50,12 +50,14 @@ function ContactCard({
   contact,
   t,
   tCommon,
+  onView,
   onEdit,
   onDelete,
 }: {
   contact: Contact
   t: (key: string) => string
   tCommon: (key: string) => string
+  onView: () => void
   onEdit: () => void
   onDelete: () => void
 }) {
@@ -74,7 +76,7 @@ function ContactCard({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem>{t('viewDetails')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={onView}>{t('viewDetails')}</DropdownMenuItem>
                   <DropdownMenuItem>{t('startConversation')}</DropdownMenuItem>
                   <DropdownMenuItem onClick={onEdit}>{t('editContact')}</DropdownMenuItem>
                   <DropdownMenuItem className="text-destructive" onClick={onDelete}>
@@ -143,6 +145,7 @@ export default function ContactsPage() {
   const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState('')
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
   const [formData, setFormData] = useState({
@@ -349,6 +352,7 @@ export default function ContactsPage() {
                   contact={contact}
                   t={t}
                   tCommon={tCommon}
+                  onView={() => setSelectedContact(contact)}
                   onEdit={() => openEditDialog(contact)}
                   onDelete={() => setContactToDelete(contact)}
                 />
@@ -367,6 +371,90 @@ export default function ContactsPage() {
           )}
         </ScrollArea>
       </div>
+
+      <Dialog open={!!selectedContact} onOpenChange={(open) => !open && setSelectedContact(null)}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>{selectedContact?.name || t('viewDetails')}</DialogTitle>
+            <DialogDescription>{t('viewDetails')}</DialogDescription>
+          </DialogHeader>
+
+          {selectedContact && (
+            <div className="space-y-6">
+              <div className="flex items-start gap-4">
+                <Avatar fallback={selectedContact.name} size="lg" />
+                <div className="min-w-0 space-y-1">
+                  <h3 className="truncate font-medium">{selectedContact.name}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {t('created')} {formatDate(selectedContact.created_at)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">{t('email')}</p>
+                  <p className="break-words text-sm">{selectedContact.email || '-'}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">{t('phone')}</p>
+                  <p className="break-words text-sm">{selectedContact.phone || '-'}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase text-muted-foreground">{t('tags')}</p>
+                {selectedContact.tags?.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedContact.tags.map((tag) => (
+                      <Badge key={tag} variant="outline">{tag}</Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">-</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase text-muted-foreground">Identities</p>
+                {selectedContact.identities?.length ? (
+                  <div className="space-y-2">
+                    {selectedContact.identities.map((identity) => (
+                      <div key={identity.id} className="rounded-md border p-3 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <Badge variant={identity.channel_type as 'webchat' | undefined || 'secondary'}>
+                            {identity.channel_type}
+                          </Badge>
+                          <span className="truncate text-muted-foreground">{identity.external_id}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">-</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSelectedContact(null)}>
+              {tCommon('close')}
+            </Button>
+            {selectedContact && (
+              <Button
+                type="button"
+                onClick={() => {
+                  openEditDialog(selectedContact)
+                  setSelectedContact(null)
+                }}
+              >
+                {t('editContact')}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isDialogOpen}

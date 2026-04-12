@@ -277,23 +277,27 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 {conversationsLoading ? (
-                  <div className="space-y-3">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <div key={i} className="flex items-center gap-3 p-3">
-                        <Skeleton className="h-8 w-8 rounded-full" />
-                        <div className="flex-1 space-y-2">
-                          <Skeleton className="h-4 w-32" />
-                          <Skeleton className="h-3 w-48" />
+                  <ScrollArea className="h-[320px] pr-4">
+                    <div className="space-y-3">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <div key={i} className="flex items-center gap-3 p-3">
+                          <Skeleton className="h-8 w-8 rounded-full" />
+                          <div className="flex-1 space-y-2">
+                            <Skeleton className="h-4 w-32" />
+                            <Skeleton className="h-3 w-48" />
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
                 ) : conversations?.data?.length ? (
-                  <div className="space-y-1">
-                    {conversations.data.map((conv) => (
-                      <ConversationItem key={conv.id} conversation={conv} />
-                    ))}
-                  </div>
+                  <ScrollArea className="h-[320px] pr-4">
+                    <div className="space-y-1">
+                      {conversations.data.map((conv) => (
+                        <ConversationItem key={conv.id} conversation={conv} />
+                      ))}
+                    </div>
+                  </ScrollArea>
                 ) : (
                   <div className="py-8 text-center text-muted-foreground">
                     <MessageSquare className="mx-auto h-8 w-8 opacity-50" />
@@ -316,45 +320,51 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 {channelsLoading ? (
-                  <div className="space-y-4">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Skeleton className="h-10 w-10 rounded-lg" />
-                          <div className="space-y-2">
-                            <Skeleton className="h-4 w-24" />
-                            <Skeleton className="h-3 w-32" />
-                          </div>
-                        </div>
-                        <Skeleton className="h-6 w-16" />
-                      </div>
-                    ))}
-                  </div>
-                ) : channels.length > 0 ? (
-                  <div className="space-y-4">
-                    {channels.map((channel) => {
-                      const typeConfig = channelTypeConfig[channel.type] || channelTypeConfig.webchat
-                      return (
-                        <div key={channel.id} className="flex items-center justify-between">
+                  <ScrollArea className="h-[320px] pr-4">
+                    <div className="space-y-4">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <div className={cn(
-                              'flex h-10 w-10 items-center justify-center rounded-lg',
-                              typeConfig.bgColor
-                            )}>
-                              <MessageSquare className={cn('h-5 w-5', typeConfig.color)} />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium">{channel.name}</p>
-                              <p className="text-xs text-muted-foreground capitalize">
-                                {channel.type.replace('_', ' ')}
-                              </p>
+                            <Skeleton className="h-10 w-10 rounded-lg" />
+                            <div className="space-y-2">
+                              <Skeleton className="h-4 w-24" />
+                              <Skeleton className="h-3 w-32" />
                             </div>
                           </div>
-                          <ChannelConnectionStatusBadge connectionStatus={channel.connection_status} />
+                          <Skeleton className="h-6 w-16" />
                         </div>
-                      )
-                    })}
-                  </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                ) : channels.length > 0 ? (
+                  <ScrollArea className="h-[320px] pr-4">
+                    <div className="space-y-4">
+                      {channels.map((channel) => {
+                        const typeConfig = channelTypeConfig[channel.type] || channelTypeConfig.webchat
+                        return (
+                          <div key={channel.id} className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className={cn(
+                                'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
+                                typeConfig.bgColor
+                              )}>
+                                <MessageSquare className={cn('h-5 w-5', typeConfig.color)} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">{channel.name}</p>
+                                <p className="truncate text-xs text-muted-foreground capitalize">
+                                  {channel.type.replace('_', ' ')}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="shrink-0">
+                              <ChannelConnectionStatusBadge connectionStatus={channel.connection_status} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </ScrollArea>
                 ) : (
                   <div className="py-6 text-center text-muted-foreground">
                     <Radio className="mx-auto h-8 w-8 opacity-50" />

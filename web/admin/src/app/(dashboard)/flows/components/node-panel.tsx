@@ -12,6 +12,7 @@ import {
   CircleStop,
   ImageIcon,
 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -35,41 +36,51 @@ interface NodePanelProps {
   onClose: () => void
 }
 
-const nodeTypeLabels: Record<FlowNode['type'], { icon: React.ReactNode; label: string }> = {
-  message: { icon: <MessageSquare className="h-4 w-4" />, label: 'Message' },
-  question: { icon: <HelpCircle className="h-4 w-4" />, label: 'Question' },
-  condition: { icon: <GitBranch className="h-4 w-4" />, label: 'Condition' },
-  action: { icon: <Zap className="h-4 w-4" />, label: 'Action' },
-  vre: { icon: <ImageIcon className="h-4 w-4" />, label: 'VRE Visual' },
-  end: { icon: <CircleStop className="h-4 w-4" />, label: 'End' },
+const nodeTypeIcons: Record<FlowNode['type'], React.ReactNode> = {
+  message: <MessageSquare className="h-4 w-4" />,
+  question: <HelpCircle className="h-4 w-4" />,
+  condition: <GitBranch className="h-4 w-4" />,
+  action: <Zap className="h-4 w-4" />,
+  vre: <ImageIcon className="h-4 w-4" />,
+  end: <CircleStop className="h-4 w-4" />,
 }
 
-const actionTypes: { value: FlowActionType; label: string }[] = [
-  { value: 'tag', label: 'Add Tag' },
-  { value: 'assign', label: 'Assign to User' },
-  { value: 'escalate', label: 'Escalate' },
-  { value: 'set_entity', label: 'Set Entity' },
-  { value: 'http_call', label: 'HTTP Call' },
-]
-
-const conditionTypes: { value: TransitionCondition; label: string }[] = [
-  { value: 'default', label: 'Default (always)' },
-  { value: 'reply_equals', label: 'Reply equals' },
-  { value: 'contains', label: 'Contains' },
-  { value: 'regex', label: 'Regex match' },
-]
-
-const vreTemplateTypes: { value: VRETemplateId; label: string; description: string }[] = [
-  { value: 'menu_opcoes', label: 'Menu Options', description: 'Menu with up to 8 numbered options' },
-  { value: 'card_produto', label: 'Product Card', description: 'Product card with price and stock' },
-  { value: 'status_pedido', label: 'Order Status', description: 'Order status timeline' },
-  { value: 'lista_produtos', label: 'Product List', description: 'List of products for comparison' },
-  { value: 'confirmacao', label: 'Confirmation', description: 'Confirmation summary with items' },
-  { value: 'cobranca_pix', label: 'PIX Payment', description: 'PIX QR code with copy-paste code' },
-]
-
 export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodePanelProps) {
+  const t = useTranslations('flows.nodePanel')
   const [localNode, setLocalNode] = useState<FlowNode>(node)
+
+  const nodeTypeLabels: Record<FlowNode['type'], string> = {
+    message: t('nodeTypes.message'),
+    question: t('nodeTypes.question'),
+    condition: t('nodeTypes.condition'),
+    action: t('nodeTypes.action'),
+    vre: t('nodeTypes.vreVisual'),
+    end: t('nodeTypes.end'),
+  }
+
+  const actionTypes: { value: FlowActionType; label: string }[] = [
+    { value: 'tag', label: t('actionTypes.add_tag') },
+    { value: 'assign', label: t('actionTypes.assign_user') },
+    { value: 'escalate', label: t('actionTypes.escalate') },
+    { value: 'set_entity', label: t('actionTypes.set_entity') },
+    { value: 'http_call', label: t('actionTypes.http_call') },
+  ]
+
+  const conditionTypes: { value: TransitionCondition; label: string }[] = [
+    { value: 'default', label: t('conditionTypes.default') },
+    { value: 'reply_equals', label: t('conditionTypes.equals') },
+    { value: 'contains', label: t('conditionTypes.contains') },
+    { value: 'regex', label: t('conditionTypes.regex') },
+  ]
+
+  const vreTemplateTypes: { value: VRETemplateId; label: string; description: string }[] = [
+    { value: 'menu_opcoes', label: t('vreTemplates.menu_options'), description: t('vreTemplates.menu_optionsDesc') },
+    { value: 'card_produto', label: t('vreTemplates.product_card'), description: t('vreTemplates.product_cardDesc') },
+    { value: 'status_pedido', label: t('vreTemplates.order_status'), description: t('vreTemplates.order_statusDesc') },
+    { value: 'lista_produtos', label: t('vreTemplates.product_list'), description: t('vreTemplates.product_listDesc') },
+    { value: 'confirmacao', label: t('vreTemplates.confirmation'), description: t('vreTemplates.confirmationDesc') },
+    { value: 'cobranca_pix', label: t('vreTemplates.pix_payment'), description: t('vreTemplates.pix_paymentDesc') },
+  ]
 
   // Sync local state when external node changes
   useEffect(() => {
@@ -87,7 +98,7 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
   const handleAddQuickReply = () => {
     const newReply: QuickReply = {
       id: `reply-${Date.now()}`,
-      title: 'New option',
+      title: t('newOption'),
     }
     handleChange({
       quick_replies: [...(localNode.quick_replies || []), newReply],
@@ -154,15 +165,16 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
   }
 
   const otherNodes = allNodes.filter((n) => n.id !== node.id)
-  const typeInfo = nodeTypeLabels[localNode.type]
+  const typeLabel = nodeTypeLabels[localNode.type]
+  const typeIcon = nodeTypeIcons[localNode.type]
 
   return (
     <div className="w-80 border-l bg-background flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-2">
-          {typeInfo.icon}
-          <span className="font-medium">{typeInfo.label} Node</span>
+          {typeIcon}
+          <span className="font-medium">{t('nodeTitle', { type: typeLabel })}</span>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
           <X className="h-4 w-4" />
@@ -173,19 +185,19 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
         <div className="p-4 space-y-6">
           {/* Node ID */}
           <div className="space-y-2">
-            <Label className="text-muted-foreground text-xs">Node ID</Label>
+            <Label className="text-muted-foreground text-xs">{t('nodeId')}</Label>
             <code className="text-xs bg-muted px-2 py-1 rounded block">{localNode.id}</code>
           </div>
 
           {/* Content (for non-end nodes) */}
           {localNode.type !== 'end' && (
             <div className="space-y-2">
-              <Label htmlFor="content">Content</Label>
+              <Label htmlFor="content">{t('content')}</Label>
               <Textarea
                 id="content"
                 value={localNode.content}
                 onChange={(e) => handleChange({ content: e.target.value })}
-                placeholder="Enter message content..."
+                placeholder={t('contentPlaceholder')}
                 rows={3}
               />
             </div>
@@ -197,10 +209,10 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
               <Separator />
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label>Quick Replies</Label>
+                  <Label>{t('quickReplies')}</Label>
                   <Button variant="outline" size="sm" onClick={handleAddQuickReply}>
                     <Plus className="h-3 w-3 mr-1" />
-                    Add
+                    {t('add')}
                   </Button>
                 </div>
 
@@ -209,7 +221,7 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
                     <Input
                       value={reply.title}
                       onChange={(e) => handleUpdateQuickReply(index, { title: e.target.value })}
-                      placeholder="Button text"
+                      placeholder={t('buttonText')}
                       className="flex-1"
                     />
                     <Button
@@ -231,10 +243,10 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
               <Separator />
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label>Actions</Label>
+                  <Label>{t('actions')}</Label>
                   <Button variant="outline" size="sm" onClick={handleAddAction}>
                     <Plus className="h-3 w-3 mr-1" />
-                    Add
+                    {t('add')}
                   </Button>
                 </div>
 
@@ -287,13 +299,13 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
                         }
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Priority" />
+                          <SelectValue placeholder={t('priority')} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="low">Low</SelectItem>
-                          <SelectItem value="normal">Normal</SelectItem>
-                          <SelectItem value="high">High</SelectItem>
-                          <SelectItem value="urgent">Urgent</SelectItem>
+                          <SelectItem value="low">{t('priorityLow')}</SelectItem>
+                          <SelectItem value="normal">{t('priorityNormal')}</SelectItem>
+                          <SelectItem value="high">{t('priorityHigh')}</SelectItem>
+                          <SelectItem value="urgent">{t('priorityUrgent')}</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -308,7 +320,7 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
             <>
               <Separator />
               <div className="space-y-3">
-                <Label>VRE Template</Label>
+                <Label>{t('vreTemplate')}</Label>
                 <Select
                   value={localNode.vre_config?.template_id || ''}
                   onValueChange={(v) =>
@@ -322,7 +334,7 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select template..." />
+                    <SelectValue placeholder={t('selectTemplate')} />
                   </SelectTrigger>
                   <SelectContent>
                     {vreTemplateTypes.map((template) => (
@@ -339,7 +351,7 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
                 {localNode.vre_config?.template_id && (
                   <>
                     <div className="space-y-2">
-                      <Label htmlFor="vre-caption">Caption (optional)</Label>
+                      <Label htmlFor="vre-caption">{t('captionOptional')}</Label>
                       <Input
                         id="vre-caption"
                         value={localNode.vre_config?.caption || ''}
@@ -351,12 +363,12 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
                             },
                           })
                         }
-                        placeholder="Custom caption for the image"
+                        placeholder={t('customCaption')}
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="vre-followup">Follow-up Text (optional)</Label>
+                      <Label htmlFor="vre-followup">{t('followUpOptional')}</Label>
                       <Input
                         id="vre-followup"
                         value={localNode.vre_config?.follow_up_text || ''}
@@ -368,12 +380,12 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
                             },
                           })
                         }
-                        placeholder="Text to send after the image"
+                        placeholder={t('followUpDesc')}
                       />
                     </div>
 
                     <div className="text-xs text-muted-foreground p-2 bg-muted rounded">
-                      Use <code className="text-purple-600">{'{{variable}}'}</code> syntax to map flow data to template fields.
+                      {t('variableSyntax')}
                     </div>
                   </>
                 )}
@@ -387,10 +399,10 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
               <Separator />
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label>Transitions</Label>
+                  <Label>{t('transitions')}</Label>
                   <Button variant="outline" size="sm" onClick={handleAddTransition}>
                     <Plus className="h-3 w-3 mr-1" />
-                    Add
+                    {t('add')}
                   </Button>
                 </div>
 
@@ -402,7 +414,7 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
                         onValueChange={(v) => handleUpdateTransition(index, { to_node_id: v })}
                       >
                         <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Select target node" />
+                          <SelectValue placeholder={t('selectTarget')} />
                         </SelectTrigger>
                         <SelectContent>
                           {otherNodes.map((n) => (
@@ -453,7 +465,7 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
 
                 {localNode.transitions.length === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-2">
-                    No transitions. Add one or connect nodes on the canvas.
+                    {t('noTransitions')}
                   </p>
                 )}
               </div>
@@ -470,7 +482,7 @@ export function NodePanel({ node, allNodes, onUpdate, onDelete, onClose }: NodeP
           onClick={onDelete}
         >
           <Trash2 className="h-4 w-4 mr-2" />
-          Delete Node
+          {t('deleteNode')}
         </Button>
       </div>
     </div>

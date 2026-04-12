@@ -124,9 +124,9 @@ export function Sidebar() {
             <Image
               src="/images/logo_fundo_escuro.png"
               alt="Linktor"
-              width={120}
-              height={32}
-              className="h-8 w-auto"
+              width={150}
+              height={40}
+              className="h-10 w-auto"
               priority
             />
           </Link>
@@ -136,9 +136,9 @@ export function Sidebar() {
             <Image
               src="/images/logo_single.png"
               alt="Linktor"
-              width={32}
-              height={32}
-              className="h-8 w-8"
+              width={36}
+              height={36}
+              className="h-9 w-9"
               priority
             />
           </Link>

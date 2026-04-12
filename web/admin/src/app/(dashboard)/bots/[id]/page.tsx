@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -46,6 +46,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
@@ -80,13 +81,25 @@ const providerConfigs: Record<AIProvider, { label: string; models: string[] }> =
   },
 }
 
-const escalationRuleTypes: { value: EscalationRuleType; label: string; description: string }[] = [
-  { value: 'low_confidence', label: 'Low Confidence', description: 'Escalate when confidence is below threshold' },
-  { value: 'sentiment', label: 'Negative Sentiment', description: 'Escalate on negative customer sentiment' },
-  { value: 'keyword', label: 'Keyword Match', description: 'Escalate when specific keywords are detected' },
-  { value: 'intent', label: 'Intent Match', description: 'Escalate for specific detected intents' },
-  { value: 'user_request', label: 'User Request', description: 'Escalate when user asks for human' },
-]
+function getEscalationRuleTypes(t: ReturnType<typeof useTranslations<'bots.detail'>>): { value: EscalationRuleType; label: string; description: string }[] {
+  return [
+    { value: 'low_confidence', label: t('escalationTypes.low_confidence'), description: t('escalationTypes.low_confidenceDesc') },
+    { value: 'sentiment', label: t('escalationTypes.sentiment'), description: t('escalationTypes.sentimentDesc') },
+    { value: 'keyword', label: t('escalationTypes.keyword'), description: t('escalationTypes.keywordDesc') },
+    { value: 'intent', label: t('escalationTypes.intent'), description: t('escalationTypes.intentDesc') },
+    { value: 'user_request', label: t('escalationTypes.user_request'), description: t('escalationTypes.user_requestDesc') },
+  ]
+}
+
+function TabScrollContent({ children }: { children: ReactNode }) {
+  return (
+    <ScrollArea className="h-[calc(100vh-420px)] min-h-[260px] pr-4">
+      <div className="space-y-4">
+        {children}
+      </div>
+    </ScrollArea>
+  )
+}
 
 /**
  * Bot Detail Page
@@ -96,6 +109,10 @@ export default function BotDetailPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const botId = params.id as string
+  const t = useTranslations('bots.detail')
+  const tBots = useTranslations('bots')
+  const tCommon = useTranslations('common')
+  const escalationRuleTypes = getEscalationRuleTypes(t)
 
   const [activeTab, setActiveTab] = useState('general')
   const [testDialogOpen, setTestDialogOpen] = useState(false)
@@ -233,7 +250,7 @@ export default function BotDetailPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Bot Configuration" />
+        <Header title={t('configuration')} />
         <div className="p-6 space-y-4">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-[400px] w-full" />
@@ -245,15 +262,15 @@ export default function BotDetailPage() {
   if (!bot) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Bot Not Found" />
+        <Header title={t('notFound')} />
         <div className="p-6">
           <Card>
             <CardContent className="py-12 text-center">
               <BotIcon className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
-              <p className="mt-4 text-lg font-medium">Bot not found</p>
+              <p className="mt-4 text-lg font-medium">{t('notFoundDesc')}</p>
               <Button className="mt-4" onClick={() => router.push('/bots')}>
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Bots
+                {t('backToBots')}
               </Button>
             </CardContent>
           </Card>
@@ -271,27 +288,27 @@ export default function BotDetailPage() {
         <div className="flex items-center justify-between">
           <Button variant="ghost" onClick={() => router.push('/bots')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Bots
+            {t('backToBots')}
           </Button>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setTestDialogOpen(true)}>
               <TestTube className="h-4 w-4 mr-2" />
-              Test Bot
+              {tBots('testBot')}
             </Button>
             {bot.is_active ? (
               <Button variant="outline" onClick={() => deactivateMutation.mutate()}>
                 <Pause className="h-4 w-4 mr-2" />
-                Deactivate
+                {tBots('deactivate')}
               </Button>
             ) : (
               <Button variant="outline" onClick={() => activateMutation.mutate()}>
                 <Play className="h-4 w-4 mr-2" />
-                Activate
+                {tBots('activate')}
               </Button>
             )}
             <Button onClick={handleSave} disabled={!hasChanges || updateConfigMutation.isPending}>
               <Save className="h-4 w-4 mr-2" />
-              {updateConfigMutation.isPending ? 'Saving...' : 'Save Changes'}
+              {updateConfigMutation.isPending ? t('saving') : t('saveChanges')}
             </Button>
           </div>
         </div>
@@ -312,7 +329,7 @@ export default function BotDetailPage() {
                 </div>
               </div>
               <Badge variant={bot.is_active ? 'success' : 'secondary'} className="text-sm">
-                {bot.is_active ? 'Active' : 'Inactive'}
+                {bot.is_active ? t('active') : t('inactive')}
               </Badge>
             </div>
           </CardContent>
@@ -323,37 +340,38 @@ export default function BotDetailPage() {
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="general" className="gap-2">
               <Settings className="h-4 w-4" />
-              General
+              {t('tabGeneral')}
             </TabsTrigger>
             <TabsTrigger value="prompts" className="gap-2">
               <BotIcon className="h-4 w-4" />
-              Prompts
+              {t('tabPrompts')}
             </TabsTrigger>
             <TabsTrigger value="channels" className="gap-2">
               <Radio className="h-4 w-4" />
-              Channels
+              {t('tabChannels')}
             </TabsTrigger>
             <TabsTrigger value="knowledge" className="gap-2">
               <BookOpen className="h-4 w-4" />
-              Knowledge
+              {t('tabKnowledge')}
             </TabsTrigger>
             <TabsTrigger value="escalation" className="gap-2">
               <Zap className="h-4 w-4" />
-              Escalation
+              {t('tabEscalation')}
             </TabsTrigger>
           </TabsList>
 
           {/* General Tab */}
-          <TabsContent value="general" className="space-y-4">
-            <Card>
+          <TabsContent value="general" className="mt-4">
+            <TabScrollContent>
+              <Card>
               <CardHeader>
-                <CardTitle>Model Settings</CardTitle>
-                <CardDescription>Configure the AI model parameters</CardDescription>
+                <CardTitle>{t('modelSettings')}</CardTitle>
+                <CardDescription>{t('configureModel')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>AI Provider</Label>
+                    <Label>{t('aiProvider')}</Label>
                     <Select value={bot.provider} disabled>
                       <SelectTrigger>
                         <SelectValue />
@@ -366,7 +384,7 @@ export default function BotDetailPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Model</Label>
+                    <Label>{t('model')}</Label>
                     <Select value={bot.model} disabled>
                       <SelectTrigger>
                         <SelectValue />
@@ -381,7 +399,7 @@ export default function BotDetailPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Temperature: {config.temperature ?? bot.config?.temperature ?? 0.7}</Label>
+                  <Label>{t('temperature')}: {config.temperature ?? bot.config?.temperature ?? 0.7}</Label>
                   <Slider
                     value={[config.temperature ?? bot.config?.temperature ?? 0.7]}
                     onValueChange={([value]) => {
@@ -393,13 +411,13 @@ export default function BotDetailPage() {
                     step={0.1}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Lower values make responses more focused, higher values more creative
+                    {t('temperatureDesc')}
                   </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Max Tokens</Label>
+                    <Label>{t('maxTokens')}</Label>
                     <Input
                       type="number"
                       value={config.max_tokens ?? bot.config?.max_tokens ?? 1024}
@@ -410,7 +428,7 @@ export default function BotDetailPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Confidence Threshold</Label>
+                    <Label>{t('confidenceThreshold')}</Label>
                     <Input
                       type="number"
                       step="0.1"
@@ -425,20 +443,22 @@ export default function BotDetailPage() {
                   </div>
                 </div>
               </CardContent>
-            </Card>
+              </Card>
+            </TabScrollContent>
           </TabsContent>
 
           {/* Prompts Tab */}
-          <TabsContent value="prompts" className="space-y-4">
-            <Card>
+          <TabsContent value="prompts" className="mt-4">
+            <TabScrollContent>
+              <Card>
               <CardHeader>
-                <CardTitle>System Prompt</CardTitle>
-                <CardDescription>Define the bot's personality and behavior</CardDescription>
+                <CardTitle>{t('systemPrompt')}</CardTitle>
+                <CardDescription>{t('definePersonality')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Textarea
                   rows={8}
-                  placeholder="You are a helpful customer service assistant..."
+                  placeholder={t('systemPromptPlaceholder')}
                   value={config.system_prompt ?? bot.config?.system_prompt ?? ''}
                   onChange={(e) => {
                     setConfig({ ...config, system_prompt: e.target.value })
@@ -451,13 +471,13 @@ export default function BotDetailPage() {
             <div className="grid grid-cols-2 gap-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>Welcome Message</CardTitle>
-                  <CardDescription>First message sent to new conversations</CardDescription>
+                  <CardTitle>{t('welcomeMessage')}</CardTitle>
+                  <CardDescription>{t('welcomeMessageDesc')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Textarea
                     rows={4}
-                    placeholder="Hello! How can I help you today?"
+                    placeholder={t('welcomeMessagePlaceholder')}
                     value={config.welcome_message ?? bot.config?.welcome_message ?? ''}
                     onChange={(e) => {
                       setConfig({ ...config, welcome_message: e.target.value })
@@ -469,13 +489,13 @@ export default function BotDetailPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Fallback Message</CardTitle>
-                  <CardDescription>Sent when the bot doesn't understand</CardDescription>
+                  <CardTitle>{t('fallbackMessage')}</CardTitle>
+                  <CardDescription>{t('fallbackMessageDesc')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Textarea
                     rows={4}
-                    placeholder="I'm sorry, I didn't understand that..."
+                    placeholder={t('fallbackMessagePlaceholder')}
                     value={config.fallback_message ?? bot.config?.fallback_message ?? ''}
                     onChange={(e) => {
                       setConfig({ ...config, fallback_message: e.target.value })
@@ -484,15 +504,17 @@ export default function BotDetailPage() {
                   />
                 </CardContent>
               </Card>
-            </div>
+              </div>
+            </TabScrollContent>
           </TabsContent>
 
           {/* Channels Tab */}
-          <TabsContent value="channels" className="space-y-4">
-            <Card>
+          <TabsContent value="channels" className="mt-4">
+            <TabScrollContent>
+              <Card>
               <CardHeader>
-                <CardTitle>Assigned Channels</CardTitle>
-                <CardDescription>Select which channels this bot should handle</CardDescription>
+                <CardTitle>{t('assignedChannels')}</CardTitle>
+                <CardDescription>{t('assignedChannelsDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
@@ -502,34 +524,36 @@ export default function BotDetailPage() {
                       <div
                         key={channel.id}
                         className={cn(
-                          'flex items-center justify-between p-3 rounded-lg border',
+                          'flex items-center justify-between gap-3 rounded-lg border p-3',
                           isAssigned ? 'border-primary bg-primary/5' : 'border-border'
                         )}
                       >
-                        <div className="flex items-center gap-3">
-                          <Radio className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <p className="font-medium">{channel.name}</p>
-                            <p className="text-xs text-muted-foreground">{channel.type}</p>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Radio className="h-5 w-5 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{channel.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">{channel.type}</p>
                           </div>
                         </div>
                         {isAssigned ? (
                           <Button
                             variant="outline"
                             size="sm"
+                            className="shrink-0"
                             onClick={() => unassignChannelMutation.mutate(channel.id)}
                           >
                             <X className="h-4 w-4 mr-1" />
-                            Remove
+                            {tCommon('remove')}
                           </Button>
                         ) : (
                           <Button
                             variant="outline"
                             size="sm"
+                            className="shrink-0"
                             onClick={() => assignChannelMutation.mutate(channel.id)}
                           >
                             <Plus className="h-4 w-4 mr-1" />
-                            Assign
+                            {t('assign')}
                           </Button>
                         )}
                       </div>
@@ -537,20 +561,22 @@ export default function BotDetailPage() {
                   })}
                   {channels.length === 0 && (
                     <p className="text-center text-muted-foreground py-4">
-                      No channels available. Create a channel first.
+                      {t('noChannelsAvailable')}
                     </p>
                   )}
                 </div>
               </CardContent>
-            </Card>
+              </Card>
+            </TabScrollContent>
           </TabsContent>
 
           {/* Knowledge Tab */}
-          <TabsContent value="knowledge" className="space-y-4">
-            <Card>
+          <TabsContent value="knowledge" className="mt-4">
+            <TabScrollContent>
+              <Card>
               <CardHeader>
-                <CardTitle>Knowledge Bases</CardTitle>
-                <CardDescription>Link knowledge bases for RAG-powered responses</CardDescription>
+                <CardTitle>{t('knowledgeBases')}</CardTitle>
+                <CardDescription>{t('knowledgeBasesDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
@@ -569,7 +595,7 @@ export default function BotDetailPage() {
                           <div>
                             <p className="font-medium">{kb.name}</p>
                             <p className="text-xs text-muted-foreground">
-                              {kb.item_count} items · {kb.type}
+                              {kb.item_count} {t('items')} · {kb.type}
                             </p>
                           </div>
                         </div>
@@ -588,12 +614,12 @@ export default function BotDetailPage() {
                           {isLinked ? (
                             <>
                               <X className="h-4 w-4 mr-1" />
-                              Unlink
+                              {t('unlink')}
                             </>
                           ) : (
                             <>
                               <Plus className="h-4 w-4 mr-1" />
-                              Link
+                              {t('link')}
                             </>
                           )}
                         </Button>
@@ -602,26 +628,28 @@ export default function BotDetailPage() {
                   })}
                   {knowledgeBases.length === 0 && (
                     <p className="text-center text-muted-foreground py-4">
-                      No knowledge bases available. Create one first.
+                      {t('noKbAvailable')}
                     </p>
                   )}
                 </div>
               </CardContent>
-            </Card>
+              </Card>
+            </TabScrollContent>
           </TabsContent>
 
           {/* Escalation Tab */}
-          <TabsContent value="escalation" className="space-y-4">
-            <Card>
+          <TabsContent value="escalation" className="mt-4">
+            <TabScrollContent>
+              <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Escalation Rules</CardTitle>
-                    <CardDescription>Define when to escalate to human agents</CardDescription>
+                    <CardTitle>{t('escalationRules')}</CardTitle>
+                    <CardDescription>{t('escalationRulesDesc')}</CardDescription>
                   </div>
                   <Button onClick={addEscalationRule}>
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Rule
+                    {t('addRule')}
                   </Button>
                 </div>
               </CardHeader>
@@ -631,7 +659,7 @@ export default function BotDetailPage() {
                     <div key={rule.id} className="flex items-start gap-4 p-4 rounded-lg border">
                       <div className="flex-1 grid grid-cols-3 gap-4">
                         <div className="space-y-2">
-                          <Label>Rule Type</Label>
+                          <Label>{t('ruleType')}</Label>
                           <Select
                             value={rule.type}
                             onValueChange={(value: EscalationRuleType) =>
@@ -652,7 +680,7 @@ export default function BotDetailPage() {
                         </div>
                         {(rule.type === 'keyword' || rule.type === 'intent') && (
                           <div className="space-y-2">
-                            <Label>Value</Label>
+                            <Label>{t('value')}</Label>
                             <Input
                               placeholder={rule.type === 'keyword' ? 'angry, refund, cancel' : 'complaint, cancellation'}
                               value={rule.value || ''}
@@ -661,9 +689,9 @@ export default function BotDetailPage() {
                           </div>
                         )}
                         <div className="space-y-2">
-                          <Label>Message (optional)</Label>
+                          <Label>{t('messageOptional')}</Label>
                           <Input
-                            placeholder="Let me connect you with an agent..."
+                            placeholder={t('escalationMsgPlaceholder')}
                             value={rule.message || ''}
                             onChange={(e) => updateEscalationRule(index, { message: e.target.value })}
                           />
@@ -681,32 +709,37 @@ export default function BotDetailPage() {
                   ))}
                   {escalationRules.length === 0 && (
                     <p className="text-center text-muted-foreground py-8">
-                      No escalation rules defined. Add rules to automatically escalate conversations.
+                      {t('noEscalationRules')}
                     </p>
                   )}
                 </div>
               </CardContent>
-            </Card>
+              </Card>
+            </TabScrollContent>
           </TabsContent>
         </Tabs>
 
         {/* Danger Zone */}
         <Card className="border-destructive/50">
-          <CardHeader>
-            <CardTitle className="text-destructive">Danger Zone</CardTitle>
-            <CardDescription>Irreversible actions</CardDescription>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base text-destructive">{t('dangerZone')}</CardTitle>
+            <CardDescription className="text-xs">{t('irreversibleActions')}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex items-center justify-between gap-3 py-3 pt-0">
+            <p className="text-xs text-muted-foreground">
+              {t('deletePermanently')}
+            </p>
             <Button
               variant="destructive"
+              size="sm"
               onClick={() => {
-                if (confirm('Are you sure you want to delete this bot? This action cannot be undone.')) {
+                if (confirm(t('deleteConfirm'))) {
                   deleteMutation.mutate()
                 }
               }}
             >
               <Trash2 className="h-4 w-4 mr-2" />
-              Delete Bot
+              {tBots('deleteBot')}
             </Button>
           </CardContent>
         </Card>
@@ -716,15 +749,15 @@ export default function BotDetailPage() {
       <Dialog open={testDialogOpen} onOpenChange={setTestDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>Test Bot</DialogTitle>
+            <DialogTitle>{t('testBotTitle')}</DialogTitle>
             <DialogDescription>
-              Send a test message to see how the bot responds
+              {t('testBotDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex gap-2">
               <Input
-                placeholder="Type a message..."
+                placeholder={t('typeMessage')}
                 value={testMessage}
                 onChange={(e) => setTestMessage(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleTest()}
@@ -737,23 +770,23 @@ export default function BotDetailPage() {
               <Card>
                 <CardContent className="pt-4 space-y-3">
                   <div>
-                    <Label className="text-xs text-muted-foreground">Response</Label>
+                    <Label className="text-xs text-muted-foreground">{t('response')}</Label>
                     <p className="mt-1">{testResult.response}</p>
                   </div>
                   <div className="flex gap-4 text-sm">
                     <div>
-                      <Label className="text-xs text-muted-foreground">Confidence</Label>
+                      <Label className="text-xs text-muted-foreground">{t('confidence')}</Label>
                       <p className="font-mono">{(testResult.confidence * 100).toFixed(1)}%</p>
                     </div>
                     {testResult.intent && (
                       <div>
-                        <Label className="text-xs text-muted-foreground">Intent</Label>
+                        <Label className="text-xs text-muted-foreground">{t('intent')}</Label>
                         <p>{testResult.intent}</p>
                       </div>
                     )}
                     <div>
-                      <Label className="text-xs text-muted-foreground">Escalate?</Label>
-                      <p>{testResult.should_escalate ? 'Yes' : 'No'}</p>
+                      <Label className="text-xs text-muted-foreground">{t('shouldEscalate')}</Label>
+                      <p>{testResult.should_escalate ? tCommon('yes') : tCommon('no')}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -762,7 +795,7 @@ export default function BotDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTestDialogOpen(false)}>
-              Close
+              {tCommon('close')}
             </Button>
           </DialogFooter>
         </DialogContent>

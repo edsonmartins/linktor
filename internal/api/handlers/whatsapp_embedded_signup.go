@@ -12,10 +12,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
@@ -62,7 +64,7 @@ func NewWhatsAppEmbeddedSignupHandler(channelRepo repository.ChannelRepository, 
 	return &WhatsAppEmbeddedSignupHandler{
 		channelRepo: channelRepo,
 		baseURL:     normalizedURL,
-		graphAPIURL: "https://graph.facebook.com/v21.0",
+		graphAPIURL: "https://graph.facebook.com/" + whatsappofficial.DefaultAPIVersion,
 		stateSecret: secret,
 		httpClient: &http.Client{
 			Timeout: HTTPClientTimeout,
@@ -94,25 +96,24 @@ type EmbeddedSignupStartResponse struct {
 
 // EmbeddedSignupCallbackRequest represents the callback data
 type EmbeddedSignupCallbackRequest struct {
-	Code      string `json:"code" binding:"required"`
-	State     string `json:"state" binding:"required"`
-	AppID     string `json:"app_id" binding:"required"`
-	AppSecret string `json:"app_secret" binding:"required"`
+	Code  string `json:"code" binding:"required"`
+	State string `json:"state" binding:"required"`
+	AppID string `json:"app_id" binding:"required"`
 }
 
 // EmbeddedSignupCallbackResponse represents the callback response
 type EmbeddedSignupCallbackResponse struct {
-	AccessToken     string            `json:"access_token"`
-	WABAID          string            `json:"waba_id"`
-	PhoneNumberID   string            `json:"phone_number_id"`
-	PhoneNumber     string            `json:"phone_number"`
-	IsCoexistence   bool              `json:"is_coexistence"`
-	CoexStatus      string            `json:"coexistence_status"`
-	BusinessName    string            `json:"business_name,omitempty"`
-	QualityRating   string            `json:"quality_rating,omitempty"`
-	VerifyToken     string            `json:"verify_token"`
-	WebhookURL      string            `json:"webhook_url"`
-	SubscribedFields []string         `json:"subscribed_fields"`
+	AccessToken      string   `json:"access_token"`
+	WABAID           string   `json:"waba_id"`
+	PhoneNumberID    string   `json:"phone_number_id"`
+	PhoneNumber      string   `json:"phone_number"`
+	IsCoexistence    bool     `json:"is_coexistence"`
+	CoexStatus       string   `json:"coexistence_status"`
+	BusinessName     string   `json:"business_name,omitempty"`
+	QualityRating    string   `json:"quality_rating,omitempty"`
+	VerifyToken      string   `json:"verify_token"`
+	WebhookURL       string   `json:"webhook_url"`
+	SubscribedFields []string `json:"subscribed_fields"`
 }
 
 // CoexistenceStatusResponse represents coexistence status
@@ -241,7 +242,7 @@ func (h *WhatsAppEmbeddedSignupHandler) StartEmbeddedSignup(c *gin.Context) {
 	// Add extras for embedded signup
 	params.Set("extras", `{"feature":"whatsapp_embedded_signup","sessionInfoVersion":2}`)
 
-	loginURL := "https://www.facebook.com/v21.0/dialog/oauth?" + params.Encode()
+	loginURL := "https://www.facebook.com/" + whatsappofficial.DefaultAPIVersion + "/dialog/oauth?" + params.Encode()
 
 	c.JSON(http.StatusOK, EmbeddedSignupStartResponse{
 		LoginURL: loginURL,
@@ -279,16 +280,21 @@ func (h *WhatsAppEmbeddedSignupHandler) CompleteEmbeddedSignup(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	appSecret, err := h.resolveAppSecret(req.AppID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// 1. Exchange code for access token
-	accessToken, err := h.exchangeCodeForToken(ctx, req.AppID, req.AppSecret, req.Code)
+	accessToken, err := h.exchangeCodeForToken(ctx, req.AppID, appSecret, req.Code)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to exchange code: " + err.Error()})
 		return
 	}
 
 	// 2. Debug token to get WABA ID and Phone Number ID
-	wabaID, phoneNumberID, err := h.getWABAInfo(ctx, accessToken, req.AppID, req.AppSecret)
+	wabaID, phoneNumberID, err := h.getWABAInfo(ctx, accessToken, req.AppID, appSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get WABA info: " + err.Error()})
 		return
@@ -350,9 +356,9 @@ func (h *WhatsAppEmbeddedSignupHandler) CreateCoexistenceChannel(c *gin.Context)
 		PhoneNumberID string `json:"phone_number_id" binding:"required"`
 		PhoneNumber   string `json:"phone_number" binding:"required"`
 		AppID         string `json:"app_id" binding:"required"`
-		AppSecret     string `json:"app_secret" binding:"required"`
 		VerifyToken   string `json:"verify_token"`
 		IsCoexistence bool   `json:"is_coexistence"`
+		QualityRating string `json:"quality_rating,omitempty"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -385,15 +391,18 @@ func (h *WhatsAppEmbeddedSignupHandler) CreateCoexistenceChannel(c *gin.Context)
 		Credentials: map[string]string{
 			"access_token":    req.AccessToken,
 			"app_id":          req.AppID,
-			"app_secret":      req.AppSecret,
 			"verify_token":    verifyToken,
 			"phone_number_id": req.PhoneNumberID,
 			"waba_id":         req.WABAID,
+			"api_version":     whatsappofficial.DefaultAPIVersion,
 		},
 		Config: map[string]string{
 			"phone_number":    req.PhoneNumber,
 			"phone_number_id": req.PhoneNumberID,
 			"waba_id":         req.WABAID,
+			"verify_token":    verifyToken,
+			"api_version":     whatsappofficial.DefaultAPIVersion,
+			"quality_rating":  strings.TrimSpace(req.QualityRating),
 		},
 		IsCoexistence:     req.IsCoexistence,
 		WABAID:            req.WABAID,
@@ -414,6 +423,39 @@ func (h *WhatsAppEmbeddedSignupHandler) CreateCoexistenceChannel(c *gin.Context)
 		"webhook_url":  webhookURL,
 		"verify_token": verifyToken,
 	})
+}
+
+func (h *WhatsAppEmbeddedSignupHandler) resolveAppSecret(appID string) (string, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return "", fmt.Errorf("app_id is required")
+	}
+
+	if secret := strings.TrimSpace(os.Getenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET_" + sanitizeEnvToken(appID))); secret != "" {
+		return secret, nil
+	}
+
+	if secret := strings.TrimSpace(os.Getenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET")); secret != "" {
+		return secret, nil
+	}
+
+	return "", fmt.Errorf("server-side app secret is not configured for WhatsApp Embedded Signup")
+}
+
+func sanitizeEnvToken(value string) string {
+	var builder strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			builder.WriteRune(r - 32)
+		case (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
+			builder.WriteRune(r)
+		default:
+			builder.WriteByte('_')
+		}
+	}
+
+	return builder.String()
 }
 
 // GetCoexistenceStatus returns the coexistence status for a channel
@@ -601,8 +643,8 @@ func (h *WhatsAppEmbeddedSignupHandler) getWABAInfo(ctx context.Context, accessT
 	var debugResp struct {
 		Data struct {
 			GranularScopes []struct {
-				Scope      string   `json:"scope"`
-				TargetIDs  []string `json:"target_ids"`
+				Scope     string   `json:"scope"`
+				TargetIDs []string `json:"target_ids"`
 			} `json:"granular_scopes"`
 		} `json:"data"`
 	}
@@ -747,6 +789,7 @@ func (h *WhatsAppEmbeddedSignupHandler) subscribeToWebhooks(ctx context.Context,
 		"messages",
 		"message_template_status_update",
 		"message_template_quality_update",
+		"template_category_update",
 		"account_alerts",
 		"account_update",
 		"phone_number_quality_update",

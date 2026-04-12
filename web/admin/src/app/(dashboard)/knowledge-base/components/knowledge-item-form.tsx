@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Plus } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import {
   Dialog,
   DialogContent,
@@ -32,13 +33,15 @@ import { queryKeys } from '@/lib/query'
 import { toast } from '@/hooks/use-toast'
 import type { KnowledgeItem, CreateKnowledgeItemInput, UpdateKnowledgeItemInput } from '@/types'
 
-const formSchema = z.object({
-  question: z.string().min(1, 'Question is required').max(1000, 'Question must be 1000 characters or less'),
-  answer: z.string().min(1, 'Answer is required').max(10000, 'Answer must be 10000 characters or less'),
-  source: z.string().max(200).optional(),
-})
+function createFormSchema(t: ReturnType<typeof useTranslations<'knowledgeBase.item'>>) {
+  return z.object({
+    question: z.string().min(1, t('questionRequired')).max(1000, t('questionMaxLength')),
+    answer: z.string().min(1, t('answerRequired')).max(10000, t('answerMaxLength')),
+    source: z.string().max(200).optional(),
+  })
+}
 
-type FormValues = z.infer<typeof formSchema>
+type FormValues = z.infer<ReturnType<typeof createFormSchema>>
 
 interface KnowledgeItemFormProps {
   open: boolean
@@ -48,8 +51,11 @@ interface KnowledgeItemFormProps {
 }
 
 export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }: KnowledgeItemFormProps) {
+  const t = useTranslations('knowledgeBase.item')
+  const tCommon = useTranslations('common')
   const queryClient = useQueryClient()
   const isEditing = !!item
+  const formSchema = createFormSchema(t)
 
   const [keywords, setKeywords] = useState<string[]>([])
   const [keywordInput, setKeywordInput] = useState('')
@@ -92,15 +98,15 @@ export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }:
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeItems.list(knowledgeBaseId, {}) })
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeBases.detail(knowledgeBaseId) })
       toast({
-        title: 'Item created',
-        description: 'The item has been added to the knowledge base.',
+        title: t('itemCreated'),
+        description: t('itemCreatedDesc'),
       })
       onOpenChange(false)
     },
     onError: (error: Error) => {
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to create item',
+        title: tCommon('error'),
+        description: error.message || t('failedCreate'),
         variant: 'error',
       })
     },
@@ -112,15 +118,15 @@ export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }:
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeItems.list(knowledgeBaseId, {}) })
       toast({
-        title: 'Item updated',
-        description: 'The item has been updated successfully.',
+        title: t('itemUpdated'),
+        description: t('itemUpdatedDesc'),
       })
       onOpenChange(false)
     },
     onError: (error: Error) => {
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to update item',
+        title: tCommon('error'),
+        description: error.message || t('failedUpdate'),
         variant: 'error',
       })
     },
@@ -167,12 +173,10 @@ export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }:
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>
-            {isEditing ? 'Edit Item' : 'Add Item'}
+            {isEditing ? t('editTitle') : t('addTitle')}
           </DialogTitle>
           <DialogDescription>
-            {isEditing
-              ? 'Update the question and answer for this knowledge item.'
-              : 'Add a new question-answer pair to your knowledge base.'}
+            {isEditing ? t('editDesc') : t('addDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -183,10 +187,10 @@ export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }:
               name="question"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Question</FormLabel>
+                  <FormLabel>{t('question')}</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="e.g., How do I reset my password?"
+                      placeholder={t('questionPlaceholder')}
                       className="resize-none"
                       rows={2}
                       {...field}
@@ -202,10 +206,10 @@ export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }:
               name="answer"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Answer</FormLabel>
+                  <FormLabel>{t('answer')}</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Provide a detailed answer..."
+                      placeholder={t('answerPlaceholder')}
                       className="resize-none"
                       rows={4}
                       {...field}
@@ -218,10 +222,10 @@ export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }:
 
             {/* Keywords */}
             <div className="space-y-2">
-              <FormLabel>Keywords (optional)</FormLabel>
+              <FormLabel>{t('keywordsOptional')}</FormLabel>
               <div className="flex gap-2">
                 <Input
-                  placeholder="Add a keyword..."
+                  placeholder={t('keywordPlaceholder')}
                   value={keywordInput}
                   onChange={(e) => setKeywordInput(e.target.value)}
                   onKeyDown={handleKeywordKeyDown}
@@ -247,7 +251,7 @@ export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }:
                 </div>
               )}
               <FormDescription>
-                Keywords help with search relevance. Press Enter to add.
+                {t('keywordsHint')}
               </FormDescription>
             </div>
 
@@ -256,12 +260,12 @@ export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }:
               name="source"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Source (optional)</FormLabel>
+                  <FormLabel>{t('sourceOptional')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., FAQ v1.0, Help Center" {...field} />
+                    <Input placeholder={t('sourcePlaceholder')} {...field} />
                   </FormControl>
                   <FormDescription>
-                    Track where this information came from.
+                    {t('sourceHint')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -270,10 +274,10 @@ export function KnowledgeItemForm({ open, onOpenChange, knowledgeBaseId, item }:
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
+                {tCommon('cancel')}
               </Button>
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Add Item'}
+                {isSubmitting ? t('saving') : isEditing ? t('saveChanges') : t('addItem')}
               </Button>
             </DialogFooter>
           </form>

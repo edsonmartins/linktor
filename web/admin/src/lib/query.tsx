@@ -176,6 +176,20 @@ export const queryKeys = {
     detail: (id: string) => [...queryKeys.users.details(), id] as const,
   },
 
+  // API Keys
+  apiKeys: {
+    all: ['api-keys'] as const,
+    lists: () => [...queryKeys.apiKeys.all, 'list'] as const,
+    list: () => [...queryKeys.apiKeys.lists()] as const,
+  },
+
+  // Tenant/Organization
+  tenant: {
+    all: ['tenant'] as const,
+    current: () => [...queryKeys.tenant.all, 'current'] as const,
+    usage: () => [...queryKeys.tenant.all, 'usage'] as const,
+  },
+
   // AI Providers
   ai: {
     all: ['ai'] as const,

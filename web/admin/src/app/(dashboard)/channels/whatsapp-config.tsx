@@ -114,12 +114,12 @@ export function WhatsAppConfig({
       business_id: (channel?.config?.business_id as string) || '',
       verify_token: (channel?.config?.verify_token as string) || generateVerifyToken(),
       webhook_secret: '',
-      api_version: (channel?.config?.api_version as string) || 'v21.0',
+      api_version: (channel?.config?.api_version as string) || 'v23.0',
     },
   })
 
   const webhookUrl = channel
-    ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/whatsapp/${channel.id}`
+    ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/whatsapp_official/${channel.id}`
     : t('willBeGenerated')
 
   const onSubmit = async (data: WhatsAppConfigForm) => {
@@ -362,7 +362,7 @@ export function WhatsAppConfig({
                 <FormItem>
                   <FormLabel>{t('apiVersion')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="v21.0" {...field} />
+                    <Input placeholder="v23.0" {...field} />
                   </FormControl>
                   <FormDescription>
                     {t('apiVersionDesc')}

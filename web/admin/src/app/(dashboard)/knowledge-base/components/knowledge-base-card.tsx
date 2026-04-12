@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { BookOpen, FileText, Globe, MoreVertical, Pencil, Trash2, RefreshCw, Search } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -29,12 +30,6 @@ const typeIcons = {
   website: Globe,
 }
 
-const typeLabels = {
-  faq: 'FAQ',
-  documents: 'Documents',
-  website: 'Website',
-}
-
 const statusVariants: Record<string, 'default' | 'success' | 'warning' | 'error'> = {
   active: 'success',
   syncing: 'warning',
@@ -48,7 +43,15 @@ export function KnowledgeBaseCard({
   onRegenerate,
   isRegenerating,
 }: KnowledgeBaseCardProps) {
+  const t = useTranslations('knowledgeBase.card')
+  const tKb = useTranslations('knowledgeBase')
   const Icon = typeIcons[knowledgeBase.type] || BookOpen
+
+  const typeLabels: Record<string, string> = {
+    faq: tKb('faq'),
+    documents: tKb('documents'),
+    website: tKb('website'),
+  }
 
   return (
     <Card className="group transition-colors hover:border-primary/30">
@@ -90,28 +93,28 @@ export function KnowledgeBaseCard({
               <DropdownMenuItem asChild>
                 <Link href={`/knowledge-base/${knowledgeBase.id}`}>
                   <FileText className="mr-2 h-4 w-4" />
-                  View Items
+                  {t('viewItems')}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href={`/knowledge-base/${knowledgeBase.id}/search`}>
                   <Search className="mr-2 h-4 w-4" />
-                  Test Search
+                  {t('testSearch')}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onEdit}>
                 <Pencil className="mr-2 h-4 w-4" />
-                Edit
+                {t('edit')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onRegenerate} disabled={isRegenerating}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${isRegenerating ? 'animate-spin' : ''}`} />
-                Regenerate Embeddings
+                {t('regenerateEmbeddings')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onDelete} className="text-destructive">
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete
+                {t('delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -126,11 +129,11 @@ export function KnowledgeBaseCard({
         )}
 
         <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>{knowledgeBase.item_count} items</span>
+          <span>{t('items', { count: knowledgeBase.item_count })}</span>
           {knowledgeBase.last_sync_at ? (
-            <span>Synced {formatDistanceToNow(knowledgeBase.last_sync_at)}</span>
+            <span>{t('synced', { time: formatDistanceToNow(knowledgeBase.last_sync_at) })}</span>
           ) : (
-            <span>Never synced</span>
+            <span>{t('neverSynced')}</span>
           )}
         </div>
       </CardContent>

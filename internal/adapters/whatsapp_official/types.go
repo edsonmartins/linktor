@@ -15,7 +15,7 @@ type Config struct {
 }
 
 // DefaultAPIVersion is the default Meta Graph API version
-const DefaultAPIVersion = "v21.0"
+const DefaultAPIVersion = "v23.0"
 
 // BaseURL is the Meta Graph API base URL
 const BaseURL = "https://graph.facebook.com"
@@ -42,14 +42,14 @@ type WebhookChange struct {
 // This is a union type that can contain different fields depending on the webhook field type
 type WebhookChangeValue struct {
 	// Common fields
-	MessagingProduct string           `json:"messaging_product,omitempty"`
-	Metadata         WebhookMetadata  `json:"metadata,omitempty"`
-	Errors           []WebhookError   `json:"errors,omitempty"`
+	MessagingProduct string          `json:"messaging_product,omitempty"`
+	Metadata         WebhookMetadata `json:"metadata,omitempty"`
+	Errors           []WebhookError  `json:"errors,omitempty"`
 
 	// messages field
-	Contacts         []ContactInfo     `json:"contacts,omitempty"`
-	Messages         []IncomingMessage `json:"messages,omitempty"`
-	Statuses         []StatusUpdate    `json:"statuses,omitempty"`
+	Contacts []ContactInfo     `json:"contacts,omitempty"`
+	Messages []IncomingMessage `json:"messages,omitempty"`
+	Statuses []StatusUpdate    `json:"statuses,omitempty"`
 
 	// message_template_status_update field
 	Event                   string `json:"event,omitempty"`
@@ -120,7 +120,7 @@ type WebhookError struct {
 
 // ContactInfo represents contact information in webhooks
 type ContactInfo struct {
-	WaID    string       `json:"wa_id"`
+	WaID    string         `json:"wa_id"`
 	Profile ContactProfile `json:"profile"`
 }
 
@@ -131,25 +131,25 @@ type ContactProfile struct {
 
 // IncomingMessage represents an incoming message from WhatsApp
 type IncomingMessage struct {
-	ID        string          `json:"id"`
-	From      string          `json:"from"`
-	Timestamp string          `json:"timestamp"`
-	Type      MessageType     `json:"type"`
-	Text      *TextContent    `json:"text,omitempty"`
-	Image     *MediaContent   `json:"image,omitempty"`
-	Video     *MediaContent   `json:"video,omitempty"`
-	Audio     *MediaContent   `json:"audio,omitempty"`
-	Document  *DocumentContent `json:"document,omitempty"`
-	Sticker   *StickerContent `json:"sticker,omitempty"`
-	Location  *LocationContent `json:"location,omitempty"`
-	Contacts  []ContactContent `json:"contacts,omitempty"`
+	ID          string               `json:"id"`
+	From        string               `json:"from"`
+	Timestamp   string               `json:"timestamp"`
+	Type        MessageType          `json:"type"`
+	Text        *TextContent         `json:"text,omitempty"`
+	Image       *MediaContent        `json:"image,omitempty"`
+	Video       *MediaContent        `json:"video,omitempty"`
+	Audio       *MediaContent        `json:"audio,omitempty"`
+	Document    *DocumentContent     `json:"document,omitempty"`
+	Sticker     *StickerContent      `json:"sticker,omitempty"`
+	Location    *LocationContent     `json:"location,omitempty"`
+	Contacts    []ContactContent     `json:"contacts,omitempty"`
 	Interactive *InteractiveResponse `json:"interactive,omitempty"`
-	Button    *ButtonResponse `json:"button,omitempty"`
-	Context   *MessageContext `json:"context,omitempty"`
-	Reaction  *ReactionContent `json:"reaction,omitempty"`
-	Referral  *ReferralContent `json:"referral,omitempty"`
-	Order     *OrderContent    `json:"order,omitempty"` // Commerce order message
-	Errors    []WebhookError   `json:"errors,omitempty"`
+	Button      *ButtonResponse      `json:"button,omitempty"`
+	Context     *MessageContext      `json:"context,omitempty"`
+	Reaction    *ReactionContent     `json:"reaction,omitempty"`
+	Referral    *ReferralContent     `json:"referral,omitempty"`
+	Order       *OrderContent        `json:"order,omitempty"` // Commerce order message
+	Errors      []WebhookError       `json:"errors,omitempty"`
 }
 
 // MessageType represents the type of WhatsApp message
@@ -294,10 +294,10 @@ type NfmReplyData struct {
 
 // InteractiveResponse represents an interactive message response
 type InteractiveResponse struct {
-	Type        string            `json:"type"` // button_reply, list_reply, nfm_reply
-	ButtonReply *ButtonReplyData  `json:"button_reply,omitempty"`
-	ListReply   *ListReplyData    `json:"list_reply,omitempty"`
-	NfmReply    *NfmReplyData     `json:"nfm_reply,omitempty"` // WhatsApp Flows response
+	Type        string           `json:"type"` // button_reply, list_reply, nfm_reply
+	ButtonReply *ButtonReplyData `json:"button_reply,omitempty"`
+	ListReply   *ListReplyData   `json:"list_reply,omitempty"`
+	NfmReply    *NfmReplyData    `json:"nfm_reply,omitempty"` // WhatsApp Flows response
 }
 
 // ButtonResponse represents a button template response
@@ -308,11 +308,11 @@ type ButtonResponse struct {
 
 // MessageContext represents the context of a message (reply-to)
 type MessageContext struct {
-	MessageID string `json:"id"`
-	From      string `json:"from"`
-	Forwarded bool   `json:"forwarded,omitempty"`
-	FrequentlyForwarded bool `json:"frequently_forwarded,omitempty"`
-	ReferredProduct *ReferredProduct `json:"referred_product,omitempty"`
+	MessageID           string           `json:"id"`
+	From                string           `json:"from"`
+	Forwarded           bool             `json:"forwarded,omitempty"`
+	FrequentlyForwarded bool             `json:"frequently_forwarded,omitempty"`
+	ReferredProduct     *ReferredProduct `json:"referred_product,omitempty"`
 }
 
 // ReferredProduct represents a referred product in context
@@ -329,26 +329,26 @@ type ReactionContent struct {
 
 // ReferralContent represents referral data (ads, click-to-WhatsApp)
 type ReferralContent struct {
-	SourceURL  string `json:"source_url,omitempty"`
-	SourceType string `json:"source_type,omitempty"`
-	SourceID   string `json:"source_id,omitempty"`
-	Headline   string `json:"headline,omitempty"`
-	Body       string `json:"body,omitempty"`
-	MediaType  string `json:"media_type,omitempty"`
-	ImageURL   string `json:"image_url,omitempty"`
-	VideoURL   string `json:"video_url,omitempty"`
+	SourceURL    string `json:"source_url,omitempty"`
+	SourceType   string `json:"source_type,omitempty"`
+	SourceID     string `json:"source_id,omitempty"`
+	Headline     string `json:"headline,omitempty"`
+	Body         string `json:"body,omitempty"`
+	MediaType    string `json:"media_type,omitempty"`
+	ImageURL     string `json:"image_url,omitempty"`
+	VideoURL     string `json:"video_url,omitempty"`
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
 }
 
 // StatusUpdate represents a message status update
 type StatusUpdate struct {
-	ID          string        `json:"id"`
-	RecipientID string        `json:"recipient_id"`
-	Status      MessageStatus `json:"status"`
-	Timestamp   string        `json:"timestamp"`
+	ID           string            `json:"id"`
+	RecipientID  string            `json:"recipient_id"`
+	Status       MessageStatus     `json:"status"`
+	Timestamp    string            `json:"timestamp"`
 	Conversation *ConversationInfo `json:"conversation,omitempty"`
-	Pricing     *PricingInfo  `json:"pricing,omitempty"`
-	Errors      []WebhookError `json:"errors,omitempty"`
+	Pricing      *PricingInfo      `json:"pricing,omitempty"`
+	Errors       []WebhookError    `json:"errors,omitempty"`
 }
 
 // MessageStatus represents the status of a message
@@ -363,9 +363,9 @@ const (
 
 // ConversationInfo represents conversation info in status updates
 type ConversationInfo struct {
-	ID     string            `json:"id"`
-	Origin *ConversationOrigin `json:"origin,omitempty"`
-	ExpirationTimestamp string `json:"expiration_timestamp,omitempty"`
+	ID                  string              `json:"id"`
+	Origin              *ConversationOrigin `json:"origin,omitempty"`
+	ExpirationTimestamp string              `json:"expiration_timestamp,omitempty"`
 }
 
 // ConversationOrigin represents the origin of a conversation
@@ -382,22 +382,22 @@ type PricingInfo struct {
 
 // SendMessageRequest represents a request to send a message
 type SendMessageRequest struct {
-	MessagingProduct string      `json:"messaging_product"`
-	RecipientType    string      `json:"recipient_type,omitempty"`
-	To               string      `json:"to"`
-	Type             MessageType `json:"type"`
-	Text             *TextContent `json:"text,omitempty"`
-	Image            *MediaObject `json:"image,omitempty"`
-	Video            *MediaObject `json:"video,omitempty"`
-	Audio            *MediaObject `json:"audio,omitempty"`
-	Document         *DocumentObject `json:"document,omitempty"`
-	Sticker          *MediaObject `json:"sticker,omitempty"`
-	Location         *LocationObject `json:"location,omitempty"`
-	Contacts         []ContactContent `json:"contacts,omitempty"`
+	MessagingProduct string             `json:"messaging_product"`
+	RecipientType    string             `json:"recipient_type,omitempty"`
+	To               string             `json:"to"`
+	Type             MessageType        `json:"type"`
+	Text             *TextContent       `json:"text,omitempty"`
+	Image            *MediaObject       `json:"image,omitempty"`
+	Video            *MediaObject       `json:"video,omitempty"`
+	Audio            *MediaObject       `json:"audio,omitempty"`
+	Document         *DocumentObject    `json:"document,omitempty"`
+	Sticker          *MediaObject       `json:"sticker,omitempty"`
+	Location         *LocationObject    `json:"location,omitempty"`
+	Contacts         []ContactContent   `json:"contacts,omitempty"`
 	Interactive      *InteractiveObject `json:"interactive,omitempty"`
-	Template         *TemplateObject `json:"template,omitempty"`
-	Reaction         *ReactionObject `json:"reaction,omitempty"`
-	Context          *ContextObject `json:"context,omitempty"`
+	Template         *TemplateObject    `json:"template,omitempty"`
+	Reaction         *ReactionObject    `json:"reaction,omitempty"`
+	Context          *ContextObject     `json:"context,omitempty"`
 }
 
 // MediaObject represents media to send (by ID or URL)
@@ -461,11 +461,11 @@ type ErrorResponse struct {
 
 // APIError represents an API error
 type APIError struct {
-	Message      string    `json:"message"`
-	Type         string    `json:"type"`
-	Code         int       `json:"code"`
-	ErrorSubcode int       `json:"error_subcode,omitempty"`
-	FBTraceID    string    `json:"fbtrace_id,omitempty"`
+	Message      string     `json:"message"`
+	Type         string     `json:"type"`
+	Code         int        `json:"code"`
+	ErrorSubcode int        `json:"error_subcode,omitempty"`
+	FBTraceID    string     `json:"fbtrace_id,omitempty"`
 	ErrorData    *ErrorData `json:"error_data,omitempty"`
 }
 
@@ -482,11 +482,11 @@ type MediaUploadResponse struct {
 
 // MediaInfoResponse represents the response from getting media info
 type MediaInfoResponse struct {
-	ID           string `json:"id"`
-	URL          string `json:"url"`
-	MimeType     string `json:"mime_type"`
-	SHA256       string `json:"sha256"`
-	FileSize     int64  `json:"file_size"`
+	ID               string `json:"id"`
+	URL              string `json:"url"`
+	MimeType         string `json:"mime_type"`
+	SHA256           string `json:"sha256"`
+	FileSize         int64  `json:"file_size"`
 	MessagingProduct string `json:"messaging_product,omitempty"`
 }
 
@@ -497,16 +497,16 @@ type HealthStatus struct {
 
 // HealthInfo represents health information
 type HealthInfo struct {
-	EntityType  string            `json:"entity_type"`
-	CanSendMessage string         `json:"can_send_message"`
-	Errors      []HealthError     `json:"errors,omitempty"`
+	EntityType     string                 `json:"entity_type"`
+	CanSendMessage string                 `json:"can_send_message"`
+	Errors         []HealthError          `json:"errors,omitempty"`
 	AdditionalInfo map[string]interface{} `json:"additional_info,omitempty"`
 }
 
 // HealthError represents a health error
 type HealthError struct {
-	ErrorCode    int    `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	ErrorCode        int    `json:"error_code"`
+	ErrorMessage     string `json:"error_message"`
 	PossibleSolution string `json:"possible_solution,omitempty"`
 }
 
@@ -524,23 +524,23 @@ type BusinessProfile struct {
 
 // PhoneNumberInfo represents phone number information
 type PhoneNumberInfo struct {
-	ID                    string `json:"id"`
-	VerifiedName          string `json:"verified_name"`
-	DisplayPhoneNumber    string `json:"display_phone_number"`
-	QualityRating         string `json:"quality_rating"`
-	Status                string `json:"status,omitempty"`
-	NameStatus            string `json:"name_status,omitempty"`
-	NewNameStatus         string `json:"new_name_status,omitempty"`
-	MessagingLimitTier    string `json:"messaging_limit_tier,omitempty"`
+	ID                     string `json:"id"`
+	VerifiedName           string `json:"verified_name"`
+	DisplayPhoneNumber     string `json:"display_phone_number"`
+	QualityRating          string `json:"quality_rating"`
+	Status                 string `json:"status,omitempty"`
+	NameStatus             string `json:"name_status,omitempty"`
+	NewNameStatus          string `json:"new_name_status,omitempty"`
+	MessagingLimitTier     string `json:"messaging_limit_tier,omitempty"`
 	CodeVerificationStatus string `json:"code_verification_status,omitempty"`
 }
 
 // SessionInfo tracks the 24-hour messaging window
 type SessionInfo struct {
-	ContactID              string    `json:"contact_id"`
-	LastCustomerMessageAt  time.Time `json:"last_customer_message_at"`
-	SessionExpiresAt       time.Time `json:"session_expires_at"`
-	CanSendSessionMessage  bool      `json:"can_send_session_message"`
+	ContactID             string    `json:"contact_id"`
+	LastCustomerMessageAt time.Time `json:"last_customer_message_at"`
+	SessionExpiresAt      time.Time `json:"session_expires_at"`
+	CanSendSessionMessage bool      `json:"can_send_session_message"`
 }
 
 // IsSessionValid checks if the 24-hour session is still valid
@@ -570,19 +570,19 @@ type RateLimitInfo struct {
 type WebhookField string
 
 const (
-	WebhookFieldMessages                   WebhookField = "messages"
-	WebhookFieldMessageTemplateStatusUpdate WebhookField = "message_template_status_update"
+	WebhookFieldMessages                     WebhookField = "messages"
+	WebhookFieldMessageTemplateStatusUpdate  WebhookField = "message_template_status_update"
 	WebhookFieldMessageTemplateQualityUpdate WebhookField = "message_template_quality_update"
-	WebhookFieldAccountAlerts              WebhookField = "account_alerts"
-	WebhookFieldAccountUpdate              WebhookField = "account_update"
-	WebhookFieldAccountReviewUpdate        WebhookField = "account_review_update"
-	WebhookFieldPhoneNumberNameUpdate      WebhookField = "phone_number_name_update"
-	WebhookFieldPhoneNumberQualityUpdate   WebhookField = "phone_number_quality_update"
-	WebhookFieldTemplateCategoryUpdate     WebhookField = "template_category_update"
-	WebhookFieldSecurity                   WebhookField = "security"
-	WebhookFieldFlows                      WebhookField = "flows"
-	WebhookFieldBusinessCapabilityUpdate   WebhookField = "business_capability_update"
-	WebhookFieldMessageEchoes              WebhookField = "message_echoes"
+	WebhookFieldAccountAlerts                WebhookField = "account_alerts"
+	WebhookFieldAccountUpdate                WebhookField = "account_update"
+	WebhookFieldAccountReviewUpdate          WebhookField = "account_review_update"
+	WebhookFieldPhoneNumberNameUpdate        WebhookField = "phone_number_name_update"
+	WebhookFieldPhoneNumberQualityUpdate     WebhookField = "phone_number_quality_update"
+	WebhookFieldTemplateCategoryUpdate       WebhookField = "template_category_update"
+	WebhookFieldSecurity                     WebhookField = "security"
+	WebhookFieldFlows                        WebhookField = "flows"
+	WebhookFieldBusinessCapabilityUpdate     WebhookField = "business_capability_update"
+	WebhookFieldMessageEchoes                WebhookField = "message_echoes"
 )
 
 // TemplateStatusUpdateValue represents a template status update webhook value
@@ -613,9 +613,9 @@ type AccountAlertValue struct {
 
 // AccountUpdateValue represents an account update webhook value
 type AccountUpdateValue struct {
-	PhoneNumber    string `json:"phone_number,omitempty"`
-	Event          string `json:"event,omitempty"`
-	BanInfo        *BanInfo `json:"ban_info,omitempty"`
+	PhoneNumber     string            `json:"phone_number,omitempty"`
+	Event           string            `json:"event,omitempty"`
+	BanInfo         *BanInfo          `json:"ban_info,omitempty"`
 	RestrictionInfo []RestrictionInfo `json:"restriction_info,omitempty"`
 }
 
@@ -638,16 +638,16 @@ type AccountReviewUpdateValue struct {
 
 // PhoneNumberNameUpdateValue represents a phone number name update webhook value
 type PhoneNumberNameUpdateValue struct {
-	DisplayPhoneNumber   string `json:"display_phone_number"`
-	Decision             string `json:"decision"`             // APPROVED, REJECTED
+	DisplayPhoneNumber    string `json:"display_phone_number"`
+	Decision              string `json:"decision"` // APPROVED, REJECTED
 	RequestedVerifiedName string `json:"requested_verified_name"`
-	RejectionReason      string `json:"rejection_reason,omitempty"`
+	RejectionReason       string `json:"rejection_reason,omitempty"`
 }
 
 // PhoneNumberQualityUpdateValue represents a phone number quality update webhook value
 type PhoneNumberQualityUpdateValue struct {
 	DisplayPhoneNumber string `json:"display_phone_number"`
-	Event              string `json:"event"` // FLAGGED, UNFLAGGED
+	Event              string `json:"event"`         // FLAGGED, UNFLAGGED
 	CurrentLimit       string `json:"current_limit"` // TIER_50, TIER_250, TIER_1K, TIER_10K, TIER_100K, TIER_UNLIMITED
 }
 
@@ -662,20 +662,20 @@ type TemplateCategoryUpdateValue struct {
 
 // SecurityValue represents a security event webhook value
 type SecurityValue struct {
-	Event          string `json:"event,omitempty"` // TWO_STEP_VERIFICATION_DISABLED, ACCOUNT_LINKED, ACCOUNT_UNLINKED
+	Event              string `json:"event,omitempty"` // TWO_STEP_VERIFICATION_DISABLED, ACCOUNT_LINKED, ACCOUNT_UNLINKED
 	DisplayPhoneNumber string `json:"display_phone_number,omitempty"`
 }
 
 // FlowsValue represents a flow lifecycle event webhook value
 type FlowsValue struct {
-	Event    string `json:"event,omitempty"` // ENDPOINT_UNREACHABLE, ENDPOINT_TIMEOUT, ENDPOINT_ERROR, FLOW_STATUS_CHANGE
-	FlowID   string `json:"flow_id,omitempty"`
-	FlowName string `json:"flow_name,omitempty"`
-	OldStatus string `json:"old_status,omitempty"` // DRAFT, PUBLISHED, DEPRECATED
-	NewStatus string `json:"new_status,omitempty"`
-	ErrorType string `json:"error_type,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
-	Details   map[string]interface{} `json:"details,omitempty"`
+	Event        string                 `json:"event,omitempty"` // ENDPOINT_UNREACHABLE, ENDPOINT_TIMEOUT, ENDPOINT_ERROR, FLOW_STATUS_CHANGE
+	FlowID       string                 `json:"flow_id,omitempty"`
+	FlowName     string                 `json:"flow_name,omitempty"`
+	OldStatus    string                 `json:"old_status,omitempty"` // DRAFT, PUBLISHED, DEPRECATED
+	NewStatus    string                 `json:"new_status,omitempty"`
+	ErrorType    string                 `json:"error_type,omitempty"`
+	ErrorMessage string                 `json:"error_message,omitempty"`
+	Details      map[string]interface{} `json:"details,omitempty"`
 }
 
 // BusinessCapabilityUpdateValue represents a business capability update webhook value
@@ -710,11 +710,21 @@ type ParsedTemplateStatusEvent struct {
 
 // ParsedTemplateQualityEvent represents a parsed template quality update
 type ParsedTemplateQualityEvent struct {
+	TemplateID      int64     `json:"template_id"`
+	TemplateName    string    `json:"template_name"`
+	Language        string    `json:"language"`
+	PreviousQuality string    `json:"previous_quality"`
+	NewQuality      string    `json:"new_quality"`
+	Timestamp       time.Time `json:"timestamp"`
+}
+
+// ParsedTemplateCategoryEvent represents a parsed template category update
+type ParsedTemplateCategoryEvent struct {
 	TemplateID       int64     `json:"template_id"`
 	TemplateName     string    `json:"template_name"`
 	Language         string    `json:"language"`
-	PreviousQuality  string    `json:"previous_quality"`
-	NewQuality       string    `json:"new_quality"`
+	PreviousCategory string    `json:"previous_category"`
+	NewCategory      string    `json:"new_category"`
 	Timestamp        time.Time `json:"timestamp"`
 }
 

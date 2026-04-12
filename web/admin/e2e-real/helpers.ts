@@ -474,6 +474,30 @@ export async function getAnalyticsOverview(request: APIRequestContext, period: '
   }
 }
 
+export async function listApiKeys(request: APIRequestContext) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.get('http://localhost:8081/api/v1/api-keys', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return (payload?.data || []) as Array<{ id: string; name: string; key_prefix: string; scopes: string[] }>
+}
+
+export async function deleteApiKeyByID(request: APIRequestContext, id: string) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.delete(`http://localhost:8081/api/v1/api-keys/${id}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+}
+
 export async function createConversationByApi(
   request: APIRequestContext,
   input: { contactID: string; channelID: string; subject?: string }

@@ -475,19 +475,19 @@ func GetWebhookPhoneNumberID(payload *WebhookPayload) string {
 type WebhookFieldType string
 
 const (
-	FieldMessages                  WebhookFieldType = "messages"
-	FieldMessageTemplateStatus     WebhookFieldType = "message_template_status_update"
-	FieldMessageTemplateQuality    WebhookFieldType = "message_template_quality_update"
-	FieldAccountAlerts             WebhookFieldType = "account_alerts"
-	FieldAccountUpdate             WebhookFieldType = "account_update"
-	FieldAccountReviewUpdate       WebhookFieldType = "account_review_update"
-	FieldPhoneNumberNameUpdate     WebhookFieldType = "phone_number_name_update"
-	FieldPhoneNumberQualityUpdate  WebhookFieldType = "phone_number_quality_update"
-	FieldTemplateCategoryUpdate    WebhookFieldType = "template_category_update"
-	FieldSecurity                  WebhookFieldType = "security"
-	FieldFlows                     WebhookFieldType = "flows"
-	FieldBusinessCapabilityUpdate  WebhookFieldType = "business_capability_update"
-	FieldMessageEchoes             WebhookFieldType = "message_echoes"
+	FieldMessages                 WebhookFieldType = "messages"
+	FieldMessageTemplateStatus    WebhookFieldType = "message_template_status_update"
+	FieldMessageTemplateQuality   WebhookFieldType = "message_template_quality_update"
+	FieldAccountAlerts            WebhookFieldType = "account_alerts"
+	FieldAccountUpdate            WebhookFieldType = "account_update"
+	FieldAccountReviewUpdate      WebhookFieldType = "account_review_update"
+	FieldPhoneNumberNameUpdate    WebhookFieldType = "phone_number_name_update"
+	FieldPhoneNumberQualityUpdate WebhookFieldType = "phone_number_quality_update"
+	FieldTemplateCategoryUpdate   WebhookFieldType = "template_category_update"
+	FieldSecurity                 WebhookFieldType = "security"
+	FieldFlows                    WebhookFieldType = "flows"
+	FieldBusinessCapabilityUpdate WebhookFieldType = "business_capability_update"
+	FieldMessageEchoes            WebhookFieldType = "message_echoes"
 )
 
 // GetWebhookFields returns all fields present in the webhook payload
@@ -550,6 +550,31 @@ func (p *WebhookProcessor) ExtractTemplateQualityUpdates(payload *WebhookPayload
 				PreviousQuality: v.PreviousQualityScore,
 				NewQuality:      v.NewQualityScore,
 				Timestamp:       time.Now(),
+			})
+		}
+	}
+
+	return events
+}
+
+// ExtractTemplateCategoryUpdates extracts template category updates from webhook
+func (p *WebhookProcessor) ExtractTemplateCategoryUpdates(payload *WebhookPayload) []*ParsedTemplateCategoryEvent {
+	var events []*ParsedTemplateCategoryEvent
+
+	for _, entry := range payload.Entry {
+		for _, change := range entry.Changes {
+			if change.Field != string(FieldTemplateCategoryUpdate) {
+				continue
+			}
+
+			v := change.Value
+			events = append(events, &ParsedTemplateCategoryEvent{
+				TemplateID:       v.MessageTemplateID,
+				TemplateName:     v.MessageTemplateName,
+				Language:         v.MessageTemplateLanguage,
+				PreviousCategory: v.PreviousCategory,
+				NewCategory:      v.NewCategory,
+				Timestamp:        time.Now(),
 			})
 		}
 	}
@@ -687,6 +712,18 @@ func IsFlowWebhook(payload *WebhookPayload) bool {
 	return false
 }
 
+// IsTemplateCategoryWebhook checks if webhook contains template category updates
+func IsTemplateCategoryWebhook(payload *WebhookPayload) bool {
+	for _, entry := range payload.Entry {
+		for _, change := range entry.Changes {
+			if change.Field == string(FieldTemplateCategoryUpdate) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // IsAccountAlertWebhook checks if webhook contains account alerts
 func IsAccountAlertWebhook(payload *WebhookPayload) bool {
 	for _, entry := range payload.Entry {
@@ -730,8 +767,8 @@ func IsSecurityWebhook(payload *WebhookPayload) bool {
 // ParsedMessageEcho represents a message sent via WhatsApp Business App (echo)
 type ParsedMessageEcho struct {
 	ExternalID    string
-	To            string            // Recipient phone number
-	RecipientName string            // Recipient contact name (if available)
+	To            string // Recipient phone number
+	RecipientName string // Recipient contact name (if available)
 	ContentType   plugin.ContentType
 	Content       string
 	Attachments   []*plugin.Attachment

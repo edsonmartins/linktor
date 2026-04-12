@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { X, Send, RotateCcw, Bot, User } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import {
   Sheet,
   SheetContent,
@@ -32,6 +33,7 @@ interface ChatMessage {
 }
 
 export function FlowTestPanel({ flowId, open, onOpenChange }: FlowTestPanelProps) {
+  const t = useTranslations('flows.testPanel')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null)
@@ -127,18 +129,18 @@ export function FlowTestPanel({ flowId, open, onOpenChange }: FlowTestPanelProps
           <div className="flex items-center justify-between">
             <SheetTitle className="flex items-center gap-2">
               <Bot className="h-5 w-5" />
-              Test Flow
+              {t('title')}
             </SheetTitle>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={handleReset}>
                 <RotateCcw className="h-3 w-3 mr-1" />
-                Reset
+                {t('reset')}
               </Button>
             </div>
           </div>
           {currentNodeId && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>Current node:</span>
+              <span>{t('currentNode')}</span>
               <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
                 {currentNodeId}
               </code>
@@ -168,7 +170,7 @@ export function FlowTestPanel({ flowId, open, onOpenChange }: FlowTestPanelProps
                       <User className="h-3 w-3" />
                     )}
                     <span className="text-xs opacity-70">
-                      {message.type === 'bot' ? 'Bot' : 'You'}
+                      {message.type === 'bot' ? t('bot') : t('you')}
                     </span>
                     {message.nodeId && (
                       <Badge variant="outline" className="text-[10px] h-4">
@@ -204,7 +206,7 @@ export function FlowTestPanel({ flowId, open, onOpenChange }: FlowTestPanelProps
                 <div className="bg-muted rounded-lg p-3">
                   <div className="flex items-center gap-2">
                     <Bot className="h-3 w-3" />
-                    <span className="text-xs opacity-70">Bot is typing...</span>
+                    <span className="text-xs opacity-70">{t('botTyping')}</span>
                   </div>
                   <div className="flex gap-1 mt-2">
                     <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -217,13 +219,13 @@ export function FlowTestPanel({ flowId, open, onOpenChange }: FlowTestPanelProps
 
             {flowEnded && (
               <div className="text-center py-4">
-                <Badge variant="secondary">Flow ended</Badge>
+                <Badge variant="secondary">{t('flowEnded')}</Badge>
                 <p className="text-sm text-muted-foreground mt-2">
-                  The conversation flow has completed.
+                  {t('flowEndedDesc')}
                 </p>
                 <Button variant="outline" size="sm" className="mt-2" onClick={handleReset}>
                   <RotateCcw className="h-3 w-3 mr-1" />
-                  Start Over
+                  {t('startOver')}
                 </Button>
               </div>
             )}
@@ -237,7 +239,7 @@ export function FlowTestPanel({ flowId, open, onOpenChange }: FlowTestPanelProps
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={flowEnded ? 'Flow ended' : 'Type a message...'}
+              placeholder={flowEnded ? t('flowEnded') : t('typeMessage')}
               disabled={flowEnded || testMutation.isPending}
             />
             <Button

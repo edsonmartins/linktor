@@ -16,6 +16,7 @@ import type {
 } from '@/types'
 import { Header } from '@/components/layout/header'
 import { Spinner } from '@/components/ui/spinner'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { StatsCards } from './components/stats-cards'
 import { ConversationsChart } from './components/conversations-chart'
 import { EscalationsChart } from './components/escalations-chart'
@@ -134,7 +135,8 @@ export default function AnalyticsPage() {
         />
       </Header>
 
-      <div className="p-6 space-y-6 overflow-auto">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="p-6 space-y-6 pr-4">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Spinner size="lg" />
@@ -157,7 +159,8 @@ export default function AnalyticsPage() {
             </div>
           </>
         )}
-      </div>
+        </div>
+      </ScrollArea>
     </div>
   )
 }

@@ -161,6 +161,7 @@ func TestMigrationStringsNotEmpty(t *testing.T) {
 	migrations := []string{
 		createTenantsTable,
 		createUsersTable,
+		createAPIKeysTable,
 		createChannelsTable,
 		createContactsTable,
 		createConversationsTable,

@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import {
   Dialog,
   DialogContent,
@@ -37,15 +38,17 @@ import { queryKeys } from '@/lib/query'
 import { toast } from '@/hooks/use-toast'
 import type { KnowledgeBase, CreateKnowledgeBaseInput, UpdateKnowledgeBaseInput } from '@/types'
 
-const formSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100, 'Name must be 100 characters or less'),
-  description: z.string().max(500, 'Description must be 500 characters or less').optional(),
-  type: z.enum(['faq', 'documents', 'website'], {
-    required_error: 'Please select a type',
-  }),
-})
+function createFormSchema(t: ReturnType<typeof useTranslations<'knowledgeBase.form'>>) {
+  return z.object({
+    name: z.string().min(1, t('nameRequired')).max(100, t('nameMaxLength')),
+    description: z.string().max(500, t('descMaxLength')).optional(),
+    type: z.enum(['faq', 'documents', 'website'], {
+      required_error: t('selectType'),
+    }),
+  })
+}
 
-type FormValues = z.infer<typeof formSchema>
+type FormValues = z.infer<ReturnType<typeof createFormSchema>>
 
 interface KnowledgeBaseFormProps {
   open: boolean
@@ -54,8 +57,11 @@ interface KnowledgeBaseFormProps {
 }
 
 export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: KnowledgeBaseFormProps) {
+  const t = useTranslations('knowledgeBase.form')
+  const tCommon = useTranslations('common')
   const queryClient = useQueryClient()
   const isEditing = !!knowledgeBase
+  const formSchema = createFormSchema(t)
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -91,15 +97,15 @@ export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: Knowled
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeBases.all })
       toast({
-        title: 'Knowledge base created',
-        description: 'Your knowledge base has been created successfully.',
+        title: t('created'),
+        description: t('createdDesc'),
       })
       onOpenChange(false)
     },
     onError: (error: Error) => {
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to create knowledge base',
+        title: tCommon('error'),
+        description: error.message || t('failedCreate'),
         variant: 'error',
       })
     },
@@ -111,15 +117,15 @@ export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: Knowled
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeBases.all })
       toast({
-        title: 'Knowledge base updated',
-        description: 'Your knowledge base has been updated successfully.',
+        title: t('updated'),
+        description: t('updatedDesc'),
       })
       onOpenChange(false)
     },
     onError: (error: Error) => {
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to update knowledge base',
+        title: tCommon('error'),
+        description: error.message || t('failedUpdate'),
         variant: 'error',
       })
     },
@@ -147,12 +153,10 @@ export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: Knowled
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>
-            {isEditing ? 'Edit Knowledge Base' : 'Create Knowledge Base'}
+            {isEditing ? t('editTitle') : t('createTitle')}
           </DialogTitle>
           <DialogDescription>
-            {isEditing
-              ? 'Update the details of your knowledge base.'
-              : 'Create a new knowledge base to store FAQs, documents, or website content for AI-powered responses.'}
+            {isEditing ? t('editDesc') : t('createDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -163,9 +167,9 @@ export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: Knowled
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Name</FormLabel>
+                  <FormLabel>{t('name')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Product FAQ" {...field} />
+                    <Input placeholder={t('namePlaceholder')} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -177,17 +181,17 @@ export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: Knowled
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Description</FormLabel>
+                  <FormLabel>{t('description')}</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Describe what this knowledge base contains..."
+                      placeholder={t('descPlaceholder')}
                       className="resize-none"
                       rows={3}
                       {...field}
                     />
                   </FormControl>
                   <FormDescription>
-                    A brief description to help identify this knowledge base.
+                    {t('descHint')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -199,7 +203,7 @@ export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: Knowled
               name="type"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Type</FormLabel>
+                  <FormLabel>{t('type')}</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
@@ -207,31 +211,31 @@ export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: Knowled
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a type" />
+                        <SelectValue placeholder={t('selectTypePlaceholder')} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
                       <SelectItem value="faq">
                         <div className="flex flex-col">
-                          <span>FAQ</span>
+                          <span>{t('faq')}</span>
                           <span className="text-xs text-muted-foreground">
-                            Question and answer pairs
+                            {t('faqDesc')}
                           </span>
                         </div>
                       </SelectItem>
                       <SelectItem value="documents">
                         <div className="flex flex-col">
-                          <span>Documents</span>
+                          <span>{t('documents')}</span>
                           <span className="text-xs text-muted-foreground">
-                            PDF, Word, or text documents
+                            {t('documentsDesc')}
                           </span>
                         </div>
                       </SelectItem>
                       <SelectItem value="website">
                         <div className="flex flex-col">
-                          <span>Website</span>
+                          <span>{t('website')}</span>
                           <span className="text-xs text-muted-foreground">
-                            Crawled website content
+                            {t('websiteDesc')}
                           </span>
                         </div>
                       </SelectItem>
@@ -239,7 +243,7 @@ export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: Knowled
                   </Select>
                   {isEditing && (
                     <FormDescription>
-                      Type cannot be changed after creation.
+                      {t('typeCannotChange')}
                     </FormDescription>
                   )}
                   <FormMessage />
@@ -249,10 +253,10 @@ export function KnowledgeBaseForm({ open, onOpenChange, knowledgeBase }: Knowled
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
+                {tCommon('cancel')}
               </Button>
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Create'}
+                {isSubmitting ? t('saving') : isEditing ? t('saveChanges') : t('create')}
               </Button>
             </DialogFooter>
           </form>

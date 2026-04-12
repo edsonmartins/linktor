@@ -4,10 +4,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +33,7 @@ func TestNewWhatsAppEmbeddedSignupHandler(t *testing.T) {
 		assert.Equal(t, "https://api.example.com", handler.baseURL)
 		assert.NotEmpty(t, handler.stateSecret)
 		assert.NotNil(t, handler.httpClient)
-		assert.Equal(t, "https://graph.facebook.com/v21.0", handler.graphAPIURL)
+		assert.Equal(t, "https://graph.facebook.com/v23.0", handler.graphAPIURL)
 	})
 
 	t.Run("http URL with localhost allowed", func(t *testing.T) {
@@ -148,10 +150,9 @@ func TestCompleteEmbeddedSignup_InvalidState(t *testing.T) {
 	handler, _ := setupEmbeddedSignupTest(t)
 
 	body := EmbeddedSignupCallbackRequest{
-		Code:      "auth-code-123",
-		State:     "invalidhexstate",
-		AppID:     "app-1",
-		AppSecret: "secret-1",
+		Code:  "auth-code-123",
+		State: "invalidhexstate",
+		AppID: "app-1",
 	}
 	w, c := newTestContext(http.MethodPost, "/oauth/whatsapp/embedded-signup/callback", body)
 	c.Set("tenant_id", "tenant-1")
@@ -181,10 +182,9 @@ func TestCompleteEmbeddedSignup_ExpiredState(t *testing.T) {
 	require.NoError(t, err)
 
 	body := EmbeddedSignupCallbackRequest{
-		Code:      "auth-code-123",
-		State:     encodedState,
-		AppID:     "app-1",
-		AppSecret: "secret-1",
+		Code:  "auth-code-123",
+		State: encodedState,
+		AppID: "app-1",
 	}
 	w, c := newTestContext(http.MethodPost, "/oauth/whatsapp/embedded-signup/callback", body)
 	c.Set("tenant_id", "tenant-1")
@@ -217,4 +217,97 @@ func TestCreateCoexistenceChannel_InvalidBody(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp["error"])
+}
+
+func TestCreateCoexistenceChannel_PersistsOfficialFields(t *testing.T) {
+	handler, channelRepo := setupEmbeddedSignupTest(t)
+
+	body := map[string]interface{}{
+		"name":            "Official Coexistence",
+		"access_token":    "token-123",
+		"waba_id":         "waba-123",
+		"phone_number_id": "phone-123",
+		"phone_number":    "+5511999999999",
+		"app_id":          "app-123",
+		"is_coexistence":  true,
+		"quality_rating":  "GREEN",
+	}
+	w, c := newTestContext(http.MethodPost, "/oauth/whatsapp/embedded-signup/create-channel", body)
+	c.Set("tenant_id", "tenant-1")
+	c.Set("user_id", "user-1")
+
+	handler.CreateCoexistenceChannel(c)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	require.Len(t, channelRepo.Channels, 1)
+
+	var created *entity.Channel
+	for _, channel := range channelRepo.Channels {
+		created = channel
+	}
+	require.NotNil(t, created)
+	assert.Equal(t, entity.ChannelTypeWhatsAppOfficial, created.Type)
+	assert.Equal(t, "token-123", created.Credentials["access_token"])
+	assert.Equal(t, "v23.0", created.Config["api_version"])
+	assert.Equal(t, "v23.0", created.Credentials["api_version"])
+	assert.Equal(t, "phone-123", created.Config["phone_number_id"])
+	assert.Equal(t, "GREEN", created.Config["quality_rating"])
+	assert.Equal(t, entity.CoexistenceStatusPending, created.CoexistenceStatus)
+	assert.Empty(t, created.Credentials["app_secret"])
+}
+
+func TestResolveEmbeddedSignupAppSecret(t *testing.T) {
+	handler, _ := setupEmbeddedSignupTest(t)
+
+	t.Setenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET", "")
+	t.Setenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET_APP_123", "")
+
+	_, err := handler.resolveAppSecret("app-123")
+	assert.Error(t, err)
+
+	t.Setenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET", "default-secret")
+	secret, err := handler.resolveAppSecret("app-123")
+	require.NoError(t, err)
+	assert.Equal(t, "default-secret", secret)
+
+	t.Setenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET_APP_123", "scoped-secret")
+	secret, err = handler.resolveAppSecret("app-123")
+	require.NoError(t, err)
+	assert.Equal(t, "scoped-secret", secret)
+}
+
+func TestCompleteEmbeddedSignup_AppSecretMustBeConfiguredServerSide(t *testing.T) {
+	handler, _ := setupEmbeddedSignupTest(t)
+
+	t.Setenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET", "")
+	t.Setenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET_APP_1", "")
+	_ = os.Unsetenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET")
+	_ = os.Unsetenv("WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET_APP_1")
+
+	state := &EmbeddedSignupState{
+		TenantID:  "tenant-1",
+		UserID:    "user-1",
+		Timestamp: time.Now().Unix(),
+		Nonce:     "nonce123",
+	}
+	encodedState, err := handler.encodeEmbeddedState(state)
+	require.NoError(t, err)
+
+	body := EmbeddedSignupCallbackRequest{
+		Code:  "auth-code-123",
+		State: encodedState,
+		AppID: "app-1",
+	}
+	w, c := newTestContext(http.MethodPost, "/oauth/whatsapp/embedded-signup/callback", body)
+	c.Set("tenant_id", "tenant-1")
+	c.Set("user_id", "user-1")
+
+	handler.CompleteEmbeddedSignup(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Contains(t, resp["error"], "server-side app secret is not configured")
 }

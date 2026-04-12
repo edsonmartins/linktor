@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import {
   Dialog,
   DialogContent,
@@ -32,16 +33,18 @@ interface CreateFlowDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-const triggerOptions: { value: FlowTriggerType; label: string; description: string }[] = [
-  { value: 'welcome', label: 'Welcome Message', description: 'Triggered when a new conversation starts' },
-  { value: 'keyword', label: 'Keyword', description: 'Triggered when a specific keyword is detected' },
-  { value: 'intent', label: 'Intent', description: 'Triggered when an intent is recognized by AI' },
-  { value: 'manual', label: 'Manual', description: 'Triggered manually by agents or other flows' },
-]
-
 export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) {
+  const t = useTranslations('flows.createDialog')
+  const tCommon = useTranslations('common')
   const router = useRouter()
   const queryClient = useQueryClient()
+
+  const triggerOptions: { value: FlowTriggerType; label: string; description: string }[] = [
+    { value: 'welcome', label: t('triggers.welcome'), description: t('triggers.welcomeDesc') },
+    { value: 'keyword', label: t('triggers.keyword'), description: t('triggers.keywordDesc') },
+    { value: 'intent', label: t('triggers.intent'), description: t('triggers.intentDesc') },
+    { value: 'manual', label: t('triggers.manual'), description: t('triggers.manualDesc') },
+  ]
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -104,19 +107,19 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
       <DialogContent className="sm:max-w-[500px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Create New Flow</DialogTitle>
+            <DialogTitle>{t('title')}</DialogTitle>
             <DialogDescription>
-              Create a conversational flow to guide customers through a decision tree.
+              {t('description')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
             {/* Name */}
             <div className="grid gap-2">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">{t('name')}</Label>
               <Input
                 id="name"
-                placeholder="e.g., Support Ticket Flow"
+                placeholder={t('namePlaceholder')}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -125,10 +128,10 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
 
             {/* Description */}
             <div className="grid gap-2">
-              <Label htmlFor="description">Description (optional)</Label>
+              <Label htmlFor="description">{t('descriptionOptional')}</Label>
               <Textarea
                 id="description"
-                placeholder="Describe what this flow does..."
+                placeholder={t('descPlaceholder')}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
@@ -137,7 +140,7 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
 
             {/* Trigger Type */}
             <div className="grid gap-2">
-              <Label htmlFor="trigger">Trigger</Label>
+              <Label htmlFor="trigger">{t('trigger')}</Label>
               <Select value={trigger} onValueChange={(v) => setTrigger(v as FlowTriggerType)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -159,18 +162,16 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
             {showTriggerValue && (
               <div className="grid gap-2">
                 <Label htmlFor="triggerValue">
-                  {trigger === 'keyword' ? 'Keyword' : 'Intent Name'}
+                  {trigger === 'keyword' ? t('keywordLabel') : t('intentLabel')}
                 </Label>
                 <Input
                   id="triggerValue"
-                  placeholder={trigger === 'keyword' ? 'e.g., support, help' : 'e.g., request_support'}
+                  placeholder={trigger === 'keyword' ? t('keywordPlaceholder') : t('intentPlaceholder')}
                   value={triggerValue}
                   onChange={(e) => setTriggerValue(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {trigger === 'keyword'
-                    ? 'The keyword that will trigger this flow (case-insensitive)'
-                    : 'The intent name that will trigger this flow'}
+                  {trigger === 'keyword' ? t('keywordHint') : t('intentHint')}
                 </p>
               </div>
             )}
@@ -178,11 +179,11 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-              Cancel
+              {tCommon('cancel')}
             </Button>
             <Button type="submit" disabled={!name || createMutation.isPending}>
               {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create & Edit
+              {t('createAndEdit')}
             </Button>
           </DialogFooter>
         </form>

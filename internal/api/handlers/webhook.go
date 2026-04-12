@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -19,6 +20,8 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/instagram"
 	"github.com/msgfy/linktor/internal/adapters/rcs"
 	"github.com/msgfy/linktor/internal/adapters/sms"
+	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
+	appservice "github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
@@ -29,13 +32,15 @@ import (
 type WebhookHandler struct {
 	channelRepo repository.ChannelRepository
 	producer    nats.Publisher
+	templateSvc *appservice.TemplateService
 }
 
 // NewWebhookHandler creates a new webhook handler
-func NewWebhookHandler(channelRepo repository.ChannelRepository, producer nats.Publisher) *WebhookHandler {
+func NewWebhookHandler(channelRepo repository.ChannelRepository, producer nats.Publisher, templateSvc *appservice.TemplateService) *WebhookHandler {
 	return &WebhookHandler{
 		channelRepo: channelRepo,
 		producer:    producer,
+		templateSvc: templateSvc,
 	}
 }
 
@@ -56,19 +61,41 @@ func (h *WebhookHandler) WhatsAppWebhook(c *gin.Context) {
 		return
 	}
 
+	var rawBody []byte
+
 	// Verify signature if secret is configured
 	if secret, ok := channel.Credentials["webhook_secret"]; ok && secret != "" {
-		if !h.verifyWhatsAppSignature(c, secret) {
+		rawBody, err = io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read payload"})
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(rawBody))
+
+		if !h.verifyWhatsAppSignature(rawBody, c.GetHeader("X-Hub-Signature-256"), secret) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
 			return
 		}
+	} else {
+		rawBody, err = io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read payload"})
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(rawBody))
 	}
 
 	// Parse webhook payload
 	var payload WhatsAppWebhookPayload
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
+	}
+
+	var officialPayload whatsappofficial.WebhookPayload
+	if err := json.Unmarshal(rawBody, &officialPayload); err == nil {
+		h.processWhatsAppTemplateWebhooks(c.Request.Context(), &officialPayload)
+		h.processWhatsAppChannelWebhooks(c.Request.Context(), channel, &officialPayload)
 	}
 
 	// Process messages
@@ -102,6 +129,45 @@ func (h *WebhookHandler) updateCoexistenceLastEcho(ctx context.Context, channel 
 		channel.CoexistenceStatus == entity.CoexistenceStatusDisconnected ||
 		channel.CoexistenceStatus == entity.CoexistenceStatusPending {
 		channel.CoexistenceStatus = entity.CoexistenceStatusActive
+	}
+
+	_ = h.channelRepo.Update(ctx, channel)
+}
+
+func (h *WebhookHandler) processWhatsAppChannelWebhooks(ctx context.Context, channel *entity.Channel, payload *whatsappofficial.WebhookPayload) {
+	if channel == nil || channel.Type != entity.ChannelTypeWhatsAppOfficial {
+		return
+	}
+
+	processor := whatsappofficial.NewWebhookProcessor(nil)
+	qualityEvents := processor.ExtractPhoneQualityUpdates(payload)
+	if len(qualityEvents) == 0 {
+		return
+	}
+
+	if channel.Config == nil {
+		channel.Config = make(map[string]string)
+	}
+
+	for _, event := range qualityEvents {
+		if event == nil {
+			continue
+		}
+
+		channel.Config["quality_rating_event"] = event.Event
+		channel.Config["messaging_limit_tier"] = event.CurrentLimit
+		if event.PhoneNumber != "" {
+			channel.Config["phone_number"] = event.PhoneNumber
+		}
+
+		switch event.Event {
+		case "FLAGGED":
+			channel.Config["quality_rating"] = "RED"
+		case "UNFLAGGED":
+			if channel.Config["quality_rating"] == "" || channel.Config["quality_rating"] == "RED" {
+				channel.Config["quality_rating"] = "GREEN"
+			}
+		}
 	}
 
 	_ = h.channelRepo.Update(ctx, channel)
@@ -485,26 +551,54 @@ func (h *WebhookHandler) handleWhatsAppVerification(c *gin.Context) {
 	c.JSON(http.StatusForbidden, gin.H{"error": "verification failed"})
 }
 
-func (h *WebhookHandler) verifyWhatsAppSignature(c *gin.Context, secret string) bool {
-	signature := c.GetHeader("X-Hub-Signature-256")
+func (h *WebhookHandler) verifyWhatsAppSignature(body []byte, signature, secret string) bool {
 	if signature == "" {
 		return false
 	}
-
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		return false
-	}
-	// Restore body for further processing
-	c.Request.Body = io.NopCloser(io.MultiReader(io.NopCloser(io.LimitReader(c.Request.Body, 0)), io.NopCloser(
-		&bodyReader{data: body},
-	)))
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
 	return hmac.Equal([]byte(signature), []byte(expected))
+}
+
+func (h *WebhookHandler) processWhatsAppTemplateWebhooks(ctx context.Context, payload *whatsappofficial.WebhookPayload) {
+	if h.templateSvc == nil || payload == nil {
+		return
+	}
+
+	processor := whatsappofficial.NewWebhookProcessor(&whatsappofficial.Config{})
+
+	for _, event := range processor.ExtractTemplateStatusUpdates(payload) {
+		_ = h.templateSvc.ProcessTemplateStatusWebhook(ctx, &appservice.TemplateStatusEvent{
+			TemplateID:   event.TemplateID,
+			TemplateName: event.TemplateName,
+			Language:     event.Language,
+			Event:        event.Event,
+			Reason:       event.Reason,
+		})
+	}
+
+	for _, event := range processor.ExtractTemplateQualityUpdates(payload) {
+		_ = h.templateSvc.ProcessTemplateQualityWebhook(ctx, &appservice.TemplateQualityEvent{
+			TemplateID:      event.TemplateID,
+			TemplateName:    event.TemplateName,
+			Language:        event.Language,
+			PreviousQuality: event.PreviousQuality,
+			NewQuality:      event.NewQuality,
+		})
+	}
+
+	for _, event := range processor.ExtractTemplateCategoryUpdates(payload) {
+		_ = h.templateSvc.ProcessTemplateCategoryWebhook(ctx, &appservice.TemplateCategoryEvent{
+			TemplateID:       event.TemplateID,
+			TemplateName:     event.TemplateName,
+			Language:         event.Language,
+			PreviousCategory: event.PreviousCategory,
+			NewCategory:      event.NewCategory,
+		})
+	}
 }
 
 func (h *WebhookHandler) processWhatsAppMessage(ctx context.Context, channel *entity.Channel, msg WhatsAppMessage, contacts []WhatsAppContact) error {
@@ -888,20 +982,6 @@ func (h *WebhookHandler) processInstagramMessage(ctx context.Context, channel *e
 }
 
 // Payload types
-
-type bodyReader struct {
-	data []byte
-	pos  int
-}
-
-func (b *bodyReader) Read(p []byte) (n int, err error) {
-	if b.pos >= len(b.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, b.data[b.pos:])
-	b.pos += n
-	return n, nil
-}
 
 // RCSWebhook handles RCS Business Messaging webhooks
 func (h *WebhookHandler) RCSWebhook(c *gin.Context) {
