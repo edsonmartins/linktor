@@ -30,8 +30,14 @@ import {
   getObservabilityLogs,
   getObservabilityQueue,
   getObservabilityStats,
+  changeMyPassword,
   deleteApiKeyByID,
+  getMe,
+  getTenant,
   listApiKeys,
+  loginWithPasswordApi,
+  updateMyProfile,
+  updateTenant,
   listBots,
   listChannels,
   listMessagesByConversation,
@@ -305,6 +311,215 @@ test.describe('Admin Full Stack', () => {
 
     if (created) {
       await deleteApiKeyByID(request, created.id)
+    }
+  })
+
+  test('updates profile name in settings via UI against the real API', async ({ page, request }) => {
+    const original = await getMe(request)
+    const newName = `Playwright Admin ${Date.now()}`
+
+    try {
+      await loginWithRealApi(page)
+      await page.goto('/settings')
+
+      await page.getByRole('button', { name: /^(Profile|Perfil)$/i }).click()
+
+      const nameInput = page.locator('#name')
+      await expect(nameInput).toBeVisible()
+      await nameInput.fill(newName)
+
+      await page
+        .getByRole('main')
+        .getByRole('button', { name: /Save changes|Salvar alterações/i })
+        .click()
+
+      await expect(
+        page.getByText(/profile updated|perfil atualizado/i).first()
+      ).toBeVisible({ timeout: 10000 })
+
+      const updated = await getMe(request)
+      expect(updated.name).toBe(newName)
+    } finally {
+      await updateMyProfile(request, { name: original.name })
+    }
+  })
+
+  test('changes the display language via settings via UI', async ({ page }) => {
+    await loginWithRealApi(page)
+    await page.goto('/settings')
+    await page.getByRole('button', { name: /^(Profile|Perfil)$/i }).click()
+
+    const languageCombobox = page.getByRole('combobox').last()
+    await expect(languageCombobox).toBeVisible()
+
+    // Switch to English
+    await languageCombobox.click()
+    await page.getByRole('option', { name: /English/i }).click()
+
+    // Wait for i18n reload — the profile section heading should appear in English
+    await expect(
+      page.getByRole('heading', { name: /^Profile$/i, level: 3 })
+    ).toBeVisible({ timeout: 10000 })
+
+    // Switch back to Portuguese
+    await page.getByRole('combobox').last().click()
+    await page.getByRole('option', { name: /Português/i }).click()
+
+    await expect(
+      page.getByRole('heading', { name: /^Perfil$/i, level: 3 })
+    ).toBeVisible({ timeout: 10000 })
+  })
+
+  test('changes admin password via UI and signs back in against the real API', async ({ page, request }) => {
+    const originalPassword = 'admin123'
+    const newPassword = `Admin-${Date.now()}!`
+
+    try {
+      await loginWithRealApi(page)
+      await page.goto('/settings')
+      await page.getByRole('button', { name: /Security|Segurança/i }).click()
+
+      await page.locator('#current-password').fill(originalPassword)
+      await page.locator('#new-password').fill(newPassword)
+      await page.locator('#confirm-password').fill(newPassword)
+
+      await page
+        .getByRole('button', { name: /Update password|Atualizar senha/i })
+        .click()
+
+      await expect(
+        page.getByText(/password changed|senha alterada/i).first()
+      ).toBeVisible({ timeout: 10000 })
+
+      // Verify the new password is accepted by the API
+      const loginAttempt = await loginWithPasswordApi(request, 'admin@demo.com', newPassword)
+      expect(loginAttempt.ok).toBeTruthy()
+
+      // Verify the old password is now rejected
+      const oldLoginAttempt = await loginWithPasswordApi(request, 'admin@demo.com', originalPassword)
+      expect(oldLoginAttempt.ok).toBeFalsy()
+    } finally {
+      // Restore the original password using the new one
+      const response = await request.post('http://localhost:8081/api/v1/auth/login', {
+        data: { email: 'admin@demo.com', password: newPassword },
+      })
+      if (response.ok()) {
+        const payload = await response.json()
+        const token = payload?.data?.access_token as string
+        await changeMyPassword(
+          request,
+          { current_password: newPassword, new_password: originalPassword },
+          token
+        )
+      }
+    }
+  })
+
+  test('rejects mismatched passwords in the change-password form via UI', async ({ page, request }) => {
+    await loginWithRealApi(page)
+    await page.goto('/settings')
+    await page.getByRole('button', { name: /Security|Segurança/i }).click()
+
+    await page.locator('#current-password').fill('admin123')
+    await page.locator('#new-password').fill('NewPassword123')
+    await page.locator('#confirm-password').fill('DifferentPassword456')
+
+    await page
+      .getByRole('button', { name: /Update password|Atualizar senha/i })
+      .click()
+
+    await expect(
+      page.getByText(/passwords do not match|as senhas não coincidem/i).first()
+    ).toBeVisible({ timeout: 10000 })
+
+    // Password must remain unchanged — verify by logging in with the original
+    const loginAttempt = await loginWithPasswordApi(request, 'admin@demo.com', 'admin123')
+    expect(loginAttempt.ok).toBeTruthy()
+  })
+
+  test('updates organization name in settings via UI against the real API', async ({ page, request }) => {
+    const original = await getTenant(request)
+    const newName = `Playwright Org ${Date.now()}`
+
+    try {
+      await loginWithRealApi(page)
+      await page.goto('/settings')
+      await page.getByRole('button', { name: /Organization|Organização/i }).click()
+
+      const orgNameInput = page.locator('#org-name')
+      await expect(orgNameInput).toBeVisible()
+      // Wait for tenant data to load before filling
+      await expect(orgNameInput).not.toHaveValue('', { timeout: 10000 })
+      await orgNameInput.fill(newName)
+
+      await page
+        .getByRole('main')
+        .getByRole('button', { name: /Save changes|Salvar alterações/i })
+        .click()
+
+      await expect(
+        page.getByText(/organization updated|organização atualizada/i).first()
+      ).toBeVisible({ timeout: 10000 })
+
+      const updated = await getTenant(request)
+      expect(updated.name).toBe(newName)
+    } finally {
+      await updateTenant(request, { name: original.name })
+    }
+  })
+
+  test('persists notification toggles in settings via UI against the real API', async ({ page, request }) => {
+    const original = await getTenant(request)
+    const originalSettings = { ...(original.settings || {}) }
+
+    // Reset notification settings to a known baseline before the test
+    await updateTenant(request, {
+      settings: {
+        'notif.email.new_conversation': 'true',
+        'notif.email.resolved': 'true',
+        'notif.email.daily_summary': 'false',
+        'notif.push.messages': 'true',
+        'notif.push.mentions': 'true',
+      },
+    })
+
+    try {
+      await loginWithRealApi(page)
+      await page.goto('/settings')
+      await page.getByRole('button', { name: /Notifications|Notificações/i }).click()
+
+      const dailySummary = page.getByRole('switch', {
+        name: /Daily summary|Resumo diário/i,
+      })
+      const pushMessages = page.getByRole('switch', {
+        name: /New messages|Novas mensagens/i,
+      })
+
+      await expect(dailySummary).toBeVisible()
+      await expect(pushMessages).toBeVisible()
+
+      // Wait for tenant data to sync into toggle state (daily starts OFF from baseline)
+      await expect(dailySummary).toHaveAttribute('data-state', 'unchecked', { timeout: 10000 })
+      await expect(pushMessages).toHaveAttribute('data-state', 'checked', { timeout: 10000 })
+
+      // Toggle daily summary ON, push messages OFF
+      await dailySummary.click()
+      await pushMessages.click()
+
+      await page
+        .getByRole('main')
+        .getByRole('button', { name: /Save changes|Salvar alterações/i })
+        .click()
+
+      await expect(
+        page.getByText(/notifications saved|notificações salvas/i).first()
+      ).toBeVisible({ timeout: 10000 })
+
+      const updated = await getTenant(request)
+      expect(updated.settings?.['notif.email.daily_summary']).toBe('true')
+      expect(updated.settings?.['notif.push.messages']).toBe('false')
+    } finally {
+      await updateTenant(request, { settings: originalSettings })
     }
   })
 

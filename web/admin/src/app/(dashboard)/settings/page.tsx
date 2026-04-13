@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
@@ -166,13 +166,22 @@ function NotificationsSettings({ t }: { t: ReturnType<typeof useTranslations<'se
     queryFn: () => api.get<Tenant>('/tenant'),
   })
 
-  const settings = tenant?.settings || {}
+  const [emailNewConvo, setEmailNewConvo] = useState(true)
+  const [emailResolved, setEmailResolved] = useState(true)
+  const [emailDaily, setEmailDaily] = useState(false)
+  const [pushMessages, setPushMessages] = useState(true)
+  const [pushMentions, setPushMentions] = useState(true)
 
-  const [emailNewConvo, setEmailNewConvo] = useState(settings['notif.email.new_conversation'] !== 'false')
-  const [emailResolved, setEmailResolved] = useState(settings['notif.email.resolved'] !== 'false')
-  const [emailDaily, setEmailDaily] = useState(settings['notif.email.daily_summary'] === 'true')
-  const [pushMessages, setPushMessages] = useState(settings['notif.push.messages'] !== 'false')
-  const [pushMentions, setPushMentions] = useState(settings['notif.push.mentions'] !== 'false')
+  // Sync state once tenant settings load
+  useEffect(() => {
+    if (!tenant) return
+    const settings = tenant.settings || {}
+    setEmailNewConvo(settings['notif.email.new_conversation'] !== 'false')
+    setEmailResolved(settings['notif.email.resolved'] !== 'false')
+    setEmailDaily(settings['notif.email.daily_summary'] === 'true')
+    setPushMessages(settings['notif.push.messages'] !== 'false')
+    setPushMentions(settings['notif.push.mentions'] !== 'false')
+  }, [tenant])
 
   const saveMutation = useMutation({
     mutationFn: (newSettings: Record<string, string>) =>
@@ -536,12 +545,12 @@ function OrganizationSettings({ t }: { t: ReturnType<typeof useTranslations<'set
     queryFn: () => api.get<Tenant>('/tenant'),
   })
 
-  const [orgName, setOrgName] = useState(tenant?.name || '')
+  const [orgName, setOrgName] = useState('')
 
   // Sync state when tenant loads
-  useState(() => {
-    if (tenant?.name && !orgName) setOrgName(tenant.name)
-  })
+  useEffect(() => {
+    if (tenant?.name) setOrgName(tenant.name)
+  }, [tenant])
 
   const updateOrgMutation = useMutation({
     mutationFn: (data: { name: string }) =>
@@ -578,7 +587,7 @@ function OrganizationSettings({ t }: { t: ReturnType<typeof useTranslations<'set
             <Label htmlFor="org-name">{t('organizationName')}</Label>
             <Input
               id="org-name"
-              value={orgName || tenant?.name || ''}
+              value={orgName}
               onChange={(e) => setOrgName(e.target.value)}
             />
           </div>

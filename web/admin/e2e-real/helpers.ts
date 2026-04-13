@@ -600,3 +600,104 @@ export async function expectListOrEmptyState(page: Page, options: {
 
   await expect(page.getByText(options.emptyStateText)).toBeVisible()
 }
+
+// Settings / Profile helpers
+
+export async function getMe(request: APIRequestContext) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.get('http://localhost:8081/api/v1/me', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as {
+    id: string
+    name: string
+    email: string
+    role: string
+    avatar_url?: string | null
+  }
+}
+
+export async function updateMyProfile(
+  request: APIRequestContext,
+  input: { name?: string; avatar_url?: string }
+) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.put('http://localhost:8081/api/v1/me', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    data: input,
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as { id: string; name: string; email: string }
+}
+
+export async function changeMyPassword(
+  request: APIRequestContext,
+  input: { current_password: string; new_password: string },
+  token?: string
+) {
+  const accessToken = token || (await loginAsAdminApi(request))
+  const response = await request.put('http://localhost:8081/api/v1/me/password', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    data: input,
+  })
+
+  expect(response.ok()).toBeTruthy()
+}
+
+export async function loginWithPasswordApi(
+  request: APIRequestContext,
+  email: string,
+  password: string
+) {
+  const response = await request.post('http://localhost:8081/api/v1/auth/login', {
+    data: { email, password },
+  })
+  return { ok: response.ok(), status: response.status() }
+}
+
+export async function getTenant(request: APIRequestContext) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.get('http://localhost:8081/api/v1/tenant', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as {
+    id: string
+    name: string
+    slug: string
+    plan: string
+    settings: Record<string, string>
+  }
+}
+
+export async function updateTenant(
+  request: APIRequestContext,
+  input: { name?: string; settings?: Record<string, string> }
+) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.put('http://localhost:8081/api/v1/tenant', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    data: input,
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as { id: string; name: string; slug: string }
+}
