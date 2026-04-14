@@ -1,0 +1,228 @@
+name: linktor
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  traefik:
+    image: traefik:v3.2
+    container_name: linktor-traefik
+    <<: [*restart, *logging]
+    command:
+      - --configFile=/etc/traefik/traefik.yml
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_acme:/letsencrypt
+    networks:
+      - linktor-edge
+      - linktor-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=dashboard-auth@file,security-headers@file"
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: linktor-postgres
+    <<: [*restart, *logging]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linktor-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: linktor-redis
+    <<: [*restart, *logging]
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linktor-internal
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: linktor-nats
+    <<: [*restart, *logging]
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linktor-internal
+
+  minio:
+    image: minio/minio:latest
+    container_name: linktor-minio
+    <<: [*restart, *logging]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER_REDIRECT_URL: https://s3-console.${ROOT_DOMAIN}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linktor-internal
+      - linktor-edge
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=linktor_linktor-edge"
+      # MinIO S3 API
+      - "traefik.http.routers.minio-api.rule=Host(`s3.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.minio-api.entrypoints=websecure"
+      - "traefik.http.routers.minio-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.minio-api.service=minio-api"
+      - "traefik.http.services.minio-api.loadbalancer.server.port=9000"
+      # MinIO Console
+      - "traefik.http.routers.minio-console.rule=Host(`s3-console.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.minio-console.entrypoints=websecure"
+      - "traefik.http.routers.minio-console.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.minio-console.service=minio-console"
+      - "traefik.http.routers.minio-console.middlewares=security-headers@file"
+      - "traefik.http.services.minio-console.loadbalancer.server.port=9001"
+
+  backend:
+    image: ghcr.io/integrall-tech/linktor-backend:${BACKEND_IMAGE_TAG:-latest}
+    container_name: linktor-backend
+    <<: [*restart, *logging]
+    environment:
+      LINKTOR_SERVER_PORT: 8081
+      LINKTOR_SERVER_HOST: 0.0.0.0
+      LINKTOR_SERVER_MODE: release
+      LINKTOR_DATABASE_HOST: postgres
+      LINKTOR_DATABASE_PORT: 5432
+      LINKTOR_DATABASE_USER: ${POSTGRES_USER}
+      LINKTOR_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      LINKTOR_DATABASE_DATABASE: ${POSTGRES_DB}
+      LINKTOR_DATABASE_SSL_MODE: disable
+      LINKTOR_REDIS_HOST: redis
+      LINKTOR_REDIS_PORT: 6379
+      LINKTOR_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      LINKTOR_NATS_URL: nats://nats:4222
+      LINKTOR_JWT_SECRET: ${JWT_SECRET}
+      LINKTOR_S3_ENDPOINT: http://minio:9000
+      LINKTOR_S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      LINKTOR_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      LINKTOR_S3_BUCKET: ${MINIO_BUCKET:-linktor-media}
+      LINKTOR_S3_REGION: us-east-1
+      LINKTOR_S3_USE_SSL: "false"
+      BASE_URL: https://api.${ROOT_DOMAIN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - linktor-internal
+      - linktor-edge
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=linktor_linktor-edge"
+      - "traefik.http.routers.backend.rule=Host(`api.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend.middlewares=security-headers@file,rate-limit@file"
+      - "traefik.http.services.backend.loadbalancer.server.port=8081"
+
+  admin:
+    image: ghcr.io/integrall-tech/linktor-admin:${ADMIN_IMAGE_TAG:-latest}
+    container_name: linktor-admin
+    <<: [*restart, *logging]
+    environment:
+      NEXT_PUBLIC_API_URL: https://api.${ROOT_DOMAIN}/api/v1
+      NEXT_PUBLIC_WS_URL: wss://api.${ROOT_DOMAIN}/api/v1/ws
+      NEXT_PUBLIC_WEBHOOK_BASE_URL: https://api.${ROOT_DOMAIN}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - linktor-edge
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=linktor_linktor-edge"
+      - "traefik.http.routers.admin.rule=Host(`app.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.admin.entrypoints=websecure"
+      - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.admin.middlewares=security-headers@file"
+      - "traefik.http.services.admin.loadbalancer.server.port=3000"
+
+  landing:
+    image: ghcr.io/integrall-tech/linktor-landing:${LANDING_IMAGE_TAG:-latest}
+    container_name: linktor-landing
+    <<: [*restart, *logging]
+    networks:
+      - linktor-edge
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=linktor_linktor-edge"
+      - "traefik.http.routers.landing.rule=Host(`${ROOT_DOMAIN}`) || Host(`www.${ROOT_DOMAIN}`)"
+      - "traefik.http.routers.landing.entrypoints=websecure"
+      - "traefik.http.routers.landing.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.landing.middlewares=www-redirect@file,security-headers@file"
+      - "traefik.http.services.landing.loadbalancer.server.port=80"
+
+volumes:
+  postgres_data:
+  redis_data:
+  nats_data:
+  minio_data:
+  traefik_acme:
+
+networks:
+  linktor-edge:
+    driver: bridge
+  linktor-internal:
+    driver: bridge
+    internal: true

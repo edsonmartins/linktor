@@ -1,0 +1,75 @@
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: Image tag to deploy (must already exist in GHCR)
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag to deploy
+        required: true
+        default: latest
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  ssh-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://app.linktor.dev
+    steps:
+      - name: Roll stack on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          envs: IMAGE_TAG
+          script: |
+            set -euo pipefail
+            cd /opt/linktor
+
+            # Pull the latest deploy/ config from the repo (read-only mirror)
+            if [ -d .git ]; then
+              git fetch --quiet origin main
+              git reset --hard origin/main
+            else
+              echo "No git checkout in /opt/linktor — make sure deploy/ is in sync manually"
+            fi
+
+            # Pin image tags for this rollout
+            sed -i \
+              -e "s|^BACKEND_IMAGE_TAG=.*|BACKEND_IMAGE_TAG=${IMAGE_TAG}|" \
+              -e "s|^ADMIN_IMAGE_TAG=.*|ADMIN_IMAGE_TAG=${IMAGE_TAG}|" \
+              -e "s|^LANDING_IMAGE_TAG=.*|LANDING_IMAGE_TAG=${IMAGE_TAG}|" \
+              .env
+
+            cd deploy
+            docker compose -f docker-compose.prod.yml --env-file ../.env pull
+            docker compose -f docker-compose.prod.yml --env-file ../.env up -d --remove-orphans
+            docker image prune -f
+            docker compose -f docker-compose.prod.yml --env-file ../.env ps
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5; do
+            if curl -fsS https://api.linktor.dev/health >/dev/null; then
+              echo "API healthy"
+              exit 0
+            fi
+            echo "waiting for API ($i/5)…"
+            sleep 10
+          done
+          echo "API failed health check" >&2
+          exit 1
