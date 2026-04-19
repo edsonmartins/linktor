@@ -74,6 +74,7 @@
     "channels": "Canales",
     "bots": "Bots",
     "knowledgeBase": "Base de Conocimiento",
+    "templates": "Plantillas",
     "flows": "Flujos",
     "analytics": "Analíticas",
     "observability": "Observabilidad",
@@ -1180,6 +1181,89 @@
       "selectTarget": "Seleccionar nodo destino",
       "noTransitions": "Sin transiciones. Agregue una o conecte los nodos en el canvas.",
       "deleteNode": "Eliminar Nodo"
+    }
+  },
+  "templates": {
+    "title": "Plantillas de WhatsApp",
+    "description": "Gestiona plantillas de mensaje aprobadas por Meta",
+    "searchPlaceholder": "Buscar por nombre…",
+    "allChannels": "Todos los canales",
+    "allStatuses": "Todos los estados",
+    "allCategories": "Todas las categorías",
+    "sync": "Sincronizar con Meta",
+    "create": "Nueva plantilla",
+    "refresh": "Actualizar",
+    "backToList": "Volver a la lista",
+    "qualityLabel": "Calidad",
+    "created": "Plantilla enviada. Esperando aprobación de Meta.",
+    "deleted": "Plantilla eliminada",
+    "synced": "Plantillas sincronizadas con Meta",
+    "refreshed": "Plantilla actualizada",
+    "category": {
+      "MARKETING": "Marketing",
+      "UTILITY": "Utilidad",
+      "AUTHENTICATION": "Autenticación"
+    },
+    "status": {
+      "APPROVED": "Aprobada",
+      "PENDING": "Pendiente",
+      "REJECTED": "Rechazada",
+      "PAUSED": "Pausada",
+      "DISABLED": "Desactivada",
+      "IN_APPEAL": "En apelación",
+      "PENDING_DELETION": "Eliminación pendiente",
+      "DELETED": "Eliminada",
+      "REINSTATED": "Reactivada",
+      "LIMIT_EXCEEDED": "Límite superado",
+      "ARCHIVED": "Archivada"
+    },
+    "empty": {
+      "title": "Aún no hay plantillas",
+      "description": "Crea tu primera plantilla o sincroniza con Meta para importar las existentes.",
+      "noChannel": "Debes configurar un canal de WhatsApp Official antes de crear plantillas."
+    },
+    "deleteConfirm": {
+      "title": "¿Eliminar plantilla?",
+      "description": "La plantilla \"{name}\" ({language}) se eliminará localmente y en Meta. Esta acción no se puede deshacer."
+    },
+    "form": {
+      "basics": "Identificación",
+      "body": "Cuerpo del mensaje",
+      "buttons": "Botones (opcional)",
+      "channel": "Canal",
+      "channelPlaceholder": "Selecciona un canal de WhatsApp",
+      "name": "Nombre técnico",
+      "nameHint": "Solo letras minúsculas, números y guiones bajos. Ej: order_confirmation",
+      "language": "Idioma",
+      "languageHint": "Código de idioma Meta (pt_BR, en_US, es_MX).",
+      "category": "Categoría",
+      "bodyText": "Texto",
+      "bodyPlaceholder": "Hola {{1}}, tu pedido {{2}} fue confirmado!",
+      "bodyHint": "Usa {{1}}, {{2}} para variables. Los campos de ejemplo aparecen automáticamente.",
+      "examples": "{count, plural, one {Ejemplo para la variable} other {Ejemplos ({count} variables)}}",
+      "examplesHint": "Meta exige un ejemplo por variable para aprobar la plantilla.",
+      "examplePlaceholder": "Ejemplo para {{'{{'}{n}{'}}'}}",
+      "footer": "Pie",
+      "footerPlaceholder": "Texto corto mostrado abajo",
+      "footerHint": "Máximo 60 caracteres. No admite variables.",
+      "addQuickReply": "Respuesta rápida",
+      "addURL": "Enlace",
+      "noButtons": "Sin botones.",
+      "buttonTextPlaceholder": "Texto del botón (máx 25 caracteres)",
+      "submit": "Enviar para aprobación"
+    },
+    "detail": {
+      "loading": "Cargando plantilla…",
+      "notFound": "Plantilla no encontrada",
+      "preview": "Vista previa",
+      "metadata": "Metadatos",
+      "externalId": "ID Meta",
+      "quality": "Puntuación de calidad",
+      "parameterFormat": "Formato de parámetros",
+      "ttl": "TTL del mensaje",
+      "createdAt": "Creada el",
+      "lastSynced": "Última sincronización",
+      "rejectionReason": "Motivo del rechazo"
     }
   },
   "knowledgeBase": {

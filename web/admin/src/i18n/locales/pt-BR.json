@@ -75,6 +75,7 @@
     "channels": "Canais",
     "bots": "Bots",
     "knowledgeBase": "Base de Conhecimento",
+    "templates": "Templates",
     "flows": "Fluxos",
     "analytics": "Analytics",
     "observability": "Observabilidade",
@@ -1177,6 +1178,89 @@
       "selectTarget": "Selecionar nó destino",
       "noTransitions": "Sem transições. Adicione uma ou conecte os nós no canvas.",
       "deleteNode": "Excluir Nó"
+    }
+  },
+  "templates": {
+    "title": "Templates do WhatsApp",
+    "description": "Gerencie os templates de mensagens aprovados pela Meta",
+    "searchPlaceholder": "Buscar por nome...",
+    "allChannels": "Todos os canais",
+    "allStatuses": "Todos os status",
+    "allCategories": "Todas as categorias",
+    "sync": "Sincronizar com Meta",
+    "create": "Novo template",
+    "refresh": "Atualizar",
+    "backToList": "Voltar para a lista",
+    "qualityLabel": "Qualidade",
+    "created": "Template criado. Aguardando aprovação da Meta.",
+    "deleted": "Template removido",
+    "synced": "Templates sincronizados com a Meta",
+    "refreshed": "Template atualizado",
+    "category": {
+      "MARKETING": "Marketing",
+      "UTILITY": "Utilitário",
+      "AUTHENTICATION": "Autenticação"
+    },
+    "status": {
+      "APPROVED": "Aprovado",
+      "PENDING": "Pendente",
+      "REJECTED": "Rejeitado",
+      "PAUSED": "Pausado",
+      "DISABLED": "Desativado",
+      "IN_APPEAL": "Em recurso",
+      "PENDING_DELETION": "Remoção pendente",
+      "DELETED": "Excluído",
+      "REINSTATED": "Reativado",
+      "LIMIT_EXCEEDED": "Limite excedido",
+      "ARCHIVED": "Arquivado"
+    },
+    "empty": {
+      "title": "Nenhum template ainda",
+      "description": "Crie seu primeiro template ou sincronize com a Meta para importar os existentes.",
+      "noChannel": "Você precisa configurar um canal do WhatsApp oficial antes de criar templates."
+    },
+    "deleteConfirm": {
+      "title": "Excluir template?",
+      "description": "O template \"{name}\" ({language}) será removido localmente e na Meta. Esta ação não pode ser desfeita."
+    },
+    "form": {
+      "basics": "Identificação",
+      "body": "Corpo da mensagem",
+      "buttons": "Botões (opcional)",
+      "channel": "Canal",
+      "channelPlaceholder": "Selecione um canal do WhatsApp",
+      "name": "Nome técnico",
+      "nameHint": "Apenas letras minúsculas, números e underscore. Ex.: order_confirmation",
+      "language": "Idioma",
+      "languageHint": "Código do idioma no formato Meta (pt_BR, en_US, es_MX).",
+      "category": "Categoria",
+      "bodyText": "Texto",
+      "bodyPlaceholder": "Olá {{1}}, seu pedido {{2}} foi confirmado!",
+      "bodyHint": "Use {{1}}, {{2}} etc para inserir variáveis. Os exemplos abaixo aparecerão automaticamente.",
+      "examples": "{count, plural, one {Exemplo para a variável} other {Exemplos ({count} variáveis)}}",
+      "examplesHint": "A Meta exige um exemplo por variável para aprovar o template.",
+      "examplePlaceholder": "Exemplo para {{'{{'}{n}{'}}'}}",
+      "footer": "Rodapé",
+      "footerPlaceholder": "Texto curto exibido no final",
+      "footerHint": "Máximo 60 caracteres. Não aceita variáveis.",
+      "addQuickReply": "Resposta rápida",
+      "addURL": "Link",
+      "noButtons": "Nenhum botão adicionado.",
+      "buttonTextPlaceholder": "Texto do botão (máx 25 caracteres)",
+      "submit": "Enviar para aprovação"
+    },
+    "detail": {
+      "loading": "Carregando template...",
+      "notFound": "Template não encontrado",
+      "preview": "Pré-visualização",
+      "metadata": "Metadados",
+      "externalId": "ID Meta",
+      "quality": "Pontuação de qualidade",
+      "parameterFormat": "Formato de parâmetros",
+      "ttl": "TTL da mensagem",
+      "createdAt": "Criado em",
+      "lastSynced": "Última sincronização",
+      "rejectionReason": "Motivo da rejeição"
     }
   },
   "knowledgeBase": {

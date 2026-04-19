@@ -20,6 +20,7 @@ import {
   Bell,
   Bot,
   Activity,
+  FileText,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -66,6 +67,11 @@ const navItems = [
     labelKey: 'knowledgeBase',
     href: '/knowledge-base',
     icon: BookOpen,
+  },
+  {
+    labelKey: 'templates',
+    href: '/templates',
+    icon: FileText,
   },
   {
     labelKey: 'flows',

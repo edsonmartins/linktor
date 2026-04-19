@@ -197,6 +197,18 @@ export const queryKeys = {
     models: (provider: string) => [...queryKeys.ai.all, 'models', provider] as const,
   },
 
+  // WhatsApp Message Templates
+  templates: {
+    all: ['templates'] as const,
+    lists: () => [...queryKeys.templates.all, 'list'] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...queryKeys.templates.lists(), filters] as const,
+    details: () => [...queryKeys.templates.all, 'detail'] as const,
+    detail: (id: string) => [...queryKeys.templates.details(), id] as const,
+    library: (filters: Record<string, unknown>) =>
+      [...queryKeys.templates.all, 'library', filters] as const,
+  },
+
   // Observability
   observability: {
     all: ['observability'] as const,

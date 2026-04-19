@@ -199,6 +199,149 @@ export interface ApiErrorResponse {
   details?: Record<string, unknown>
 }
 
+// ---------------------------------------------------------------------------
+// WhatsApp Message Templates
+// Mirrors internal/domain/entity/template.go on the backend.
+// ---------------------------------------------------------------------------
+
+export type TemplateCategory = 'AUTHENTICATION' | 'MARKETING' | 'UTILITY'
+
+export type TemplateStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'PAUSED'
+  | 'DISABLED'
+  | 'IN_APPEAL'
+  | 'PENDING_DELETION'
+  | 'DELETED'
+  | 'REINSTATED'
+  | 'LIMIT_EXCEEDED'
+  | 'ARCHIVED'
+
+export type TemplateQuality = 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN'
+
+export type TemplateParameterFormat = 'POSITIONAL' | 'NAMED'
+
+export type TemplateComponentType =
+  | 'HEADER'
+  | 'BODY'
+  | 'FOOTER'
+  | 'BUTTONS'
+  | 'CAROUSEL'
+  | 'LIMITED_TIME_OFFER'
+
+export type TemplateHeaderFormat = 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'LOCATION'
+
+export type TemplateButtonType =
+  | 'QUICK_REPLY'
+  | 'URL'
+  | 'PHONE_NUMBER'
+  | 'COPY_CODE'
+  | 'OTP'
+  | 'FLOW'
+
+export interface TemplateExample {
+  header_text?: string[]
+  body_text?: string[][]
+  header_handle?: string[]
+}
+
+export interface TemplateOTPApp {
+  package_name: string
+  signature_hash: string
+}
+
+export interface TemplateButton {
+  type: TemplateButtonType
+  text: string
+  url?: string
+  phone_number?: string
+  flow_id?: string
+  flow_action?: string
+  example?: string
+  otp_type?: string
+  autofill_text?: string
+  package_name?: string
+  signature_hash?: string
+  supported_apps?: TemplateOTPApp[]
+  zero_tap_terms_accepted?: boolean
+}
+
+export interface TemplateLimitedTimeOffer {
+  text?: string
+  has_expiration: boolean
+  expiration_time_ms?: number
+}
+
+export interface TemplateCarouselCard {
+  components: TemplateComponent[]
+}
+
+export interface TemplateComponent {
+  type: TemplateComponentType
+  format?: TemplateHeaderFormat
+  text?: string
+  example?: TemplateExample
+  buttons?: TemplateButton[]
+  cards?: TemplateCarouselCard[]
+  limited_time_offer?: TemplateLimitedTimeOffer
+}
+
+export interface Template {
+  id: string
+  tenant_id: string
+  channel_id: string
+  external_id: string
+  name: string
+  language: string
+  category: TemplateCategory
+  sub_category?: string
+  parameter_format?: TemplateParameterFormat
+  message_send_ttl_seconds?: number
+  allow_category_change?: boolean
+  status: TemplateStatus
+  quality_score: TemplateQuality
+  components: TemplateComponent[]
+  rejection_reason?: string
+  last_synced_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateTemplateRequest {
+  channel_id: string
+  name: string
+  language: string
+  category: TemplateCategory
+  sub_category?: string
+  parameter_format?: TemplateParameterFormat
+  message_send_ttl_seconds?: number
+  allow_category_change?: boolean
+  components: TemplateComponent[]
+}
+
+export interface EditTemplateRequest {
+  category?: TemplateCategory
+  components?: TemplateComponent[]
+  message_send_ttl_seconds?: number
+}
+
+export interface TemplateListFilters {
+  channel_id?: string
+  category?: TemplateCategory
+  sub_category?: string
+  language?: string
+  status?: TemplateStatus
+  quality_score?: TemplateQuality
+  name?: string
+  content?: string
+  since?: number
+  until?: number
+  page?: number
+  page_size?: number
+}
+
 // Dashboard Stats
 export interface DashboardStats {
   total_conversations: number
