@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
-import { ArrowLeft, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Trash2, Pencil } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -151,6 +151,12 @@ export default function TemplateDetailPage({ params }: { params: Promise<{ id: s
               )}
             </div>
             <div className="flex gap-2">
+              <Link href={`/templates/${id}/edit`}>
+                <Button variant="outline" size="sm">
+                  <Pencil className="mr-2 h-4 w-4" />
+                  {t('edit')}
+                </Button>
+              </Link>
               <Button
                 variant="outline"
                 size="sm"
