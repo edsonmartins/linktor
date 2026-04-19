@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, RefreshCw, FileText, Trash2 } from 'lucide-react'
+import { Plus, Search, RefreshCw, FileText, Trash2, Sparkles } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -199,6 +199,12 @@ export default function TemplatesPage() {
             />
             {t('sync')}
           </Button>
+          <Link href="/templates/library">
+            <Button variant="outline" size="sm">
+              <Sparkles className="mr-2 h-4 w-4" />
+              {t('library.browse')}
+            </Button>
+          </Link>
           <Link href="/templates/new">
             <Button size="sm">
               <Plus className="mr-2 h-4 w-4" />

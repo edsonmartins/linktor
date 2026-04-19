@@ -30,11 +30,13 @@ import type {
   Template,
   TemplateButton,
   TemplateButtonType,
+  TemplateCarouselCard,
   TemplateCategory,
   TemplateComponent,
   TemplateHeaderFormat,
   TemplateParameterFormat,
 } from '@/types'
+import { CarouselEditor } from './carousel-editor'
 
 // Placeholder matchers — kept client-side so the admin sees required
 // example counts change as they type instead of waiting for Meta's 400.
@@ -62,7 +64,10 @@ interface ButtonDraft {
   url?: string
   phone_number?: string
   example?: string // coupon for COPY_CODE
-  otp_type?: string // COPY_CODE only in phase 2
+  otp_type?: 'COPY_CODE' | 'ONE_TAP' | 'ZERO_TAP'
+  autofill_text?: string
+  supported_apps?: Array<{ package_name: string; signature_hash: string }>
+  zero_tap_terms_accepted?: boolean
   flow_id?: string
   flow_action?: 'navigate' | 'data_exchange'
 }
@@ -141,6 +146,30 @@ export function TemplateForm({ mode, template }: TemplateFormProps) {
     template?.components.find((c) => c.type === 'FOOTER')?.text ?? '',
   )
 
+  // Limited-time offer state. The component is either absent or present
+  // with its own text + expiration. Meta allows at most one LTO per
+  // template, so we model it as a single optional draft rather than a list.
+  const initialLTO = useMemo(() => {
+    const c = template?.components.find((c) => c.type === 'LIMITED_TIME_OFFER')
+    if (!c || !c.limited_time_offer) return null
+    return {
+      text: c.limited_time_offer.text ?? '',
+      has_expiration: c.limited_time_offer.has_expiration,
+      expiration_time_ms: c.limited_time_offer.expiration_time_ms ?? 0,
+    }
+  }, [template])
+  const [lto, setLto] = useState<{
+    text: string
+    has_expiration: boolean
+    expiration_time_ms: number
+  } | null>(initialLTO)
+
+  const initialCards = useMemo<TemplateCarouselCard[]>(() => {
+    const c = template?.components.find((c) => c.type === 'CAROUSEL')
+    return c?.cards ?? []
+  }, [template])
+  const [cards, setCards] = useState<TemplateCarouselCard[]>(initialCards)
+
   const initialButtons = useMemo<ButtonDraft[]>(() => {
     const row = template?.components.find((c) => c.type === 'BUTTONS')
     return (
@@ -150,7 +179,10 @@ export function TemplateForm({ mode, template }: TemplateFormProps) {
         url: b.url,
         phone_number: b.phone_number,
         example: b.example,
-        otp_type: b.otp_type,
+        otp_type: b.otp_type as 'COPY_CODE' | 'ONE_TAP' | 'ZERO_TAP' | undefined,
+        autofill_text: b.autofill_text,
+        supported_apps: b.supported_apps,
+        zero_tap_terms_accepted: b.zero_tap_terms_accepted,
         flow_id: b.flow_id,
         flow_action: (b.flow_action as 'navigate' | 'data_exchange' | undefined) ?? undefined,
       })) ?? []
@@ -215,12 +247,48 @@ export function TemplateForm({ mode, template }: TemplateFormProps) {
     ) {
       return false
     }
+    // LTO: expiration requires a positive timestamp (matches the backend validator).
+    if (lto && lto.has_expiration && lto.expiration_time_ms <= Date.now()) {
+      return false
+    }
+
+    // Carousel: each card needs a non-empty body text, and any declared
+    // placeholder needs a matching example — mirrors the backend's
+    // recursive validateTemplateComponents loop.
+    for (const card of cards) {
+      const body = card.components.find((c) => c.type === 'BODY')
+      if (!body?.text?.trim()) return false
+      const txt = body.text
+      const varCount = ((): number => {
+        let max = 0
+        for (const m of txt.matchAll(POSITIONAL)) {
+          const n = Number(m[1])
+          if (Number.isFinite(n) && n > max) max = n
+        }
+        return max
+      })()
+      if (varCount > 0) {
+        const row = body.example?.body_text?.[0] ?? []
+        if (row.length < varCount || row.some((v) => !v?.trim())) return false
+      }
+      const header = card.components.find((c) => c.type === 'HEADER')
+      if (header && !header.example?.header_handle?.[0]?.trim()) return false
+    }
+
     for (const b of buttons) {
       if (!b.text.trim()) return false
       if (b.type === 'URL' && !b.url?.trim()) return false
       if (b.type === 'PHONE_NUMBER' && !b.phone_number?.trim()) return false
       if (b.type === 'COPY_CODE' && !b.example?.trim()) return false
       if (b.type === 'FLOW' && (!b.flow_id?.trim() || !b.flow_action)) return false
+      // ONE_TAP / ZERO_TAP require at least one supported app (package + hash).
+      // ZERO_TAP additionally requires the terms-accepted flag. These mirror
+      // the backend validator in internal/application/service/template_validation.go.
+      if (b.type === 'OTP' && (b.otp_type === 'ONE_TAP' || b.otp_type === 'ZERO_TAP')) {
+        if (!b.supported_apps || b.supported_apps.length === 0) return false
+        if (b.supported_apps.some((a) => !a.package_name.trim() || !a.signature_hash.trim())) return false
+        if (b.otp_type === 'ZERO_TAP' && !b.zero_tap_terms_accepted) return false
+      }
     }
     return true
   }, [
@@ -233,6 +301,8 @@ export function TemplateForm({ mode, template }: TemplateFormProps) {
     header,
     trimmedHeaderExamples,
     buttons,
+    lto,
+    cards,
   ])
 
   // ---- Submit --------------------------------------------------------------
@@ -270,6 +340,26 @@ export function TemplateForm({ mode, template }: TemplateFormProps) {
       components.push({ type: 'FOOTER', text: footerText })
     }
 
+    if (cards.length > 0) {
+      components.push({
+        type: 'CAROUSEL',
+        cards,
+      })
+    }
+
+    if (lto) {
+      components.push({
+        type: 'LIMITED_TIME_OFFER',
+        limited_time_offer: {
+          text: lto.text || undefined,
+          has_expiration: lto.has_expiration,
+          ...(lto.has_expiration && lto.expiration_time_ms > 0 && {
+            expiration_time_ms: lto.expiration_time_ms,
+          }),
+        },
+      })
+    }
+
     if (buttons.length > 0) {
       components.push({
         type: 'BUTTONS',
@@ -279,7 +369,14 @@ export function TemplateForm({ mode, template }: TemplateFormProps) {
           ...(b.type === 'URL' && { url: b.url }),
           ...(b.type === 'PHONE_NUMBER' && { phone_number: b.phone_number }),
           ...(b.type === 'COPY_CODE' && { example: b.example }),
-          ...(b.type === 'OTP' && { otp_type: b.otp_type ?? 'COPY_CODE' }),
+          ...(b.type === 'OTP' && {
+            otp_type: b.otp_type ?? 'COPY_CODE',
+            ...(b.autofill_text && { autofill_text: b.autofill_text }),
+            ...(b.supported_apps && b.supported_apps.length > 0 && {
+              supported_apps: b.supported_apps,
+            }),
+            ...(b.zero_tap_terms_accepted && { zero_tap_terms_accepted: true }),
+          }),
           ...(b.type === 'FLOW' && {
             flow_id: b.flow_id,
             flow_action: b.flow_action,
@@ -716,6 +813,102 @@ export function TemplateForm({ mode, template }: TemplateFormProps) {
           </CardContent>
         </Card>
 
+        {/* ================= Carousel ================= */}
+        <CarouselEditor cards={cards} onChange={setCards} />
+
+        {/* ================= Limited-time offer ================= */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              {t('form.lto')}
+              {lto === null ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setLto({
+                      text: '',
+                      has_expiration: false,
+                      expiration_time_ms: 0,
+                    })
+                  }
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  {t('form.ltoAdd')}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setLto(null)}
+                >
+                  <Trash2 className="mr-1 h-3 w-3" />
+                  {t('form.ltoRemove')}
+                </Button>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {lto === null ? (
+              <p className="text-sm text-muted-foreground">{t('form.ltoEmpty')}</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>{t('form.ltoText')}</Label>
+                  <Input
+                    value={lto.text}
+                    onChange={(e) => setLto({ ...lto, text: e.target.value })}
+                    placeholder={t('form.ltoTextPlaceholder')}
+                    maxLength={16}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('form.ltoTextHint')}</p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="lto-expires">{t('form.ltoHasExpiration')}</Label>
+                    <p className="text-xs text-muted-foreground">
+                      {t('form.ltoHasExpirationHint')}
+                    </p>
+                  </div>
+                  <Switch
+                    id="lto-expires"
+                    checked={lto.has_expiration}
+                    onCheckedChange={(v) =>
+                      setLto({ ...lto, has_expiration: v })
+                    }
+                  />
+                </div>
+                {lto.has_expiration && (
+                  <div className="space-y-2">
+                    <Label>{t('form.ltoExpiration')}</Label>
+                    <Input
+                      type="datetime-local"
+                      value={
+                        lto.expiration_time_ms
+                          ? new Date(lto.expiration_time_ms)
+                              .toISOString()
+                              .slice(0, 16)
+                          : ''
+                      }
+                      onChange={(e) => {
+                        const ms = e.target.value
+                          ? new Date(e.target.value).getTime()
+                          : 0
+                        setLto({ ...lto, expiration_time_ms: ms })
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t('form.ltoExpirationHint')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* ================= Buttons ================= */}
         <Card>
           <CardHeader>
@@ -842,28 +1035,7 @@ function ButtonEditor({
         )}
 
         {button.type === 'OTP' && (
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <div className="space-y-1">
-              <Label>{t('otpType')}</Label>
-              <Select
-                value={button.otp_type ?? 'COPY_CODE'}
-                onValueChange={(v) => onChange({ otp_type: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="COPY_CODE">COPY_CODE</SelectItem>
-                  <SelectItem value="ONE_TAP" disabled>
-                    ONE_TAP ({t('phase3')})
-                  </SelectItem>
-                  <SelectItem value="ZERO_TAP" disabled>
-                    ZERO_TAP ({t('phase3')})
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <OTPButtonFields button={button} onChange={onChange} />
         )}
 
         {button.type === 'FLOW' && (
@@ -894,6 +1066,150 @@ function ButtonEditor({
       <Button type="button" variant="ghost" size="icon" onClick={onRemove}>
         <Trash2 className="h-4 w-4" />
       </Button>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// OTPButtonFields — otp_type selector + supported_apps editor
+// -----------------------------------------------------------------------------
+function OTPButtonFields({
+  button,
+  onChange,
+}: {
+  button: ButtonDraft
+  onChange: (patch: Partial<ButtonDraft>) => void
+}) {
+  const t = useTranslations('templates.form')
+  const otpType = button.otp_type ?? 'COPY_CODE'
+  const needsApps = otpType === 'ONE_TAP' || otpType === 'ZERO_TAP'
+  const supportedApps = button.supported_apps ?? []
+
+  return (
+    <div className="space-y-3 rounded-md bg-muted/30 p-3">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        <div className="space-y-1">
+          <Label>{t('otpType')}</Label>
+          <Select
+            value={otpType}
+            onValueChange={(v) => {
+              // Clear ZT-specific state when switching back to COPY_CODE so
+              // we don't accidentally ship a `zero_tap_terms_accepted: true`
+              // with an unrelated otp_type.
+              const patch: Partial<ButtonDraft> = {
+                otp_type: v as 'COPY_CODE' | 'ONE_TAP' | 'ZERO_TAP',
+              }
+              if (v === 'COPY_CODE') {
+                patch.supported_apps = undefined
+                patch.zero_tap_terms_accepted = false
+              }
+              onChange(patch)
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="COPY_CODE">COPY_CODE</SelectItem>
+              <SelectItem value="ONE_TAP">ONE_TAP</SelectItem>
+              <SelectItem value="ZERO_TAP">ZERO_TAP</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {needsApps && (
+          <div className="space-y-1">
+            <Label>{t('otpAutofillText')}</Label>
+            <Input
+              value={button.autofill_text ?? ''}
+              onChange={(e) => onChange({ autofill_text: e.target.value })}
+              placeholder={t('otpAutofillPlaceholder')}
+              maxLength={25}
+            />
+          </div>
+        )}
+      </div>
+
+      {needsApps && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>{t('otpSupportedApps')}</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                onChange({
+                  supported_apps: [
+                    ...supportedApps,
+                    { package_name: '', signature_hash: '' },
+                  ],
+                })
+              }
+              disabled={supportedApps.length >= 5}
+            >
+              <Plus className="mr-1 h-3 w-3" />
+              {t('otpAddApp')}
+            </Button>
+          </div>
+          {supportedApps.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t('otpSupportedAppsEmpty')}
+            </p>
+          ) : (
+            supportedApps.map((app, i) => (
+              <div key={i} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+                <Input
+                  value={app.package_name}
+                  onChange={(e) => {
+                    const next = [...supportedApps]
+                    next[i] = { ...next[i], package_name: e.target.value }
+                    onChange({ supported_apps: next })
+                  }}
+                  placeholder="com.example.app"
+                />
+                <Input
+                  value={app.signature_hash}
+                  onChange={(e) => {
+                    const next = [...supportedApps]
+                    next[i] = { ...next[i], signature_hash: e.target.value }
+                    onChange({ supported_apps: next })
+                  }}
+                  placeholder={t('otpSignatureHash')}
+                  className="font-mono text-xs"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    onChange({
+                      supported_apps: supportedApps.filter((_, idx) => idx !== i),
+                    })
+                  }
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {otpType === 'ZERO_TAP' && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+          <input
+            type="checkbox"
+            id={`ztta-${button.text}`}
+            className="mt-1"
+            checked={button.zero_tap_terms_accepted ?? false}
+            onChange={(e) => onChange({ zero_tap_terms_accepted: e.target.checked })}
+          />
+          <Label htmlFor={`ztta-${button.text}`} className="text-xs leading-snug">
+            {t('otpZeroTapTerms')}
+          </Label>
+        </div>
+      )}
     </div>
   )
 }
