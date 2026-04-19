@@ -27,15 +27,25 @@ type TemplateComponent struct {
 	Parameters []TemplateParameter  `json:"parameters,omitempty"`
 }
 
-// TemplateParameter represents a parameter in a template component
+// TemplateParameter represents a parameter in a template component.
+// The Type field names the field that holds the value:
+//   - text / payload / coupon_code → Text
+//   - currency → Currency
+//   - date_time → DateTime
+//   - image / video → Image / Video (MediaObject with ID or Link)
+//   - document → Document (DocumentObject)
+//   - location → Location (LocationObject)
+//   - action → Action (flow button navigation payload)
 type TemplateParameter struct {
-	Type     string              `json:"type"` // text, currency, date_time, image, document, video
-	Text     string              `json:"text,omitempty"`
-	Currency *CurrencyParameter  `json:"currency,omitempty"`
-	DateTime *DateTimeParameter  `json:"date_time,omitempty"`
-	Image    *MediaObject        `json:"image,omitempty"`
-	Document *DocumentObject     `json:"document,omitempty"`
-	Video    *MediaObject        `json:"video,omitempty"`
+	Type     string                 `json:"type"`
+	Text     string                 `json:"text,omitempty"`
+	Currency *CurrencyParameter     `json:"currency,omitempty"`
+	DateTime *DateTimeParameter     `json:"date_time,omitempty"`
+	Image    *MediaObject           `json:"image,omitempty"`
+	Document *DocumentObject        `json:"document,omitempty"`
+	Video    *MediaObject           `json:"video,omitempty"`
+	Location *LocationObject        `json:"location,omitempty"`
+	Action   map[string]interface{} `json:"action,omitempty"`
 }
 
 // CurrencyParameter represents a currency parameter
@@ -194,6 +204,94 @@ func (b *TemplateBuilder) AddURLButton(index int, urlSuffix string) *TemplateBui
 		Index:   &idx,
 		Parameters: []TemplateParameter{
 			{Type: "text", Text: urlSuffix},
+		},
+	})
+	return b
+}
+
+// AddPhoneNumberButton adds a click-to-call button. Phone number buttons on
+// templates have no runtime parameters — the phone number is baked in at
+// create time — but Meta still expects the button block in the send payload
+// when the template defines one.
+func (b *TemplateBuilder) AddPhoneNumberButton(index int) *TemplateBuilder {
+	idx := index
+	b.template.Components = append(b.template.Components, TemplateComponent{
+		Type:    "button",
+		SubType: "phone_number",
+		Index:   &idx,
+	})
+	return b
+}
+
+// AddCopyCodeButton adds a copy-code button (authentication templates). The
+// coupon is the dynamic value the user will copy — typically the OTP itself.
+func (b *TemplateBuilder) AddCopyCodeButton(index int, coupon string) *TemplateBuilder {
+	idx := index
+	b.template.Components = append(b.template.Components, TemplateComponent{
+		Type:    "button",
+		SubType: "copy_code",
+		Index:   &idx,
+		Parameters: []TemplateParameter{
+			{Type: "coupon_code", Text: coupon},
+		},
+	})
+	return b
+}
+
+// AddOTPButton adds a one-time password button for authentication templates.
+// `otp` is the generated code that Meta will surface to the user via
+// one-tap/zero-tap autofill or copy-to-clipboard depending on how the
+// template was created.
+func (b *TemplateBuilder) AddOTPButton(index int, otp string) *TemplateBuilder {
+	idx := index
+	b.template.Components = append(b.template.Components, TemplateComponent{
+		Type:    "button",
+		SubType: "url",
+		Index:   &idx,
+		Parameters: []TemplateParameter{
+			{Type: "text", Text: otp},
+		},
+	})
+	return b
+}
+
+// AddFlowButton adds a button that opens a WhatsApp Flow. `flowToken` tracks
+// the user's flow session and `initialData` feeds the first screen.
+func (b *TemplateBuilder) AddFlowButton(index int, flowToken string, initialData map[string]interface{}) *TemplateBuilder {
+	idx := index
+	payload := map[string]interface{}{
+		"flow_token": flowToken,
+	}
+	if initialData != nil {
+		payload["flow_action_data"] = initialData
+	}
+	b.template.Components = append(b.template.Components, TemplateComponent{
+		Type:    "button",
+		SubType: "flow",
+		Index:   &idx,
+		Parameters: []TemplateParameter{
+			{Type: "action", Action: payload},
+		},
+	})
+	return b
+}
+
+// AddHeaderLocation adds a location header. The entity already modelled the
+// LOCATION format but the builder didn't expose it — this closes the gap so
+// delivery/dispatch templates that carry a location can actually be sent.
+func (b *TemplateBuilder) AddHeaderLocation(latitude, longitude float64, name, address string) *TemplateBuilder {
+	b.template.Components = append(b.template.Components, TemplateComponent{
+		Type: "header",
+		Parameters: []TemplateParameter{
+			{
+				Type: "location",
+				Location: &LocationObject{
+					Latitude:  latitude,
+					Longitude: longitude,
+					Name:      name,
+					Address:   address,
+				},
+			},
 		},
 	})
 	return b

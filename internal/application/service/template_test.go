@@ -158,7 +158,13 @@ func TestTemplateService_Create(t *testing.T) {
 		Language:  "en",
 		Category:  entity.TemplateCategoryMarketing,
 		Components: []entity.TemplateComponent{
-			{Type: "BODY", Text: "Hello {{1}}!"},
+			{
+				Type: "BODY",
+				Text: "Hello {{1}}!",
+				Example: &entity.TemplateExample{
+					BodyText: [][]string{{"Ana"}},
+				},
+			},
 		},
 	})
 
@@ -169,6 +175,27 @@ func TestTemplateService_Create(t *testing.T) {
 	assert.Equal(t, "en", template.Language)
 	assert.Equal(t, entity.TemplateStatusPending, template.Status)
 	assert.Len(t, templateRepo.Templates, 1)
+}
+
+func TestTemplateService_Create_RejectsVariablesWithoutExample(t *testing.T) {
+	// Meta rejects this payload anyway — validating locally saves a
+	// round-trip and gives the admin a clear error instead of 400 from Meta.
+	svc, _ := setupTemplateService()
+
+	_, err := svc.Create(context.Background(), &CreateTemplateInput{
+		TenantID:  "tenant-1",
+		ChannelID: "channel-1",
+		Name:      "welcome",
+		Language:  "en",
+		Category:  entity.TemplateCategoryMarketing,
+		Components: []entity.TemplateComponent{
+			{Type: "BODY", Text: "Hello {{1}}!"}, // no example — must fail
+		},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid template")
+	assert.Contains(t, err.Error(), "example")
 }
 
 func TestTemplateService_Create_Duplicate(t *testing.T) {
@@ -333,6 +360,94 @@ func TestTemplateService_ProcessTemplateCategoryWebhook(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, entity.TemplateCategoryMarketing, templateRepo.Templates["t1"].Category)
+}
+
+// -----------------------------------------------------------------------------
+// Status mapper — newly added LIMIT_EXCEEDED and ARCHIVED
+// -----------------------------------------------------------------------------
+
+func TestMapMetaStatusToEntity_NewValues(t *testing.T) {
+	cases := map[string]entity.TemplateStatus{
+		"LIMIT_EXCEEDED": entity.TemplateStatusLimitExceeded,
+		"ARCHIVED":       entity.TemplateStatusArchived,
+	}
+	for meta, want := range cases {
+		assert.Equal(t, want, mapMetaStatusToEntity(meta), "meta status=%s", meta)
+	}
+}
+
+func TestMapMetaStatusToEntity_UnknownFallsBackToPending(t *testing.T) {
+	assert.Equal(t, entity.TemplateStatusPending, mapMetaStatusToEntity("SOMETHING_NEW"))
+}
+
+// -----------------------------------------------------------------------------
+// Delete — must pass hsm_id so Meta only removes the specific language variant
+// -----------------------------------------------------------------------------
+
+func TestTemplateService_Delete_PassesHSMIDToMeta(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID:       "ch-1",
+		TenantID: "tenant-1",
+		Type:     entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{
+			"access_token": "test-token",
+			"waba_id":      "waba-123",
+		},
+	}
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID:         "t1",
+		TenantID:   "tenant-1",
+		ChannelID:  "ch-1",
+		ExternalID: "hsm-42",
+		Name:       "welcome",
+		Language:   "pt_BR",
+	}
+
+	var capturedURL string
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		capturedURL = r.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"success":true}`)),
+		}, nil
+	})
+
+	require.NoError(t, svc.Delete(context.Background(), "t1"))
+	assert.Contains(t, capturedURL, "name=welcome", "must include name param")
+	assert.Contains(t, capturedURL, "hsm_id=hsm-42",
+		"must include hsm_id so Meta only deletes this language variant, not every variant sharing the name")
+	// Verify the row is gone locally too
+	_, exists := templateRepo.Templates["t1"]
+	assert.False(t, exists)
+}
+
+func TestTemplateService_Delete_SkipsMetaWhenNoExternalID(t *testing.T) {
+	// A template that never synced to Meta (no ExternalID) shouldn't trigger
+	// an HTTP call on delete — otherwise we'd call Meta with an empty hsm_id
+	// and (worse) fall back to name-only delete, wiping other variants.
+	svc, templateRepo := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-1", Type: entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{"access_token": "t", "waba_id": "w"},
+	}
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID: "t1", TenantID: "tenant-1", ChannelID: "ch-1",
+		Name: "welcome", Language: "pt_BR",
+		// no ExternalID
+	}
+
+	called := false
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		called = true
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})
+
+	require.NoError(t, svc.Delete(context.Background(), "t1"))
+	assert.False(t, called, "no Meta call expected when template was never synced")
 }
 
 type roundTripFunc func(req *http.Request) (*http.Response, error)

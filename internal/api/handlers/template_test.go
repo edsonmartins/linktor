@@ -127,6 +127,9 @@ func TestTemplateHandler_Create(t *testing.T) {
 			{
 				Type: "BODY",
 				Text: "Hello {{1}}, your order {{2}} is ready.",
+				Example: &entity.TemplateExample{
+					BodyText: [][]string{{"Ana", "ORD-42"}},
+				},
 			},
 		},
 	}

@@ -49,6 +49,14 @@ type CreateTemplateInput struct {
 
 // Create creates a new template (locally and syncs to Meta if credentials available)
 func (s *TemplateService) Create(ctx context.Context, input *CreateTemplateInput) (*entity.Template, error) {
+	// Validate components locally before spending a Graph API round-trip on
+	// something Meta would reject anyway. This catches the most common
+	// authoring mistake: declaring {{N}} variables without attaching
+	// example values.
+	if err := validateTemplateComponents(input.Components); err != nil {
+		return nil, fmt.Errorf("invalid template: %w", err)
+	}
+
 	// Check if template already exists
 	existing, _ := s.templateRepo.FindByName(ctx, input.TenantID, input.ChannelID, input.Name, input.Language)
 	if existing != nil {
@@ -134,11 +142,14 @@ func (s *TemplateService) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("template not found: %w", err)
 	}
 
-	// Try to delete from Meta
+	// Try to delete from Meta. Pass the external (hsm) id so Meta only removes
+	// this specific language variant — without hsm_id, Meta deletes every
+	// language variant that shares the template name, which is almost never
+	// what the caller wants.
 	if template.ExternalID != "" {
 		creds := s.getChannelCredentials(ctx, template.ChannelID)
 		if creds != nil {
-			s.deleteTemplateOnMeta(ctx, creds, template.Name)
+			s.deleteTemplateOnMeta(ctx, creds, template.Name, template.ExternalID)
 		}
 	}
 
@@ -314,8 +325,15 @@ func (s *TemplateService) createTemplateOnMeta(ctx context.Context, creds *metaC
 	return result.ID, nil
 }
 
-func (s *TemplateService) deleteTemplateOnMeta(ctx context.Context, creds *metaCredentials, templateName string) error {
+// deleteTemplateOnMeta removes a template from the WABA. When hsmID is
+// non-empty, Meta deletes only the specific language variant identified by
+// that id; when it's empty, Meta deletes every language variant that shares
+// the template name.
+func (s *TemplateService) deleteTemplateOnMeta(ctx context.Context, creds *metaCredentials, templateName, hsmID string) error {
 	url := fmt.Sprintf("%s/%s/%s/message_templates?name=%s", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, creds.wabaID, templateName)
+	if hsmID != "" {
+		url += "&hsm_id=" + hsmID
+	}
 	_, err := s.metaRequest(ctx, "DELETE", url, creds.accessToken, nil)
 	return err
 }
@@ -442,6 +460,10 @@ func mapMetaStatusToEntity(status string) entity.TemplateStatus {
 		return entity.TemplateStatusDeleted
 	case "REINSTATED":
 		return entity.TemplateStatusReinstated
+	case "LIMIT_EXCEEDED":
+		return entity.TemplateStatusLimitExceeded
+	case "ARCHIVED":
+		return entity.TemplateStatusArchived
 	default:
 		return entity.TemplateStatusPending
 	}

@@ -17,6 +17,13 @@ const (
 	TemplateStatusPendingDeletion  TemplateStatus = "PENDING_DELETION"
 	TemplateStatusDeleted          TemplateStatus = "DELETED"
 	TemplateStatusReinstated       TemplateStatus = "REINSTATED"
+	// Meta returns LIMIT_EXCEEDED for templates a WABA can no longer send
+	// because it hit its category-specific send limit, and ARCHIVED for
+	// templates Meta has retired from the library but that still exist on
+	// the WABA for reference. Missing these meant the mapper silently fell
+	// through and we'd persist the zero value instead of the real status.
+	TemplateStatusLimitExceeded    TemplateStatus = "LIMIT_EXCEEDED"
+	TemplateStatusArchived         TemplateStatus = "ARCHIVED"
 )
 
 // TemplateCategory represents the category of a template
