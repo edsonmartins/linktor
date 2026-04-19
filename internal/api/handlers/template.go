@@ -390,6 +390,31 @@ func (h *TemplateHandler) Edit(c *gin.Context) {
 	RespondSuccess(c, template)
 }
 
+// FetchNamespace godoc
+// @Summary      Fetch WABA message_template_namespace
+// @Description  Reads the WhatsApp Business Account's message_template_namespace from Meta and persists it on the channel
+// @Tags         templates
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channel_id path string true "Channel ID"
+// @Success      200 {object} Response{data=map[string]string}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{channel_id}/templates/namespace [get]
+func (h *TemplateHandler) FetchNamespace(c *gin.Context) {
+	channelID := c.Param("channel_id")
+	if channelID == "" {
+		RespondValidationError(c, "Channel ID is required", nil)
+		return
+	}
+	namespace, err := h.templateService.FetchNamespace(c.Request.Context(), channelID)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	RespondSuccess(c, map[string]string{"message_template_namespace": namespace})
+}
+
 // BulkDeleteTemplatesRequest carries the IDs for DELETE /templates (bulk).
 type BulkDeleteTemplatesRequest struct {
 	IDs []string `json:"ids" binding:"required,min=1"`

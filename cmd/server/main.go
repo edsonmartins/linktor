@@ -929,6 +929,7 @@ func main() {
 				templates.DELETE("/:id", templateHandler.Delete)
 				templates.POST("/:id/refresh", templateHandler.Refresh)
 				templates.POST("/sync/:channelId", templateHandler.Sync)
+				templates.GET("/namespace/:channel_id", templateHandler.FetchNamespace)
 			}
 
 			// Analytics

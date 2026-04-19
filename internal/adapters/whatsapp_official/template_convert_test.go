@@ -56,7 +56,36 @@ func TestBuildSendPayload_BodyNamedTakesPrecedence(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, payload.Components, 1)
 	require.Len(t, payload.Components[0].Parameters, 1)
-	assert.Equal(t, "Ana", payload.Components[0].Parameters[0].Text)
+	p := payload.Components[0].Parameters[0]
+	assert.Equal(t, "Ana", p.Text)
+	// Meta matches NAMED parameters by parameter_name, not by position —
+	// emitting it is what makes {{customer_name}} resolve correctly.
+	assert.Equal(t, "name", p.ParameterName)
+}
+
+func TestBuildSendPayload_NamedParametersAreOrderedDeterministic(t *testing.T) {
+	// Map iteration in Go is randomised; sorting the keys keeps the
+	// outbound JSON stable for cache headers / test assertions / request
+	// replay scenarios.
+	tpl := &entity.Template{
+		Name: "order", Language: "pt_BR",
+		Components: []entity.TemplateComponent{
+			{Type: "BODY", Text: "{{zulu}} {{alpha}} {{mike}}"},
+		},
+	}
+	payload, err := BuildSendPayload(tpl, SendValues{
+		NamedBody: map[string]string{
+			"zulu":  "z",
+			"alpha": "a",
+			"mike":  "m",
+		},
+	})
+	require.NoError(t, err)
+	params := payload.Components[0].Parameters
+	require.Len(t, params, 3)
+	assert.Equal(t, "alpha", params[0].ParameterName)
+	assert.Equal(t, "mike", params[1].ParameterName)
+	assert.Equal(t, "zulu", params[2].ParameterName)
 }
 
 func TestBuildSendPayload_HeaderByFormat(t *testing.T) {
@@ -213,8 +242,9 @@ func TestBuildSendPayload_ButtonWithoutValueSkipped(t *testing.T) {
 }
 
 func TestBuildSendPayload_StaticComponentsDroppedFromSend(t *testing.T) {
-	// Footer, Carousel, and LTO are static at send time — their content is
+	// Footer and LTO are static at send time — their content is
 	// defined on the approved template and Meta doesn't want us echoing it.
+	// Carousel without CardValues is also skipped (static).
 	tpl := &entity.Template{
 		Name: "t", Language: "pt_BR",
 		Components: []entity.TemplateComponent{
@@ -232,4 +262,112 @@ func TestBuildSendPayload_StaticComponentsDroppedFromSend(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, payload.Components, 1)
 	assert.Equal(t, "body", payload.Components[0].Type)
+}
+
+func TestBuildSendPayload_CarouselEmitsCardsWithRuntimeValues(t *testing.T) {
+	tpl := &entity.Template{
+		Name: "promo", Language: "pt_BR",
+		Components: []entity.TemplateComponent{
+			{Type: "BODY", Text: "Check out {{1}}"},
+			{
+				Type: "CAROUSEL",
+				Cards: []entity.TemplateCarouselCard{
+					{Components: []entity.TemplateComponent{
+						{Type: "HEADER", Format: "IMAGE"},
+						{Type: "BODY", Text: "Product {{1}} for {{2}}"},
+						{Type: "BUTTONS", Buttons: []entity.TemplateButton{
+							{Type: "QUICK_REPLY", Text: "Add"},
+						}},
+					}},
+					{Components: []entity.TemplateComponent{
+						{Type: "HEADER", Format: "IMAGE"},
+						{Type: "BODY", Text: "Bundle {{1}}"},
+					}},
+				},
+			},
+		},
+	}
+
+	payload, err := BuildSendPayload(tpl, SendValues{
+		BodyParams: []string{"our collection"},
+		CardValues: map[int]CardSendValues{
+			0: {
+				HeaderImageURL: "https://cdn/card0.jpg",
+				BodyParams:     []string{"Shirt", "R$99"},
+				ButtonValues:   map[int]string{0: "ADD_P1"},
+			},
+			1: {
+				HeaderImageURL: "https://cdn/card1.jpg",
+				BodyParams:     []string{"Summer bundle"},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, payload.Components, 2)
+
+	// Root body
+	assert.Equal(t, "body", payload.Components[0].Type)
+
+	// Carousel wrapper
+	car := payload.Components[1]
+	assert.Equal(t, "carousel", car.Type)
+	require.Len(t, car.Cards, 2)
+
+	// Card 0: header + body + button
+	card0 := car.Cards[0]
+	assert.Equal(t, 0, card0.CardIndex)
+	require.Len(t, card0.Components, 3)
+	assert.Equal(t, "header", card0.Components[0].Type)
+	assert.Equal(t, "https://cdn/card0.jpg", card0.Components[0].Parameters[0].Image.Link)
+	assert.Equal(t, "body", card0.Components[1].Type)
+	require.Len(t, card0.Components[1].Parameters, 2)
+	assert.Equal(t, "Shirt", card0.Components[1].Parameters[0].Text)
+	assert.Equal(t, "R$99", card0.Components[1].Parameters[1].Text)
+	assert.Equal(t, "button", card0.Components[2].Type)
+	assert.Equal(t, "quick_reply", card0.Components[2].SubType)
+
+	// Card 1: header + body, no buttons
+	card1 := car.Cards[1]
+	assert.Equal(t, 1, card1.CardIndex)
+	require.Len(t, card1.Components, 2)
+	assert.Equal(t, "Summer bundle", card1.Components[1].Parameters[0].Text)
+}
+
+func TestBuildSendPayload_CarouselSkippedWhenNoCardValues(t *testing.T) {
+	tpl := &entity.Template{
+		Name: "promo", Language: "pt_BR",
+		Components: []entity.TemplateComponent{
+			{Type: "CAROUSEL", Cards: []entity.TemplateCarouselCard{
+				{Components: []entity.TemplateComponent{{Type: "BODY", Text: "card"}}},
+			}},
+		},
+	}
+	payload, err := BuildSendPayload(tpl, SendValues{})
+	require.NoError(t, err)
+	assert.Empty(t, payload.Components, "carousel without runtime values must be skipped entirely")
+}
+
+func TestBuildSendPayload_CarouselSkipsCardsWithoutValues(t *testing.T) {
+	// Three cards in the template but only runtime values for card 1 —
+	// cards 0 and 2 are omitted from the send payload.
+	tpl := &entity.Template{
+		Name: "t", Language: "pt_BR",
+		Components: []entity.TemplateComponent{
+			{Type: "CAROUSEL", Cards: []entity.TemplateCarouselCard{
+				{Components: []entity.TemplateComponent{{Type: "BODY", Text: "A"}}},
+				{Components: []entity.TemplateComponent{{Type: "BODY", Text: "B"}}},
+				{Components: []entity.TemplateComponent{{Type: "BODY", Text: "C"}}},
+			}},
+		},
+	}
+	payload, err := BuildSendPayload(tpl, SendValues{
+		CardValues: map[int]CardSendValues{
+			1: {BodyParams: []string{"only-the-middle"}},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, payload.Components, 1)
+	car := payload.Components[0]
+	require.Len(t, car.Cards, 1)
+	assert.Equal(t, 1, car.Cards[0].CardIndex)
 }

@@ -464,6 +464,45 @@ func TestTemplateService_Create_OmitsEmptyOptionalFields(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// FetchNamespace — GET /{waba-id}?fields=message_template_namespace
+// -----------------------------------------------------------------------------
+
+func TestTemplateService_FetchNamespace_PersistsOnChannel(t *testing.T) {
+	svc, _ := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-1", Type: entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{"access_token": "t", "waba_id": "waba-1"},
+	}
+
+	var capturedURL string
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		capturedURL = r.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"message_template_namespace":"ns-xyz-123"}`)),
+		}, nil
+	})
+
+	ns, err := svc.FetchNamespace(context.Background(), "ch-1")
+	require.NoError(t, err)
+	assert.Equal(t, "ns-xyz-123", ns)
+	assert.Contains(t, capturedURL, "/waba-1")
+	assert.Contains(t, capturedURL, "message_template_namespace")
+
+	// Must have persisted on the channel
+	assert.Equal(t, "ns-xyz-123", channelRepo.Channels["ch-1"].MessageTemplateNamespace)
+}
+
+func TestTemplateService_FetchNamespace_MissingCreds(t *testing.T) {
+	svc, _ := setupTemplateService()
+	_, err := svc.FetchNamespace(context.Background(), "nonexistent")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "credentials")
+}
+
+// -----------------------------------------------------------------------------
 // DeleteBulk — DELETE /message_templates?hsm_ids=[...]
 // -----------------------------------------------------------------------------
 

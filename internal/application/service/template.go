@@ -530,6 +530,39 @@ func (s *TemplateService) editTemplateOnMeta(ctx context.Context, creds *metaCre
 	return err
 }
 
+// FetchNamespace reads the WABA's message_template_namespace via Meta's
+// GET /{waba-id} endpoint and persists it on the channel. The namespace is
+// required by partners integrating with the legacy HSM API or provisioning
+// their own Cloud API apps; most Cloud API consumers can ignore it.
+func (s *TemplateService) FetchNamespace(ctx context.Context, channelID string) (string, error) {
+	creds := s.getChannelCredentials(ctx, channelID)
+	if creds == nil {
+		return "", fmt.Errorf("channel missing credentials")
+	}
+
+	url := fmt.Sprintf("%s/%s/%s?fields=message_template_namespace", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, creds.wabaID)
+	respBody, err := s.metaRequest(ctx, "GET", url, creds.accessToken, nil)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		MessageTemplateNamespace string `json:"message_template_namespace"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("failed to parse namespace response: %w", err)
+	}
+
+	// Persist on the channel so subsequent reads don't need another Graph call.
+	channel, err := s.channelRepo.FindByID(ctx, channelID)
+	if err == nil && channel != nil && result.MessageTemplateNamespace != "" {
+		channel.MessageTemplateNamespace = result.MessageTemplateNamespace
+		_ = s.channelRepo.Update(ctx, channel)
+	}
+
+	return result.MessageTemplateNamespace, nil
+}
+
 // LibraryTemplate represents a pre-built template Meta exposes via the
 // message_template_library endpoint. Each entry can be instantiated on a
 // WABA by name — Meta handles approval because the wording is pre-vetted.

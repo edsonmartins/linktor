@@ -19,12 +19,23 @@ type TemplateLanguage struct {
 	Code   string `json:"code"`             // en, pt_BR, es, etc.
 }
 
-// TemplateComponent represents a component in a template message
+// TemplateComponent represents a component in a template message.
+// For buttons Type=="button" and SubType narrows the kind.
+// For carousels Type=="carousel" and Cards carries the per-card
+// sub-components (each card gets its own body + header + button row).
 type TemplateComponent struct {
-	Type       string               `json:"type"` // header, body, button
-	SubType    string               `json:"sub_type,omitempty"` // quick_reply, url
-	Index      *int                 `json:"index,omitempty"` // For buttons: 0, 1, 2
-	Parameters []TemplateParameter  `json:"parameters,omitempty"`
+	Type       string              `json:"type"` // header, body, button, carousel
+	SubType    string              `json:"sub_type,omitempty"`
+	Index      *int                `json:"index,omitempty"`
+	Parameters []TemplateParameter `json:"parameters,omitempty"`
+	Cards      []TemplateCard      `json:"cards,omitempty"`
+}
+
+// TemplateCard is one card in a carousel send payload. CardIndex binds the
+// runtime components to the nth card on the approved template definition.
+type TemplateCard struct {
+	CardIndex  int                 `json:"card_index"`
+	Components []TemplateComponent `json:"components"`
 }
 
 // TemplateParameter represents a parameter in a template component.
@@ -36,16 +47,21 @@ type TemplateComponent struct {
 //   - document → Document (DocumentObject)
 //   - location → Location (LocationObject)
 //   - action → Action (flow button navigation payload)
+//
+// ParameterName is set only when the template was created with
+// parameter_format=NAMED; Meta then uses the name to match the value to
+// the correct placeholder instead of relying on array position.
 type TemplateParameter struct {
-	Type     string                 `json:"type"`
-	Text     string                 `json:"text,omitempty"`
-	Currency *CurrencyParameter     `json:"currency,omitempty"`
-	DateTime *DateTimeParameter     `json:"date_time,omitempty"`
-	Image    *MediaObject           `json:"image,omitempty"`
-	Document *DocumentObject        `json:"document,omitempty"`
-	Video    *MediaObject           `json:"video,omitempty"`
-	Location *LocationObject        `json:"location,omitempty"`
-	Action   map[string]interface{} `json:"action,omitempty"`
+	Type          string                 `json:"type"`
+	ParameterName string                 `json:"parameter_name,omitempty"`
+	Text          string                 `json:"text,omitempty"`
+	Currency      *CurrencyParameter     `json:"currency,omitempty"`
+	DateTime      *DateTimeParameter     `json:"date_time,omitempty"`
+	Image         *MediaObject           `json:"image,omitempty"`
+	Document      *DocumentObject        `json:"document,omitempty"`
+	Video         *MediaObject           `json:"video,omitempty"`
+	Location      *LocationObject        `json:"location,omitempty"`
+	Action        map[string]interface{} `json:"action,omitempty"`
 }
 
 // CurrencyParameter represents a currency parameter

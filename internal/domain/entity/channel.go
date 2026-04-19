@@ -72,10 +72,17 @@ type Channel struct {
 	UpdatedAt        time.Time         `json:"updated_at"`
 
 	// WhatsApp Coexistence fields
-	IsCoexistence      bool              `json:"is_coexistence,omitempty"`       // Whether channel uses Business App + Cloud API
-	WABAID             string            `json:"waba_id,omitempty"`              // WhatsApp Business Account ID
-	LastEchoAt         *time.Time        `json:"last_echo_at,omitempty"`         // Last message echo from Business App
-	CoexistenceStatus  CoexistenceStatus `json:"coexistence_status,omitempty"`   // Current coexistence status
+	IsCoexistence     bool              `json:"is_coexistence,omitempty"`     // Whether channel uses Business App + Cloud API
+	WABAID            string            `json:"waba_id,omitempty"`            // WhatsApp Business Account ID
+	LastEchoAt        *time.Time        `json:"last_echo_at,omitempty"`       // Last message echo from Business App
+	CoexistenceStatus CoexistenceStatus `json:"coexistence_status,omitempty"` // Current coexistence status
+
+	// MessageTemplateNamespace is the WABA-level identifier Meta exposes on
+	// GET /{waba-id}. The Cloud API template sending flow does not require
+	// it (templates are addressed by name + language), but partners running
+	// legacy HSM integrations or customers provisioning their own Cloud API
+	// apps do. We fetch it lazily via TemplateService.FetchNamespace.
+	MessageTemplateNamespace string `json:"message_template_namespace,omitempty"`
 }
 
 // NewChannel creates a new channel

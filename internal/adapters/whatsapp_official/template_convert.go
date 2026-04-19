@@ -2,6 +2,7 @@ package whatsapp_official
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 )
@@ -40,6 +41,30 @@ type SendValues struct {
 	// FlowExtras lets a caller attach a flow_action_data blob to a flow
 	// button at the given index. Ignored for any other button type.
 	FlowExtras map[int]map[string]interface{}
+
+	// CardValues carries per-card runtime values for a CAROUSEL component.
+	// Keyed by card_index (matching the position in the approved template),
+	// each entry is a scoped SendValues whose own BodyParams / HeaderImage*
+	// / ButtonValues feed the card's sub-components. Cards without a
+	// matching entry are sent with their static definition only.
+	CardValues map[int]CardSendValues
+}
+
+// CardSendValues carries the runtime substitutions for a single carousel
+// card. Mirrors the top-level SendValues but scoped to one card — each
+// card has its own header (image/video), body params, and button values.
+type CardSendValues struct {
+	BodyParams             []string
+	NamedBody              map[string]string
+	HeaderImageID          string
+	HeaderImageURL         string
+	HeaderVideoID          string
+	HeaderVideoURL         string
+	HeaderDocumentID       string
+	HeaderDocumentURL      string
+	HeaderDocumentFilename string
+	ButtonValues           map[int]string
+	FlowExtras             map[int]map[string]interface{}
 }
 
 // BuildSendPayload converts a stored entity.Template plus its runtime
@@ -88,7 +113,12 @@ func BuildSendPayload(t *entity.Template, values SendValues) (*TemplateObject, e
 		case "BUTTONS":
 			obj.Components = append(obj.Components, buildButtonSendComponents(comp, values)...)
 
-		case "FOOTER", "CAROUSEL", "LIMITED_TIME_OFFER":
+		case "CAROUSEL":
+			if card := buildCarouselSendComponent(comp, values); card != nil {
+				obj.Components = append(obj.Components, *card)
+			}
+
+		case "FOOTER", "LIMITED_TIME_OFFER":
 			// Static content — Meta uses the approved template definition and
 			// does not expect runtime parameters for these on /messages.
 
@@ -99,6 +129,69 @@ func BuildSendPayload(t *entity.Template, values SendValues) (*TemplateObject, e
 	}
 
 	return obj, nil
+}
+
+// buildCarouselSendComponent emits the carousel wrapper that Meta expects:
+//
+//	{"type":"carousel","cards":[{"card_index":0,"components":[...]}]}
+//
+// Each card's runtime values come from `values.CardValues[cardIndex]`.
+// Cards without runtime values are skipped entirely — Meta then uses the
+// approved card definition with no substitutions.
+func buildCarouselSendComponent(comp entity.TemplateComponent, values SendValues) *TemplateComponent {
+	if len(values.CardValues) == 0 {
+		return nil
+	}
+
+	cards := make([]TemplateCard, 0, len(comp.Cards))
+	for cardIndex := range comp.Cards {
+		cv, ok := values.CardValues[cardIndex]
+		if !ok {
+			continue
+		}
+		// Re-use the top-level helpers by projecting CardSendValues into a
+		// SendValues. Each helper already handles "missing value → skip",
+		// so empty fields on the card become absent components.
+		scoped := SendValues{
+			BodyParams:             cv.BodyParams,
+			NamedBody:              cv.NamedBody,
+			HeaderImageID:          cv.HeaderImageID,
+			HeaderImageURL:         cv.HeaderImageURL,
+			HeaderVideoID:          cv.HeaderVideoID,
+			HeaderVideoURL:         cv.HeaderVideoURL,
+			HeaderDocumentID:       cv.HeaderDocumentID,
+			HeaderDocumentURL:      cv.HeaderDocumentURL,
+			HeaderDocumentFilename: cv.HeaderDocumentFilename,
+			ButtonValues:           cv.ButtonValues,
+			FlowExtras:             cv.FlowExtras,
+		}
+
+		var cardComponents []TemplateComponent
+		for _, sub := range comp.Cards[cardIndex].Components {
+			switch sub.Type {
+			case "HEADER":
+				if h, err := buildHeaderSendComponent(sub, scoped); err == nil && h != nil {
+					cardComponents = append(cardComponents, *h)
+				}
+			case "BODY":
+				if p := buildBodyParams(sub, scoped); len(p) > 0 {
+					cardComponents = append(cardComponents, TemplateComponent{Type: "body", Parameters: p})
+				}
+			case "BUTTONS":
+				cardComponents = append(cardComponents, buildButtonSendComponents(sub, scoped)...)
+			}
+		}
+
+		cards = append(cards, TemplateCard{
+			CardIndex:  cardIndex,
+			Components: cardComponents,
+		})
+	}
+
+	if len(cards) == 0 {
+		return nil
+	}
+	return &TemplateComponent{Type: "carousel", Cards: cards}
 }
 
 func buildHeaderSendComponent(comp entity.TemplateComponent, values SendValues) (*TemplateComponent, error) {
@@ -165,11 +258,24 @@ func buildHeaderSendComponent(comp entity.TemplateComponent, values SendValues) 
 }
 
 func buildBodyParams(comp entity.TemplateComponent, values SendValues) []TemplateParameter {
-	// Prefer named params when provided — they keep authoring order-independent.
+	// Named params: Meta needs the parameter_name on each parameter to
+	// match it against the template's {{name}} placeholders. Iterating
+	// over the map is order-unstable in Go, so we sort by key to keep the
+	// outbound JSON deterministic (useful for cache headers, test
+	// assertions, and reproducible request logs).
 	if len(values.NamedBody) > 0 {
-		params := make([]TemplateParameter, 0, len(values.NamedBody))
-		for _, v := range values.NamedBody {
-			params = append(params, TemplateParameter{Type: "text", Text: v})
+		keys := make([]string, 0, len(values.NamedBody))
+		for k := range values.NamedBody {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		params := make([]TemplateParameter, 0, len(keys))
+		for _, k := range keys {
+			params = append(params, TemplateParameter{
+				Type:          "text",
+				ParameterName: k,
+				Text:          values.NamedBody[k],
+			})
 		}
 		return params
 	}
