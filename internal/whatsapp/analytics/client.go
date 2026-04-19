@@ -12,6 +12,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 // Client handles WhatsApp Analytics API interactions
@@ -56,7 +58,7 @@ func NewClient(config *ClientConfig) *Client {
 		businessID:    config.BusinessID,
 		phoneNumberID: config.PhoneNumberID,
 		apiVersion:    apiVersion,
-		baseURL:       "https://graph.facebook.com",
+		baseURL:       graphapi.BaseURL(),
 		cache:         make(map[string]*cachedAnalytics),
 	}
 }

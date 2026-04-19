@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 // Client handles WhatsApp Payments API interactions
@@ -62,7 +64,7 @@ func NewClient(config *ClientConfig) *Client {
 		accessToken:    config.AccessToken,
 		phoneNumberID:  config.PhoneNumberID,
 		apiVersion:     apiVersion,
-		baseURL:        "https://graph.facebook.com",
+		baseURL:        graphapi.BaseURL(),
 		gatewayConfig:  config.GatewayConfig,
 		store:          config.Store,
 		organizationID: config.OrganizationID,

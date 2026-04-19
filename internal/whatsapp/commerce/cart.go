@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 // CartManager handles shopping cart operations
@@ -59,7 +61,7 @@ func NewCartManager(config *CartManagerConfig) *CartManager {
 		accessToken:      config.AccessToken,
 		phoneNumberID:    config.PhoneNumberID,
 		apiVersion:       apiVersion,
-		baseURL:          "https://graph.facebook.com",
+		baseURL:          graphapi.BaseURL(),
 		carts:            make(map[string]*Cart),
 		abandonedCarts:   make(map[string]*Cart),
 		cartTTL:          cartTTL,

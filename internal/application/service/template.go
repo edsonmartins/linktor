@@ -13,6 +13,7 @@ import (
 	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 // TemplateService handles template operations
@@ -286,7 +287,7 @@ func (s *TemplateService) getChannelCredentials(ctx context.Context, channelID s
 }
 
 func (s *TemplateService) createTemplateOnMeta(ctx context.Context, creds *metaCredentials, template *entity.Template) (string, error) {
-	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates", whatsappofficial.DefaultAPIVersion, creds.wabaID)
+	url := fmt.Sprintf("%s/%s/%s/message_templates", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, creds.wabaID)
 
 	payload := map[string]interface{}{
 		"name":     template.Name,
@@ -314,7 +315,7 @@ func (s *TemplateService) createTemplateOnMeta(ctx context.Context, creds *metaC
 }
 
 func (s *TemplateService) deleteTemplateOnMeta(ctx context.Context, creds *metaCredentials, templateName string) error {
-	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates?name=%s", whatsappofficial.DefaultAPIVersion, creds.wabaID, templateName)
+	url := fmt.Sprintf("%s/%s/%s/message_templates?name=%s", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, creds.wabaID, templateName)
 	_, err := s.metaRequest(ctx, "DELETE", url, creds.accessToken, nil)
 	return err
 }
@@ -328,7 +329,7 @@ type metaTemplateInfo struct {
 }
 
 func (s *TemplateService) listTemplatesFromMeta(ctx context.Context, creds *metaCredentials) ([]metaTemplateInfo, error) {
-	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/message_templates?limit=250", whatsappofficial.DefaultAPIVersion, creds.wabaID)
+	url := fmt.Sprintf("%s/%s/%s/message_templates?limit=250", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, creds.wabaID)
 
 	respBody, err := s.metaRequest(ctx, "GET", url, creds.accessToken, nil)
 	if err != nil {

@@ -1,0 +1,45 @@
+name: linktor-mocks
+
+services:
+  whatsapp-mock:
+    image: stoplight/prism:5
+    container_name: linktor-whatsapp-mock
+    command: >
+      mock
+      -h 0.0.0.0
+      -p 4010
+      -m false
+      --errors=false
+      -d
+      /spec/business-messaging-api_v23.0.yaml
+    volumes:
+      - ../../documentos:/spec:ro
+    ports:
+      - "4010:4010"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4010/v23.0/me"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+
+  # Prism in proxy mode: use this instead of `whatsapp-mock` when you want
+  # to record how Linktor talks to a real API under controlled credentials.
+  # Start it with `docker compose --profile proxy up whatsapp-proxy`.
+  whatsapp-proxy:
+    image: stoplight/prism:5
+    container_name: linktor-whatsapp-proxy
+    profiles: ["proxy"]
+    command: >
+      proxy
+      -h 0.0.0.0
+      -p 4011
+      -m false
+      /spec/business-messaging-api_v23.0.yaml
+      https://graph.facebook.com
+    volumes:
+      - ../../documentos:/spec:ro
+    ports:
+      - "4011:4011"
+    restart: unless-stopped

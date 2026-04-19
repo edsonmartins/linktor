@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 // FlowStatus represents the status of a WhatsApp Flow
@@ -113,7 +115,7 @@ func NewFlowClient(config *FlowClientConfig) *FlowClient {
 		accessToken: config.AccessToken,
 		wabaID:      config.WABAID,
 		apiVersion:  apiVersion,
-		baseURL:     "https://graph.facebook.com",
+		baseURL:     graphapi.BaseURL(),
 	}
 }
 
@@ -528,7 +530,7 @@ func (s *FlowSender) SendFlow(ctx context.Context, input *SendFlowInput) (string
 		}
 	}
 
-	url := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages", s.apiVersion, s.phoneNumberID)
+	url := fmt.Sprintf("%s/%s/%s/messages", graphapi.BaseURL(), s.apiVersion, s.phoneNumberID)
 
 	body, err := json.Marshal(msg)
 	if err != nil {

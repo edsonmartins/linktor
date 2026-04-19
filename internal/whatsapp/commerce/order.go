@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 // OrderManager handles order operations
@@ -46,7 +48,7 @@ func NewOrderManager(config *OrderManagerConfig) *OrderManager {
 		accessToken:   config.AccessToken,
 		phoneNumberID: config.PhoneNumberID,
 		apiVersion:    apiVersion,
-		baseURL:       "https://graph.facebook.com",
+		baseURL:       graphapi.BaseURL(),
 		orders:        make(map[string]*Order),
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 // Client wraps the Meta Graph API
@@ -32,7 +34,7 @@ func NewClient(accessToken, appSecret string) *Client {
 		accessToken: accessToken,
 		appSecret:   appSecret,
 		apiVersion:  DefaultAPIVersion,
-		baseURL:     GraphAPIBaseURL,
+		baseURL:     graphapi.BaseURL(),
 	}
 }
 

@@ -17,9 +17,6 @@ type Config struct {
 // DefaultAPIVersion is the default Meta Graph API version
 const DefaultAPIVersion = "v23.0"
 
-// BaseURL is the Meta Graph API base URL
-const BaseURL = "https://graph.facebook.com"
-
 // WebhookPayload represents the incoming webhook payload from Meta
 type WebhookPayload struct {
 	Object string         `json:"object"`

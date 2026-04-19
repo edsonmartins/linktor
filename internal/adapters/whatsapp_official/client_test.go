@@ -1109,7 +1109,7 @@ func TestNewClient_DefaultAPIVersion(t *testing.T) {
 	client := NewClient(config)
 
 	assert.Equal(t, DefaultAPIVersion, client.config.APIVersion)
-	assert.Equal(t, "v21.0", client.config.APIVersion)
+	assert.Equal(t, "v23.0", client.config.APIVersion)
 }
 
 func TestNewClient_CustomAPIVersion(t *testing.T) {

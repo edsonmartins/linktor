@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 // CatalogClient manages interactions with Facebook Commerce Manager catalogs
@@ -45,7 +47,7 @@ func NewCatalogClient(config *CatalogClientConfig) *CatalogClient {
 		businessID:    config.BusinessID,
 		phoneNumberID: config.PhoneNumberID,
 		apiVersion:    apiVersion,
-		baseURL:       "https://graph.facebook.com",
+		baseURL:       graphapi.BaseURL(),
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/msgfy/linktor/pkg/graphapi"
 	"golang.org/x/time/rate"
 )
 
@@ -365,7 +366,7 @@ func (c *Client) GetHealth(ctx context.Context) (*HealthStatus, error) {
 
 // buildURL builds the API URL
 func (c *Client) buildURL(path string) string {
-	return fmt.Sprintf("%s/%s%s", BaseURL, c.config.APIVersion, path)
+	return fmt.Sprintf("%s/%s%s", graphapi.BaseURL(), c.config.APIVersion, path)
 }
 
 // doRequest executes an HTTP request with retry logic

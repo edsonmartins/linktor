@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 // Client handles WhatsApp Business Calling API interactions
@@ -44,7 +46,7 @@ func NewClient(config *ClientConfig) *Client {
 		accessToken:   config.AccessToken,
 		phoneNumberID: config.PhoneNumberID,
 		apiVersion:    apiVersion,
-		baseURL:       "https://graph.facebook.com",
+		baseURL:       graphapi.BaseURL(),
 		calls:         make(map[string]*Call),
 	}
 }

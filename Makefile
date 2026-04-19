@@ -1,4 +1,4 @@
-.PHONY: all build run test lint clean proto docker-up docker-down help
+.PHONY: all build run test lint clean proto docker-up docker-down help mock-whatsapp-up mock-whatsapp-down mock-whatsapp-logs test-with-mock
 
 # Variables
 BINARY_NAME=linktor
@@ -66,6 +66,24 @@ docker-logs: ## Show Docker logs
 
 docker-clean: ## Remove Docker volumes
 	docker-compose down -v
+
+## Mock servers (Prism — deploy/mocks/)
+
+MOCK_COMPOSE=docker compose -f deploy/mocks/docker-compose.mocks.yml
+
+mock-whatsapp-up: ## Start the Meta Graph API mock server (Prism on :4010)
+	$(MOCK_COMPOSE) up -d whatsapp-mock
+	@echo "→ Mock up at http://localhost:4010"
+	@echo "→ Export LINKTOR_GRAPH_API_URL=http://localhost:4010 to redirect traffic"
+
+mock-whatsapp-down: ## Stop the Meta Graph API mock server
+	$(MOCK_COMPOSE) down
+
+mock-whatsapp-logs: ## Tail the mock server logs
+	$(MOCK_COMPOSE) logs -f whatsapp-mock
+
+test-with-mock: ## Run tests against the Prism mock (requires mock-whatsapp-up)
+	LINKTOR_GRAPH_API_URL=http://localhost:4010 $(GO) test ./internal/adapters/whatsapp_official/... ./internal/whatsapp/...
 
 ## Database
 

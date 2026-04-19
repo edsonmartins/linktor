@@ -21,6 +21,7 @@ import (
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
 const (
@@ -64,7 +65,7 @@ func NewWhatsAppEmbeddedSignupHandler(channelRepo repository.ChannelRepository, 
 	return &WhatsAppEmbeddedSignupHandler{
 		channelRepo: channelRepo,
 		baseURL:     normalizedURL,
-		graphAPIURL: "https://graph.facebook.com/" + whatsappofficial.DefaultAPIVersion,
+		graphAPIURL: graphapi.BaseURL() + "/" + whatsappofficial.DefaultAPIVersion,
 		stateSecret: secret,
 		httpClient: &http.Client{
 			Timeout: HTTPClientTimeout,
