@@ -107,6 +107,39 @@ func validateComponent(index int, c entity.TemplateComponent) error {
 			return fmt.Errorf("component[%d] FOOTER must not contain variables", index)
 		}
 
+	case "CAROUSEL":
+		if len(c.Cards) == 0 {
+			return fmt.Errorf("component[%d] CAROUSEL must have at least one card", index)
+		}
+		if len(c.Cards) > 10 {
+			return fmt.Errorf("component[%d] CAROUSEL supports at most 10 cards, got %d", index, len(c.Cards))
+		}
+		// Each card's sub-components must pass the same validation as a
+		// top-level template. Cards without a BODY are rejected because
+		// Meta requires it for the card to render.
+		for ci, card := range c.Cards {
+			hasBody := false
+			for _, sub := range card.Components {
+				if sub.Type == "BODY" {
+					hasBody = true
+				}
+			}
+			if !hasBody {
+				return fmt.Errorf("component[%d].cards[%d] must contain a BODY sub-component", index, ci)
+			}
+			if err := validateTemplateComponents(card.Components); err != nil {
+				return fmt.Errorf("component[%d].cards[%d]: %w", index, ci, err)
+			}
+		}
+
+	case "LIMITED_TIME_OFFER":
+		if c.LimitedTimeOffer == nil {
+			return fmt.Errorf("component[%d] LIMITED_TIME_OFFER requires limited_time_offer payload", index)
+		}
+		if c.LimitedTimeOffer.HasExpiration && c.LimitedTimeOffer.ExpirationTimeMS <= 0 {
+			return fmt.Errorf("component[%d] LIMITED_TIME_OFFER with has_expiration=true requires expiration_time_ms", index)
+		}
+
 	case "BUTTONS":
 		// URL buttons may embed a single {{1}} in the href; this is validated
 		// at button creation on Meta's side. We only reject the trivially
@@ -115,7 +148,39 @@ func validateComponent(index int, c entity.TemplateComponent) error {
 			if maxPositionalIndex(b.Text) > 0 || namedPlaceholderCount(b.Text) > 0 {
 				return fmt.Errorf("component[%d].buttons[%d] text must not contain variables", index, j)
 			}
+			if err := validateOTPButton(index, j, b); err != nil {
+				return err
+			}
 		}
+	}
+	return nil
+}
+
+// validateOTPButton applies the specific rules Meta enforces on OTP
+// authentication buttons: ONE_TAP and ZERO_TAP both require at least one
+// entry in supported_apps (package_name + signature_hash), and ZERO_TAP
+// additionally requires zero_tap_terms_accepted to be set to true.
+func validateOTPButton(componentIndex, buttonIndex int, b entity.TemplateButton) error {
+	if b.OTPType == "" {
+		return nil
+	}
+	switch b.OTPType {
+	case "COPY_CODE":
+		// COPY_CODE is the permissive default; no extra fields required.
+	case "ONE_TAP", "ZERO_TAP":
+		if len(b.SupportedApps) == 0 {
+			return fmt.Errorf("component[%d].buttons[%d] otp_type=%s requires supported_apps", componentIndex, buttonIndex, b.OTPType)
+		}
+		for k, app := range b.SupportedApps {
+			if app.PackageName == "" || app.SignatureHash == "" {
+				return fmt.Errorf("component[%d].buttons[%d].supported_apps[%d] requires both package_name and signature_hash", componentIndex, buttonIndex, k)
+			}
+		}
+		if b.OTPType == "ZERO_TAP" && !b.ZeroTapTermsAccepted {
+			return fmt.Errorf("component[%d].buttons[%d] otp_type=ZERO_TAP requires zero_tap_terms_accepted=true", componentIndex, buttonIndex)
+		}
+	default:
+		return fmt.Errorf("component[%d].buttons[%d] unknown otp_type %q (expected COPY_CODE, ONE_TAP, or ZERO_TAP)", componentIndex, buttonIndex, b.OTPType)
 	}
 	return nil
 }

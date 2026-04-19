@@ -21,6 +21,7 @@ type TemplateService struct {
 	templateRepo repository.TemplateRepository
 	channelRepo  repository.ChannelRepository
 	httpClient   *http.Client
+	writeLimiter *templateWriteLimiter
 }
 
 // NewTemplateService creates a new template service
@@ -34,6 +35,10 @@ func NewTemplateService(
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		// Meta's hard ceiling on WABA template writes is ~100/hour. We
+		// shave a bit off the top so concurrent callers don't race into
+		// an 80008 response.
+		writeLimiter: newTemplateWriteLimiter(80, time.Hour),
 	}
 }
 
@@ -88,9 +93,12 @@ func (s *TemplateService) Create(ctx context.Context, input *CreateTemplateInput
 		UpdatedAt:             time.Now(),
 	}
 
-	// Try to create template on Meta if credentials are available
+	// Try to create template on Meta if credentials are available.
 	creds := s.getChannelCredentials(ctx, input.ChannelID)
 	if creds != nil {
+		if err := s.writeLimiter.Allow(creds.wabaID); err != nil {
+			return nil, err
+		}
 		externalID, err := s.createTemplateOnMeta(ctx, creds, template)
 		if err == nil && externalID != "" {
 			template.ExternalID = externalID
@@ -156,6 +164,9 @@ func (s *TemplateService) Edit(ctx context.Context, input *EditTemplateInput) (*
 		return nil, fmt.Errorf("channel missing credentials")
 	}
 
+	if err := s.writeLimiter.Allow(creds.wabaID); err != nil {
+		return nil, err
+	}
 	if err := s.editTemplateOnMeta(ctx, creds, template); err != nil {
 		return nil, fmt.Errorf("failed to edit template on Meta: %w", err)
 	}
@@ -206,6 +217,57 @@ func (s *TemplateService) UpdateQuality(ctx context.Context, externalID string, 
 }
 
 // Delete deletes a template (locally and from Meta if credentials available)
+// DeleteBulk removes multiple templates in a single Meta call. All templates
+// must belong to the same channel (so we can resolve credentials once);
+// mixing channels returns an error rather than silently partitioning.
+func (s *TemplateService) DeleteBulk(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	// Resolve all templates first so we can fail fast before touching Meta.
+	templates := make([]*entity.Template, 0, len(ids))
+	var channelID string
+	for _, id := range ids {
+		tpl, err := s.templateRepo.FindByID(ctx, id)
+		if err != nil {
+			return fmt.Errorf("template %s not found: %w", id, err)
+		}
+		if channelID == "" {
+			channelID = tpl.ChannelID
+		} else if tpl.ChannelID != channelID {
+			return fmt.Errorf("bulk delete requires all templates to share the same channel (got %s and %s)", channelID, tpl.ChannelID)
+		}
+		templates = append(templates, tpl)
+	}
+
+	// Collect external IDs and hit Meta once. Templates that were never
+	// synced (no ExternalID) are dropped from the Meta call but still
+	// removed locally.
+	var hsmIDs []string
+	for _, tpl := range templates {
+		if tpl.ExternalID != "" {
+			hsmIDs = append(hsmIDs, tpl.ExternalID)
+		}
+	}
+	if len(hsmIDs) > 0 {
+		creds := s.getChannelCredentials(ctx, channelID)
+		if creds != nil {
+			if err := s.deleteTemplatesBulkOnMeta(ctx, creds, hsmIDs); err != nil {
+				return fmt.Errorf("bulk delete on Meta failed: %w", err)
+			}
+		}
+	}
+
+	// Remove local rows even if Meta was skipped (no creds or no external IDs).
+	for _, tpl := range templates {
+		if err := s.templateRepo.Delete(ctx, tpl.ID); err != nil {
+			return fmt.Errorf("failed to delete %s locally: %w", tpl.ID, err)
+		}
+	}
+	return nil
+}
+
 func (s *TemplateService) Delete(ctx context.Context, id string) error {
 	template, err := s.templateRepo.FindByID(ctx, id)
 	if err != nil {
@@ -420,6 +482,25 @@ func (s *TemplateService) deleteTemplateOnMeta(ctx context.Context, creds *metaC
 	return err
 }
 
+// deleteTemplatesBulkOnMeta sends a single DELETE with a comma-joined
+// hsm_ids[] so Meta removes every listed template in one call. Useful for
+// the admin "delete N selected templates" UI flow — avoids N round-trips
+// and respects Meta's per-WABA rate limits better.
+func (s *TemplateService) deleteTemplatesBulkOnMeta(ctx context.Context, creds *metaCredentials, hsmIDs []string) error {
+	if len(hsmIDs) == 0 {
+		return nil
+	}
+	// Meta accepts hsm_ids as a JSON array in the query string, e.g.
+	//   ?hsm_ids=["123","456"]
+	ids, err := json.Marshal(hsmIDs)
+	if err != nil {
+		return fmt.Errorf("failed to encode hsm_ids: %w", err)
+	}
+	url := fmt.Sprintf("%s/%s/%s/message_templates?hsm_ids=%s", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, creds.wabaID, string(ids))
+	_, err = s.metaRequest(ctx, "DELETE", url, creds.accessToken, nil)
+	return err
+}
+
 type metaTemplateInfo struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -447,6 +528,161 @@ func (s *TemplateService) editTemplateOnMeta(ctx context.Context, creds *metaCre
 
 	_, err := s.metaRequest(ctx, "POST", url, creds.accessToken, payload)
 	return err
+}
+
+// LibraryTemplate represents a pre-built template Meta exposes via the
+// message_template_library endpoint. Each entry can be instantiated on a
+// WABA by name — Meta handles approval because the wording is pre-vetted.
+type LibraryTemplate struct {
+	Name       string                   `json:"name"`
+	Category   string                   `json:"category"`
+	Language   string                   `json:"language,omitempty"`
+	Industry   []string                 `json:"industry,omitempty"`
+	Topic      string                   `json:"topic,omitempty"`
+	Usecase    string                   `json:"usecase,omitempty"`
+	BodyText   string                   `json:"body_text,omitempty"`
+	HeaderText string                   `json:"header_text,omitempty"`
+	Buttons    []map[string]interface{} `json:"buttons,omitempty"`
+}
+
+// LibraryQuery narrows the template library listing via Meta's filter
+// parameters. All fields are optional; zero value returns the full catalog.
+type LibraryQuery struct {
+	Search   string // free-text match against template content/name
+	Topic    string // e.g. "PAYMENT_REMINDER"
+	Usecase  string
+	Industry string
+	Language string
+}
+
+// ListTemplateLibrary fetches Meta's pre-built template catalog. The list
+// is the same regardless of WABA but we still take a channelID so we can
+// authenticate with the right access token.
+func (s *TemplateService) ListTemplateLibrary(ctx context.Context, channelID string, query LibraryQuery) ([]LibraryTemplate, error) {
+	creds := s.getChannelCredentials(ctx, channelID)
+	if creds == nil {
+		return nil, fmt.Errorf("channel missing credentials")
+	}
+
+	params := ""
+	addParam := func(key, value string) {
+		if value == "" {
+			return
+		}
+		sep := "?"
+		if params != "" {
+			sep = "&"
+		}
+		params += sep + key + "=" + value
+	}
+	addParam("search", query.Search)
+	addParam("topic", query.Topic)
+	addParam("usecase", query.Usecase)
+	addParam("industry", query.Industry)
+	addParam("language", query.Language)
+
+	url := fmt.Sprintf("%s/%s/message_template_library%s", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, params)
+	respBody, err := s.metaRequest(ctx, "GET", url, creds.accessToken, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Data []LibraryTemplate `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse library response: %w", err)
+	}
+	return result.Data, nil
+}
+
+// CreateFromLibraryInput carries the payload for creating a template from
+// Meta's library. library_template_name is required; body/button inputs
+// customise the optional placeholders the library exposes.
+type CreateFromLibraryInput struct {
+	TenantID                  string
+	ChannelID                 string
+	Name                      string
+	Language                  string
+	Category                  entity.TemplateCategory
+	LibraryTemplateName       string
+	LibraryTemplateBodyInputs map[string]interface{}
+	LibraryTemplateButtonInputs []map[string]interface{}
+}
+
+// CreateFromLibrary instantiates a library template on the channel's WABA.
+// The local row is persisted the same way as a hand-crafted template —
+// subsequent sync/refresh/edit calls work identically.
+func (s *TemplateService) CreateFromLibrary(ctx context.Context, input *CreateFromLibraryInput) (*entity.Template, error) {
+	if input.LibraryTemplateName == "" {
+		return nil, fmt.Errorf("library_template_name is required")
+	}
+
+	existing, _ := s.templateRepo.FindByName(ctx, input.TenantID, input.ChannelID, input.Name, input.Language)
+	if existing != nil {
+		return nil, fmt.Errorf("template with name '%s' and language '%s' already exists", input.Name, input.Language)
+	}
+
+	creds := s.getChannelCredentials(ctx, input.ChannelID)
+	if creds == nil {
+		return nil, fmt.Errorf("channel missing credentials")
+	}
+	if err := s.writeLimiter.Allow(creds.wabaID); err != nil {
+		return nil, err
+	}
+
+	payload := map[string]interface{}{
+		"name":                  input.Name,
+		"language":              input.Language,
+		"category":              string(input.Category),
+		"library_template_name": input.LibraryTemplateName,
+	}
+	if len(input.LibraryTemplateBodyInputs) > 0 {
+		payload["library_template_body_inputs"] = input.LibraryTemplateBodyInputs
+	}
+	if len(input.LibraryTemplateButtonInputs) > 0 {
+		payload["library_template_button_inputs"] = input.LibraryTemplateButtonInputs
+	}
+
+	url := fmt.Sprintf("%s/%s/%s/message_templates", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, creds.wabaID)
+	respBody, err := s.metaRequest(ctx, "POST", url, creds.accessToken, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create template from library: %w", err)
+	}
+
+	var result struct {
+		ID       string `json:"id"`
+		Status   string `json:"status"`
+		Category string `json:"category"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse library create response: %w", err)
+	}
+
+	template := &entity.Template{
+		ID:           generateID(),
+		TenantID:     input.TenantID,
+		ChannelID:    input.ChannelID,
+		ExternalID:   result.ID,
+		Name:         input.Name,
+		Language:     input.Language,
+		Category:     input.Category,
+		Status:       mapMetaStatusToEntity(result.Status),
+		QualityScore: entity.TemplateQualityUnknown,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if template.Status == "" {
+		template.Status = entity.TemplateStatusPending
+	}
+	if result.Category != "" {
+		template.Category = entity.TemplateCategory(result.Category)
+	}
+
+	if err := s.templateRepo.Create(ctx, template); err != nil {
+		return nil, fmt.Errorf("failed to save template: %w", err)
+	}
+	return template, nil
 }
 
 // getTemplateFromMeta fetches a single template by its Meta ID (hsm_id).

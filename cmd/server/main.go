@@ -921,6 +921,9 @@ func main() {
 			{
 				templates.GET("", templateHandler.List)
 				templates.POST("", templateHandler.Create)
+				templates.DELETE("", templateHandler.BulkDelete)
+				templates.GET("/library", templateHandler.ListLibrary)
+				templates.POST("/library", templateHandler.CreateFromLibrary)
 				templates.GET("/:id", templateHandler.Get)
 				templates.PATCH("/:id", templateHandler.Edit)
 				templates.DELETE("/:id", templateHandler.Delete)

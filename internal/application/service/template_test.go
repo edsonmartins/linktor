@@ -464,6 +464,51 @@ func TestTemplateService_Create_OmitsEmptyOptionalFields(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// DeleteBulk — DELETE /message_templates?hsm_ids=[...]
+// -----------------------------------------------------------------------------
+
+func TestTemplateService_DeleteBulk_SingleCallToMeta(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-1", Type: entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{"access_token": "t", "waba_id": "w"},
+	}
+	templateRepo.Templates["a"] = &entity.Template{ID: "a", ChannelID: "ch-1", ExternalID: "hsm-1", Name: "a"}
+	templateRepo.Templates["b"] = &entity.Template{ID: "b", ChannelID: "ch-1", ExternalID: "hsm-2", Name: "b"}
+	templateRepo.Templates["c"] = &entity.Template{ID: "c", ChannelID: "ch-1", ExternalID: "", Name: "c"} // unsynced
+
+	var calls int
+	var capturedURL string
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		capturedURL = r.URL.String()
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"success":true}`))}, nil
+	})
+
+	require.NoError(t, svc.DeleteBulk(context.Background(), []string{"a", "b", "c"}))
+	assert.Equal(t, 1, calls, "bulk delete must hit Meta exactly once")
+	assert.Contains(t, capturedURL, "hsm_ids=")
+	// All three rows are gone locally — even the unsynced one
+	assert.Empty(t, templateRepo.Templates)
+}
+
+func TestTemplateService_DeleteBulk_RejectsCrossChannel(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	templateRepo.Templates["a"] = &entity.Template{ID: "a", ChannelID: "ch-1", ExternalID: "hsm-1"}
+	templateRepo.Templates["b"] = &entity.Template{ID: "b", ChannelID: "ch-2", ExternalID: "hsm-2"}
+
+	err := svc.DeleteBulk(context.Background(), []string{"a", "b"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "same channel")
+}
+
+func TestTemplateService_DeleteBulk_EmptyNoOp(t *testing.T) {
+	svc, _ := setupTemplateService()
+	assert.NoError(t, svc.DeleteBulk(context.Background(), nil))
+}
+
+// -----------------------------------------------------------------------------
 // Edit — POST /{template_id}
 // -----------------------------------------------------------------------------
 

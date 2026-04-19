@@ -251,6 +251,95 @@ func (h *TemplateHandler) Sync(c *gin.Context) {
 	})
 }
 
+// ListLibrary godoc
+// @Summary      List Meta template library
+// @Description  Returns pre-built templates from Meta's library that can be instantiated via CreateFromLibrary
+// @Tags         templates
+// @Produce      json
+// @Security     BearerAuth
+// @Param        channel_id query string true "Channel ID (resolves access token)"
+// @Param        search query string false "Free-text match"
+// @Param        topic query string false "Topic filter"
+// @Param        usecase query string false "Use-case filter"
+// @Param        industry query string false "Industry filter"
+// @Param        language query string false "Language filter"
+// @Success      200 {object} Response{data=[]service.LibraryTemplate}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /templates/library [get]
+func (h *TemplateHandler) ListLibrary(c *gin.Context) {
+	channelID := c.Query("channel_id")
+	if channelID == "" {
+		RespondValidationError(c, "channel_id query param is required", nil)
+		return
+	}
+	query := service.LibraryQuery{
+		Search:   c.Query("search"),
+		Topic:    c.Query("topic"),
+		Usecase:  c.Query("usecase"),
+		Industry: c.Query("industry"),
+		Language: c.Query("language"),
+	}
+	items, err := h.templateService.ListTemplateLibrary(c.Request.Context(), channelID, query)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	RespondSuccess(c, items)
+}
+
+// CreateFromLibraryRequest is the payload accepted by POST /templates/library.
+type CreateFromLibraryRequest struct {
+	ChannelID                   string                   `json:"channel_id" binding:"required"`
+	Name                        string                   `json:"name" binding:"required"`
+	Language                    string                   `json:"language" binding:"required"`
+	Category                    string                   `json:"category" binding:"required,oneof=AUTHENTICATION MARKETING UTILITY"`
+	LibraryTemplateName         string                   `json:"library_template_name" binding:"required"`
+	LibraryTemplateBodyInputs   map[string]interface{}   `json:"library_template_body_inputs,omitempty"`
+	LibraryTemplateButtonInputs []map[string]interface{} `json:"library_template_button_inputs,omitempty"`
+}
+
+// CreateFromLibrary godoc
+// @Summary      Instantiate a library template
+// @Description  Creates a new message template on the channel's WABA by cloning a pre-approved template from Meta's library
+// @Tags         templates
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body CreateFromLibraryRequest true "Library template reference"
+// @Success      201 {object} Response{data=entity.Template}
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /templates/library [post]
+func (h *TemplateHandler) CreateFromLibrary(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	var req CreateFromLibraryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondValidationError(c, "Invalid request body", nil)
+		return
+	}
+
+	template, err := h.templateService.CreateFromLibrary(c.Request.Context(), &service.CreateFromLibraryInput{
+		TenantID:                    tenantID,
+		ChannelID:                   req.ChannelID,
+		Name:                        req.Name,
+		Language:                    req.Language,
+		Category:                    entity.TemplateCategory(req.Category),
+		LibraryTemplateName:         req.LibraryTemplateName,
+		LibraryTemplateBodyInputs:   req.LibraryTemplateBodyInputs,
+		LibraryTemplateButtonInputs: req.LibraryTemplateButtonInputs,
+	})
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	RespondCreated(c, template)
+}
+
 // EditTemplateRequest is the payload accepted by PATCH /templates/{id}.
 // Category and components are the two fields Meta accepts on edit;
 // message_send_ttl_seconds piggybacks because it's also editable.
@@ -299,6 +388,37 @@ func (h *TemplateHandler) Edit(c *gin.Context) {
 	}
 
 	RespondSuccess(c, template)
+}
+
+// BulkDeleteTemplatesRequest carries the IDs for DELETE /templates (bulk).
+type BulkDeleteTemplatesRequest struct {
+	IDs []string `json:"ids" binding:"required,min=1"`
+}
+
+// BulkDelete godoc
+// @Summary      Bulk delete templates
+// @Description  Deletes multiple templates in a single call; all templates must share the same channel
+// @Tags         templates
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body BulkDeleteTemplatesRequest true "Template IDs"
+// @Success      204
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Router       /templates [delete]
+func (h *TemplateHandler) BulkDelete(c *gin.Context) {
+	var req BulkDeleteTemplatesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondValidationError(c, "Invalid request body", nil)
+		return
+	}
+
+	if err := h.templateService.DeleteBulk(c.Request.Context(), req.IDs); err != nil {
+		RespondError(c, err)
+		return
+	}
+	RespondNoContent(c)
 }
 
 // Refresh godoc

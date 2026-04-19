@@ -87,14 +87,40 @@ type Template struct {
 	UpdatedAt         time.Time        `json:"updated_at"`
 }
 
-// TemplateComponent represents a component of a template (header, body, footer, buttons)
+// TemplateComponent represents a component of a template at creation time.
+// Allowed `Type` values:
+//   - HEADER / BODY / FOOTER — plain text or media components
+//   - BUTTONS — button row (QUICK_REPLY / URL / PHONE_NUMBER / OTP / FLOW)
+//   - CAROUSEL — card-based carousel (fill Cards)
+//   - LIMITED_TIME_OFFER — time-bound promo banner (fill LimitedTimeOffer)
 type TemplateComponent struct {
-	Type       string                 `json:"type"` // HEADER, BODY, FOOTER, BUTTONS
+	Type       string                 `json:"type"`
 	Format     string                 `json:"format,omitempty"` // TEXT, IMAGE, VIDEO, DOCUMENT, LOCATION
 	Text       string                 `json:"text,omitempty"`
 	Example    *TemplateExample       `json:"example,omitempty"`
 	Buttons    []TemplateButton       `json:"buttons,omitempty"`
 	Parameters []TemplateParameter    `json:"parameters,omitempty"`
+	// Cards applies to CAROUSEL components. Each card carries its own
+	// header/body/buttons sub-components. Meta caps carousel at 10 cards.
+	Cards []TemplateCarouselCard `json:"cards,omitempty"`
+	// LimitedTimeOffer applies to the LIMITED_TIME_OFFER component.
+	LimitedTimeOffer *TemplateLimitedTimeOffer `json:"limited_time_offer,omitempty"`
+}
+
+// TemplateCarouselCard is one card inside a carousel. A card must carry at
+// least a header and body, and may carry a button row. Cards share the
+// overall template's body; their own body can further vary per card.
+type TemplateCarouselCard struct {
+	Components []TemplateComponent `json:"components"`
+}
+
+// TemplateLimitedTimeOffer declares a countdown promo banner on a
+// utility/marketing template. `ExpirationTimeMS` is an absolute unix
+// millisecond timestamp; `HasExpiration=false` disables the countdown.
+type TemplateLimitedTimeOffer struct {
+	Text             string `json:"text,omitempty"`
+	HasExpiration    bool   `json:"has_expiration"`
+	ExpirationTimeMS int64  `json:"expiration_time_ms,omitempty"`
 }
 
 // TemplateExample represents example values for a template
@@ -104,7 +130,9 @@ type TemplateExample struct {
 	HeaderHandle []string   `json:"header_handle,omitempty"` // For media headers
 }
 
-// TemplateButton represents a button in a template
+// TemplateButton represents a button in a template at creation time.
+// Meta has different shapes per button type — the struct carries the
+// superset and only the fields relevant to `Type` are serialized.
 type TemplateButton struct {
 	Type        string `json:"type"` // QUICK_REPLY, URL, PHONE_NUMBER, COPY_CODE, OTP, FLOW
 	Text        string `json:"text"`
@@ -113,6 +141,23 @@ type TemplateButton struct {
 	FlowID      string `json:"flow_id,omitempty"`
 	FlowAction  string `json:"flow_action,omitempty"` // navigate, data_exchange
 	Example     string `json:"example,omitempty"`
+	// OTP-specific fields. OTPType selects the autofill experience:
+	//   - COPY_CODE → user manually taps "copy" (fallback for all apps)
+	//   - ONE_TAP   → same as copy but Meta can autofill if supported_apps matches
+	//   - ZERO_TAP  → fully automatic autofill; requires zero_tap_terms_accepted
+	OTPType              string            `json:"otp_type,omitempty"`
+	AutofillText         string            `json:"autofill_text,omitempty"`
+	PackageName          string            `json:"package_name,omitempty"`
+	SignatureHash        string            `json:"signature_hash,omitempty"`
+	SupportedApps        []TemplateOTPApp  `json:"supported_apps,omitempty"`
+	ZeroTapTermsAccepted bool              `json:"zero_tap_terms_accepted,omitempty"`
+}
+
+// TemplateOTPApp identifies an Android app that can autofill an OTP code
+// via Meta's WhatsApp OTP API. Required for ONE_TAP and ZERO_TAP.
+type TemplateOTPApp struct {
+	PackageName   string `json:"package_name"`
+	SignatureHash string `json:"signature_hash"`
 }
 
 // TemplateParameter represents a parameter in a template message
