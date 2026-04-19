@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -360,6 +361,230 @@ func TestTemplateService_ProcessTemplateCategoryWebhook(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, entity.TemplateCategoryMarketing, templateRepo.Templates["t1"].Category)
+}
+
+// -----------------------------------------------------------------------------
+// Create payload — new P1 fields (parameter_format, sub_category, TTL, allow_category_change)
+// -----------------------------------------------------------------------------
+
+func TestTemplateService_Create_SendsNewFieldsToMeta(t *testing.T) {
+	svc, _ := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID:       "ch-1",
+		TenantID: "tenant-1",
+		Type:     entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{
+			"access_token": "test-token",
+			"waba_id":      "waba-123",
+		},
+	}
+
+	var captured map[string]interface{}
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &captured)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"id":"tpl-new"}`)),
+		}, nil
+	})
+
+	_, err := svc.Create(context.Background(), &CreateTemplateInput{
+		TenantID:              "tenant-1",
+		ChannelID:             "ch-1",
+		Name:                  "order_update",
+		Language:              "pt_BR",
+		Category:              entity.TemplateCategoryUtility,
+		SubCategory:           "ORDER_STATUS",
+		ParameterFormat:       entity.TemplateParameterFormatNamed,
+		MessageSendTTLSeconds: 3600,
+		AllowCategoryChange:   true,
+		Components: []entity.TemplateComponent{
+			{
+				Type: "BODY",
+				Text: "Oi {{customer_name}}, o pedido {{order_id}} foi atualizado.",
+				Example: &entity.TemplateExample{
+					BodyText: [][]string{{"Ana", "ORD-42"}},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, captured)
+
+	assert.Equal(t, "order_update", captured["name"])
+	assert.Equal(t, "pt_BR", captured["language"])
+	assert.Equal(t, "UTILITY", captured["category"])
+	assert.Equal(t, "ORDER_STATUS", captured["sub_category"])
+	assert.Equal(t, "NAMED", captured["parameter_format"])
+	assert.Equal(t, float64(3600), captured["message_send_ttl_seconds"])
+	assert.Equal(t, true, captured["allow_category_change"])
+}
+
+func TestTemplateService_Create_OmitsEmptyOptionalFields(t *testing.T) {
+	// When the caller doesn't set the new optional fields, the payload
+	// should not carry them (Meta would otherwise interpret zero values as
+	// explicit settings).
+	svc, _ := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-1", Type: entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{"access_token": "t", "waba_id": "w"},
+	}
+
+	var captured map[string]interface{}
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &captured)
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"t"}`))}, nil
+	})
+
+	_, err := svc.Create(context.Background(), &CreateTemplateInput{
+		TenantID:  "tenant-1",
+		ChannelID: "ch-1",
+		Name:      "plain",
+		Language:  "pt_BR",
+		Category:  entity.TemplateCategoryMarketing,
+		Components: []entity.TemplateComponent{
+			{Type: "BODY", Text: "No variables"},
+		},
+	})
+	require.NoError(t, err)
+
+	_, hasSub := captured["sub_category"]
+	_, hasFmt := captured["parameter_format"]
+	_, hasTTL := captured["message_send_ttl_seconds"]
+	_, hasAllow := captured["allow_category_change"]
+	assert.False(t, hasSub, "sub_category must be omitted when empty")
+	assert.False(t, hasFmt, "parameter_format must be omitted when empty")
+	assert.False(t, hasTTL, "message_send_ttl_seconds must be omitted when zero")
+	assert.False(t, hasAllow, "allow_category_change must be omitted when false")
+}
+
+// -----------------------------------------------------------------------------
+// Edit — POST /{template_id}
+// -----------------------------------------------------------------------------
+
+func TestTemplateService_Edit_SendsChangesToMeta(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-1", Type: entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{"access_token": "test-token", "waba_id": "w"},
+	}
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID:         "t1",
+		TenantID:   "tenant-1",
+		ChannelID:  "ch-1",
+		ExternalID: "hsm-42",
+		Name:       "welcome",
+		Language:   "pt_BR",
+		Category:   entity.TemplateCategoryUtility,
+		Status:     entity.TemplateStatusApproved,
+	}
+
+	var capturedURL string
+	var captured map[string]interface{}
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		capturedURL = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &captured)
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"success":true}`))}, nil
+	})
+
+	newComponents := []entity.TemplateComponent{
+		{Type: "BODY", Text: "New body no vars"},
+	}
+	result, err := svc.Edit(context.Background(), &EditTemplateInput{
+		ID:                    "t1",
+		Category:              entity.TemplateCategoryMarketing,
+		Components:            newComponents,
+		MessageSendTTLSeconds: 7200,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// Status resets to PENDING after edit — mirrors Meta's behaviour
+	assert.Equal(t, entity.TemplateStatusPending, result.Status)
+	assert.Equal(t, entity.TemplateCategoryMarketing, result.Category)
+	assert.Contains(t, capturedURL, "/hsm-42", "edit must target /{template_id}")
+	assert.Equal(t, "MARKETING", captured["category"])
+	assert.Equal(t, float64(7200), captured["message_send_ttl_seconds"])
+}
+
+func TestTemplateService_Edit_RejectsInvalidComponents(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID: "t1", ChannelID: "ch-1", ExternalID: "hsm-1",
+	}
+
+	_, err := svc.Edit(context.Background(), &EditTemplateInput{
+		ID: "t1",
+		Components: []entity.TemplateComponent{
+			{Type: "BODY", Text: "Hi {{1}}"}, // no example
+		},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid template")
+}
+
+func TestTemplateService_Edit_RequiresSyncedTemplate(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID: "t1", ChannelID: "ch-1", // no ExternalID
+	}
+
+	_, err := svc.Edit(context.Background(), &EditTemplateInput{
+		ID:         "t1",
+		Components: []entity.TemplateComponent{{Type: "BODY", Text: "ok"}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "synced")
+}
+
+// -----------------------------------------------------------------------------
+// Refresh — GET /{template_id}
+// -----------------------------------------------------------------------------
+
+func TestTemplateService_RefreshFromMeta_UpdatesLocalRow(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-1", Type: entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{"access_token": "t", "waba_id": "w"},
+	}
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID: "t1", TenantID: "tenant-1", ChannelID: "ch-1",
+		ExternalID: "hsm-99",
+		Status:     entity.TemplateStatusPending,
+	}
+
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		assert.Contains(t, r.URL.Path, "/hsm-99")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"id":"hsm-99","name":"welcome","language":"en_US","status":"APPROVED","category":"UTILITY"}`)),
+		}, nil
+	})
+
+	result, err := svc.RefreshFromMeta(context.Background(), "t1")
+	require.NoError(t, err)
+	assert.Equal(t, entity.TemplateStatusApproved, result.Status)
+	assert.Equal(t, entity.TemplateCategoryUtility, result.Category)
+	assert.Equal(t, "en_US", result.Language)
+	assert.NotNil(t, result.LastSyncedAt)
+}
+
+func TestTemplateService_RefreshFromMeta_NoExternalID(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	templateRepo.Templates["t1"] = &entity.Template{ID: "t1", ChannelID: "ch-1"}
+
+	_, err := svc.RefreshFromMeta(context.Background(), "t1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "external_id")
 }
 
 // -----------------------------------------------------------------------------

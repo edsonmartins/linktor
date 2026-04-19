@@ -922,7 +922,9 @@ func main() {
 				templates.GET("", templateHandler.List)
 				templates.POST("", templateHandler.Create)
 				templates.GET("/:id", templateHandler.Get)
+				templates.PATCH("/:id", templateHandler.Edit)
 				templates.DELETE("/:id", templateHandler.Delete)
+				templates.POST("/:id/refresh", templateHandler.Refresh)
 				templates.POST("/sync/:channelId", templateHandler.Sync)
 			}
 

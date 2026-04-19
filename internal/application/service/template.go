@@ -39,12 +39,16 @@ func NewTemplateService(
 
 // CreateTemplateInput represents input for creating a template
 type CreateTemplateInput struct {
-	TenantID   string
-	ChannelID  string
-	Name       string
-	Language   string
-	Category   entity.TemplateCategory
-	Components []entity.TemplateComponent
+	TenantID              string
+	ChannelID             string
+	Name                  string
+	Language              string
+	Category              entity.TemplateCategory
+	SubCategory           string
+	ParameterFormat       entity.TemplateParameterFormat
+	MessageSendTTLSeconds int
+	AllowCategoryChange   bool
+	Components            []entity.TemplateComponent
 }
 
 // Create creates a new template (locally and syncs to Meta if credentials available)
@@ -56,6 +60,9 @@ func (s *TemplateService) Create(ctx context.Context, input *CreateTemplateInput
 	if err := validateTemplateComponents(input.Components); err != nil {
 		return nil, fmt.Errorf("invalid template: %w", err)
 	}
+	if err := validateParameterFormat(input.ParameterFormat, input.Components); err != nil {
+		return nil, fmt.Errorf("invalid template: %w", err)
+	}
 
 	// Check if template already exists
 	existing, _ := s.templateRepo.FindByName(ctx, input.TenantID, input.ChannelID, input.Name, input.Language)
@@ -64,17 +71,21 @@ func (s *TemplateService) Create(ctx context.Context, input *CreateTemplateInput
 	}
 
 	template := &entity.Template{
-		ID:           generateID(),
-		TenantID:     input.TenantID,
-		ChannelID:    input.ChannelID,
-		Name:         input.Name,
-		Language:     input.Language,
-		Category:     input.Category,
-		Status:       entity.TemplateStatusPending,
-		QualityScore: entity.TemplateQualityUnknown,
-		Components:   input.Components,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		ID:                    generateID(),
+		TenantID:              input.TenantID,
+		ChannelID:             input.ChannelID,
+		Name:                  input.Name,
+		Language:              input.Language,
+		Category:              input.Category,
+		SubCategory:           input.SubCategory,
+		ParameterFormat:       input.ParameterFormat,
+		MessageSendTTLSeconds: input.MessageSendTTLSeconds,
+		AllowCategoryChange:   input.AllowCategoryChange,
+		Status:                entity.TemplateStatusPending,
+		QualityScore:          entity.TemplateQualityUnknown,
+		Components:            input.Components,
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
 	}
 
 	// Try to create template on Meta if credentials are available
@@ -96,6 +107,65 @@ func (s *TemplateService) Create(ctx context.Context, input *CreateTemplateInput
 // GetByID returns a template by ID
 func (s *TemplateService) GetByID(ctx context.Context, id string) (*entity.Template, error) {
 	return s.templateRepo.FindByID(ctx, id)
+}
+
+// EditTemplateInput carries the fields Meta will accept on a template edit.
+// Components and Category are the two Meta actually allows to change on
+// already-approved templates; MessageSendTTLSeconds is also editable.
+// Other fields (name, language, parameter_format) are immutable once a
+// template has been submitted — changing them requires delete + recreate.
+type EditTemplateInput struct {
+	ID                    string
+	Category              entity.TemplateCategory
+	Components            []entity.TemplateComponent
+	MessageSendTTLSeconds int
+}
+
+// Edit updates an existing template on Meta and syncs the local copy.
+// After a successful edit Meta resets the status to PENDING regardless of
+// the previous state, so we mirror that here.
+func (s *TemplateService) Edit(ctx context.Context, input *EditTemplateInput) (*entity.Template, error) {
+	if err := validateTemplateComponents(input.Components); err != nil {
+		return nil, fmt.Errorf("invalid template: %w", err)
+	}
+
+	template, err := s.templateRepo.FindByID(ctx, input.ID)
+	if err != nil {
+		return nil, fmt.Errorf("template not found: %w", err)
+	}
+	if template.ExternalID == "" {
+		return nil, fmt.Errorf("template must be synced with Meta before editing")
+	}
+
+	// Apply edits locally so the same components make the round-trip.
+	if input.Category != "" {
+		template.Category = input.Category
+	}
+	if len(input.Components) > 0 {
+		template.Components = input.Components
+	}
+	if input.MessageSendTTLSeconds > 0 {
+		template.MessageSendTTLSeconds = input.MessageSendTTLSeconds
+	}
+	if err := validateParameterFormat(template.ParameterFormat, template.Components); err != nil {
+		return nil, fmt.Errorf("invalid template: %w", err)
+	}
+
+	creds := s.getChannelCredentials(ctx, template.ChannelID)
+	if creds == nil {
+		return nil, fmt.Errorf("channel missing credentials")
+	}
+
+	if err := s.editTemplateOnMeta(ctx, creds, template); err != nil {
+		return nil, fmt.Errorf("failed to edit template on Meta: %w", err)
+	}
+
+	template.Status = entity.TemplateStatusPending
+	template.UpdatedAt = time.Now()
+	if err := s.templateRepo.Update(ctx, template); err != nil {
+		return nil, fmt.Errorf("failed to save edited template: %w", err)
+	}
+	return template, nil
 }
 
 // GetByName returns a template by name and language
@@ -309,6 +379,18 @@ func (s *TemplateService) createTemplateOnMeta(ctx context.Context, creds *metaC
 	if len(template.Components) > 0 {
 		payload["components"] = template.Components
 	}
+	if template.SubCategory != "" {
+		payload["sub_category"] = template.SubCategory
+	}
+	if template.ParameterFormat != "" {
+		payload["parameter_format"] = string(template.ParameterFormat)
+	}
+	if template.MessageSendTTLSeconds > 0 {
+		payload["message_send_ttl_seconds"] = template.MessageSendTTLSeconds
+	}
+	if template.AllowCategoryChange {
+		payload["allow_category_change"] = true
+	}
 
 	respBody, err := s.metaRequest(ctx, "POST", url, creds.accessToken, payload)
 	if err != nil {
@@ -344,6 +426,82 @@ type metaTemplateInfo struct {
 	Language string `json:"language"`
 	Status   string `json:"status"`
 	Category string `json:"category"`
+}
+
+// editTemplateOnMeta updates an existing template. Meta allows editing
+// components, category, and a handful of other fields on templates that
+// are APPROVED, IN_APPEAL or REJECTED. Status resets to PENDING after edit.
+func (s *TemplateService) editTemplateOnMeta(ctx context.Context, creds *metaCredentials, template *entity.Template) error {
+	url := fmt.Sprintf("%s/%s/%s", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, template.ExternalID)
+
+	payload := map[string]interface{}{}
+	if len(template.Components) > 0 {
+		payload["components"] = template.Components
+	}
+	if template.Category != "" {
+		payload["category"] = string(template.Category)
+	}
+	if template.MessageSendTTLSeconds > 0 {
+		payload["message_send_ttl_seconds"] = template.MessageSendTTLSeconds
+	}
+
+	_, err := s.metaRequest(ctx, "POST", url, creds.accessToken, payload)
+	return err
+}
+
+// getTemplateFromMeta fetches a single template by its Meta ID (hsm_id).
+// Useful when the caller has a stale local copy and wants to refresh just
+// that variant without paying for a 250-template list call.
+func (s *TemplateService) getTemplateFromMeta(ctx context.Context, creds *metaCredentials, templateID string) (*metaTemplateInfo, error) {
+	url := fmt.Sprintf("%s/%s/%s?fields=id,name,language,status,category", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, templateID)
+
+	respBody, err := s.metaRequest(ctx, "GET", url, creds.accessToken, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var info metaTemplateInfo
+	if err := json.Unmarshal(respBody, &info); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &info, nil
+}
+
+// RefreshFromMeta pulls the latest state of a single template from Meta
+// and syncs the local row. Returns the updated template. Callers typically
+// use this after a webhook hints that a specific template changed, or when
+// an admin triggers a manual refresh from the UI.
+func (s *TemplateService) RefreshFromMeta(ctx context.Context, id string) (*entity.Template, error) {
+	template, err := s.templateRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("template not found: %w", err)
+	}
+	if template.ExternalID == "" {
+		return nil, fmt.Errorf("template has no external_id to refresh from")
+	}
+
+	creds := s.getChannelCredentials(ctx, template.ChannelID)
+	if creds == nil {
+		return nil, fmt.Errorf("channel missing credentials")
+	}
+
+	info, err := s.getTemplateFromMeta(ctx, creds, template.ExternalID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch from Meta: %w", err)
+	}
+
+	template.Status = mapMetaStatusToEntity(info.Status)
+	template.Category = entity.TemplateCategory(info.Category)
+	template.Language = info.Language
+	template.UpdatedAt = time.Now()
+	now := time.Now()
+	template.LastSyncedAt = &now
+
+	if err := s.templateRepo.Update(ctx, template); err != nil {
+		return nil, fmt.Errorf("failed to save refreshed template: %w", err)
+	}
+	return template, nil
 }
 
 func (s *TemplateService) listTemplatesFromMeta(ctx context.Context, creds *metaCredentials) ([]metaTemplateInfo, error) {

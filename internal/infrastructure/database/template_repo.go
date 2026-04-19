@@ -124,33 +124,115 @@ func (r *TemplateRepository) FindByName(ctx context.Context, tenantID, channelID
 	return template, nil
 }
 
+// buildTemplateFilters translates ListParams.Filters into SQL. Supported
+// keys match the query params accepted by the templates handler:
+//   - category / sub_category / language / status / quality_score (exact)
+//   - name / content (ILIKE substring match — content searches body text)
+//   - since / until (int64 unix seconds → created_at boundaries)
+//
+// Unknown keys are ignored so callers can over-specify safely.
+func buildTemplateFilters(filters map[string]interface{}, startArg int) (clause string, args []interface{}) {
+	if len(filters) == 0 {
+		return "", nil
+	}
+	arg := startArg
+	for _, spec := range []struct {
+		key, column string
+	}{
+		{"category", "category"},
+		{"sub_category", "sub_category"},
+		{"language", "language"},
+		{"status", "status"},
+		{"quality_score", "quality_score"},
+	} {
+		v, ok := filters[spec.key]
+		if !ok {
+			continue
+		}
+		s, _ := v.(string)
+		if s == "" {
+			continue
+		}
+		clause += fmt.Sprintf(" AND %s = $%d", spec.column, arg)
+		args = append(args, s)
+		arg++
+	}
+	if v, ok := filters["name"]; ok {
+		if s, _ := v.(string); s != "" {
+			clause += fmt.Sprintf(" AND name ILIKE $%d", arg)
+			args = append(args, "%"+s+"%")
+			arg++
+		}
+	}
+	if v, ok := filters["content"]; ok {
+		if s, _ := v.(string); s != "" {
+			clause += fmt.Sprintf(" AND components::text ILIKE $%d", arg)
+			args = append(args, "%"+s+"%")
+			arg++
+		}
+	}
+	if v, ok := filters["since"]; ok {
+		if ts, ok := toUnix(v); ok {
+			clause += fmt.Sprintf(" AND created_at >= to_timestamp($%d)", arg)
+			args = append(args, ts)
+			arg++
+		}
+	}
+	if v, ok := filters["until"]; ok {
+		if ts, ok := toUnix(v); ok {
+			clause += fmt.Sprintf(" AND created_at <= to_timestamp($%d)", arg)
+			args = append(args, ts)
+			arg++
+		}
+	}
+	return clause, args
+}
+
+func toUnix(v interface{}) (int64, bool) {
+	switch t := v.(type) {
+	case int64:
+		return t, true
+	case int:
+		return int64(t), true
+	case float64:
+		return int64(t), true
+	}
+	return 0, false
+}
+
 // FindByTenant finds all templates for a tenant
 func (r *TemplateRepository) FindByTenant(ctx context.Context, tenantID string, params *repository.ListParams) ([]*entity.Template, int64, error) {
 	if params == nil {
 		params = repository.NewListParams()
 	}
 
+	filterClause, filterArgs := buildTemplateFilters(params.Filters, 2)
+
 	// Count total
-	countQuery := `SELECT COUNT(*) FROM templates WHERE tenant_id = $1`
+	countQuery := `SELECT COUNT(*) FROM templates WHERE tenant_id = $1` + filterClause
+	countArgs := append([]interface{}{tenantID}, filterArgs...)
 	var total int64
-	if err := r.db.Pool.QueryRow(ctx, countQuery, tenantID).Scan(&total); err != nil {
+	if err := r.db.Pool.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, fmt.Sprintf("failed to count templates: %v", err))
 	}
 
 	// Get templates
-	query := `
+	limitArg := len(filterArgs) + 2
+	offsetArg := len(filterArgs) + 3
+	query := fmt.Sprintf(`
 		SELECT id, tenant_id, channel_id, external_id, name, language, category,
 		       status, quality_score, components, rejection_reason, last_synced_at,
 		       created_at, updated_at
 		FROM templates
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1%s
 		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
-	`
+		LIMIT $%d OFFSET $%d
+	`, filterClause, limitArg, offsetArg)
 
-	limit := int32(params.Limit())
-	offset := int32(params.Offset())
-	rows, err := r.db.Pool.Query(ctx, query, tenantID, limit, offset)
+	queryArgs := append([]interface{}{tenantID}, filterArgs...)
+	queryArgs = append(queryArgs, int32(params.Limit()), int32(params.Offset()))
+
+	rows, err := r.db.Pool.Query(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, fmt.Sprintf("failed to query templates: %v", err))
 	}
@@ -170,25 +252,33 @@ func (r *TemplateRepository) FindByChannel(ctx context.Context, channelID string
 		params = repository.NewListParams()
 	}
 
+	filterClause, filterArgs := buildTemplateFilters(params.Filters, 2)
+
 	// Count total
-	countQuery := `SELECT COUNT(*) FROM templates WHERE channel_id = $1`
+	countQuery := `SELECT COUNT(*) FROM templates WHERE channel_id = $1` + filterClause
+	countArgs := append([]interface{}{channelID}, filterArgs...)
 	var total int64
-	if err := r.db.Pool.QueryRow(ctx, countQuery, channelID).Scan(&total); err != nil {
+	if err := r.db.Pool.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to count templates")
 	}
 
 	// Get templates
-	query := `
+	limitArg := len(filterArgs) + 2
+	offsetArg := len(filterArgs) + 3
+	query := fmt.Sprintf(`
 		SELECT id, tenant_id, channel_id, external_id, name, language, category,
 		       status, quality_score, components, rejection_reason, last_synced_at,
 		       created_at, updated_at
 		FROM templates
-		WHERE channel_id = $1
+		WHERE channel_id = $1%s
 		ORDER BY created_at DESC
-		LIMIT $2 OFFSET $3
-	`
+		LIMIT $%d OFFSET $%d
+	`, filterClause, limitArg, offsetArg)
 
-	rows, err := r.db.Pool.Query(ctx, query, channelID, params.Limit(), params.Offset())
+	queryArgs := append([]interface{}{channelID}, filterArgs...)
+	queryArgs = append(queryArgs, params.Limit(), params.Offset())
+
+	rows, err := r.db.Pool.Query(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to query templates")
 	}

@@ -45,15 +45,39 @@ const (
 	TemplateQualityUnknown TemplateQuality = "UNKNOWN"
 )
 
+// TemplateParameterFormat declares whether a template's placeholders are
+// referenced by position ({{1}}, {{2}}) or by name ({{customer_name}}).
+// Meta defaults to POSITIONAL when the field is omitted.
+type TemplateParameterFormat string
+
+const (
+	TemplateParameterFormatPositional TemplateParameterFormat = "POSITIONAL"
+	TemplateParameterFormatNamed      TemplateParameterFormat = "NAMED"
+)
+
 // Template represents a WhatsApp message template
 type Template struct {
 	ID                string           `json:"id"`
 	TenantID          string           `json:"tenant_id"`
 	ChannelID         string           `json:"channel_id"`
-	ExternalID        string           `json:"external_id"`         // Meta's template ID
+	ExternalID        string           `json:"external_id"`         // Meta's template ID (aka hsm_id)
 	Name              string           `json:"name"`
 	Language          string           `json:"language"`
 	Category          TemplateCategory `json:"category"`
+	// SubCategory refines some categories (e.g. UTILITY → ORDER_DETAILS,
+	// ORDER_STATUS, RICH_ORDER_STATUS). Optional; Meta treats absence as
+	// the generic category.
+	SubCategory       string           `json:"sub_category,omitempty"`
+	// ParameterFormat controls whether placeholders are positional ({{1}})
+	// or named ({{first_name}}). Empty means positional per Meta's default.
+	ParameterFormat   TemplateParameterFormat `json:"parameter_format,omitempty"`
+	// MessageSendTTLSeconds bounds how long Meta will retry delivery of a
+	// message that uses this template. Zero means Meta's default.
+	MessageSendTTLSeconds int `json:"message_send_ttl_seconds,omitempty"`
+	// AllowCategoryChange lets Meta auto-move a template to a different
+	// creation category based on content during review. Useful for
+	// marketing vs utility ambiguity.
+	AllowCategoryChange bool             `json:"allow_category_change,omitempty"`
 	Status            TemplateStatus   `json:"status"`
 	QualityScore      TemplateQuality  `json:"quality_score"`
 	Components        []TemplateComponent `json:"components"`

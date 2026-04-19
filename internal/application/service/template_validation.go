@@ -157,3 +157,45 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
+
+// validateParameterFormat enforces mutual consistency between the declared
+// parameter_format and the placeholders actually used in the components.
+// Meta rejects templates that mix named and positional placeholders in the
+// same component, and it requires named placeholders to be lowercase /
+// underscore-safe identifiers.
+func validateParameterFormat(format entity.TemplateParameterFormat, components []entity.TemplateComponent) error {
+	for i, c := range components {
+		texts := collectVariableTexts(c)
+		for _, txt := range texts {
+			hasPos := positionalPlaceholder.MatchString(txt)
+			hasNamed := namedPlaceholder.MatchString(txt)
+
+			if hasPos && hasNamed {
+				return fmt.Errorf("component[%d] mixes positional and named placeholders; pick one", i)
+			}
+
+			switch format {
+			case entity.TemplateParameterFormatNamed:
+				if hasPos {
+					return fmt.Errorf("component[%d] uses positional placeholders but parameter_format=NAMED", i)
+				}
+			case entity.TemplateParameterFormatPositional, "":
+				if hasNamed {
+					return fmt.Errorf("component[%d] uses named placeholders but parameter_format=POSITIONAL (the default); set parameter_format=NAMED", i)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// collectVariableTexts returns every text-bearing string in a component
+// that Meta will scan for placeholders. Buttons/footers are not included
+// here because they cannot contain variables (enforced in validateComponent).
+func collectVariableTexts(c entity.TemplateComponent) []string {
+	switch c.Type {
+	case "BODY", "HEADER":
+		return []string{c.Text}
+	}
+	return nil
+}
