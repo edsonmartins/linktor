@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -122,7 +123,12 @@ func (s *TemplateService) GetByID(ctx context.Context, id string) (*entity.Templ
 // already-approved templates; MessageSendTTLSeconds is also editable.
 // Other fields (name, language, parameter_format) are immutable once a
 // template has been submitted — changing them requires delete + recreate.
+//
+// TenantID is the caller's tenant (extracted from the auth middleware).
+// We verify it against the stored template's TenantID to prevent one
+// tenant from editing another's templates via UUID guessing.
 type EditTemplateInput struct {
+	TenantID              string
 	ID                    string
 	Category              entity.TemplateCategory
 	Components            []entity.TemplateComponent
@@ -140,6 +146,9 @@ func (s *TemplateService) Edit(ctx context.Context, input *EditTemplateInput) (*
 	template, err := s.templateRepo.FindByID(ctx, input.ID)
 	if err != nil {
 		return nil, fmt.Errorf("template not found: %w", err)
+	}
+	if input.TenantID != "" && template.TenantID != input.TenantID {
+		return nil, fmt.Errorf("template not found: %s", input.ID)
 	}
 	if template.ExternalID == "" {
 		return nil, fmt.Errorf("template must be synced with Meta before editing")
@@ -220,7 +229,10 @@ func (s *TemplateService) UpdateQuality(ctx context.Context, externalID string, 
 // DeleteBulk removes multiple templates in a single Meta call. All templates
 // must belong to the same channel (so we can resolve credentials once);
 // mixing channels returns an error rather than silently partitioning.
-func (s *TemplateService) DeleteBulk(ctx context.Context, ids []string) error {
+//
+// tenantID (if non-empty) scopes the lookup so one tenant can't bulk-delete
+// another tenant's templates via UUID enumeration.
+func (s *TemplateService) DeleteBulk(ctx context.Context, tenantID string, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -232,6 +244,9 @@ func (s *TemplateService) DeleteBulk(ctx context.Context, ids []string) error {
 		tpl, err := s.templateRepo.FindByID(ctx, id)
 		if err != nil {
 			return fmt.Errorf("template %s not found: %w", id, err)
+		}
+		if tenantID != "" && tpl.TenantID != tenantID {
+			return fmt.Errorf("template %s not found", id)
 		}
 		if channelID == "" {
 			channelID = tpl.ChannelID
@@ -482,22 +497,27 @@ func (s *TemplateService) deleteTemplateOnMeta(ctx context.Context, creds *metaC
 	return err
 }
 
-// deleteTemplatesBulkOnMeta sends a single DELETE with a comma-joined
-// hsm_ids[] so Meta removes every listed template in one call. Useful for
-// the admin "delete N selected templates" UI flow — avoids N round-trips
-// and respects Meta's per-WABA rate limits better.
+// deleteTemplatesBulkOnMeta sends a single DELETE with an hsm_ids[] so
+// Meta removes every listed template in one call. Useful for the admin
+// "delete N selected templates" UI flow — avoids N round-trips and
+// respects Meta's per-WABA rate limits better.
 func (s *TemplateService) deleteTemplatesBulkOnMeta(ctx context.Context, creds *metaCredentials, hsmIDs []string) error {
 	if len(hsmIDs) == 0 {
 		return nil
 	}
-	// Meta accepts hsm_ids as a JSON array in the query string, e.g.
-	//   ?hsm_ids=["123","456"]
+	// Meta accepts hsm_ids as a JSON array in the query string. We marshal
+	// to JSON first (to get the `["id1","id2"]` shape) and then percent-
+	// encode the whole value so brackets / quotes survive any middlebox
+	// normalisation intact.
 	ids, err := json.Marshal(hsmIDs)
 	if err != nil {
 		return fmt.Errorf("failed to encode hsm_ids: %w", err)
 	}
-	url := fmt.Sprintf("%s/%s/%s/message_templates?hsm_ids=%s", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, creds.wabaID, string(ids))
-	_, err = s.metaRequest(ctx, "DELETE", url, creds.accessToken, nil)
+	params := url.Values{}
+	params.Set("hsm_ids", string(ids))
+	fullURL := fmt.Sprintf("%s/%s/%s/message_templates?%s",
+		graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, creds.wabaID, params.Encode())
+	_, err = s.metaRequest(ctx, "DELETE", fullURL, creds.accessToken, nil)
 	return err
 }
 
@@ -530,11 +550,28 @@ func (s *TemplateService) editTemplateOnMeta(ctx context.Context, creds *metaCre
 	return err
 }
 
-// FetchNamespace reads the WABA's message_template_namespace via Meta's
-// GET /{waba-id} endpoint and persists it on the channel. The namespace is
-// required by partners integrating with the legacy HSM API or provisioning
-// their own Cloud API apps; most Cloud API consumers can ignore it.
-func (s *TemplateService) FetchNamespace(ctx context.Context, channelID string) (string, error) {
+// FetchNamespace reads the WABA's message_template_namespace. Callers that
+// pass forceRefresh=false get the value persisted on the channel when
+// available, avoiding a Graph API round-trip. Passing forceRefresh=true
+// (or calling on a channel that never cached the value) hits Meta's
+// GET /{waba-id}?fields=message_template_namespace endpoint.
+//
+// tenantID (if non-empty) scopes the channel lookup so one tenant can't
+// fetch another tenant's namespace.
+func (s *TemplateService) FetchNamespace(ctx context.Context, tenantID, channelID string, forceRefresh bool) (string, error) {
+	channel, err := s.channelRepo.FindByID(ctx, channelID)
+	if err != nil {
+		return "", fmt.Errorf("channel not found: %w", err)
+	}
+	if tenantID != "" && channel.TenantID != tenantID {
+		return "", fmt.Errorf("channel not found: %s", channelID)
+	}
+
+	// Serve from the cached field unless the caller wants a fresh read.
+	if !forceRefresh && channel.MessageTemplateNamespace != "" {
+		return channel.MessageTemplateNamespace, nil
+	}
+
 	creds := s.getChannelCredentials(ctx, channelID)
 	if creds == nil {
 		return "", fmt.Errorf("channel missing credentials")
@@ -553,11 +590,14 @@ func (s *TemplateService) FetchNamespace(ctx context.Context, channelID string) 
 		return "", fmt.Errorf("failed to parse namespace response: %w", err)
 	}
 
-	// Persist on the channel so subsequent reads don't need another Graph call.
-	channel, err := s.channelRepo.FindByID(ctx, channelID)
-	if err == nil && channel != nil && result.MessageTemplateNamespace != "" {
+	// Persist on the channel so the fast path above can serve future reads.
+	if result.MessageTemplateNamespace != "" {
 		channel.MessageTemplateNamespace = result.MessageTemplateNamespace
-		_ = s.channelRepo.Update(ctx, channel)
+		if err := s.channelRepo.Update(ctx, channel); err != nil {
+			// Non-fatal: we still return the value the caller asked for.
+			// Worst case next call re-fetches from Meta.
+			_ = err
+		}
 	}
 
 	return result.MessageTemplateNamespace, nil
@@ -597,25 +637,33 @@ func (s *TemplateService) ListTemplateLibrary(ctx context.Context, channelID str
 		return nil, fmt.Errorf("channel missing credentials")
 	}
 
-	params := ""
-	addParam := func(key, value string) {
-		if value == "" {
-			return
-		}
-		sep := "?"
-		if params != "" {
-			sep = "&"
-		}
-		params += sep + key + "=" + value
+	// url.Values handles percent-encoding so a query like `Search="A&B"`
+	// or `Search="hello world"` doesn't inject spurious params / break
+	// the URL. Previously we concatenated raw values which was a
+	// correctness + mild injection bug.
+	params := url.Values{}
+	if query.Search != "" {
+		params.Set("search", query.Search)
 	}
-	addParam("search", query.Search)
-	addParam("topic", query.Topic)
-	addParam("usecase", query.Usecase)
-	addParam("industry", query.Industry)
-	addParam("language", query.Language)
+	if query.Topic != "" {
+		params.Set("topic", query.Topic)
+	}
+	if query.Usecase != "" {
+		params.Set("usecase", query.Usecase)
+	}
+	if query.Industry != "" {
+		params.Set("industry", query.Industry)
+	}
+	if query.Language != "" {
+		params.Set("language", query.Language)
+	}
+	suffix := ""
+	if encoded := params.Encode(); encoded != "" {
+		suffix = "?" + encoded
+	}
 
-	url := fmt.Sprintf("%s/%s/message_template_library%s", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, params)
-	respBody, err := s.metaRequest(ctx, "GET", url, creds.accessToken, nil)
+	fullURL := fmt.Sprintf("%s/%s/message_template_library%s", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, suffix)
+	respBody, err := s.metaRequest(ctx, "GET", fullURL, creds.accessToken, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -741,10 +789,16 @@ func (s *TemplateService) getTemplateFromMeta(ctx context.Context, creds *metaCr
 // and syncs the local row. Returns the updated template. Callers typically
 // use this after a webhook hints that a specific template changed, or when
 // an admin triggers a manual refresh from the UI.
-func (s *TemplateService) RefreshFromMeta(ctx context.Context, id string) (*entity.Template, error) {
+//
+// tenantID (if non-empty) scopes the lookup so one tenant can't refresh
+// another tenant's template via UUID guessing.
+func (s *TemplateService) RefreshFromMeta(ctx context.Context, tenantID, id string) (*entity.Template, error) {
 	template, err := s.templateRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("template not found: %w", err)
+	}
+	if tenantID != "" && template.TenantID != tenantID {
+		return nil, fmt.Errorf("template not found: %s", id)
 	}
 	if template.ExternalID == "" {
 		return nil, fmt.Errorf("template has no external_id to refresh from")

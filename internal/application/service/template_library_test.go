@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -56,6 +57,37 @@ func TestListTemplateLibrary_MissingChannel(t *testing.T) {
 	_, err := svc.ListTemplateLibrary(context.Background(), "nonexistent", LibraryQuery{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "credentials")
+}
+
+func TestListTemplateLibrary_EncodesSpecialCharacters(t *testing.T) {
+	// A search term with '&', '=', or spaces must be percent-encoded,
+	// otherwise it would either inject new query params or produce an
+	// invalid URL that Meta rejects.
+	svc, _ := setupLibraryTestService()
+
+	var capturedRawQuery string
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		capturedRawQuery = r.URL.RawQuery
+		return &http.Response{
+			StatusCode: http.StatusOK, Header: make(http.Header),
+			Body: io.NopCloser(strings.NewReader(`{"data":[]}`)),
+		}, nil
+	})
+
+	_, err := svc.ListTemplateLibrary(context.Background(), "ch-1", LibraryQuery{
+		Search: "hello world & co",
+		Topic:  "plan=basic",
+	})
+	require.NoError(t, err)
+
+	// After decoding, the values must match exactly what we sent.
+	decoded, err := url.ParseQuery(capturedRawQuery)
+	require.NoError(t, err)
+	assert.Equal(t, "hello world & co", decoded.Get("search"))
+	assert.Equal(t, "plan=basic", decoded.Get("topic"))
+	// And the raw wire format must not contain the literal special chars.
+	assert.NotContains(t, capturedRawQuery, "hello world")
+	assert.Contains(t, capturedRawQuery, "%26") // '&' encoded
 }
 
 func TestCreateFromLibrary_SendsCorrectPayload(t *testing.T) {

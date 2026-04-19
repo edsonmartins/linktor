@@ -485,7 +485,8 @@ func TestTemplateService_FetchNamespace_PersistsOnChannel(t *testing.T) {
 		}, nil
 	})
 
-	ns, err := svc.FetchNamespace(context.Background(), "ch-1")
+	// Force refresh on first call so we actually hit the Graph API.
+	ns, err := svc.FetchNamespace(context.Background(), "tenant-1", "ch-1", true)
 	require.NoError(t, err)
 	assert.Equal(t, "ns-xyz-123", ns)
 	assert.Contains(t, capturedURL, "/waba-1")
@@ -495,11 +496,46 @@ func TestTemplateService_FetchNamespace_PersistsOnChannel(t *testing.T) {
 	assert.Equal(t, "ns-xyz-123", channelRepo.Channels["ch-1"].MessageTemplateNamespace)
 }
 
-func TestTemplateService_FetchNamespace_MissingCreds(t *testing.T) {
+func TestTemplateService_FetchNamespace_ServesFromCache(t *testing.T) {
+	// Second call without forceRefresh should NOT hit Meta — the value
+	// was persisted on first fetch.
 	svc, _ := setupTemplateService()
-	_, err := svc.FetchNamespace(context.Background(), "nonexistent")
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-1", Type: entity.ChannelTypeWhatsAppOfficial,
+		Credentials:              map[string]string{"access_token": "t", "waba_id": "waba-1"},
+		MessageTemplateNamespace: "cached-ns",
+	}
+
+	var calls int
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})
+
+	ns, err := svc.FetchNamespace(context.Background(), "tenant-1", "ch-1", false)
+	require.NoError(t, err)
+	assert.Equal(t, "cached-ns", ns)
+	assert.Equal(t, 0, calls, "cached hit must not trigger a Graph call")
+}
+
+func TestTemplateService_FetchNamespace_MissingChannel(t *testing.T) {
+	svc, _ := setupTemplateService()
+	_, err := svc.FetchNamespace(context.Background(), "tenant-1", "nonexistent", false)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "credentials")
+}
+
+func TestTemplateService_FetchNamespace_RejectsWrongTenant(t *testing.T) {
+	svc, _ := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-B", MessageTemplateNamespace: "ns",
+		Credentials: map[string]string{"access_token": "t", "waba_id": "w"},
+	}
+
+	_, err := svc.FetchNamespace(context.Background(), "tenant-A", "ch-1", false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
 }
 
 // -----------------------------------------------------------------------------
@@ -525,7 +561,11 @@ func TestTemplateService_DeleteBulk_SingleCallToMeta(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"success":true}`))}, nil
 	})
 
-	require.NoError(t, svc.DeleteBulk(context.Background(), []string{"a", "b", "c"}))
+	templateRepo.Templates["a"].TenantID = "tenant-1"
+	templateRepo.Templates["b"].TenantID = "tenant-1"
+	templateRepo.Templates["c"].TenantID = "tenant-1"
+
+	require.NoError(t, svc.DeleteBulk(context.Background(), "tenant-1", []string{"a", "b", "c"}))
 	assert.Equal(t, 1, calls, "bulk delete must hit Meta exactly once")
 	assert.Contains(t, capturedURL, "hsm_ids=")
 	// All three rows are gone locally — even the unsynced one
@@ -534,17 +574,38 @@ func TestTemplateService_DeleteBulk_SingleCallToMeta(t *testing.T) {
 
 func TestTemplateService_DeleteBulk_RejectsCrossChannel(t *testing.T) {
 	svc, templateRepo := setupTemplateService()
-	templateRepo.Templates["a"] = &entity.Template{ID: "a", ChannelID: "ch-1", ExternalID: "hsm-1"}
-	templateRepo.Templates["b"] = &entity.Template{ID: "b", ChannelID: "ch-2", ExternalID: "hsm-2"}
+	templateRepo.Templates["a"] = &entity.Template{ID: "a", TenantID: "tenant-1", ChannelID: "ch-1", ExternalID: "hsm-1"}
+	templateRepo.Templates["b"] = &entity.Template{ID: "b", TenantID: "tenant-1", ChannelID: "ch-2", ExternalID: "hsm-2"}
 
-	err := svc.DeleteBulk(context.Background(), []string{"a", "b"})
+	err := svc.DeleteBulk(context.Background(), "tenant-1", []string{"a", "b"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "same channel")
 }
 
 func TestTemplateService_DeleteBulk_EmptyNoOp(t *testing.T) {
 	svc, _ := setupTemplateService()
-	assert.NoError(t, svc.DeleteBulk(context.Background(), nil))
+	assert.NoError(t, svc.DeleteBulk(context.Background(), "tenant-1", nil))
+}
+
+func TestTemplateService_DeleteBulk_RejectsWrongTenant(t *testing.T) {
+	// A token for tenant A must not be able to delete tenant B's template
+	// even if the caller guesses the UUID.
+	svc, templateRepo := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-B", Type: entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{"access_token": "t", "waba_id": "w"},
+	}
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID: "t1", TenantID: "tenant-B", ChannelID: "ch-1", ExternalID: "hsm-1",
+	}
+
+	err := svc.DeleteBulk(context.Background(), "tenant-A", []string{"t1"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+	// Template still exists locally
+	_, stillThere := templateRepo.Templates["t1"]
+	assert.True(t, stillThere)
 }
 
 // -----------------------------------------------------------------------------
@@ -654,7 +715,7 @@ func TestTemplateService_RefreshFromMeta_UpdatesLocalRow(t *testing.T) {
 		}, nil
 	})
 
-	result, err := svc.RefreshFromMeta(context.Background(), "t1")
+	result, err := svc.RefreshFromMeta(context.Background(), "tenant-1", "t1")
 	require.NoError(t, err)
 	assert.Equal(t, entity.TemplateStatusApproved, result.Status)
 	assert.Equal(t, entity.TemplateCategoryUtility, result.Category)
@@ -662,11 +723,22 @@ func TestTemplateService_RefreshFromMeta_UpdatesLocalRow(t *testing.T) {
 	assert.NotNil(t, result.LastSyncedAt)
 }
 
+func TestTemplateService_RefreshFromMeta_RejectsWrongTenant(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID: "t1", TenantID: "tenant-B", ChannelID: "ch-1", ExternalID: "hsm-1",
+	}
+
+	_, err := svc.RefreshFromMeta(context.Background(), "tenant-A", "t1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
 func TestTemplateService_RefreshFromMeta_NoExternalID(t *testing.T) {
 	svc, templateRepo := setupTemplateService()
 	templateRepo.Templates["t1"] = &entity.Template{ID: "t1", ChannelID: "ch-1"}
 
-	_, err := svc.RefreshFromMeta(context.Background(), "t1")
+	_, err := svc.RefreshFromMeta(context.Background(), "", "t1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "external_id")
 }

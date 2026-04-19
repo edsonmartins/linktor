@@ -51,14 +51,31 @@ tar -czf "$ARCHIVE" -C "$BACKUP_DIR" "$TIMESTAMP"
 rm -rf "$WORK_DIR"
 
 if [[ -n "${BACKUP_S3_ENDPOINT:-}" && -n "${BACKUP_S3_BUCKET:-}" ]]; then
-  log "Pushing to offsite S3: $BACKUP_S3_ENDPOINT/$BACKUP_S3_BUCKET"
-  docker run --rm \
-    -v "$BACKUP_DIR:/backup:ro" \
-    -e MC_HOST_offsite="$BACKUP_S3_ENDPOINT" \
-    -e AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY" \
-    -e AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_KEY" \
-    minio/mc:latest \
-    cp "/backup/$(basename "$ARCHIVE")" "offsite/$BACKUP_S3_BUCKET/"
+  if [[ -z "${BACKUP_S3_ACCESS_KEY:-}" || -z "${BACKUP_S3_SECRET_KEY:-}" ]]; then
+    log "Skipping offsite push: BACKUP_S3_ACCESS_KEY / BACKUP_S3_SECRET_KEY not set"
+  else
+    # mc authenticates via MC_HOST_<alias> which MUST embed the credentials
+    # in the URL: https://KEY:SECRET@host. Setting AWS_ACCESS_KEY_ID is
+    # ignored. Build the URL here so BACKUP_S3_ENDPOINT can stay a bare
+    # scheme+host string in .env.
+    proto="${BACKUP_S3_ENDPOINT%%://*}"
+    hostpart="${BACKUP_S3_ENDPOINT#*://}"
+    if [[ "$proto" == "$BACKUP_S3_ENDPOINT" ]]; then
+      # No scheme provided — assume https.
+      proto="https"
+      hostpart="$BACKUP_S3_ENDPOINT"
+    fi
+    # urlencode the secret so '+', '/', '=' characters in it don't break parsing
+    encoded_secret=$(printf '%s' "$BACKUP_S3_SECRET_KEY" | python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))' 2>/dev/null || printf '%s' "$BACKUP_S3_SECRET_KEY")
+    mc_host="${proto}://${BACKUP_S3_ACCESS_KEY}:${encoded_secret}@${hostpart}"
+
+    log "Pushing to offsite S3: ${proto}://${hostpart}/${BACKUP_S3_BUCKET}"
+    docker run --rm \
+      -v "$BACKUP_DIR:/backup:ro" \
+      -e MC_HOST_offsite="$mc_host" \
+      minio/mc:latest \
+      cp "/backup/$(basename "$ARCHIVE")" "offsite/$BACKUP_S3_BUCKET/"
+  fi
 fi
 
 log "Pruning archives older than ${RETENTION_DAYS}d"

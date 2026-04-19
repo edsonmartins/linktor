@@ -38,6 +38,16 @@ jobs:
             set -euo pipefail
             cd /opt/linktor
 
+            # Fail fast if /opt/linktor/.env is missing — without it sed
+            # would create an empty file, Compose would then complain about
+            # unset variables, and Traefik would have already requested
+            # certificates for the unconfigured routes. Bail loudly instead.
+            if [ ! -f /opt/linktor/.env ]; then
+              echo "FATAL: /opt/linktor/.env does not exist on the host. Aborting deploy." >&2
+              echo "First-boot setup is documented in deploy/docs/vps-setup.md §5." >&2
+              exit 1
+            fi
+
             # Pull the latest deploy/ config from the repo (read-only mirror)
             if [ -d .git ]; then
               git fetch --quiet origin main

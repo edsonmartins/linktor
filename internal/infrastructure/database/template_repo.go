@@ -124,6 +124,12 @@ func (r *TemplateRepository) FindByName(ctx context.Context, tenantID, channelID
 	return template, nil
 }
 
+// templateContentMinLen caps how short a `content` filter can be before we
+// refuse the scan. Three characters is enough for any realistic template-
+// body lookup and blocks the trivial DOS where an authenticated user
+// triggers an unbounded ILIKE over the whole components JSON.
+const templateContentMinLen = 3
+
 // buildTemplateFilters translates ListParams.Filters into SQL. Supported
 // keys match the query params accepted by the templates handler:
 //   - category / sub_category / language / status / quality_score (exact)
@@ -165,7 +171,13 @@ func buildTemplateFilters(filters map[string]interface{}, startArg int) (clause 
 		}
 	}
 	if v, ok := filters["content"]; ok {
-		if s, _ := v.(string); s != "" {
+		if s, _ := v.(string); s != "" && len([]rune(s)) >= templateContentMinLen {
+			// ILIKE over components::text can't use a b-tree index and a
+			// leading wildcard defeats pg_trgm too. Requiring a minimum
+			// length keeps the scan cost bounded — a 3-char search still
+			// covers any reasonable template-body lookup an admin does
+			// while refusing single-character queries that would scan the
+			// whole table across tenants on a busy host.
 			clause += fmt.Sprintf(" AND components::text ILIKE $%d", arg)
 			args = append(args, "%"+s+"%")
 			arg++

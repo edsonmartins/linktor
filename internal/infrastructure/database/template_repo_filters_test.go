@@ -53,6 +53,23 @@ func TestBuildTemplateFilters_NameAndContentUseILIKE(t *testing.T) {
 	assert.Contains(t, args, "%hello%")
 }
 
+func TestBuildTemplateFilters_ContentBelowMinLenIsDropped(t *testing.T) {
+	// Single-character ILIKE over components::text would scan the whole
+	// tenant-wide templates table — deny it cheaply at the filter layer.
+	clause, args := buildTemplateFilters(map[string]interface{}{
+		"content": "ab", // 2 < templateContentMinLen (3)
+	}, 2)
+	assert.NotContains(t, clause, "components::text")
+	assert.Empty(t, args)
+
+	// Exactly at the limit is allowed.
+	clause, args = buildTemplateFilters(map[string]interface{}{
+		"content": "abc",
+	}, 2)
+	assert.Contains(t, clause, "components::text ILIKE $")
+	assert.Contains(t, args, "%abc%")
+}
+
 func TestBuildTemplateFilters_SinceUntilUseTimestamp(t *testing.T) {
 	clause, args := buildTemplateFilters(map[string]interface{}{
 		"since": int64(1700000000),

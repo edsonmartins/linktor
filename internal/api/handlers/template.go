@@ -364,6 +364,10 @@ type EditTemplateRequest struct {
 // @Failure      404 {object} Response
 // @Router       /templates/{id} [patch]
 func (h *TemplateHandler) Edit(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Template ID is required", nil)
@@ -377,6 +381,7 @@ func (h *TemplateHandler) Edit(c *gin.Context) {
 	}
 
 	template, err := h.templateService.Edit(c.Request.Context(), &service.EditTemplateInput{
+		TenantID:              tenantID,
 		ID:                    id,
 		Category:              entity.TemplateCategory(req.Category),
 		Components:            req.Components,
@@ -392,22 +397,28 @@ func (h *TemplateHandler) Edit(c *gin.Context) {
 
 // FetchNamespace godoc
 // @Summary      Fetch WABA message_template_namespace
-// @Description  Reads the WhatsApp Business Account's message_template_namespace from Meta and persists it on the channel
+// @Description  Returns the WhatsApp Business Account's message_template_namespace. Served from the cached channel field unless ?refresh=true, which forces a Graph API roundtrip.
 // @Tags         templates
 // @Produce      json
 // @Security     BearerAuth
 // @Param        channel_id path string true "Channel ID"
+// @Param        refresh query boolean false "Force re-fetch from Meta even if a cached value exists"
 // @Success      200 {object} Response{data=map[string]string}
 // @Failure      401 {object} Response
 // @Failure      404 {object} Response
-// @Router       /channels/{channel_id}/templates/namespace [get]
+// @Router       /templates/namespace/{channel_id} [get]
 func (h *TemplateHandler) FetchNamespace(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
 	channelID := c.Param("channel_id")
 	if channelID == "" {
 		RespondValidationError(c, "Channel ID is required", nil)
 		return
 	}
-	namespace, err := h.templateService.FetchNamespace(c.Request.Context(), channelID)
+	forceRefresh := c.Query("refresh") == "true"
+	namespace, err := h.templateService.FetchNamespace(c.Request.Context(), tenantID, channelID, forceRefresh)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -433,13 +444,17 @@ type BulkDeleteTemplatesRequest struct {
 // @Failure      401 {object} Response
 // @Router       /templates [delete]
 func (h *TemplateHandler) BulkDelete(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
 	var req BulkDeleteTemplatesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondValidationError(c, "Invalid request body", nil)
 		return
 	}
 
-	if err := h.templateService.DeleteBulk(c.Request.Context(), req.IDs); err != nil {
+	if err := h.templateService.DeleteBulk(c.Request.Context(), tenantID, req.IDs); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -459,13 +474,17 @@ func (h *TemplateHandler) BulkDelete(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /templates/{id}/refresh [post]
 func (h *TemplateHandler) Refresh(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Template ID is required", nil)
 		return
 	}
 
-	template, err := h.templateService.RefreshFromMeta(c.Request.Context(), id)
+	template, err := h.templateService.RefreshFromMeta(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
