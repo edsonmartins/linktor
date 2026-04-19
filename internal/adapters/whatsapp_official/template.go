@@ -380,13 +380,6 @@ func TemplateFromJSON(jsonStr string) (*TemplateObject, error) {
 	return &template, nil
 }
 
-// Common template categories
-const (
-	TemplateCategoryMarketing      = "MARKETING"
-	TemplateCategoryUtility        = "UTILITY"
-	TemplateCategoryAuthentication = "AUTHENTICATION"
-)
-
 // TemplateInfo represents information about a template
 type TemplateInfo struct {
 	Name       string   `json:"name"`
@@ -396,31 +389,10 @@ type TemplateInfo struct {
 	Components []string `json:"components,omitempty"`
 }
 
-// CreateOTPTemplate creates a standard OTP template message
-func CreateOTPTemplate(templateName, languageCode, otp string) *TemplateObject {
-	return NewTemplateBuilder(templateName, languageCode).
-		AddBodyParameters(otp).
-		Build()
-}
-
-// CreateOrderConfirmationTemplate creates an order confirmation template
-func CreateOrderConfirmationTemplate(templateName, languageCode, orderID, total, currency string) *TemplateObject {
-	return NewTemplateBuilder(templateName, languageCode).
-		AddBodyParameters(orderID, total, currency).
-		Build()
-}
-
-// CreateAppointmentReminderTemplate creates an appointment reminder template
-func CreateAppointmentReminderTemplate(templateName, languageCode, name, date, time, location string) *TemplateObject {
-	return NewTemplateBuilder(templateName, languageCode).
-		AddBodyParameters(name, date, time, location).
-		Build()
-}
-
-// CreateShippingUpdateTemplate creates a shipping update template
-func CreateShippingUpdateTemplate(templateName, languageCode, orderID, status, trackingURL string) *TemplateObject {
-	return NewTemplateBuilder(templateName, languageCode).
-		AddBodyParameters(orderID, status).
-		AddURLButton(0, trackingURL).
-		Build()
-}
+// Use-case factory helpers (CreateOTPTemplate, CreateOrderConfirmationTemplate,
+// CreateAppointmentReminderTemplate, CreateShippingUpdateTemplate) were
+// removed as part of the P3 cleanup. Their names implied they created
+// templates via the Management API (Create*), but in reality they produced
+// outgoing *TemplateObject payloads — conflating the two concepts.
+// Callers should now use TemplateBuilder directly, or BuildSendPayload
+// when turning a stored entity.Template into a send payload.

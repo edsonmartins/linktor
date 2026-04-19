@@ -207,40 +207,10 @@ func TestTemplateBuilder_ChainedBuild(t *testing.T) {
 	assert.Equal(t, "url", tmpl.Components[3].SubType)
 }
 
-func TestCreateOTPTemplate(t *testing.T) {
-	tmpl := CreateOTPTemplate("otp_template", "en", "123456")
-
-	assert.Equal(t, "otp_template", tmpl.Name)
-	assert.Equal(t, "en", tmpl.Language.Code)
-	require.Len(t, tmpl.Components, 1)
-	comp := tmpl.Components[0]
-	assert.Equal(t, "body", comp.Type)
-	require.Len(t, comp.Parameters, 1)
-	assert.Equal(t, "text", comp.Parameters[0].Type)
-	assert.Equal(t, "123456", comp.Parameters[0].Text)
-}
-
-func TestCreateShippingUpdateTemplate(t *testing.T) {
-	tmpl := CreateShippingUpdateTemplate("shipping", "en", "ORD-100", "In Transit", "/track/ORD-100")
-
-	assert.Equal(t, "shipping", tmpl.Name)
-	require.Len(t, tmpl.Components, 2)
-
-	// Body
-	body := tmpl.Components[0]
-	assert.Equal(t, "body", body.Type)
-	require.Len(t, body.Parameters, 2)
-	assert.Equal(t, "ORD-100", body.Parameters[0].Text)
-	assert.Equal(t, "In Transit", body.Parameters[1].Text)
-
-	// URL button
-	btn := tmpl.Components[1]
-	assert.Equal(t, "button", btn.Type)
-	assert.Equal(t, "url", btn.SubType)
-	require.NotNil(t, btn.Index)
-	assert.Equal(t, 0, *btn.Index)
-	assert.Equal(t, "/track/ORD-100", btn.Parameters[0].Text)
-}
+// Tests for CreateOTPTemplate / CreateShippingUpdateTemplate were removed
+// alongside those helpers (see P3 cleanup in template.go). The equivalent
+// build-from-scratch flow is exercised by TestTemplateBuilder_* cases in
+// template_test.go, and the stored-template path by TestBuildSendPayload_*.
 
 func TestTemplateFromJSON(t *testing.T) {
 	t.Run("valid JSON", func(t *testing.T) {
