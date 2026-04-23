@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,12 +19,12 @@ import (
 
 // Handler handles WebChat HTTP endpoints
 type Handler struct {
-	adapter         *Adapter
-	channelRepo     repository.ChannelRepository
+	adapter          *Adapter
+	channelRepo      repository.ChannelRepository
 	conversationRepo repository.ConversationRepository
-	contactRepo     repository.ContactRepository
-	producer        nats.Publisher
-	upgrader        websocket.Upgrader
+	contactRepo      repository.ContactRepository
+	producer         nats.Publisher
+	upgrader         websocket.Upgrader
 }
 
 // NewHandler creates a new WebChat handler
@@ -44,8 +45,7 @@ func NewHandler(
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				// In production, validate origin against allowed domains
-				return true
+				return isOriginAllowed(r)
 			},
 		},
 	}
@@ -143,6 +143,10 @@ func (h *Handler) WebSocketHandler(c *gin.Context) {
 
 // handleClientMessage processes messages from WebSocket clients
 func (h *Handler) handleClientMessage(ctx context.Context, client *Client, channel *entity.Channel, msg *MessagePayload) error {
+	if h.producer == nil {
+		return fmt.Errorf("message queue unavailable")
+	}
+
 	// Get or create contact
 	contact, err := h.getOrCreateContact(ctx, channel.TenantID, client)
 	if err != nil {
@@ -188,6 +192,24 @@ func (h *Handler) handleClientMessage(ctx context.Context, client *Client, chann
 	}
 
 	return h.producer.PublishInbound(ctx, inbound)
+}
+
+func isOriginAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+
+	for _, allowed := range strings.Split(os.Getenv("LINKTOR_WS_ALLOWED_ORIGINS"), ",") {
+		if strings.TrimSpace(allowed) == origin {
+			return true
+		}
+	}
+
+	return strings.HasPrefix(origin, "http://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:") ||
+		strings.HasPrefix(origin, "https://localhost:") ||
+		strings.HasPrefix(origin, "https://127.0.0.1:")
 }
 
 // getOrCreateContact finds or creates a contact

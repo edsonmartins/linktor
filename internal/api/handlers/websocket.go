@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,8 +82,8 @@ type AgentHub struct {
 
 // TenantBroadcast represents a message to broadcast to a tenant
 type TenantBroadcast struct {
-	TenantID string
-	Message  *WSMessage
+	TenantID      string
+	Message       *WSMessage
 	ExcludeUserID string // Optional: exclude this user from broadcast
 }
 
@@ -244,7 +246,7 @@ func NewWebSocketHandler(hub *AgentHub, jwtSecret string) *WebSocketHandler {
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				return true // In production, validate origin
+				return isWebSocketOriginAllowed(r)
 			},
 		},
 	}
@@ -309,6 +311,24 @@ func (h *WebSocketHandler) HandleConnection(c *gin.Context) {
 	// Start pumps
 	go client.writePump()
 	go client.readPump()
+}
+
+func isWebSocketOriginAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+
+	for _, allowed := range strings.Split(os.Getenv("LINKTOR_WS_ALLOWED_ORIGINS"), ",") {
+		if strings.TrimSpace(allowed) == origin {
+			return true
+		}
+	}
+
+	return strings.HasPrefix(origin, "http://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:") ||
+		strings.HasPrefix(origin, "https://localhost:") ||
+		strings.HasPrefix(origin, "https://127.0.0.1:")
 }
 
 // readPump reads messages from the WebSocket connection

@@ -133,13 +133,18 @@ func (h *ConversationHandler) Create(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /conversations/{id} [get]
 func (h *ConversationHandler) Get(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
 		return
 	}
 
-	conversation, err := h.conversationService.GetByID(c.Request.Context(), id)
+	conversation, err := h.conversationService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -171,6 +176,11 @@ type UpdateConversationRequest struct {
 // @Failure      404 {object} Response
 // @Router       /conversations/{id} [put]
 func (h *ConversationHandler) Update(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
@@ -190,7 +200,7 @@ func (h *ConversationHandler) Update(c *gin.Context) {
 		Tags:     req.Tags,
 	}
 
-	conversation, err := h.conversationService.Update(c.Request.Context(), id, input)
+	conversation, err := h.conversationService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -219,6 +229,11 @@ type AssignRequest struct {
 // @Failure      404 {object} Response
 // @Router       /conversations/{id}/assign [post]
 func (h *ConversationHandler) Assign(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
@@ -231,7 +246,7 @@ func (h *ConversationHandler) Assign(c *gin.Context) {
 		return
 	}
 
-	conversation, err := h.conversationService.Assign(c.Request.Context(), id, req.UserID)
+	conversation, err := h.conversationService.AssignForTenant(c.Request.Context(), tenantID, id, req.UserID)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -254,13 +269,18 @@ func (h *ConversationHandler) Assign(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /conversations/{id}/resolve [post]
 func (h *ConversationHandler) Resolve(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
 		return
 	}
 
-	conversation, err := h.conversationService.Resolve(c.Request.Context(), id)
+	conversation, err := h.conversationService.ResolveForTenant(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -283,13 +303,18 @@ func (h *ConversationHandler) Resolve(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /conversations/{id}/reopen [post]
 func (h *ConversationHandler) Reopen(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
 		return
 	}
 
-	conversation, err := h.conversationService.Reopen(c.Request.Context(), id)
+	conversation, err := h.conversationService.ReopenForTenant(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -338,9 +363,9 @@ func (h *ConversationHandler) GetEscalationContext(c *gin.Context) {
 
 // ConversationEscalateRequest represents an escalate conversation request
 type ConversationEscalateRequest struct {
-	Reason       string  `json:"reason"`
-	Priority     string  `json:"priority"` // low, normal, high, urgent
-	AssignTo     *string `json:"assign_to"`
+	Reason   string  `json:"reason"`
+	Priority string  `json:"priority"` // low, normal, high, urgent
+	AssignTo *string `json:"assign_to"`
 }
 
 // Escalate godoc
@@ -376,7 +401,7 @@ func (h *ConversationHandler) Escalate(c *gin.Context) {
 	}
 
 	// Get conversation to get channel and contact IDs
-	conversation, err := h.conversationService.GetByID(c.Request.Context(), id)
+	conversation, err := h.conversationService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return

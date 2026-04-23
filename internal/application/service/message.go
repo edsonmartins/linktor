@@ -13,6 +13,7 @@ import (
 
 // SendMessageInput represents input for sending a message
 type SendMessageInput struct {
+	TenantID       string
 	ConversationID string
 	SenderID       string
 	SenderType     string
@@ -58,6 +59,14 @@ func (s *MessageService) ListByConversation(ctx context.Context, conversationID 
 	return s.messageRepo.FindByConversation(ctx, conversationID, params)
 }
 
+// ListByConversationForTenant returns messages only when the conversation belongs to the tenant.
+func (s *MessageService) ListByConversationForTenant(ctx context.Context, tenantID, conversationID string, params *repository.ListParams) ([]*entity.Message, int64, error) {
+	if _, err := s.getConversationForTenant(ctx, tenantID, conversationID); err != nil {
+		return nil, 0, err
+	}
+	return s.ListByConversation(ctx, conversationID, params)
+}
+
 // Send sends a new message
 func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*entity.Message, error) {
 	if input.ConversationID == "" {
@@ -72,16 +81,25 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 	if err != nil {
 		return nil, errors.New(errors.ErrCodeConversationNotFound, "conversation not found")
 	}
+	if input.TenantID != "" && conversation.TenantID != input.TenantID {
+		return nil, errors.New(errors.ErrCodeConversationNotFound, "conversation not found")
+	}
 
 	// Get channel
 	channel, err := s.channelRepo.FindByID(ctx, conversation.ChannelID)
 	if err != nil {
 		return nil, errors.New(errors.ErrCodeChannelNotFound, "channel not found")
 	}
+	if channel.TenantID != conversation.TenantID {
+		return nil, errors.New(errors.ErrCodeChannelNotFound, "channel not found")
+	}
 
 	// Get contact for recipient ID
 	contact, err := s.contactRepo.FindByID(ctx, conversation.ContactID)
 	if err != nil {
+		return nil, errors.New(errors.ErrCodeContactNotFound, "contact not found")
+	}
+	if contact.TenantID != conversation.TenantID {
 		return nil, errors.New(errors.ErrCodeContactNotFound, "contact not found")
 	}
 
@@ -155,6 +173,18 @@ func (s *MessageService) GetByID(ctx context.Context, id string) (*entity.Messag
 	return message, nil
 }
 
+// GetByIDForTenant returns a message only if its conversation belongs to the tenant.
+func (s *MessageService) GetByIDForTenant(ctx context.Context, tenantID, id string) (*entity.Message, error) {
+	message, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.getConversationForTenant(ctx, tenantID, message.ConversationID); err != nil {
+		return nil, errors.New(errors.ErrCodeMessageNotFound, "message not found")
+	}
+	return message, nil
+}
+
 // UpdateStatus updates a message status
 func (s *MessageService) UpdateStatus(ctx context.Context, id string, status entity.MessageStatus, errorMessage string) (*entity.Message, error) {
 	if err := s.messageRepo.UpdateStatus(ctx, id, status, errorMessage); err != nil {
@@ -175,6 +205,9 @@ func (s *MessageService) SendReaction(ctx context.Context, conversationID, messa
 	// Get the original message to find external_id
 	message, err := s.messageRepo.FindByID(ctx, messageID)
 	if err != nil {
+		return errors.New(errors.ErrCodeMessageNotFound, "message not found")
+	}
+	if message.ConversationID != conversationID {
 		return errors.New(errors.ErrCodeMessageNotFound, "message not found")
 	}
 
@@ -206,6 +239,14 @@ func (s *MessageService) SendReaction(ctx context.Context, conversationID, messa
 	}
 
 	return nil
+}
+
+// SendReactionForTenant sends a reaction only if the conversation belongs to the tenant.
+func (s *MessageService) SendReactionForTenant(ctx context.Context, tenantID, conversationID, messageID, emoji, senderID string) error {
+	if _, err := s.getConversationForTenant(ctx, tenantID, conversationID); err != nil {
+		return err
+	}
+	return s.SendReaction(ctx, conversationID, messageID, emoji, senderID)
 }
 
 // EditMessage edits an existing message's content
@@ -255,6 +296,15 @@ func (s *MessageService) EditMessage(ctx context.Context, messageID, newContent 
 	return message, nil
 }
 
+// EditMessageForTenant edits a message only if its conversation belongs to the tenant.
+func (s *MessageService) EditMessageForTenant(ctx context.Context, tenantID, messageID, newContent string) (*entity.Message, error) {
+	message, err := s.GetByIDForTenant(ctx, tenantID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	return s.EditMessage(ctx, message.ID, newContent)
+}
+
 // DeleteMessage marks a message as deleted/revoked
 func (s *MessageService) DeleteMessage(ctx context.Context, messageID string) error {
 	if messageID == "" {
@@ -297,6 +347,15 @@ func (s *MessageService) DeleteMessage(ctx context.Context, messageID string) er
 	}
 
 	return nil
+}
+
+// DeleteMessageForTenant deletes a message only if its conversation belongs to the tenant.
+func (s *MessageService) DeleteMessageForTenant(ctx context.Context, tenantID, messageID string) error {
+	message, err := s.GetByIDForTenant(ctx, tenantID, messageID)
+	if err != nil {
+		return err
+	}
+	return s.DeleteMessage(ctx, message.ID)
 }
 
 // MarkAsRead marks messages as read in a conversation
@@ -342,6 +401,14 @@ func (s *MessageService) MarkAsRead(ctx context.Context, conversationID string, 
 	return nil
 }
 
+// MarkAsReadForTenant marks messages as read only if the conversation belongs to the tenant.
+func (s *MessageService) MarkAsReadForTenant(ctx context.Context, tenantID, conversationID string, messageIDs []string) error {
+	if _, err := s.getConversationForTenant(ctx, tenantID, conversationID); err != nil {
+		return err
+	}
+	return s.MarkAsRead(ctx, conversationID, messageIDs)
+}
+
 // SendTypingIndicator sends a typing indicator for a conversation
 func (s *MessageService) SendTypingIndicator(ctx context.Context, conversationID string, isTyping bool) error {
 	if conversationID == "" {
@@ -373,6 +440,25 @@ func (s *MessageService) SendTypingIndicator(ctx context.Context, conversationID
 	}
 
 	return nil
+}
+
+// SendTypingIndicatorForTenant sends typing state only if the conversation belongs to the tenant.
+func (s *MessageService) SendTypingIndicatorForTenant(ctx context.Context, tenantID, conversationID string, isTyping bool) error {
+	if _, err := s.getConversationForTenant(ctx, tenantID, conversationID); err != nil {
+		return err
+	}
+	return s.SendTypingIndicator(ctx, conversationID, isTyping)
+}
+
+func (s *MessageService) getConversationForTenant(ctx context.Context, tenantID, conversationID string) (*entity.Conversation, error) {
+	conversation, err := s.conversationRepo.FindByID(ctx, conversationID)
+	if err != nil {
+		return nil, errors.New(errors.ErrCodeConversationNotFound, "conversation not found")
+	}
+	if conversation.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeConversationNotFound, "conversation not found")
+	}
+	return conversation, nil
 }
 
 // findRecipientForChannel finds the recipient identifier for a given channel type

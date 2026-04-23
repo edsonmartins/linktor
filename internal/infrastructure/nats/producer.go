@@ -31,6 +31,13 @@ func NewProducer(client *Client) *Producer {
 	return &Producer{client: client}
 }
 
+func (p *Producer) ensureReady() error {
+	if p == nil || p.client == nil || p.client.js == nil {
+		return fmt.Errorf("nats producer is not connected")
+	}
+	return nil
+}
+
 // InboundMessage represents a message received from an external channel
 type InboundMessage struct {
 	ID             string            `json:"id"`
@@ -94,19 +101,22 @@ type Event struct {
 
 // WebhookDelivery represents a webhook to be delivered
 type WebhookDelivery struct {
-	ID          string                 `json:"id"`
-	TenantID    string                 `json:"tenant_id"`
-	URL         string                 `json:"url"`
-	EventType   string                 `json:"event_type"`
-	Payload     map[string]interface{} `json:"payload"`
-	Headers     map[string]string      `json:"headers,omitempty"`
-	RetryCount  int                    `json:"retry_count"`
-	MaxRetries  int                    `json:"max_retries"`
-	Timestamp   time.Time              `json:"timestamp"`
+	ID         string                 `json:"id"`
+	TenantID   string                 `json:"tenant_id"`
+	URL        string                 `json:"url"`
+	EventType  string                 `json:"event_type"`
+	Payload    map[string]interface{} `json:"payload"`
+	Headers    map[string]string      `json:"headers,omitempty"`
+	RetryCount int                    `json:"retry_count"`
+	MaxRetries int                    `json:"max_retries"`
+	Timestamp  time.Time              `json:"timestamp"`
 }
 
 // PublishInbound publishes an inbound message to the stream
 func (p *Producer) PublishInbound(ctx context.Context, msg *InboundMessage) error {
+	if err := p.ensureReady(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal inbound message: %w", err)
@@ -125,6 +135,9 @@ func (p *Producer) PublishInbound(ctx context.Context, msg *InboundMessage) erro
 
 // PublishOutbound publishes an outbound message to the stream
 func (p *Producer) PublishOutbound(ctx context.Context, msg *OutboundMessage) error {
+	if err := p.ensureReady(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal outbound message: %w", err)
@@ -143,6 +156,9 @@ func (p *Producer) PublishOutbound(ctx context.Context, msg *OutboundMessage) er
 
 // PublishStatusUpdate publishes a message status update
 func (p *Producer) PublishStatusUpdate(ctx context.Context, status *StatusUpdate) error {
+	if err := p.ensureReady(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(status)
 	if err != nil {
 		return fmt.Errorf("failed to marshal status update: %w", err)
@@ -162,6 +178,9 @@ func (p *Producer) PublishStatusUpdate(ctx context.Context, status *StatusUpdate
 
 // PublishEvent publishes a system event
 func (p *Producer) PublishEvent(ctx context.Context, event *Event) error {
+	if err := p.ensureReady(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal event: %w", err)
@@ -181,6 +200,9 @@ func (p *Producer) PublishEvent(ctx context.Context, event *Event) error {
 
 // PublishWebhookDelivery publishes a webhook delivery request
 func (p *Producer) PublishWebhookDelivery(ctx context.Context, webhook *WebhookDelivery) error {
+	if err := p.ensureReady(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(webhook)
 	if err != nil {
 		return fmt.Errorf("failed to marshal webhook delivery: %w", err)

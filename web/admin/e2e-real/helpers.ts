@@ -1,12 +1,24 @@
 import { expect, type Page, type APIRequestContext } from '@playwright/test'
 
+export const E2E_API_BASE_URL = (
+  process.env.E2E_REAL_API_BASE ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://localhost:8081/api/v1'
+).replace(/\/$/, '')
+
+export const E2E_SERVER_BASE_URL = E2E_API_BASE_URL.replace(/\/api\/v1\/?$/, '')
+
+function apiPath(path: string) {
+  return `${E2E_API_BASE_URL}${path}`
+}
+
 export async function assertApiHealthy(request: APIRequestContext) {
-  const health = await request.get('http://localhost:8081/health')
+  const health = await request.get(`${E2E_SERVER_BASE_URL}/health`)
   expect(health.ok()).toBeTruthy()
 }
 
 export async function loginAsAdminApi(request: APIRequestContext) {
-  const response = await request.post('http://localhost:8081/api/v1/auth/login', {
+  const response = await request.post(apiPath('/auth/login'), {
     data: {
       email: 'admin@demo.com',
       password: 'admin123',
@@ -23,7 +35,7 @@ export async function loginAsAdminApi(request: APIRequestContext) {
 
 export async function listUsers(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/users', {
+  const response = await request.get(apiPath('/users'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -39,7 +51,7 @@ export async function createUserByApi(
   input: { name: string; email: string; password: string; role?: 'admin' | 'supervisor' | 'agent' }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.post('http://localhost:8081/api/v1/users', {
+  const response = await request.post(apiPath('/users'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -58,7 +70,7 @@ export async function createUserByApi(
 
 export async function deleteUserByEmail(request: APIRequestContext, email: string) {
   const accessToken = await loginAsAdminApi(request)
-  const usersResponse = await request.get('http://localhost:8081/api/v1/users', {
+  const usersResponse = await request.get(apiPath('/users'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -70,7 +82,7 @@ export async function deleteUserByEmail(request: APIRequestContext, email: strin
   const user = users.find((item) => item.email === email)
   if (!user) return
 
-  const deleteResponse = await request.delete(`http://localhost:8081/api/v1/users/${user.id}`, {
+  const deleteResponse = await request.delete(apiPath(`/users/${user.id}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -86,7 +98,7 @@ export async function findUserByEmail(request: APIRequestContext, email: string)
 
 export async function listChannels(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/channels', {
+  const response = await request.get(apiPath('/channels'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -113,7 +125,7 @@ export async function findChannelByName(request: APIRequestContext, name: string
 
 export async function deleteChannelByName(request: APIRequestContext, name: string) {
   const accessToken = await loginAsAdminApi(request)
-  const channelsResponse = await request.get('http://localhost:8081/api/v1/channels', {
+  const channelsResponse = await request.get(apiPath('/channels'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -125,7 +137,7 @@ export async function deleteChannelByName(request: APIRequestContext, name: stri
   const channel = channels.find((item) => item.name === name)
   if (!channel) return
 
-  const deleteResponse = await request.delete(`http://localhost:8081/api/v1/channels/${channel.id}`, {
+  const deleteResponse = await request.delete(apiPath(`/channels/${channel.id}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -136,7 +148,7 @@ export async function deleteChannelByName(request: APIRequestContext, name: stri
 
 export async function deleteChannelByID(request: APIRequestContext, id: string) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.delete(`http://localhost:8081/api/v1/channels/${id}`, {
+  const response = await request.delete(apiPath(`/channels/${id}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -150,7 +162,7 @@ export async function createWebchatChannelByApi(
   input: { name: string }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.post('http://localhost:8081/api/v1/channels', {
+  const response = await request.post(apiPath('/channels'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -176,12 +188,37 @@ export async function createWebchatChannelByApi(
   return payload?.data as { id: string; name: string; type: string }
 }
 
+export async function createWhatsAppOfficialChannelByApi(
+  request: APIRequestContext,
+  input: { name: string }
+) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.post(apiPath('/channels'), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    data: {
+      name: input.name,
+      type: 'whatsapp_official',
+      config: {},
+      credentials: {
+        access_token: 'playwright-access-token',
+        phone_number_id: `pn-${Date.now()}`,
+      },
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as { id: string; name: string; type: string }
+}
+
 export async function createContactByApi(
   request: APIRequestContext,
   input: { name: string; email: string; phone: string }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.post('http://localhost:8081/api/v1/contacts', {
+  const response = await request.post(apiPath('/contacts'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -200,7 +237,7 @@ export async function createContactByApi(
 
 export async function listContacts(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/contacts', {
+  const response = await request.get(apiPath('/contacts'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -229,7 +266,7 @@ export async function addContactIdentityByApi(
   input: { channelType: string; identifier: string }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.post(`http://localhost:8081/api/v1/contacts/${contactID}/identities`, {
+  const response = await request.post(apiPath(`/contacts/${contactID}/identities`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -247,9 +284,48 @@ export async function addContactIdentityByApi(
   return payload?.data as { id: string; identities?: Array<{ id: string; identifier: string; channel_type: string }> }
 }
 
+export async function getContactByID(request: APIRequestContext, contactID: string) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.get(apiPath(`/contacts/${contactID}`), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as {
+    id: string
+    name: string
+    email?: string
+    phone?: string
+    identities?: Array<{ id: string; external_id: string; channel_type: string }>
+  }
+}
+
+export async function removeContactIdentityByApi(
+  request: APIRequestContext,
+  contactID: string,
+  identityID: string
+) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.delete(apiPath(`/contacts/${contactID}/identities/${identityID}`), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as {
+    id: string
+    identities?: Array<{ id: string; external_id: string; channel_type: string }>
+  }
+}
+
 export async function deleteContactByID(request: APIRequestContext, contactID: string) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.delete(`http://localhost:8081/api/v1/contacts/${contactID}`, {
+  const response = await request.delete(apiPath(`/contacts/${contactID}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -260,7 +336,7 @@ export async function deleteContactByID(request: APIRequestContext, contactID: s
 
 export async function listKnowledgeBases(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/knowledge-bases', {
+  const response = await request.get(apiPath('/knowledge-bases'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -276,7 +352,7 @@ export async function createKnowledgeBaseByApi(
   input: { name: string; description?: string; type?: 'faq' | 'documents' | 'website' }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.post('http://localhost:8081/api/v1/knowledge-bases', {
+  const response = await request.post(apiPath('/knowledge-bases'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -302,7 +378,7 @@ export async function deleteKnowledgeBaseByName(request: APIRequestContext, name
   const knowledgeBase = await findKnowledgeBaseByName(request, name)
   if (!knowledgeBase) return
 
-  const response = await request.delete(`http://localhost:8081/api/v1/knowledge-bases/${knowledgeBase.id}`, {
+  const response = await request.delete(apiPath(`/knowledge-bases/${knowledgeBase.id}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -313,7 +389,7 @@ export async function deleteKnowledgeBaseByName(request: APIRequestContext, name
 
 export async function listKnowledgeItems(request: APIRequestContext, knowledgeBaseID: string) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get(`http://localhost:8081/api/v1/knowledge-bases/${knowledgeBaseID}/items`, {
+  const response = await request.get(apiPath(`/knowledge-bases/${knowledgeBaseID}/items`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -326,7 +402,7 @@ export async function listKnowledgeItems(request: APIRequestContext, knowledgeBa
 
 export async function listBots(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/bots', {
+  const response = await request.get(apiPath('/bots'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -350,7 +426,7 @@ export async function createBotByApi(
   input: { name: string; type?: 'customer_service' | 'sales' | 'faq' | 'custom'; provider?: 'openai' | 'anthropic' | 'ollama'; model?: string }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.post('http://localhost:8081/api/v1/bots', {
+  const response = await request.post(apiPath('/bots'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -384,7 +460,7 @@ export async function deleteBotByName(request: APIRequestContext, name: string) 
   const bot = await findBotByName(request, name)
   if (!bot) return
 
-  const response = await request.delete(`http://localhost:8081/api/v1/bots/${bot.id}`, {
+  const response = await request.delete(apiPath(`/bots/${bot.id}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -395,7 +471,7 @@ export async function deleteBotByName(request: APIRequestContext, name: string) 
 
 export async function getObservabilityLogs(request: APIRequestContext, query = 'limit=1') {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get(`http://localhost:8081/api/v1/observability/logs?${query}`, {
+  const response = await request.get(apiPath(`/observability/logs?${query}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -407,7 +483,7 @@ export async function getObservabilityLogs(request: APIRequestContext, query = '
 
 export async function getObservabilityQueue(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/observability/queue', {
+  const response = await request.get(apiPath('/observability/queue'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -419,7 +495,7 @@ export async function getObservabilityQueue(request: APIRequestContext) {
 
 export async function getObservabilityStats(request: APIRequestContext, period: 'hour' | 'day' | 'week' = 'day') {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get(`http://localhost:8081/api/v1/observability/stats?period=${period}`, {
+  const response = await request.get(apiPath(`/observability/stats?period=${period}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -435,7 +511,7 @@ export async function createKnowledgeItemByApi(
   input: { question: string; answer: string; source?: string; keywords?: string[] }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.post(`http://localhost:8081/api/v1/knowledge-bases/${knowledgeBaseID}/items`, {
+  const response = await request.post(apiPath(`/knowledge-bases/${knowledgeBaseID}/items`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -459,7 +535,7 @@ export async function findKnowledgeItemByQuestion(request: APIRequestContext, kn
 
 export async function getAnalyticsOverview(request: APIRequestContext, period: 'daily' | 'weekly' | 'monthly' = 'weekly') {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get(`http://localhost:8081/api/v1/analytics/overview?period=${period}`, {
+  const response = await request.get(apiPath(`/analytics/overview?period=${period}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -476,7 +552,7 @@ export async function getAnalyticsOverview(request: APIRequestContext, period: '
 
 export async function listApiKeys(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/api-keys', {
+  const response = await request.get(apiPath('/api-keys'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -489,7 +565,104 @@ export async function listApiKeys(request: APIRequestContext) {
 
 export async function deleteApiKeyByID(request: APIRequestContext, id: string) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.delete(`http://localhost:8081/api/v1/api-keys/${id}`, {
+  const response = await request.delete(apiPath(`/api-keys/${id}`), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+}
+
+export async function listTemplates(request: APIRequestContext) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.get(apiPath('/templates'), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return (payload?.data || []) as Array<{
+    id: string
+    channel_id: string
+    name: string
+    language: string
+    category: string
+    status: string
+  }>
+}
+
+export async function findTemplateByName(request: APIRequestContext, name: string) {
+  const templates = await listTemplates(request)
+  return templates.find((template) => template.name === name) || null
+}
+
+export async function getTemplateByID(request: APIRequestContext, templateID: string) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.get(apiPath(`/templates/${templateID}`), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as {
+    id: string
+    channel_id: string
+    name: string
+    language: string
+    category: string
+    status: string
+  }
+}
+
+export async function createTemplateByApi(
+  request: APIRequestContext,
+  input: {
+    channelID: string
+    name: string
+    language?: string
+    category?: 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+    bodyText?: string
+  }
+) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.post(apiPath('/templates'), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    data: {
+      channel_id: input.channelID,
+      name: input.name,
+      language: input.language || 'pt_BR',
+      category: input.category || 'UTILITY',
+      components: [
+        {
+          type: 'BODY',
+          text: input.bodyText || 'Playwright template body',
+        },
+      ],
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as {
+    id: string
+    channel_id: string
+    name: string
+    language: string
+    category: string
+    status: string
+  }
+}
+
+export async function deleteTemplateByID(request: APIRequestContext, templateID: string) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.delete(apiPath(`/templates/${templateID}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -503,7 +676,7 @@ export async function createConversationByApi(
   input: { contactID: string; channelID: string; subject?: string }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.post('http://localhost:8081/api/v1/conversations', {
+  const response = await request.post(apiPath('/conversations'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -521,9 +694,28 @@ export async function createConversationByApi(
   return payload?.data as { id: string; contact_id: string; channel_id: string; subject?: string }
 }
 
+export async function getConversationByID(request: APIRequestContext, conversationID: string) {
+  const accessToken = await loginAsAdminApi(request)
+  const response = await request.get(apiPath(`/conversations/${conversationID}`), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json()
+  return payload?.data as {
+    id: string
+    status: string
+    assigned_user_id?: string
+    priority?: string
+    metadata?: Record<string, string>
+  }
+}
+
 export async function listMessagesByConversation(request: APIRequestContext, conversationID: string) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get(`http://localhost:8081/api/v1/conversations/${conversationID}/messages`, {
+  const response = await request.get(apiPath(`/conversations/${conversationID}/messages`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -536,7 +728,7 @@ export async function listMessagesByConversation(request: APIRequestContext, con
 
 export async function listFlows(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/flows', {
+  const response = await request.get(apiPath('/flows'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -557,7 +749,7 @@ export async function deleteFlowByName(request: APIRequestContext, name: string)
   const flow = await findFlowByName(request, name)
   if (!flow) return
 
-  const response = await request.delete(`http://localhost:8081/api/v1/flows/${flow.id}`, {
+  const response = await request.delete(apiPath(`/flows/${flow.id}`), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -605,7 +797,7 @@ export async function expectListOrEmptyState(page: Page, options: {
 
 export async function getMe(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/me', {
+  const response = await request.get(apiPath('/me'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -627,7 +819,7 @@ export async function updateMyProfile(
   input: { name?: string; avatar_url?: string }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.put('http://localhost:8081/api/v1/me', {
+  const response = await request.put(apiPath('/me'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -645,7 +837,7 @@ export async function changeMyPassword(
   token?: string
 ) {
   const accessToken = token || (await loginAsAdminApi(request))
-  const response = await request.put('http://localhost:8081/api/v1/me/password', {
+  const response = await request.put(apiPath('/me/password'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -660,7 +852,7 @@ export async function loginWithPasswordApi(
   email: string,
   password: string
 ) {
-  const response = await request.post('http://localhost:8081/api/v1/auth/login', {
+  const response = await request.post(apiPath('/auth/login'), {
     data: { email, password },
   })
   return { ok: response.ok(), status: response.status() }
@@ -668,7 +860,7 @@ export async function loginWithPasswordApi(
 
 export async function getTenant(request: APIRequestContext) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.get('http://localhost:8081/api/v1/tenant', {
+  const response = await request.get(apiPath('/tenant'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -690,7 +882,7 @@ export async function updateTenant(
   input: { name?: string; settings?: Record<string, string> }
 ) {
   const accessToken = await loginAsAdminApi(request)
-  const response = await request.put('http://localhost:8081/api/v1/tenant', {
+  const response = await request.put(apiPath('/tenant'), {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },

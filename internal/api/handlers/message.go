@@ -60,13 +60,18 @@ type TypingIndicatorRequest struct {
 // @Failure      404 {object} Response
 // @Router       /conversations/{id}/messages [get]
 func (h *MessageHandler) List(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	conversationID := c.Param("id")
 	if conversationID == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
 		return
 	}
 
-	messages, total, err := h.messageService.ListByConversation(c.Request.Context(), conversationID, nil)
+	messages, total, err := h.messageService.ListByConversationForTenant(c.Request.Context(), tenantID, conversationID, nil)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -94,6 +99,11 @@ func (h *MessageHandler) List(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /conversations/{id}/messages [post]
 func (h *MessageHandler) Send(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	conversationID := c.Param("id")
 	if conversationID == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
@@ -112,6 +122,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	}
 
 	input := &service.SendMessageInput{
+		TenantID:       tenantID,
 		ConversationID: conversationID,
 		SenderID:       userID,
 		SenderType:     "user",
@@ -142,13 +153,18 @@ func (h *MessageHandler) Send(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /messages/{id} [get]
 func (h *MessageHandler) Get(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Message ID is required", nil)
 		return
 	}
 
-	message, err := h.messageService.GetByID(c.Request.Context(), id)
+	message, err := h.messageService.GetByIDForTenant(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -173,6 +189,11 @@ func (h *MessageHandler) Get(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /conversations/{id}/messages/{messageId}/reactions [post]
 func (h *MessageHandler) SendReaction(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	conversationID := c.Param("id")
 	if conversationID == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
@@ -197,7 +218,7 @@ func (h *MessageHandler) SendReaction(c *gin.Context) {
 	}
 
 	// Send reaction using the message service
-	err := h.messageService.SendReaction(c.Request.Context(), conversationID, messageID, req.Emoji, userID)
+	err := h.messageService.SendReactionForTenant(c.Request.Context(), tenantID, conversationID, messageID, req.Emoji, userID)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -229,6 +250,11 @@ func (h *MessageHandler) SendReaction(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /messages/{id}/edit [put]
 func (h *MessageHandler) EditMessage(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	messageID := c.Param("id")
 	if messageID == "" {
 		RespondValidationError(c, "Message ID is required", nil)
@@ -241,7 +267,7 @@ func (h *MessageHandler) EditMessage(c *gin.Context) {
 		return
 	}
 
-	message, err := h.messageService.EditMessage(c.Request.Context(), messageID, req.Content)
+	message, err := h.messageService.EditMessageForTenant(c.Request.Context(), tenantID, messageID, req.Content)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -262,13 +288,18 @@ func (h *MessageHandler) EditMessage(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /messages/{id} [delete]
 func (h *MessageHandler) DeleteMessage(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	messageID := c.Param("id")
 	if messageID == "" {
 		RespondValidationError(c, "Message ID is required", nil)
 		return
 	}
 
-	err := h.messageService.DeleteMessage(c.Request.Context(), messageID)
+	err := h.messageService.DeleteMessageForTenant(c.Request.Context(), tenantID, messageID)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -290,6 +321,11 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 // @Failure      400 {object} Response
 // @Router       /conversations/{id}/messages/read [post]
 func (h *MessageHandler) MarkAsRead(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	conversationID := c.Param("id")
 	if conversationID == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
@@ -302,7 +338,7 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 		return
 	}
 
-	err := h.messageService.MarkAsRead(c.Request.Context(), conversationID, req.MessageIDs)
+	err := h.messageService.MarkAsReadForTenant(c.Request.Context(), tenantID, conversationID, req.MessageIDs)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -324,6 +360,11 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 // @Failure      400 {object} Response
 // @Router       /conversations/{id}/typing [post]
 func (h *MessageHandler) SendTypingIndicator(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	conversationID := c.Param("id")
 	if conversationID == "" {
 		RespondValidationError(c, "Conversation ID is required", nil)
@@ -336,7 +377,7 @@ func (h *MessageHandler) SendTypingIndicator(c *gin.Context) {
 		return
 	}
 
-	err := h.messageService.SendTypingIndicator(c.Request.Context(), conversationID, req.IsTyping)
+	err := h.messageService.SendTypingIndicatorForTenant(c.Request.Context(), tenantID, conversationID, req.IsTyping)
 	if err != nil {
 		RespondError(c, err)
 		return

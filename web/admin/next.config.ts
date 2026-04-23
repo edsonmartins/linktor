@@ -2,6 +2,10 @@ import type { NextConfig } from 'next'
 import createNextIntlPlugin from 'next-intl/plugin'
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
+const apiOrigin =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/v1\/?$/, '') ||
+  process.env.NEXT_PROXY_API_ORIGIN ||
+  'http://localhost:8081'
 
 const nextConfig: NextConfig = {
   output: 'standalone',
@@ -12,7 +16,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:8081/api/:path*',
+        destination: `${apiOrigin}/api/:path*`,
       },
     ]
   },

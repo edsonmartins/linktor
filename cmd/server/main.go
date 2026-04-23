@@ -73,6 +73,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	redisv9 "github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
@@ -146,9 +147,13 @@ func main() {
 		logger.Fatal("Failed to run migrations: " + err.Error())
 	}
 
-	// Seed database with initial data
-	if err := db.Seed(context.Background()); err != nil {
-		logger.Error("Failed to seed database: " + err.Error())
+	// Seed demo data only outside release mode, unless explicitly enabled.
+	if cfg.Server.Mode != "release" || os.Getenv("LINKTOR_SEED_DEMO") == "true" {
+		if err := db.Seed(context.Background()); err != nil {
+			logger.Error("Failed to seed database: " + err.Error())
+		}
+	} else {
+		logger.Info("Skipping demo database seed in release mode")
 	}
 
 	// Initialize NATS (optional - will work without it but messaging features disabled)
@@ -261,6 +266,7 @@ func main() {
 	logger.Info("Initializing VRE service...")
 	var vreService *service.VREService
 	var redisClient *redis.Client
+	var rateLimiter *middleware.RateLimiter
 
 	// Connect to Redis if configured (for VRE caching)
 	redisURL := os.Getenv("REDIS_URL")
@@ -275,6 +281,20 @@ func main() {
 				logger.Info("Redis connected for VRE caching")
 			}
 		}
+	}
+
+	rateRedis := redisv9.NewClient(&redisv9.Options{
+		Addr:     cfg.Redis.Addr(),
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	if err := rateRedis.Ping(context.Background()).Err(); err != nil {
+		logger.Warn("Failed to connect to Redis - HTTP rate limiting disabled: " + err.Error())
+		_ = rateRedis.Close()
+	} else {
+		defer rateRedis.Close()
+		rateLimiter = middleware.NewRateLimiter(rateRedis, nil)
+		logger.Info("Redis connected for HTTP rate limiting")
 	}
 
 	// Create VRE service
@@ -443,7 +463,8 @@ func main() {
 	)
 
 	// Create webhook handler
-	webhookHandler := handlers.NewWebhookHandler(channelRepo, producer, templateService)
+	requireWebhookSecrets := cfg.Server.Mode == "release" || os.Getenv("LINKTOR_REQUIRE_WEBHOOK_SECRETS") == "true"
+	webhookHandler := handlers.NewWebhookHandler(channelRepo, producer, templateService, requireWebhookSecrets)
 
 	// Create bot handler
 	botHandler := handlers.NewBotHandler(botService)
@@ -609,7 +630,7 @@ func main() {
 
 		// Subscribe to status updates
 		if err := consumer.SubscribeStatus(ctx, func(ctx context.Context, status *nats.StatusUpdate) error {
-			return messageRepo.UpdateStatus(ctx, status.MessageID, toMessageStatus(status.Status), status.ErrorMessage)
+			return handleMessageStatusUpdate(ctx, messageRepo, status)
 		}); err != nil {
 			logger.Warn("Failed to subscribe to status updates")
 		}
@@ -712,6 +733,11 @@ func main() {
 	{
 		// Auth routes (no auth required)
 		auth := api.Group("/auth")
+		if rateLimiter != nil {
+			auth.Use(rateLimiter.LimitByKey(func(c *gin.Context) string {
+				return "auth:" + c.ClientIP()
+			}))
+		}
 		{
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/refresh", authHandler.RefreshToken)
@@ -722,6 +748,11 @@ func main() {
 
 		// Webhook routes (auth via signature verification)
 		webhooks := api.Group("/webhooks")
+		if rateLimiter != nil {
+			webhooks.Use(rateLimiter.LimitByKey(func(c *gin.Context) string {
+				return "webhook:" + c.ClientIP()
+			}))
+		}
 		{
 			webhooks.Any("/whatsapp/:channelId", webhookHandler.WhatsAppWebhook)
 			webhooks.POST("/telegram/:channelId", webhookHandler.TelegramWebhook)
@@ -748,6 +779,9 @@ func main() {
 		// Protected routes
 		protected := api.Group("")
 		protected.Use(authMiddleware.Authenticate())
+		if rateLimiter != nil {
+			protected.Use(rateLimiter.Limit())
+		}
 		{
 			// User info
 			protected.GET("/me", authHandler.Me)
@@ -756,7 +790,7 @@ func main() {
 
 			// Tenant/Organization
 			protected.GET("/tenant", tenantHandler.Get)
-			protected.PUT("/tenant", tenantHandler.Update)
+			protected.PUT("/tenant", authMiddleware.RequireRole("admin", "owner"), tenantHandler.Update)
 			protected.GET("/tenant/usage", tenantHandler.GetUsage)
 
 			// Conversations
@@ -894,6 +928,7 @@ func main() {
 
 			// Observability
 			observability := protected.Group("/observability")
+			observability.Use(authMiddleware.RequireRole("admin", "owner"))
 			{
 				observability.GET("/logs", observabilityHandler.GetLogs)
 				observability.POST("/logs/cleanup", observabilityHandler.CleanupLogs)
@@ -1008,23 +1043,9 @@ func main() {
 				}
 			}
 
-			// Conversation Management (with escalation support)
-			convMgmt := protected.Group("/conversations-v2")
-			{
-				convMgmt.GET("", conversationHandler.List)
-				convMgmt.POST("", conversationHandler.Create)
-				convMgmt.GET("/:id", conversationHandler.Get)
-				convMgmt.PUT("/:id", conversationHandler.Update)
-				convMgmt.POST("/:id/assign", conversationHandler.Assign)
-				convMgmt.POST("/:id/resolve", conversationHandler.Resolve)
-				convMgmt.POST("/:id/reopen", conversationHandler.Reopen)
-				convMgmt.POST("/:id/escalate", conversationHandler.Escalate)
-				convMgmt.GET("/:id/escalation-context", conversationHandler.GetEscalationContext)
-			}
-
 			// User management (admin only)
 			users := protected.Group("/users")
-			users.Use(authMiddleware.RequireRole("admin"))
+			users.Use(authMiddleware.RequireRole("admin", "owner"))
 			{
 				users.GET("", userHandler.List)
 				users.POST("", userHandler.Create)
@@ -1035,7 +1056,7 @@ func main() {
 
 			// API keys (admin only)
 			apiKeys := protected.Group("/api-keys")
-			apiKeys.Use(authMiddleware.RequireRole("admin"))
+			apiKeys.Use(authMiddleware.RequireRole("admin", "owner"))
 			{
 				apiKeys.GET("", apiKeyHandler.List)
 				apiKeys.POST("", apiKeyHandler.Create)
@@ -1253,6 +1274,42 @@ func toMessageStatus(status string) entity.MessageStatus {
 	default:
 		return entity.MessageStatusPending
 	}
+}
+
+func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.MessageRepository, status *nats.StatusUpdate) error {
+	if status == nil {
+		return nil
+	}
+
+	messageID := status.MessageID
+	if messageID == "" && status.ExternalID != "" {
+		message, err := messageRepo.FindByExternalID(ctx, status.ExternalID)
+		if err != nil {
+			logger.Warn("Ignoring status update for unknown external message id: " + status.ExternalID)
+			return nil
+		}
+		messageID = message.ID
+	}
+	if messageID == "" {
+		logger.Warn("Ignoring status update without message id")
+		return nil
+	}
+
+	if status.ExternalID != "" {
+		if message, err := messageRepo.FindByID(ctx, messageID); err == nil && message.ExternalID == "" {
+			message.ExternalID = status.ExternalID
+			if updateErr := messageRepo.Update(ctx, message); updateErr != nil {
+				return updateErr
+			}
+		}
+	}
+
+	if err := messageRepo.UpdateStatus(ctx, messageID, toMessageStatus(status.Status), status.ErrorMessage); err != nil {
+		logger.Warn("Ignoring status update for unknown message id: " + messageID)
+		return nil
+	}
+
+	return nil
 }
 
 // ListParams alias for database package

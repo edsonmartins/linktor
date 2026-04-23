@@ -462,6 +462,17 @@ function ApiKeysSettings({ t }: { t: ReturnType<typeof useTranslations<'settings
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/api-keys/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all })
+      toast({ title: 'API key revoked' })
+    },
+    onError: () => {
+      toast({ title: 'Could not revoke API key', variant: 'error' })
+    },
+  })
+
   const handleCopyKey = async (key: string) => {
     await navigator.clipboard.writeText(key)
     toast({ title: t('apiKeyCopied'), description: t('apiKeyCopiedDesc') })
@@ -515,7 +526,17 @@ function ApiKeysSettings({ t }: { t: ReturnType<typeof useTranslations<'settings
                     {t('prefix')} {apiKey.key_prefix} - {t('created')} {new Date(apiKey.created_at).toLocaleString()}
                   </p>
                 </div>
-                <Badge variant="outline">{apiKey.scopes.join(', ') || '*'}</Badge>
+                <div className="flex items-center gap-3">
+                  <Badge variant="outline">{apiKey.scopes.join(', ') || '*'}</Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => deleteMutation.mutate(apiKey.id)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Revoke
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}

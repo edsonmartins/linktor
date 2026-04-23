@@ -110,6 +110,18 @@ func (s *ContactService) GetByID(ctx context.Context, id string) (*entity.Contac
 	return contact, nil
 }
 
+// GetByTenantAndID returns a contact only if it belongs to the tenant.
+func (s *ContactService) GetByTenantAndID(ctx context.Context, tenantID, id string) (*entity.Contact, error) {
+	contact, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if contact.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeContactNotFound, "contact not found")
+	}
+	return contact, nil
+}
+
 // Update updates a contact
 func (s *ContactService) Update(ctx context.Context, id string, input *UpdateContactInput) (*entity.Contact, error) {
 	contact, err := s.contactRepo.FindByID(ctx, id)
@@ -144,6 +156,15 @@ func (s *ContactService) Update(ctx context.Context, id string, input *UpdateCon
 	return contact, nil
 }
 
+// UpdateForTenant updates a contact only if it belongs to the tenant.
+func (s *ContactService) UpdateForTenant(ctx context.Context, tenantID, id string, input *UpdateContactInput) (*entity.Contact, error) {
+	contact, err := s.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.Update(ctx, contact.ID, input)
+}
+
 // Delete deletes a contact
 func (s *ContactService) Delete(ctx context.Context, id string) error {
 	_, err := s.contactRepo.FindByID(ctx, id)
@@ -156,6 +177,15 @@ func (s *ContactService) Delete(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+// DeleteForTenant deletes a contact only if it belongs to the tenant.
+func (s *ContactService) DeleteForTenant(ctx context.Context, tenantID, id string) error {
+	contact, err := s.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return err
+	}
+	return s.Delete(ctx, contact.ID)
 }
 
 // AddIdentity adds an identity to a contact
@@ -187,6 +217,15 @@ func (s *ContactService) AddIdentity(ctx context.Context, contactID, channelType
 	return contact, nil
 }
 
+// AddIdentityForTenant adds an identity only if the contact belongs to the tenant.
+func (s *ContactService) AddIdentityForTenant(ctx context.Context, tenantID, contactID, channelType, identifier string, metadata map[string]string) (*entity.Contact, error) {
+	contact, err := s.GetByTenantAndID(ctx, tenantID, contactID)
+	if err != nil {
+		return nil, err
+	}
+	return s.AddIdentity(ctx, contact.ID, channelType, identifier, metadata)
+}
+
 // RemoveIdentity removes an identity from a contact
 func (s *ContactService) RemoveIdentity(ctx context.Context, contactID, identityID string) (*entity.Contact, error) {
 	contact, err := s.contactRepo.FindByID(ctx, contactID)
@@ -205,6 +244,15 @@ func (s *ContactService) RemoveIdentity(ctx context.Context, contactID, identity
 	}
 
 	return contact, nil
+}
+
+// RemoveIdentityForTenant removes an identity only if the contact belongs to the tenant.
+func (s *ContactService) RemoveIdentityForTenant(ctx context.Context, tenantID, contactID, identityID string) (*entity.Contact, error) {
+	contact, err := s.GetByTenantAndID(ctx, tenantID, contactID)
+	if err != nil {
+		return nil, err
+	}
+	return s.RemoveIdentity(ctx, contact.ID, identityID)
 }
 
 // BlockContact blocks a contact

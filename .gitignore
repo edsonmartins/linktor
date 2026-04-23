@@ -37,6 +37,7 @@ Thumbs.db
 
 # Generated files
 internal/grpc/gen/
+*.tsbuildinfo
 
 # Logs
 *.log

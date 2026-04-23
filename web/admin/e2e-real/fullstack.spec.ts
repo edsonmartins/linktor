@@ -7,10 +7,12 @@ import {
   createContactByApi,
   createConversationByApi,
   createKnowledgeBaseByApi,
-  createKnowledgeItemByApi,
-  createWebchatChannelByApi,
+    createKnowledgeItemByApi,
+    createTemplateByApi,
+    createWhatsAppOfficialChannelByApi,
+    createWebchatChannelByApi,
   deleteBotByName,
-  createUserByApi,
+    createUserByApi,
   deleteChannelByID,
   deleteChannelByName,
   deleteContactByEmail,
@@ -19,12 +21,16 @@ import {
   deleteKnowledgeBaseByName,
   deleteUserByEmail,
   expectListOrEmptyState,
-  findBotByName,
-  findKnowledgeBaseByName,
-  findKnowledgeItemByQuestion,
-  findChannelByName,
-  findContactByEmail,
-  findFlowByName,
+    findBotByName,
+    findKnowledgeBaseByName,
+    findKnowledgeItemByQuestion,
+    findChannelByName,
+    getContactByID,
+    getConversationByID,
+    getTemplateByID,
+    findContactByEmail,
+    findFlowByName,
+  findTemplateByName,
   findUserByEmail,
   getAnalyticsOverview,
   getObservabilityLogs,
@@ -32,6 +38,7 @@ import {
   getObservabilityStats,
   changeMyPassword,
   deleteApiKeyByID,
+  deleteTemplateByID,
   getMe,
   getTenant,
   listApiKeys,
@@ -44,6 +51,7 @@ import {
   loginAsAdminApi,
   listUsers,
   loginWithRealApi,
+  E2E_API_BASE_URL,
 } from './helpers'
 
 async function openAddChannelDialog(page: import('@playwright/test').Page, channelHeading: RegExp | string) {
@@ -400,7 +408,7 @@ test.describe('Admin Full Stack', () => {
       expect(oldLoginAttempt.ok).toBeFalsy()
     } finally {
       // Restore the original password using the new one
-      const response = await request.post('http://localhost:8081/api/v1/auth/login', {
+      const response = await request.post(`${E2E_API_BASE_URL}/auth/login`, {
         data: { email: 'admin@demo.com', password: newPassword },
       })
       if (response.ok()) {
@@ -1405,6 +1413,261 @@ test.describe('Admin Full Stack', () => {
     await deleteChannelByName(request, channelName)
   })
 
+  test('assigns, resolves and reopens a conversation via UI against the real API', async ({ page, request }) => {
+    const suffix = Date.now()
+    const channelName = `Playwright Assign Channel ${suffix}`
+    const contactEmail = `playwright.assign.${suffix}@example.com`
+    const contactName = `Assignable Contact ${suffix}`
+    const agentEmail = `playwright.agent.${suffix}@example.com`
+    const agentName = `Assignable Agent ${suffix}`
+
+    await deleteChannelByName(request, channelName)
+    await deleteContactByEmail(request, contactEmail)
+    await deleteUserByEmail(request, agentEmail)
+
+    const channel = await createWebchatChannelByApi(request, { name: channelName })
+    const contact = await createContactByApi(request, {
+      name: contactName,
+      email: contactEmail,
+      phone: `+1555${String(suffix).slice(-7)}`,
+    })
+    await addContactIdentityByApi(request, contact.id, {
+      channelType: 'webchat',
+      identifier: contactEmail,
+    })
+    const conversation = await createConversationByApi(request, {
+      contactID: contact.id,
+      channelID: channel.id,
+      subject: `Playwright assignment ${suffix}`,
+    })
+    const agent = await createUserByApi(request, {
+      name: agentName,
+      email: agentEmail,
+      password: 'StrongPass123!',
+      role: 'agent',
+    })
+
+    await loginWithRealApi(page)
+    await page.goto('/conversations')
+    await page.getByRole('button').filter({ hasText: contactName }).first().click()
+
+    await page.locator('button:has(svg.lucide-more-vertical)').click()
+    await page.getByRole('menuitem', { name: /Assign conversation|Assign to agent/i }).click()
+    const assignDialog = page.getByRole('dialog')
+    await assignDialog.getByRole('combobox').click()
+    await page.getByRole('option', { name: new RegExp(agentName) }).click()
+    await assignDialog.getByRole('button', { name: /^Assign$/ }).click()
+
+    await expect
+      .poll(async () => (await getConversationByID(request, conversation.id)).assigned_user_id || null, { timeout: 15000 })
+      .toBe(agent.id)
+
+    await page.locator('button:has(svg.lucide-more-vertical)').click()
+    await page.getByRole('menuitem', { name: /Resolve conversation/i }).click()
+
+    await expect
+      .poll(async () => (await getConversationByID(request, conversation.id)).status, { timeout: 15000 })
+      .toBe('resolved')
+
+    await page.locator('button:has(svg.lucide-more-vertical)').click()
+    await page.getByRole('menuitem', { name: /Reopen conversation/i }).click()
+
+    await expect
+      .poll(async () => (await getConversationByID(request, conversation.id)).status, { timeout: 15000 })
+      .toBe('open')
+
+    await deleteUserByEmail(request, agentEmail)
+    await deleteContactByID(request, contact.id)
+    await deleteChannelByName(request, channelName)
+  })
+
+  test('escalates a conversation via UI against the real API', async ({ page, request }) => {
+    const suffix = Date.now()
+    const channelName = `Playwright Escalation Channel ${suffix}`
+    const contactEmail = `playwright.escalation.${suffix}@example.com`
+    const contactName = `Escalation Contact ${suffix}`
+    const escalationReason = `Manual escalation reason ${suffix}`
+
+    await deleteChannelByName(request, channelName)
+    await deleteContactByEmail(request, contactEmail)
+
+    const channel = await createWebchatChannelByApi(request, { name: channelName })
+    const contact = await createContactByApi(request, {
+      name: contactName,
+      email: contactEmail,
+      phone: `+1666${String(suffix).slice(-7)}`,
+    })
+    await addContactIdentityByApi(request, contact.id, {
+      channelType: 'webchat',
+      identifier: contactEmail,
+    })
+    const conversation = await createConversationByApi(request, {
+      contactID: contact.id,
+      channelID: channel.id,
+      subject: `Playwright escalation ${suffix}`,
+    })
+
+    await loginWithRealApi(page)
+    await page.goto('/conversations')
+    await page.getByRole('button').filter({ hasText: contactName }).first().click()
+
+    await page.locator('button:has(svg.lucide-more-vertical)').click()
+    await page.getByRole('menuitem', { name: /Escalate conversation/i }).click()
+
+    const dialog = page.getByRole('dialog')
+    await dialog.locator('#escalation-reason').fill(escalationReason)
+    await dialog.locator('#escalation-priority').click()
+    await page.getByRole('option', { name: /High/i }).click()
+    await dialog.getByRole('button', { name: /^Escalate$/ }).click()
+
+    await expect
+      .poll(async () => (await getConversationByID(request, conversation.id)).metadata?.['escalation_reason'] || null, { timeout: 15000 })
+      .toBe(escalationReason)
+
+    await deleteContactByID(request, contact.id)
+    await deleteChannelByName(request, channelName)
+  })
+
+  test('manages contact identities via UI against the real API', async ({ page, request }) => {
+    const suffix = Date.now()
+    const email = `playwright.identity.${suffix}@example.com`
+    const identifier = `telegram-user-${suffix}`
+    const name = `Identity Contact ${suffix}`
+
+    await deleteContactByEmail(request, email)
+    const contact = await createContactByApi(request, {
+      name,
+      email,
+      phone: `+1777${String(suffix).slice(-7)}`,
+    })
+
+    await loginWithRealApi(page)
+    await page.goto('/contacts')
+    await page.getByPlaceholder(/search contacts/i).fill(email)
+
+    const card = page.getByRole('heading', { name }).locator('xpath=ancestor::div[contains(@class, "hover:border-primary/30")]')
+    await expect(card.getByRole('heading', { name })).toBeVisible({ timeout: 15000 })
+    await card.getByRole('button').click()
+    await page.getByRole('menuitem', { name: /view details/i }).click()
+
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('combobox').click()
+    await page.getByRole('option', { name: /^telegram$/i }).click()
+    await dialog.getByPlaceholder('Identifier').fill(identifier)
+    await dialog.getByRole('button', { name: /^Add$/ }).click()
+
+    await expect
+      .poll(async () => {
+        const updated = await getContactByID(request, contact.id)
+        return updated.identities?.some((identity) => identity.external_id === identifier) ?? false
+      }, { timeout: 15000 })
+      .toBeTruthy()
+
+    const identityRow = dialog.locator('div').filter({ hasText: identifier }).first()
+    await identityRow.getByRole('button', { name: /Delete/i }).click()
+
+    await expect
+      .poll(async () => {
+        const updated = await getContactByID(request, contact.id)
+        return updated.identities?.some((identity) => identity.external_id === identifier) ?? false
+      }, { timeout: 15000 })
+      .toBeFalsy()
+
+    await deleteContactByID(request, contact.id)
+  })
+
+  test('revokes an API key via UI', async ({ page, request }) => {
+    await loginWithRealApi(page)
+    await page.goto('/settings')
+    await page.getByRole('button', { name: /API Keys/i }).click()
+    await page.getByRole('button', { name: /Generate new key/i }).click()
+
+    const rawKey = page.getByText(/^lk_[A-Za-z0-9]+$/)
+    await expect(rawKey).toBeVisible()
+    const keyValue = await rawKey.textContent()
+    const prefix = keyValue?.slice(0, 12)
+    expect(prefix).toBeTruthy()
+
+    await expect
+      .poll(async () => (await listApiKeys(request)).find((apiKey) => apiKey.key_prefix === prefix) || null, { timeout: 15000 })
+      .not.toBeNull()
+
+    const keyCard = page.locator('div').filter({
+      hasText: prefix!,
+    }).filter({
+      has: page.getByRole('button', { name: /^Revoke$/ }),
+    }).first()
+    await keyCard.getByRole('button', { name: /^Revoke$/ }).click()
+
+    await expect
+      .poll(async () => (await listApiKeys(request)).find((apiKey) => apiKey.key_prefix === prefix) || null, { timeout: 15000 })
+      .toBeNull()
+  })
+
+  test('creates a template via UI against the real API', async ({ page, request }) => {
+    const suffix = Date.now()
+    const channelName = `Playwright Template Channel ${suffix}`
+    const templateName = `playwright_template_${suffix}`
+    const templateBody = `Template body ${suffix}`
+
+    await deleteChannelByName(request, channelName)
+    const channel = await createWhatsAppOfficialChannelByApi(request, { name: channelName })
+
+    await loginWithRealApi(page)
+    await page.goto('/templates/new')
+
+    await page.locator('#channel').click()
+    await page.getByRole('option', { name: channelName }).click()
+    await page.locator('#name').fill(templateName)
+    await page.locator('#language').fill('pt_BR')
+    await page.locator('#body').fill(templateBody)
+    await page.locator('button[type="submit"]').click()
+
+    await expect
+      .poll(async () => await findTemplateByName(request, templateName), { timeout: 15000 })
+      .not.toBeNull()
+
+    const createdTemplate = await findTemplateByName(request, templateName)
+
+    expect(createdTemplate?.channel_id).toBe(channel.id)
+
+    await expect(page).toHaveURL(new RegExp(`/templates/${createdTemplate!.id}$`), { timeout: 15000 })
+    await expect(page.getByRole('heading', { name: templateName, level: 1 })).toBeVisible()
+    await expect(page.getByText(templateBody)).toBeVisible()
+
+    await deleteTemplateByID(request, createdTemplate!.id)
+    await deleteChannelByID(request, channel.id)
+  })
+
+  test('deletes a template from the detail page via UI against the real API', async ({ page, request }) => {
+    const suffix = Date.now()
+    const channelName = `Playwright Template Delete Channel ${suffix}`
+    const templateName = `playwright_delete_template_${suffix}`
+
+    await deleteChannelByName(request, channelName)
+    const channel = await createWhatsAppOfficialChannelByApi(request, { name: channelName })
+    const template = await createTemplateByApi(request, {
+      channelID: channel.id,
+      name: templateName,
+      bodyText: `Delete template body ${suffix}`,
+    })
+    await getTemplateByID(request, template.id)
+
+    await loginWithRealApi(page)
+    await page.goto(`/templates/${template.id}`)
+
+    await expect(page.getByRole('heading', { name: templateName, level: 1 })).toBeVisible()
+    await page.getByRole('button', { name: /^Delete$/i }).click()
+    await page.getByRole('dialog').getByRole('button', { name: /^Delete$/i }).click()
+
+    await expect(page).toHaveURL(/\/templates$/, { timeout: 15000 })
+    await expect
+      .poll(async () => await findTemplateByName(request, templateName), { timeout: 15000 })
+      .toBeNull()
+
+    await deleteChannelByID(request, channel.id)
+  })
+
   test('creates a flow via UI against the real API', async ({ page, request }) => {
     const flowName = `Playwright Flow ${Date.now()}`
 
@@ -1440,7 +1703,7 @@ test.describe('Admin Full Stack', () => {
     await loginWithRealApi(page)
 
     const accessToken = await loginAsAdminApi(request)
-    const createResponse = await request.post('http://localhost:8081/api/v1/flows', {
+    const createResponse = await request.post(`${E2E_API_BASE_URL}/flows`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },

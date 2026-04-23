@@ -93,14 +93,20 @@ func (s *ConversationService) Create(ctx context.Context, input *CreateConversat
 	}
 
 	// Verify contact exists
-	_, err := s.contactRepo.FindByID(ctx, input.ContactID)
+	contact, err := s.contactRepo.FindByID(ctx, input.ContactID)
 	if err != nil {
+		return nil, errors.New(errors.ErrCodeContactNotFound, "contact not found")
+	}
+	if contact.TenantID != input.TenantID {
 		return nil, errors.New(errors.ErrCodeContactNotFound, "contact not found")
 	}
 
 	// Verify channel exists
-	_, err = s.channelRepo.FindByID(ctx, input.ChannelID)
+	channel, err := s.channelRepo.FindByID(ctx, input.ChannelID)
 	if err != nil {
+		return nil, errors.New(errors.ErrCodeChannelNotFound, "channel not found")
+	}
+	if channel.TenantID != input.TenantID {
 		return nil, errors.New(errors.ErrCodeChannelNotFound, "channel not found")
 	}
 
@@ -146,6 +152,18 @@ func (s *ConversationService) GetByID(ctx context.Context, id string) (*entity.C
 	return conversation, nil
 }
 
+// GetByTenantAndID returns a conversation only if it belongs to the tenant.
+func (s *ConversationService) GetByTenantAndID(ctx context.Context, tenantID, id string) (*entity.Conversation, error) {
+	conversation, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if conversation.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeConversationNotFound, "conversation not found")
+	}
+	return conversation, nil
+}
+
 // Update updates a conversation
 func (s *ConversationService) Update(ctx context.Context, id string, input *UpdateConversationInput) (*entity.Conversation, error) {
 	conversation, err := s.conversationRepo.FindByID(ctx, id)
@@ -174,6 +192,16 @@ func (s *ConversationService) Update(ctx context.Context, id string, input *Upda
 	return conversation, nil
 }
 
+// UpdateForTenant updates a conversation only if it belongs to the tenant.
+func (s *ConversationService) UpdateForTenant(ctx context.Context, tenantID, id string, input *UpdateConversationInput) (*entity.Conversation, error) {
+	conversation, err := s.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.Update(ctx, conversation.ID, input)
+}
+
 // Assign assigns a conversation to a user
 func (s *ConversationService) Assign(ctx context.Context, id, userID string) (*entity.Conversation, error) {
 	conversation, err := s.conversationRepo.FindByID(ctx, id)
@@ -189,6 +217,16 @@ func (s *ConversationService) Assign(ctx context.Context, id, userID string) (*e
 	}
 
 	return conversation, nil
+}
+
+// AssignForTenant assigns a conversation only if it belongs to the tenant.
+func (s *ConversationService) AssignForTenant(ctx context.Context, tenantID, id, userID string) (*entity.Conversation, error) {
+	conversation, err := s.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.Assign(ctx, conversation.ID, userID)
 }
 
 // Resolve marks a conversation as resolved
@@ -212,6 +250,16 @@ func (s *ConversationService) Resolve(ctx context.Context, id string) (*entity.C
 	return conversation, nil
 }
 
+// ResolveForTenant resolves a conversation only if it belongs to the tenant.
+func (s *ConversationService) ResolveForTenant(ctx context.Context, tenantID, id string) (*entity.Conversation, error) {
+	conversation, err := s.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.Resolve(ctx, conversation.ID)
+}
+
 // Reopen reopens a resolved conversation
 func (s *ConversationService) Reopen(ctx context.Context, id string) (*entity.Conversation, error) {
 	conversation, err := s.conversationRepo.FindByID(ctx, id)
@@ -231,4 +279,14 @@ func (s *ConversationService) Reopen(ctx context.Context, id string) (*entity.Co
 	}
 
 	return conversation, nil
+}
+
+// ReopenForTenant reopens a conversation only if it belongs to the tenant.
+func (s *ConversationService) ReopenForTenant(ctx context.Context, tenantID, id string) (*entity.Conversation, error) {
+	conversation, err := s.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.Reopen(ctx, conversation.ID)
 }

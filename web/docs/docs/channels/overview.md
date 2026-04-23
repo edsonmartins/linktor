@@ -18,11 +18,13 @@ In Linktor, a **channel** is an integration with an external messaging platform.
 
 ## Supported Channels
 
-Linktor supports 10+ messaging channels out of the box:
+Linktor supports 11 messaging channel types out of the box:
 
 | Channel | Type | Features |
 |---------|------|----------|
-| [WhatsApp](/channels/whatsapp) | Instant Messaging | Text, media, templates, buttons, lists |
+| WhatsApp | Instant Messaging | Generic WhatsApp channel type for backwards-compatible deployments |
+| [WhatsApp Official](/channels/whatsapp) | Instant Messaging | Meta Cloud API, text, media, templates, buttons, lists, coexistence |
+| WhatsApp Unofficial | Instant Messaging | Session-based WhatsApp, QR/pair code, text and media |
 | [Telegram](/channels/telegram) | Instant Messaging | Text, media, inline keyboards, commands |
 | [SMS](/channels/sms) | Text Messaging | Text, MMS (carrier dependent) |
 | [Email](/channels/email) | Email | HTML/text, attachments, threading |

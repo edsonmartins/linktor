@@ -60,7 +60,7 @@ func (db *PostgresDB) Seed(ctx context.Context) error {
 	if err := userRepo.Create(ctx, adminUser); err != nil {
 		return err
 	}
-	logger.Info("Created admin user: admin@demo.com / admin123")
+	logger.Info("Created admin user: admin@demo.com")
 
 	// Create agent user
 	agentUser := entity.NewUser(tenantID, "agent@demo.com", string(hashedPassword), "Agent User", entity.UserRoleAgent)
@@ -69,7 +69,7 @@ func (db *PostgresDB) Seed(ctx context.Context) error {
 	if err := userRepo.Create(ctx, agentUser); err != nil {
 		return err
 	}
-	logger.Info("Created agent user: agent@demo.com / admin123")
+	logger.Info("Created agent user: agent@demo.com")
 
 	// Create WebChat channel
 	channelID := uuid.New().String()
@@ -191,9 +191,9 @@ func (db *PostgresDB) Seed(ctx context.Context) error {
 
 	logger.Info("Database seeding completed!")
 	logger.Info("=========================================")
-	logger.Info("Login credentials:")
-	logger.Info("  Admin: admin@demo.com / admin123")
-	logger.Info("  Agent: agent@demo.com / admin123")
+	logger.Info("Demo login users created")
+	logger.Info("  Admin: admin@demo.com")
+	logger.Info("  Agent: agent@demo.com")
 	logger.Info("=========================================")
 
 	return nil

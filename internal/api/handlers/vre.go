@@ -30,6 +30,7 @@ func NewVREHandler(vreService *service.VREService, producer nats.Publisher) *VRE
 // RenderRequest represents the API request for rendering
 type RenderRequest struct {
 	TenantID     string                 `json:"tenant_id"`
+	ChannelID    string                 `json:"channel_id,omitempty"`
 	TemplateID   string                 `json:"template_id,omitempty"`
 	SVG          string                 `json:"svg,omitempty"`
 	Data         map[string]interface{} `json:"data,omitempty"`
@@ -62,10 +63,13 @@ func (h *VREHandler) Render(c *gin.Context) {
 		return
 	}
 
-	// Get tenant ID from context if not provided
-	tenantID := req.TenantID
+	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
-		tenantID = middleware.MustGetTenantID(c)
+		return
+	}
+	if req.TenantID != "" && req.TenantID != tenantID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tenant_id does not match authenticated tenant"})
+		return
 	}
 
 	// Build entity request
@@ -121,10 +125,17 @@ func (h *VREHandler) RenderAndSend(c *gin.Context) {
 		return
 	}
 
-	// Get tenant ID from context if not provided
-	tenantID := req.TenantID
+	tenantID := middleware.MustGetTenantID(c)
 	if tenantID == "" {
-		tenantID = middleware.MustGetTenantID(c)
+		return
+	}
+	if req.TenantID != "" && req.TenantID != tenantID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tenant_id does not match authenticated tenant"})
+		return
+	}
+	if req.Channel == "" || req.ChannelID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "channel and channel_id are required"})
+		return
 	}
 
 	// Build entity request
@@ -155,14 +166,11 @@ func (h *VREHandler) RenderAndSend(c *gin.Context) {
 
 	// Send via NATS for channel delivery
 	if h.producer != nil && req.SendTo != "" {
-		tenantID := req.TenantID
-		if tenantID == "" {
-			tenantID = middleware.MustGetTenantID(c)
-		}
-
 		outbound := &nats.OutboundMessage{
 			ID:          uuid.New().String(),
 			TenantID:    tenantID,
+			ChannelID:   req.ChannelID,
+			ChannelType: req.Channel,
 			ContentType: "image",
 			Content:     response.Caption,
 			Metadata: map[string]string{

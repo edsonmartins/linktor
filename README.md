@@ -598,13 +598,28 @@ cp .env.example .env
 docker compose up --build
 ```
 
+Se as portas locais já estiverem ocupadas, ajuste no `.env` antes de subir:
+
+```bash
+LINKTOR_API_PORT=18081
+LINKTOR_ADMIN_PORT=13000
+LINKTOR_POSTGRES_PORT=15432
+LINKTOR_REDIS_PORT=16379
+LINKTOR_MINIO_PORT=19000
+LINKTOR_MINIO_CONSOLE_PORT=19001
+LINKTOR_BASE_URL=http://localhost:18081
+NEXT_PUBLIC_API_URL=http://localhost:18081/api/v1
+NEXT_PUBLIC_WS_URL=ws://localhost:18081/api/v1/ws
+NEXT_PUBLIC_WEBHOOK_BASE_URL=http://localhost:18081
+```
+
 Isso inicia:
-- **PostgreSQL** (porta 5432) - Banco de dados principal
-- **Redis** (porta 6379) - Cache e sessions
-- **NATS** (porta 4222, monitoring 8222) - Message broker
-- **MinIO** (portas 9000, 9001) - Object storage
-- **API** (porta 8081) - Backend Go
-- **Admin Dashboard** (porta 3000) - Frontend Next.js
+- **PostgreSQL** (`LINKTOR_POSTGRES_PORT`, default `5432`) - Banco de dados principal
+- **Redis** (`LINKTOR_REDIS_PORT`, default `6379`) - Cache e sessions
+- **NATS** (`LINKTOR_NATS_PORT`, default `4222`; monitoring `LINKTOR_NATS_MONITOR_PORT`, default `8222`) - Message broker
+- **MinIO** (`LINKTOR_MINIO_PORT`, `LINKTOR_MINIO_CONSOLE_PORT`; defaults `9000`, `9001`) - Object storage
+- **API** (`LINKTOR_API_PORT`, default `8081`) - Backend Go
+- **Admin Dashboard** (`LINKTOR_ADMIN_PORT`, default `3000`) - Frontend Next.js
 
 ### 3. Configure as variáveis de ambiente
 
@@ -689,6 +704,8 @@ npm run dev
 - **API**: http://localhost:8081
 - **NATS Monitoring**: http://localhost:8222
 - **MinIO Console**: http://localhost:9001
+
+Se você alterou as portas no `.env`, use esses valores aqui também.
 
 ### Credenciais padrão
 
@@ -1150,7 +1167,7 @@ Adicione ao `claude_desktop_config.json`:
       "args": ["-y", "@linktor/mcp-server"],
       "env": {
         "LINKTOR_API_KEY": "sua-api-key",
-        "LINKTOR_API_URL": "https://api.linktor.io"
+        "LINKTOR_API_URL": "https://api.linktor.io/api/v1"
       }
     }
   }
@@ -1161,7 +1178,7 @@ Adicione ao `claude_desktop_config.json`:
 
 | Tipo | Quantidade | Descrição |
 |------|------------|-----------|
-| Tools | 30+ | Conversas, mensagens, contatos, canais, bots, analytics, knowledge |
+| Tools | 51 | Conversas, mensagens, contatos, canais, bots, analytics, knowledge, VRE |
 | Resources | 6 | Dados estáticos e templates parametrizados |
 | Prompts | 4 | customer_support, conversation_summary, draft_response, analyze_sentiment |
 
@@ -1187,7 +1204,7 @@ A documentação oficial está disponível em [docs.linktor.io](https://docs.lin
 | Seção | Descrição |
 |-------|-----------|
 | **Getting Started** | Instalação, quick start, autenticação |
-| **Channels** | WhatsApp, Telegram, SMS, Email, Voice, WebChat, Instagram, Facebook, RCS |
+| **Channels** | WhatsApp Official, WhatsApp Unofficial, Telegram, SMS, Email, Voice, WebChat, Instagram, Facebook, RCS |
 | **AI & Bots** | Configuração de bots, providers, escalação |
 | **Flows** | Flow Builder visual, tipos de nós, triggers |
 | **Knowledge Base** | RAG, embeddings, busca semântica |

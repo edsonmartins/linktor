@@ -21,6 +21,7 @@ import {
   Bot,
   Activity,
   FileText,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -72,6 +73,11 @@ const navItems = [
     labelKey: 'templates',
     href: '/templates',
     icon: FileText,
+  },
+  {
+    labelKey: 'vre',
+    href: '/vre',
+    icon: Sparkles,
   },
   {
     labelKey: 'flows',

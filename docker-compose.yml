@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: linktor
       POSTGRES_DB: linktor
     ports:
-      - "5432:5432"
+      - "${LINKTOR_POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,7 +25,7 @@ services:
     container_name: linktor-redis
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "${LINKTOR_REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -42,8 +42,8 @@ services:
     container_name: linktor-nats
     command: ["-js", "-m", "8222"]
     ports:
-      - "4222:4222"   # Client connections
-      - "8222:8222"   # HTTP monitoring
+      - "${LINKTOR_NATS_PORT:-4222}:4222"   # Client connections
+      - "${LINKTOR_NATS_MONITOR_PORT:-8222}:8222"   # HTTP monitoring
     volumes:
       - nats_data:/data
     healthcheck:
@@ -63,8 +63,8 @@ services:
       MINIO_ROOT_USER: linktor
       MINIO_ROOT_PASSWORD: linktor123
     ports:
-      - "9000:9000"   # API
-      - "9001:9001"   # Console
+      - "${LINKTOR_MINIO_PORT:-9000}:9000"   # API
+      - "${LINKTOR_MINIO_CONSOLE_PORT:-9001}:9001"   # Console
     volumes:
       - minio_data:/data
     healthcheck:
@@ -82,7 +82,7 @@ services:
       dockerfile: Dockerfile
     container_name: linktor-backend
     environment:
-      LINKTOR_SERVER_PORT: 8081
+      LINKTOR_SERVER_PORT: ${LINKTOR_API_PORT:-8081}
       LINKTOR_SERVER_HOST: 0.0.0.0
       LINKTOR_SERVER_MODE: debug
       LINKTOR_DATABASE_HOST: postgres
@@ -95,9 +95,9 @@ services:
       LINKTOR_REDIS_PORT: 6379
       LINKTOR_NATS_URL: nats://nats:4222
       LINKTOR_JWT_SECRET: change-me-in-development
-      BASE_URL: http://localhost:8081
+      BASE_URL: ${LINKTOR_BASE_URL:-http://localhost:${LINKTOR_API_PORT:-8081}}
     ports:
-      - "8081:8081"
+      - "${LINKTOR_API_PORT:-8081}:${LINKTOR_API_PORT:-8081}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,7 +108,7 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:${LINKTOR_API_PORT:-8081}/health"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -122,16 +122,16 @@ services:
       context: ./web/admin
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8081/api/v1
-        NEXT_PUBLIC_WS_URL: ws://localhost:8081/api/v1/ws
-        NEXT_PUBLIC_WEBHOOK_BASE_URL: http://localhost:8081
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${LINKTOR_API_PORT:-8081}/api/v1}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:${LINKTOR_API_PORT:-8081}/api/v1/ws}
+        NEXT_PUBLIC_WEBHOOK_BASE_URL: ${NEXT_PUBLIC_WEBHOOK_BASE_URL:-http://localhost:${LINKTOR_API_PORT:-8081}}
     container_name: linktor-admin
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8081/api/v1
-      NEXT_PUBLIC_WS_URL: ws://localhost:8081/api/v1/ws
-      NEXT_PUBLIC_WEBHOOK_BASE_URL: http://localhost:8081
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${LINKTOR_API_PORT:-8081}/api/v1}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:${LINKTOR_API_PORT:-8081}/api/v1/ws}
+      NEXT_PUBLIC_WEBHOOK_BASE_URL: ${NEXT_PUBLIC_WEBHOOK_BASE_URL:-http://localhost:${LINKTOR_API_PORT:-8081}}
     ports:
-      - "3000:3000"
+      - "${LINKTOR_ADMIN_PORT:-3000}:3000"
     depends_on:
       backend:
         condition: service_healthy

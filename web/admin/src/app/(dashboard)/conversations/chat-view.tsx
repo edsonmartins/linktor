@@ -18,7 +18,6 @@ import {
   Wifi,
   WifiOff,
   Smartphone,
-  Bot,
   History,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -35,18 +34,44 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 import { SimpleTooltip } from '@/components/ui/tooltip'
 import { cn, formatDate, formatRelativeTime } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { useUser } from '@/stores/auth-store'
+import { useToast } from '@/hooks/use-toast'
 import {
   useWebSocketContext,
   WSEventTypes,
   type WSNewMessagePayload,
   type WSTypingPayload,
 } from '@/hooks/use-websocket'
-import type { Conversation, Message, MessageStatus } from '@/types'
+import type {
+  Conversation,
+  EscalationContext,
+  Message,
+  MessageStatus,
+  User as AppUser,
+} from '@/types'
+
+const QUICK_REACTIONS = ['👍', '❤️', '👀']
 
 /**
  * Message Status Icon
@@ -119,13 +144,18 @@ function MessageSourceBadge({ source, isImported, isOwn }: MessageSourceBadgePro
 interface MessageBubbleProps {
   message: Message
   isOwn: boolean
+  currentUserID?: string
+  onReact: (messageID: string, emoji: string) => void
+  isReacting: boolean
 }
 
-function MessageBubble({ message, isOwn }: MessageBubbleProps) {
+function MessageBubble({ message, isOwn, currentUserID, onReact, isReacting }: MessageBubbleProps) {
+  const ownReaction = message.reactions?.find((reaction) => reaction.user_id === currentUserID)?.emoji
+
   return (
     <div
       className={cn(
-        'flex gap-2 max-w-[70%]',
+        'group flex gap-2 max-w-[70%]',
         isOwn ? 'ml-auto flex-row-reverse' : ''
       )}
     >
@@ -144,6 +174,33 @@ function MessageBubble({ message, isOwn }: MessageBubbleProps) {
         >
           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         </div>
+        <div className={cn('flex flex-wrap items-center gap-1', isOwn && 'justify-end')}>
+          {QUICK_REACTIONS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              className={cn(
+                'rounded-full border px-2 py-0.5 text-xs transition-colors',
+                ownReaction === emoji
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-secondary'
+              )}
+              disabled={isReacting}
+              onClick={() => onReact(message.id, ownReaction === emoji ? '' : emoji)}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+        {message.reactions && message.reactions.length > 0 && (
+          <div className={cn('flex flex-wrap items-center gap-1', isOwn && 'justify-end')}>
+            {message.reactions.map((reaction) => (
+              <Badge key={`${reaction.user_id}-${reaction.emoji}`} variant="outline" className="h-5 px-1.5 text-[10px]">
+                {reaction.emoji}
+              </Badge>
+            ))}
+          </div>
+        )}
         <div
           className={cn(
             'flex items-center gap-1.5 text-[10px] text-muted-foreground',
@@ -168,10 +225,25 @@ function MessageBubble({ message, isOwn }: MessageBubbleProps) {
  */
 interface ChatHeaderProps {
   conversation: Conversation
+  onAssign: () => void
+  onEscalate: () => void
+  onResolveOrReopen: () => void
+  onViewEscalationContext: () => void
+  isResolving: boolean
+  isEscalatingContextLoading: boolean
 }
 
-function ChatHeader({ conversation }: ChatHeaderProps) {
+function ChatHeader({
+  conversation,
+  onAssign,
+  onEscalate,
+  onResolveOrReopen,
+  onViewEscalationContext,
+  isResolving,
+  isEscalatingContextLoading,
+}: ChatHeaderProps) {
   const t = useTranslations('conversations')
+  const isResolved = conversation.status === 'resolved'
   return (
     <div className="flex h-16 items-center justify-between border-b border-border bg-card px-4">
       <div className="flex items-center gap-3">
@@ -220,17 +292,281 @@ function ChatHeader({ conversation }: ChatHeaderProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>{t('resolveConversation')}</DropdownMenuItem>
-            <DropdownMenuItem>{t('assignToAgent')}</DropdownMenuItem>
-            <DropdownMenuItem>{t('snooze')}</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">
-              {t('deleteConversation')}
+            <DropdownMenuItem onClick={onResolveOrReopen} disabled={isResolving}>
+              {isResolved ? 'Reopen conversation' : t('resolveConversation')}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={onAssign}>
+              {t('assignToAgent')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onEscalate}>
+              Escalate conversation
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onViewEscalationContext} disabled={isEscalatingContextLoading}>
+              View escalation context
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled>{t('snooze')}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
     </div>
+  )
+}
+
+interface AssignConversationDialogProps {
+  conversation: Conversation
+  users: AppUser[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onAssign: (userID: string) => void
+  isSubmitting: boolean
+}
+
+function AssignConversationDialog({
+  conversation,
+  users,
+  open,
+  onOpenChange,
+  onAssign,
+  isSubmitting,
+}: AssignConversationDialogProps) {
+  const [selectedUserID, setSelectedUserID] = useState(conversation.assigned_user_id || '')
+
+  useEffect(() => {
+    if (open) {
+      setSelectedUserID(conversation.assigned_user_id || '')
+    }
+  }, [conversation.assigned_user_id, open])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Assign conversation</DialogTitle>
+          <DialogDescription>
+            Route this conversation to a team member.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="assign-user">Agent</Label>
+          <Select value={selectedUserID} onValueChange={setSelectedUserID}>
+            <SelectTrigger id="assign-user">
+              <SelectValue placeholder="Select an agent" />
+            </SelectTrigger>
+            <SelectContent>
+              {users.map((user) => (
+                <SelectItem key={user.id} value={user.id}>
+                  {user.name} ({user.email})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => onAssign(selectedUserID)}
+            disabled={!selectedUserID || isSubmitting}
+          >
+            {isSubmitting ? 'Assigning...' : 'Assign'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+interface EscalateConversationDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onEscalate: (payload: { reason: string; priority: 'low' | 'normal' | 'high' | 'urgent' }) => void
+  context?: EscalationContext
+  isLoadingContext: boolean
+  isSubmitting: boolean
+}
+
+function EscalateConversationDialog({
+  open,
+  onOpenChange,
+  onEscalate,
+  context,
+  isLoadingContext,
+  isSubmitting,
+}: EscalateConversationDialogProps) {
+  const [reason, setReason] = useState('')
+  const [priority, setPriority] = useState<'low' | 'normal' | 'high' | 'urgent'>('normal')
+
+  useEffect(() => {
+    if (open) {
+      setReason(context?.reason_detail || context?.summary || '')
+      setPriority(context?.priority || 'normal')
+    }
+  }, [context, open])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Escalate conversation</DialogTitle>
+          <DialogDescription>
+            Send this conversation to a human queue with context.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="escalation-reason">Reason</Label>
+              <Textarea
+                id="escalation-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Explain why this conversation needs escalation"
+                className="min-h-[120px]"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="escalation-priority">Priority</Label>
+              <Select value={priority} onValueChange={(value) => setPriority(value as typeof priority)}>
+                <SelectTrigger id="escalation-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-3 rounded-md border p-3 text-sm">
+            <div>
+              <p className="font-medium">Escalation context</p>
+              <p className="text-xs text-muted-foreground">
+                {isLoadingContext ? 'Loading context...' : 'Current handoff snapshot'}
+              </p>
+            </div>
+            {context ? (
+              <>
+                {context.summary && (
+                  <div>
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Summary</p>
+                    <p>{context.summary}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {context.detected_intent && <Badge variant="outline">{context.detected_intent}</Badge>}
+                  {context.sentiment && <Badge variant="outline">{context.sentiment}</Badge>}
+                  {context.channel_type && <Badge variant="outline">{context.channel_type}</Badge>}
+                </div>
+                {context.last_messages?.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Recent messages</p>
+                    {context.last_messages.slice(0, 3).map((message) => (
+                      <div key={message.id} className="rounded border p-2">
+                        <p className="text-xs text-muted-foreground">
+                          {message.sender_name || message.sender_type}
+                        </p>
+                        <p>{message.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-muted-foreground">No escalation context available yet.</p>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => onEscalate({ reason, priority })}
+            disabled={!reason.trim() || isSubmitting}
+          >
+            {isSubmitting ? 'Escalating...' : 'Escalate'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+interface EscalationContextDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  context?: EscalationContext
+  isLoading: boolean
+}
+
+function EscalationContextDialog({
+  open,
+  onOpenChange,
+  context,
+  isLoading,
+}: EscalationContextDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Escalation context</DialogTitle>
+          <DialogDescription>
+            Handoff context generated for human support.
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : context ? (
+          <div className="space-y-4 text-sm">
+            <div>
+              <p className="text-xs font-medium uppercase text-muted-foreground">Summary</p>
+              <p>{context.summary || 'No summary available.'}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">{context.priority}</Badge>
+              {context.escalation_reason && <Badge variant="outline">{context.escalation_reason}</Badge>}
+              {context.suggested_team && <Badge variant="outline">{context.suggested_team}</Badge>}
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="text-xs font-medium uppercase text-muted-foreground">Customer</p>
+                <p>{context.customer?.name || '-'}</p>
+                <p className="text-muted-foreground">{context.customer?.email || context.customer?.phone || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase text-muted-foreground">Metrics</p>
+                <p>Messages: {context.message_count}</p>
+                <p>Bot attempts: {context.bot_attempts}</p>
+                <p>Wait time: {context.wait_time_seconds}s</p>
+              </div>
+            </div>
+            {context.last_messages?.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase text-muted-foreground">Last messages</p>
+                {context.last_messages.map((message) => (
+                  <div key={message.id} className="rounded-md border p-3">
+                    <p className="text-xs text-muted-foreground">
+                      {message.sender_name || message.sender_type} · {formatRelativeTime(message.timestamp)}
+                    </p>
+                    <p>{message.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No escalation context available.</p>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -358,8 +694,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const t = useTranslations('conversations')
   const queryClient = useQueryClient()
   const user = useUser()
+  const { toast } = useToast()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [typingUsers, setTypingUsers] = useState<{ user_id: string; user_name: string }[]>([])
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false)
+  const [escalateDialogOpen, setEscalateDialogOpen] = useState(false)
+  const [escalationContextOpen, setEscalationContextOpen] = useState(false)
 
   // WebSocket integration
   const { connectionState, subscribe, sendTyping } = useWebSocketContext()
@@ -379,6 +719,34 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   const messages = messagesData?.data || []
 
+  const { data: users = [] } = useQuery({
+    queryKey: queryKeys.users.list({ status: 'active' }),
+    queryFn: () => api.get<AppUser[]>('/users'),
+  })
+
+  const {
+    data: escalationContext,
+    isFetching: isEscalationContextLoading,
+    refetch: refetchEscalationContext,
+  } = useQuery({
+    queryKey: [...queryKeys.conversations.detail(conversationId), 'escalation-context'],
+    queryFn: () => api.get<EscalationContext>(`/conversations/${conversationId}/escalation-context`),
+    enabled: false,
+    retry: false,
+  })
+
+  const invalidateConversation = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.messages.list(conversationId),
+    })
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.conversations.detail(conversationId),
+    })
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.conversations.all,
+    })
+  }, [conversationId, queryClient])
+
   // Send message mutation
   const sendMessage = useMutation({
     mutationFn: (content: string) =>
@@ -387,13 +755,67 @@ export function ChatView({ conversationId }: ChatViewProps) {
         content_type: 'text',
       }),
     onSuccess: () => {
-      // Refetch messages after sending
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.messages.list(conversationId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.conversations.detail(conversationId),
-      })
+      invalidateConversation()
+    },
+  })
+
+  const assignConversation = useMutation({
+    mutationFn: (userID: string) =>
+      api.post<Conversation>(`/conversations/${conversationId}/assign`, { user_id: userID }),
+    onSuccess: () => {
+      invalidateConversation()
+      setAssignDialogOpen(false)
+      toast({ title: 'Conversation assigned' })
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Failed to assign conversation', description: error.message, variant: 'error' })
+    },
+  })
+
+  const resolveConversation = useMutation({
+    mutationFn: () => api.post<Conversation>(`/conversations/${conversationId}/resolve`),
+    onSuccess: () => {
+      invalidateConversation()
+      toast({ title: 'Conversation resolved' })
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Failed to update conversation', description: error.message, variant: 'error' })
+    },
+  })
+
+  const reopenConversation = useMutation({
+    mutationFn: () => api.post<Conversation>(`/conversations/${conversationId}/reopen`),
+    onSuccess: () => {
+      invalidateConversation()
+      toast({ title: 'Conversation reopened' })
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Failed to update conversation', description: error.message, variant: 'error' })
+    },
+  })
+
+  const escalateConversation = useMutation({
+    mutationFn: (payload: { reason: string; priority: 'low' | 'normal' | 'high' | 'urgent' }) =>
+      api.post(`/conversations/${conversationId}/escalate`, payload),
+    onSuccess: () => {
+      invalidateConversation()
+      setEscalateDialogOpen(false)
+      refetchEscalationContext()
+      toast({ title: 'Conversation escalated' })
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Failed to escalate conversation', description: error.message, variant: 'error' })
+    },
+  })
+
+  const reactToMessage = useMutation({
+    mutationFn: ({ messageID, emoji }: { messageID: string; emoji: string }) =>
+      api.post(`/conversations/${conversationId}/messages/${messageID}/reactions`, { emoji }),
+    onSuccess: () => {
+      invalidateConversation()
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Failed to update reaction', description: error.message, variant: 'error' })
     },
   })
 
@@ -413,12 +835,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       (payload) => {
         if (payload.conversation_id === conversationId) {
           // Invalidate queries to fetch new message
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.messages.list(conversationId),
-          })
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.conversations.detail(conversationId),
-          })
+          invalidateConversation()
         }
       }
     )
@@ -448,7 +865,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       unsubNewMessage()
       unsubTyping()
     }
-  }, [conversationId, subscribe, queryClient])
+  }, [conversationId, subscribe, invalidateConversation])
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -492,7 +909,27 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   return (
     <div className="flex-1 flex flex-col">
-      <ChatHeader conversation={conversation} />
+      <ChatHeader
+        conversation={conversation}
+        onAssign={() => setAssignDialogOpen(true)}
+        onEscalate={async () => {
+          await refetchEscalationContext()
+          setEscalateDialogOpen(true)
+        }}
+        onResolveOrReopen={() => {
+          if (conversation.status === 'resolved') {
+            reopenConversation.mutate()
+            return
+          }
+          resolveConversation.mutate()
+        }}
+        onViewEscalationContext={async () => {
+          await refetchEscalationContext()
+          setEscalationContextOpen(true)
+        }}
+        isResolving={resolveConversation.isPending || reopenConversation.isPending}
+        isEscalatingContextLoading={isEscalationContextLoading}
+      />
 
       {/* Connection status indicator */}
       {connectionState !== 'connected' && (
@@ -550,6 +987,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
                   message.sender_type === 'user' &&
                   message.sender_id === user?.id
                 }
+                currentUserID={user?.id}
+                onReact={(messageID, emoji) => reactToMessage.mutate({ messageID, emoji })}
+                isReacting={reactToMessage.isPending}
               />
             ))
           ) : (
@@ -571,6 +1011,31 @@ export function ChatView({ conversationId }: ChatViewProps) {
         onSend={(content) => sendMessage.mutate(content)}
         onTyping={handleTyping}
         isSending={sendMessage.isPending}
+      />
+
+      <AssignConversationDialog
+        conversation={conversation}
+        users={users.filter((candidate) => candidate.status === 'active')}
+        open={assignDialogOpen}
+        onOpenChange={setAssignDialogOpen}
+        onAssign={(userID) => assignConversation.mutate(userID)}
+        isSubmitting={assignConversation.isPending}
+      />
+
+      <EscalateConversationDialog
+        open={escalateDialogOpen}
+        onOpenChange={setEscalateDialogOpen}
+        onEscalate={(payload) => escalateConversation.mutate(payload)}
+        context={escalationContext}
+        isLoadingContext={isEscalationContextLoading}
+        isSubmitting={escalateConversation.isPending}
+      />
+
+      <EscalationContextDialog
+        open={escalationContextOpen}
+        onOpenChange={setEscalationContextOpen}
+        context={escalationContext}
+        isLoading={isEscalationContextLoading}
       />
     </div>
   )

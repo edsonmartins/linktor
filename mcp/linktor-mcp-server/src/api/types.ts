@@ -90,6 +90,7 @@ export type ChannelType =
   | 'webchat'
   | 'whatsapp'
   | 'whatsapp_official'
+  | 'whatsapp_unofficial'
   | 'telegram'
   | 'sms'
   | 'rcs'
@@ -98,7 +99,7 @@ export type ChannelType =
   | 'email'
   | 'voice';
 
-export type ChannelStatus = 'inactive' | 'active' | 'error' | 'disconnected';
+export type ChannelStatus = 'inactive' | 'active' | 'connected' | 'connecting' | 'error' | 'disconnected';
 
 export interface Channel {
   id: string;
@@ -106,11 +107,34 @@ export interface Channel {
   type: ChannelType;
   name: string;
   identifier?: string;
-  status: ChannelStatus;
+  enabled?: boolean;
+  status?: ChannelStatus;
+  connection_status?: ChannelStatus;
   config?: Record<string, string>;
   webhook_url?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CreateChannelInput {
+  type: ChannelType;
+  name: string;
+  identifier?: string;
+  config?: Record<string, string>;
+  credentials?: Record<string, string>;
+}
+
+export interface UpdateChannelInput {
+  name?: string;
+  identifier?: string;
+  config?: Record<string, string>;
+  credentials?: Record<string, string>;
+}
+
+export interface TestChannelInput {
+  type: ChannelType;
+  config?: Record<string, string>;
+  credentials?: Record<string, string>;
 }
 
 // Conversation Types

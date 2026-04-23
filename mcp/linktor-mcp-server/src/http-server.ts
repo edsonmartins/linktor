@@ -30,6 +30,35 @@ import { vreToolDefinitions, registerVRETools } from './tools/vre.js';
 import { resourceDefinitions, handleResourceRead } from './resources/handlers.js';
 import { promptDefinitions, handlePromptGet } from './prompts/templates.js';
 
+function parseCsv(value: string | undefined): string[] {
+  return (value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isLocalOrigin(origin: string): boolean {
+  try {
+    const parsed = new URL(origin);
+    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
+function isOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) {
+    return true;
+  }
+
+  const allowedOrigins = parseCsv(process.env.MCP_HTTP_ALLOWED_ORIGINS);
+  if (allowedOrigins.length > 0) {
+    return allowedOrigins.includes(origin);
+  }
+
+  return isLocalOrigin(origin);
+}
+
 // ─── Session Management ───────────────────────────────────────────
 interface Session {
   id: string;
@@ -304,7 +333,13 @@ export function createHttpServer() {
 
   // CORS configuration
   app.use(cors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Origin not allowed by MCP CORS policy'));
+    },
     credentials: true,
     exposedHeaders: ['Mcp-Session-Id'],
   }));
@@ -314,6 +349,21 @@ export function createHttpServer() {
   // Health check
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'linktor-mcp-server' });
+  });
+
+  app.use('/mcp', (req, res, next) => {
+    const token = process.env.MCP_HTTP_AUTH_TOKEN;
+    if (!token) {
+      next();
+      return;
+    }
+
+    if (req.header('authorization') !== `Bearer ${token}`) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    next();
   });
 
   // MCP endpoint
@@ -359,13 +409,13 @@ export function createHttpServer() {
 }
 
 // ─── Main ─────────────────────────────────────────────────────────
-export function startHttpServer(port: number = 3001): void {
+export function startHttpServer(port: number = 3001, host: string = '127.0.0.1'): void {
   const app = createHttpServer();
 
-  app.listen(port, () => {
-    console.log(`🔌 Linktor MCP HTTP server running on http://localhost:${port}`);
-    console.log(`   Endpoint: POST http://localhost:${port}/mcp`);
-    console.log(`   Health:   GET  http://localhost:${port}/health`);
+  app.listen(port, host, () => {
+    console.log(`🔌 Linktor MCP HTTP server running on http://${host}:${port}`);
+    console.log(`   Endpoint: POST http://${host}:${port}/mcp`);
+    console.log(`   Health:   GET  http://${host}:${port}/health`);
     console.log('');
     console.log('Available capabilities:');
     console.log(`   Tools:     ${allTools.length}`);
@@ -378,5 +428,6 @@ export function startHttpServer(port: number = 3001): void {
 const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const port = parseInt(process.env.MCP_HTTP_PORT || '3001', 10);
-  startHttpServer(port);
+  const host = process.env.MCP_HTTP_HOST || '127.0.0.1';
+  startHttpServer(port, host);
 }

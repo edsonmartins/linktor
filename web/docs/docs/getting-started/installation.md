@@ -24,23 +24,40 @@ cd linktor
 # Copy environment file
 cp .env.example .env
 
+# Optional: avoid local port conflicts
+# LINKTOR_API_PORT=18081
+# LINKTOR_ADMIN_PORT=13000
+# LINKTOR_POSTGRES_PORT=15432
+# LINKTOR_REDIS_PORT=16379
+
 # Start all services
 docker compose up --build
 ```
 
 This will start:
-- API Server on `http://localhost:8081`
-- Admin Dashboard on `http://localhost:3000`
-- PostgreSQL on port `5432`
-- Redis on port `6379`
-- NATS on port `4222`
-- MinIO on port `9000`
+- API Server on `LINKTOR_API_PORT` (`8081` by default)
+- Admin Dashboard on `LINKTOR_ADMIN_PORT` (`3000` by default)
+- PostgreSQL on `LINKTOR_POSTGRES_PORT` (`5432` by default)
+- Redis on `LINKTOR_REDIS_PORT` (`6379` by default)
+- NATS on `LINKTOR_NATS_PORT` (`4222` by default)
+- MinIO on `LINKTOR_MINIO_PORT` (`9000` by default)
 
 ## Environment Variables
 
 Configure Linktor by editing the `.env` file:
 
 ```bash
+# Published ports
+LINKTOR_API_PORT=8081
+LINKTOR_ADMIN_PORT=3000
+LINKTOR_POSTGRES_PORT=5432
+LINKTOR_REDIS_PORT=6379
+LINKTOR_NATS_PORT=4222
+LINKTOR_NATS_MONITOR_PORT=8222
+LINKTOR_MINIO_PORT=9000
+LINKTOR_MINIO_CONSOLE_PORT=9001
+LINKTOR_BASE_URL=http://localhost:8081
+
 # Database
 LINKTOR_DATABASE_HOST=localhost
 LINKTOR_DATABASE_PORT=5432
@@ -132,7 +149,7 @@ Verify the installation:
 
 ```bash
 # Check API health
-curl http://localhost:8081/health
+curl "${LINKTOR_BASE_URL:-http://localhost:8081}/health"
 
 # Expected response
 {"status": "healthy"}

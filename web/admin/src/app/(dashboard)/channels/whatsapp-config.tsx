@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { useTranslations } from 'next-intl'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -16,7 +17,9 @@ import {
   Phone,
   Shield,
   Smartphone,
+  PhoneCall,
   Webhook,
+  Wallet,
   Zap,
 } from 'lucide-react'
 import { WhatsAppEmbeddedSignup } from './whatsapp-embedded-signup'
@@ -87,6 +90,67 @@ interface WhatsAppConfigProps {
   onCancel?: () => void
 }
 
+interface PaymentStats {
+  total_payments: number
+  successful_payments: number
+  failed_payments: number
+  total_amount: number
+  refunded_amount: number
+  currency: string
+  success_rate: number
+}
+
+interface PaymentResponse {
+  payment_id: string
+  status: string
+  payment_url?: string
+  qr_code?: string
+}
+
+interface CallStats {
+  total_calls: number
+  inbound_calls: number
+  outbound_calls: number
+  completed_calls: number
+  missed_calls: number
+  failed_calls: number
+  total_duration: number
+  average_duration: number
+}
+
+interface ChannelCall {
+  id: string
+  to: string
+  type: 'voice' | 'video'
+  status: string
+  duration: number
+  created_at: string
+}
+
+interface RecentCallsResponse {
+  calls: ChannelCall[]
+  limit: number
+  offset: number
+}
+
+interface CTWADashboard {
+  summary?: {
+    total_referrals?: number
+    total_conversions?: number
+    conversion_rate?: number
+    total_value?: number
+    currency?: string
+    average_value?: number
+  }
+  top_ads?: Array<{
+    ad_id: string
+    ad_name: string
+    campaign_name: string
+    referrals: number
+    conversions: number
+  }>
+}
+
 /**
  * WhatsApp Official Channel Configuration Component
  */
@@ -102,6 +166,16 @@ export function WhatsAppConfig({
   const [showAccessToken, setShowAccessToken] = useState(false)
   const [showWebhookSecret, setShowWebhookSecret] = useState(false)
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const [paymentTo, setPaymentTo] = useState('')
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentReferenceId, setPaymentReferenceId] = useState('')
+  const [paymentDescription, setPaymentDescription] = useState('')
+  const [callTo, setCallTo] = useState('')
+  const [callType, setCallType] = useState<'voice' | 'video'>('voice')
+  const [conversionReferralId, setConversionReferralId] = useState('')
+  const [conversionType, setConversionType] = useState('purchase')
+  const [conversionValue, setConversionValue] = useState('')
+  const queryClient = useQueryClient()
 
   const isEditing = !!channel
 
@@ -121,6 +195,126 @@ export function WhatsAppConfig({
   const webhookUrl = channel
     ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/whatsapp_official/${channel.id}`
     : t('willBeGenerated')
+
+  const paymentsStatsQuery = useQuery({
+    queryKey: ['channel-operations', channel?.id, 'payments-stats'],
+    queryFn: () => api.get<PaymentStats>(`/channels/${channel!.id}/payments/stats`),
+    enabled: isEditing,
+    retry: false,
+  })
+
+  const callStatsQuery = useQuery({
+    queryKey: ['channel-operations', channel?.id, 'calls-stats'],
+    queryFn: () => api.get<CallStats>(`/channels/${channel!.id}/calls/stats`),
+    enabled: isEditing,
+    retry: false,
+  })
+
+  const recentCallsQuery = useQuery({
+    queryKey: ['channel-operations', channel?.id, 'calls', 'recent'],
+    queryFn: () =>
+      api.get<RecentCallsResponse>(`/channels/${channel!.id}/calls`, {
+        limit: '5',
+        offset: '0',
+      }),
+    enabled: isEditing,
+    retry: false,
+  })
+
+  const ctwaDashboardQuery = useQuery({
+    queryKey: ['channel-operations', channel?.id, 'ctwa-dashboard'],
+    queryFn: () => api.get<CTWADashboard>(`/channels/${channel!.id}/ctwa/dashboard`),
+    enabled: isEditing,
+    retry: false,
+  })
+
+  const createPaymentMutation = useMutation({
+    mutationFn: () =>
+      api.post<PaymentResponse>(`/channels/${channel!.id}/payments`, {
+        to: paymentTo,
+        reference_id: paymentReferenceId,
+        type: 'order',
+        amount: Number(paymentAmount),
+        currency: 'BRL',
+        description: paymentDescription,
+      }),
+    onSuccess: (result) => {
+      toast({
+        title: 'Payment created',
+        description: result.payment_id,
+      })
+      setPaymentTo('')
+      setPaymentAmount('')
+      setPaymentReferenceId('')
+      setPaymentDescription('')
+      queryClient.invalidateQueries({
+        queryKey: ['channel-operations', channel?.id, 'payments-stats'],
+      })
+    },
+    onError: (error) => {
+      toast({
+        title: 'Failed to create payment',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'error',
+      })
+    },
+  })
+
+  const initiateCallMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/channels/${channel!.id}/calls`, {
+        to: callTo,
+        type: callType,
+      }),
+    onSuccess: () => {
+      toast({
+        title: 'Call started',
+        description: callTo,
+      })
+      setCallTo('')
+      queryClient.invalidateQueries({
+        queryKey: ['channel-operations', channel?.id, 'calls-stats'],
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['channel-operations', channel?.id, 'calls', 'recent'],
+      })
+    },
+    onError: (error) => {
+      toast({
+        title: 'Failed to start call',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'error',
+      })
+    },
+  })
+
+  const trackConversionMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/channels/${channel!.id}/ctwa/conversions`, {
+        referral_id: conversionReferralId,
+        conversion_type: conversionType,
+        value: conversionValue ? Number(conversionValue) : 0,
+        currency: 'BRL',
+      }),
+    onSuccess: () => {
+      toast({
+        title: 'Conversion tracked',
+        description: conversionReferralId,
+      })
+      setConversionReferralId('')
+      setConversionValue('')
+      queryClient.invalidateQueries({
+        queryKey: ['channel-operations', channel?.id, 'ctwa-dashboard'],
+      })
+    },
+    onError: (error) => {
+      toast({
+        title: 'Failed to track conversion',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'error',
+      })
+    },
+  })
 
   const onSubmit = async (data: WhatsAppConfigForm) => {
     setIsSubmitting(true)
@@ -212,7 +406,7 @@ export function WhatsAppConfig({
       <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full">
         <div className="flex-1 space-y-6">
         <Tabs defaultValue={isEditing ? "credentials" : "embedded"} className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className={`grid w-full ${isEditing ? 'grid-cols-5' : 'grid-cols-4'}`}>
             <TabsTrigger value="embedded" className="flex items-center gap-1.5">
               <Zap className="h-3.5 w-3.5" />
               {t('embeddedSignup')}
@@ -223,6 +417,9 @@ export function WhatsAppConfig({
             </TabsTrigger>
             <TabsTrigger value="webhook">{t('webhook')}</TabsTrigger>
             <TabsTrigger value="setup">{t('setupGuide')}</TabsTrigger>
+            {isEditing && (
+              <TabsTrigger value="operations">Operations</TabsTrigger>
+            )}
           </TabsList>
 
           {/* Embedded Signup Tab - Quick setup via OAuth */}
@@ -588,6 +785,305 @@ export function WhatsAppConfig({
               </AlertDescription>
             </Alert>
           </TabsContent>
+
+          {isEditing && channel && (
+            <TabsContent value="operations" className="space-y-4 mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Wallet className="h-4 w-4" />
+                    Payments
+                  </CardTitle>
+                  <CardDescription>
+                    Stats and a basic payment request flow for this channel.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <OperationsState
+                    isLoading={paymentsStatsQuery.isLoading}
+                    error={paymentsStatsQuery.error}
+                  >
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <MetricCard label="Total payments" value={String(paymentsStatsQuery.data?.total_payments ?? 0)} />
+                      <MetricCard label="Success rate" value={formatPercent(paymentsStatsQuery.data?.success_rate)} />
+                      <MetricCard
+                        label="Total amount"
+                        value={formatMinorCurrency(
+                          paymentsStatsQuery.data?.total_amount,
+                          paymentsStatsQuery.data?.currency
+                        )}
+                      />
+                      <MetricCard
+                        label="Refunded"
+                        value={formatMinorCurrency(
+                          paymentsStatsQuery.data?.refunded_amount,
+                          paymentsStatsQuery.data?.currency
+                        )}
+                      />
+                    </div>
+                  </OperationsState>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentTo">Customer phone</Label>
+                      <Input
+                        id="paymentTo"
+                        value={paymentTo}
+                        onChange={(event) => setPaymentTo(event.target.value)}
+                        placeholder="+5511999999999"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentAmount">Amount (cents)</Label>
+                      <Input
+                        id="paymentAmount"
+                        value={paymentAmount}
+                        onChange={(event) => setPaymentAmount(event.target.value)}
+                        placeholder="1999"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentReferenceId">Reference ID</Label>
+                      <Input
+                        id="paymentReferenceId"
+                        value={paymentReferenceId}
+                        onChange={(event) => setPaymentReferenceId(event.target.value)}
+                        placeholder="order-123"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentDescription">Description</Label>
+                      <Input
+                        id="paymentDescription"
+                        value={paymentDescription}
+                        onChange={(event) => setPaymentDescription(event.target.value)}
+                        placeholder="Order payment"
+                      />
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    onClick={() => createPaymentMutation.mutate()}
+                    disabled={
+                      createPaymentMutation.isPending ||
+                      !paymentTo ||
+                      !paymentAmount ||
+                      !paymentReferenceId
+                    }
+                  >
+                    {createPaymentMutation.isPending && (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    )}
+                    Create payment
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <PhoneCall className="h-4 w-4" />
+                    Calls
+                  </CardTitle>
+                  <CardDescription>
+                    Live channel call stats and recent outbound activity.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <OperationsState
+                    isLoading={callStatsQuery.isLoading}
+                    error={callStatsQuery.error}
+                  >
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <MetricCard label="Total calls" value={String(callStatsQuery.data?.total_calls ?? 0)} />
+                      <MetricCard label="Completed" value={String(callStatsQuery.data?.completed_calls ?? 0)} />
+                      <MetricCard label="Missed" value={String(callStatsQuery.data?.missed_calls ?? 0)} />
+                      <MetricCard
+                        label="Average duration"
+                        value={formatDuration(callStatsQuery.data?.average_duration)}
+                      />
+                    </div>
+                  </OperationsState>
+
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_auto]">
+                    <div className="space-y-2">
+                      <Label htmlFor="callTo">Call destination</Label>
+                      <Input
+                        id="callTo"
+                        value={callTo}
+                        onChange={(event) => setCallTo(event.target.value)}
+                        placeholder="+5511888888888"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="callType">Call type</Label>
+                      <Input
+                        id="callType"
+                        value={callType}
+                        onChange={(event) => setCallType(event.target.value === 'video' ? 'video' : 'voice')}
+                        placeholder="voice"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button
+                        type="button"
+                        onClick={() => initiateCallMutation.mutate()}
+                        disabled={initiateCallMutation.isPending || !callTo}
+                      >
+                        {initiateCallMutation.isPending && (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        )}
+                        Start call
+                      </Button>
+                    </div>
+                  </div>
+
+                  <OperationsState
+                    isLoading={recentCallsQuery.isLoading}
+                    error={recentCallsQuery.error}
+                  >
+                    <div className="space-y-2">
+                      <Label>Recent calls</Label>
+                      <div className="rounded-md border">
+                        {(recentCallsQuery.data?.calls ?? []).length === 0 ? (
+                          <div className="p-4 text-sm text-muted-foreground">
+                            No recent calls.
+                          </div>
+                        ) : (
+                          (recentCallsQuery.data?.calls ?? []).map((call) => (
+                            <div
+                              key={call.id}
+                              className="flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0"
+                            >
+                              <div>
+                                <p className="text-sm font-medium">{call.to}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {call.type} · {call.status}
+                                </p>
+                              </div>
+                              <Badge variant="outline">
+                                {formatDuration(call.duration)}
+                              </Badge>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </OperationsState>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Zap className="h-4 w-4" />
+                    CTWA
+                  </CardTitle>
+                  <CardDescription>
+                    Ad referral metrics and manual conversion tracking.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <OperationsState
+                    isLoading={ctwaDashboardQuery.isLoading}
+                    error={ctwaDashboardQuery.error}
+                  >
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <MetricCard
+                        label="Referrals"
+                        value={String(ctwaDashboardQuery.data?.summary?.total_referrals ?? 0)}
+                      />
+                      <MetricCard
+                        label="Conversions"
+                        value={String(ctwaDashboardQuery.data?.summary?.total_conversions ?? 0)}
+                      />
+                      <MetricCard
+                        label="Conversion rate"
+                        value={formatPercent(ctwaDashboardQuery.data?.summary?.conversion_rate)}
+                      />
+                      <MetricCard
+                        label="Total value"
+                        value={formatCurrency(
+                          ctwaDashboardQuery.data?.summary?.total_value,
+                          ctwaDashboardQuery.data?.summary?.currency
+                        )}
+                      />
+                    </div>
+                  </OperationsState>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="conversionReferralId">Referral ID</Label>
+                      <Input
+                        id="conversionReferralId"
+                        value={conversionReferralId}
+                        onChange={(event) => setConversionReferralId(event.target.value)}
+                        placeholder="ref-123"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="conversionType">Conversion type</Label>
+                      <Input
+                        id="conversionType"
+                        value={conversionType}
+                        onChange={(event) => setConversionType(event.target.value)}
+                        placeholder="purchase"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="conversionValue">Value</Label>
+                      <Input
+                        id="conversionValue"
+                        value={conversionValue}
+                        onChange={(event) => setConversionValue(event.target.value)}
+                        placeholder="199.90"
+                      />
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    onClick={() => trackConversionMutation.mutate()}
+                    disabled={trackConversionMutation.isPending || !conversionReferralId || !conversionType}
+                  >
+                    {trackConversionMutation.isPending && (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    )}
+                    Track conversion
+                  </Button>
+
+                  <div className="space-y-2">
+                    <Label>Top ads</Label>
+                    <div className="rounded-md border">
+                      {(ctwaDashboardQuery.data?.top_ads ?? []).length === 0 ? (
+                        <div className="p-4 text-sm text-muted-foreground">
+                          No CTWA ads recorded.
+                        </div>
+                      ) : (
+                        (ctwaDashboardQuery.data?.top_ads ?? []).map((ad) => (
+                          <div
+                            key={ad.ad_id}
+                            className="flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0"
+                          >
+                            <div>
+                              <p className="text-sm font-medium">{ad.ad_name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {ad.campaign_name || ad.ad_id}
+                              </p>
+                            </div>
+                            <Badge variant="outline">
+                              {ad.conversions} conversions
+                            </Badge>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
         </div>
 
@@ -641,6 +1137,73 @@ function SetupStep({
       </div>
     </div>
   )
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-lg font-semibold">{value}</p>
+    </div>
+  )
+}
+
+function OperationsState({
+  isLoading,
+  error,
+  children,
+}: {
+  isLoading: boolean
+  error: unknown
+  children: React.ReactNode
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading channel operations...
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Unavailable</AlertTitle>
+        <AlertDescription>
+          {error instanceof Error ? error.message : 'Failed to load data'}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  return <>{children}</>
+}
+
+function formatMinorCurrency(amount?: number, currency = 'BRL') {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency,
+  }).format((amount ?? 0) / 100)
+}
+
+function formatCurrency(amount?: number, currency = 'BRL') {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency,
+  }).format(amount ?? 0)
+}
+
+function formatPercent(value?: number) {
+  return `${((value ?? 0) * 100).toFixed(1)}%`
+}
+
+function formatDuration(value?: number) {
+  const seconds = Math.round(value ?? 0)
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return `${minutes}m ${remainder}s`
 }
 
 /**

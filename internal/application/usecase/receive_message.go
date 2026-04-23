@@ -51,12 +51,42 @@ func NewReceiveMessageUseCase(
 
 // Execute processes an incoming message from a channel
 func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.InboundMessage) (*ReceiveMessageOutput, error) {
-	// Check for duplicate message
+	if inbound == nil {
+		return nil, errors.Validation("inbound message is required")
+	}
+	if inbound.ChannelID == "" {
+		return nil, errors.Validation("channel_id is required")
+	}
+	if inbound.Metadata == nil {
+		inbound.Metadata = make(map[string]string)
+	}
+
+	// Get channel first and treat it as the source of truth for tenant/type.
+	channel, err := uc.channelRepo.FindByID(ctx, inbound.ChannelID)
+	if err != nil {
+		return nil, err
+	}
+	if inbound.TenantID != "" && inbound.TenantID != channel.TenantID {
+		return nil, errors.Forbidden("inbound message tenant does not match channel")
+	}
+	if inbound.ChannelType != "" && inbound.ChannelType != string(channel.Type) {
+		return nil, errors.Validation("inbound message channel_type does not match channel")
+	}
+	if !channel.IsActive() {
+		return nil, errors.New(errors.ErrCodeChannelDisconnected, "channel is not active")
+	}
+	inbound.TenantID = channel.TenantID
+	inbound.ChannelType = string(channel.Type)
+
+	// Check for duplicate message in the same channel.
 	if inbound.ExternalID != "" {
 		existing, err := uc.messageRepo.FindByExternalID(ctx, inbound.ExternalID)
 		if err == nil && existing != nil {
-			// Message already processed
-			return nil, errors.New(errors.ErrCodeConflict, "message already exists")
+			existingConversation, convErr := uc.conversationRepo.FindByID(ctx, existing.ConversationID)
+			if convErr != nil || existingConversation.ChannelID == channel.ID {
+				// Message already processed for this channel.
+				return nil, errors.New(errors.ErrCodeConflict, "message already exists")
+			}
 		}
 	}
 
@@ -69,12 +99,6 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 		return nil, err
 	}
 	normalized.ContactID = contact.ID
-
-	// Get channel
-	channel, err := uc.channelRepo.FindByID(ctx, inbound.ChannelID)
-	if err != nil {
-		return nil, err
-	}
 
 	// Get or create conversation
 	conversation, isNewConversation, err := uc.getOrCreateConversation(ctx, inbound.TenantID, channel.ID, contact.ID)
@@ -216,6 +240,9 @@ func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, te
 	// Try to find open conversation
 	conversation, err := uc.conversationRepo.FindOpenByContactAndChannel(ctx, contactID, channelID)
 	if err == nil && conversation != nil {
+		if conversation.TenantID != tenantID {
+			return nil, false, errors.Forbidden("conversation does not belong to tenant")
+		}
 		return conversation, false, nil
 	}
 
@@ -256,7 +283,9 @@ func (uc *ReceiveMessageUseCase) publishMessageReceivedEvent(ctx context.Context
 		},
 		Timestamp: time.Now(),
 	}
-	uc.producer.PublishEvent(ctx, event)
+	if uc.producer != nil {
+		uc.producer.PublishEvent(ctx, event)
+	}
 }
 
 func (uc *ReceiveMessageUseCase) publishContactCreatedEvent(ctx context.Context, tenantID string, contact *entity.Contact) {
@@ -271,7 +300,9 @@ func (uc *ReceiveMessageUseCase) publishContactCreatedEvent(ctx context.Context,
 		},
 		Timestamp: time.Now(),
 	}
-	uc.producer.PublishEvent(ctx, event)
+	if uc.producer != nil {
+		uc.producer.PublishEvent(ctx, event)
+	}
 }
 
 func (uc *ReceiveMessageUseCase) publishConversationCreatedEvent(ctx context.Context, tenantID string, conversation *entity.Conversation) {
@@ -285,5 +316,7 @@ func (uc *ReceiveMessageUseCase) publishConversationCreatedEvent(ctx context.Con
 		},
 		Timestamp: time.Now(),
 	}
-	uc.producer.PublishEvent(ctx, event)
+	if uc.producer != nil {
+		uc.producer.PublishEvent(ctx, event)
+	}
 }

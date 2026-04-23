@@ -76,7 +76,7 @@ type JWTConfig struct {
 
 // LogConfig holds logging configuration
 type LogConfig struct {
-	Level  string `mapstructure:"level"` // debug, info, warn, error
+	Level  string `mapstructure:"level"`  // debug, info, warn, error
 	Format string `mapstructure:"format"` // json, console
 }
 
@@ -109,7 +109,29 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
+	if err := validateProductionConfig(&cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+func validateProductionConfig(cfg *Config) error {
+	if cfg.Server.Mode != "release" {
+		return nil
+	}
+
+	secret := strings.TrimSpace(cfg.JWT.Secret)
+	switch {
+	case secret == "":
+		return fmt.Errorf("jwt.secret is required in release mode")
+	case secret == "change-me-in-production", secret == "change-me-in-production-use-strong-secret", secret == "change-me-in-development":
+		return fmt.Errorf("jwt.secret must be changed in release mode")
+	case len(secret) < 32:
+		return fmt.Errorf("jwt.secret must be at least 32 characters in release mode")
+	}
+
+	return nil
 }
 
 func setDefaults() {

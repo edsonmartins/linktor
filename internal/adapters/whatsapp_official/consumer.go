@@ -114,17 +114,17 @@ func (c *OutboundConsumer) handleOutbound(ctx context.Context, msg *nats.Outboun
 	// Send via adapter
 	result, err := c.adapter.SendMessage(ctx, pluginMsg)
 	if err != nil {
-		c.publishStatus(ctx, msg, "failed", err.Error())
+		c.publishStatus(ctx, msg, "failed", err.Error(), "")
 		return err
 	}
 
 	if !result.Success {
-		c.publishStatus(ctx, msg, "failed", result.Error)
+		c.publishStatus(ctx, msg, "failed", result.Error, result.ExternalID)
 		return fmt.Errorf("send failed: %s", result.Error)
 	}
 
 	// Publish success status
-	c.publishStatus(ctx, msg, "sent", "")
+	c.publishStatus(ctx, msg, "sent", "", result.ExternalID)
 
 	// Mark as processed
 	c.deduplicator.MarkProcessed(msg.ID)
@@ -133,13 +133,14 @@ func (c *OutboundConsumer) handleOutbound(ctx context.Context, msg *nats.Outboun
 }
 
 // publishStatus publishes a status update for a message
-func (c *OutboundConsumer) publishStatus(ctx context.Context, msg *nats.OutboundMessage, status, errorMsg string) {
+func (c *OutboundConsumer) publishStatus(ctx context.Context, msg *nats.OutboundMessage, status, errorMsg, externalID string) {
 	if c.producer == nil {
 		return
 	}
 
 	statusUpdate := &nats.StatusUpdate{
 		MessageID:    msg.ID,
+		ExternalID:   externalID,
 		ChannelType:  msg.ChannelType,
 		Status:       status,
 		ErrorMessage: errorMsg,
@@ -208,7 +209,7 @@ func (d *MessageDeduplicator) cleanup() {
 // SessionAwareConsumer adds session window checking to outbound consumer
 type SessionAwareConsumer struct {
 	*OutboundConsumer
-	templateSender *TemplateSender
+	templateSender  *TemplateSender
 	defaultTemplate string
 	defaultLanguage string
 }
@@ -281,24 +282,24 @@ func (c *SessionAwareConsumer) sendTemplateMessage(ctx context.Context, msg *nat
 	// Send template
 	resp, err := c.templateSender.SendTemplate(ctx, msg.RecipientID, template)
 	if err != nil {
-		c.publishStatus(ctx, msg, "failed", err.Error())
+		c.publishStatus(ctx, msg, "failed", err.Error(), "")
 		return err
 	}
 
 	if len(resp.Messages) == 0 {
-		c.publishStatus(ctx, msg, "failed", "no message ID returned")
+		c.publishStatus(ctx, msg, "failed", "no message ID returned", "")
 		return fmt.Errorf("template send returned no message ID")
 	}
 
-	c.publishStatus(ctx, msg, "sent", "")
+	c.publishStatus(ctx, msg, "sent", "", resp.Messages[0].ID)
 	return nil
 }
 
 // WebhookConsumer processes inbound webhooks and publishes to NATS
 type WebhookConsumer struct {
-	adapter  *Adapter
-	producer *nats.Producer
-	tenantID string
+	adapter   *Adapter
+	producer  *nats.Producer
+	tenantID  string
 	channelID string
 }
 

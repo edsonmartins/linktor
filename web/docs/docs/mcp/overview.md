@@ -20,14 +20,14 @@ The [Model Context Protocol](https://modelcontextprotocol.io) is an open protoco
 
 The `@linktor/mcp-server` package provides full access to Linktor's capabilities through MCP:
 
-### Tools (30+)
+### Tools (51)
 
 | Category | Description |
 |----------|-------------|
 | **Conversations** | List, create, update, close, and assign conversations |
-| **Messages** | Send messages, retrieve history, handle attachments |
+| **Messages** | Send messages, send via channel, poll received channel messages, retrieve history, handle attachments |
 | **Contacts** | Manage contacts, identities, and custom fields |
-| **Channels** | List and manage WhatsApp, Telegram, and other channels |
+| **Channels** | Create, update, test, connect, disconnect, pair, and manage WhatsApp, Telegram, SMS, RCS, Instagram, Facebook, email, voice, and webchat channels |
 | **Bots** | Configure and test AI bots |
 | **Analytics** | Access metrics, reports, and performance data |
 | **Knowledge** | Search and manage knowledge base articles |
@@ -94,8 +94,18 @@ The MCP server uses the following environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LINKTOR_API_KEY` | API key for authentication | - |
-| `LINKTOR_API_URL` | Linktor API base URL | `https://api.linktor.io` |
+| `LINKTOR_API_URL` | Linktor API base URL | `http://localhost:8081/api/v1` |
 | `MCP_HTTP_PORT` | HTTP server port | `3001` |
+
+## Channel Messaging Flow
+
+The Linktor API stores messages inside conversations. For MCP clients, the fastest channel-oriented flow is:
+
+1. Use `list_channels` or `get_channel` to select a channel.
+2. Use `send_channel_message` with an existing `conversation_id`, or with `channel_id` and `contact_id` to create the conversation and send.
+3. Use `receive_channel_messages` to poll conversations and messages populated by inbound webhooks for that channel.
+
+Inbound delivery is still handled by each channel webhook. The MCP server reads the resulting conversations/messages; it is not a push subscription transport.
 
 ## Next Steps
 

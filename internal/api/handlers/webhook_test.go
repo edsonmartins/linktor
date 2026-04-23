@@ -30,7 +30,7 @@ func setupWebhookTest() (*WebhookHandler, *testutil.MockChannelRepository, *test
 	producer := testutil.NewMockProducer()
 	templateRepo := newMockTemplateRepository()
 	templateSvc := service.NewTemplateService(templateRepo, channelRepo)
-	handler := NewWebhookHandler(channelRepo, producer, templateSvc)
+	handler := NewWebhookHandler(channelRepo, producer, templateSvc, false)
 
 	channel := &entity.Channel{
 		ID:               "ch-1",
@@ -546,6 +546,41 @@ func TestWebhookWhatsAppPost_NoSecretConfigured(t *testing.T) {
 	require.Len(t, producer.InboundMessages, 1)
 }
 
+func TestWebhookWhatsAppPost_NoSecretConfiguredWhenRequired_Returns401(t *testing.T) {
+	handler, channelRepo, producer, _ := setupWebhookTest()
+	handler.requireWebhookSecrets = true
+	delete(channelRepo.Channels["ch-1"].Credentials, "webhook_secret")
+
+	payload := buildWhatsAppPayload(
+		[]WhatsAppMessage{
+			{
+				ID:   "wamid.nosec.required",
+				From: "5511999990000",
+				Type: "text",
+				Text: struct {
+					Body string `json:"body"`
+				}{Body: "no secret"},
+			},
+		},
+		nil,
+		nil,
+	)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/webhook/ch-1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+	c.Params = []gin.Param{{Key: "channelId", Value: "ch-1"}}
+
+	handler.WhatsAppWebhook(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Empty(t, producer.InboundMessages)
+}
+
 // ---------------------------------------------------------------------------
 // 7. WhatsApp POST - Status Updates
 // ---------------------------------------------------------------------------
@@ -877,6 +912,7 @@ func TestWebhookStatusCallback_ValidPayload(t *testing.T) {
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/webhook/status/ch-1", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Linktor-Signature", computeHMACSHA256("test-secret", body))
 	c.Request = req
 	c.Params = []gin.Param{{Key: "channelId", Value: "ch-1"}}
 
@@ -915,6 +951,85 @@ func TestWebhookStatusCallback_ChannelNotFound(t *testing.T) {
 	handler.StatusCallback(c)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestWebhookEmail_MailgunValidSignature(t *testing.T) {
+	handler, channelRepo, producer, _ := setupWebhookTest()
+	channelRepo.Channels["ch-email"] = &entity.Channel{
+		ID:               "ch-email",
+		TenantID:         "tenant-1",
+		Type:             entity.ChannelTypeEmail,
+		Name:             "Mailgun",
+		Enabled:          true,
+		ConnectionStatus: entity.ConnectionStatusConnected,
+		Config:           map[string]string{"provider": "mailgun"},
+		Credentials:      map[string]string{"mailgun_api_key": "mailgun-secret"},
+	}
+
+	form := url.Values{
+		"recipient":  {"support@example.com"},
+		"sender":     {"sender@example.com"},
+		"from":       {"Sender <sender@example.com>"},
+		"subject":    {"Hello"},
+		"body-plain": {"Email body"},
+		"Message-Id": {"mailgun-msg-1"},
+		"timestamp":  {"1700000000"},
+		"token":      {"token-1"},
+	}
+	mac := hmac.New(sha256.New, []byte("mailgun-secret"))
+	mac.Write([]byte(form.Get("timestamp") + form.Get("token")))
+	form.Set("signature", hex.EncodeToString(mac.Sum(nil)))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/webhook/email/ch-email/mailgun", bytes.NewReader([]byte(form.Encode())))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.Request = req
+	c.Params = []gin.Param{{Key: "channelId", Value: "ch-email"}}
+
+	handler.EmailWebhook(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, producer.InboundMessages, 1)
+	assert.Equal(t, "mailgun-msg-1", producer.InboundMessages[0].ExternalID)
+}
+
+func TestWebhookEmail_MailgunInvalidSignature_Returns401(t *testing.T) {
+	handler, channelRepo, producer, _ := setupWebhookTest()
+	channelRepo.Channels["ch-email"] = &entity.Channel{
+		ID:               "ch-email",
+		TenantID:         "tenant-1",
+		Type:             entity.ChannelTypeEmail,
+		Name:             "Mailgun",
+		Enabled:          true,
+		ConnectionStatus: entity.ConnectionStatusConnected,
+		Config:           map[string]string{"provider": "mailgun"},
+		Credentials:      map[string]string{"mailgun_api_key": "mailgun-secret"},
+	}
+
+	form := url.Values{
+		"recipient":  {"support@example.com"},
+		"sender":     {"sender@example.com"},
+		"from":       {"Sender <sender@example.com>"},
+		"subject":    {"Hello"},
+		"body-plain": {"Email body"},
+		"Message-Id": {"mailgun-msg-1"},
+		"timestamp":  {"1700000000"},
+		"token":      {"token-1"},
+		"signature":  {"invalid"},
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/webhook/email/ch-email/mailgun", bytes.NewReader([]byte(form.Encode())))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.Request = req
+	c.Params = []gin.Param{{Key: "channelId", Value: "ch-email"}}
+
+	handler.EmailWebhook(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Empty(t, producer.InboundMessages)
 }
 
 // ---------------------------------------------------------------------------

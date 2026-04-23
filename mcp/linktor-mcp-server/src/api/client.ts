@@ -23,6 +23,9 @@ import type {
   Channel,
   ChannelType,
   ChannelStatus,
+  CreateChannelInput,
+  UpdateChannelInput,
+  TestChannelInput,
   // Bots
   Bot,
   BotStatus,
@@ -124,7 +127,10 @@ export class LinktorClient {
 
         clearTimeout(timeoutId);
 
-        const data = await response.json() as ApiResponse<T>;
+        const responseText = await response.text();
+        const data = responseText
+          ? JSON.parse(responseText) as ApiResponse<T>
+          : { success: response.ok, data: undefined as T } as ApiResponse<T>;
 
         if (!response.ok || !data.success) {
           throw new LinktorClientError(
@@ -325,6 +331,29 @@ export class LinktorClient {
       });
     },
 
+    create: async (input: CreateChannelInput): Promise<Channel> => {
+      return this.request({
+        method: 'POST',
+        path: '/channels',
+        body: input,
+      });
+    },
+
+    update: async (id: string, input: UpdateChannelInput): Promise<Channel> => {
+      return this.request({
+        method: 'PUT',
+        path: `/channels/${id}`,
+        body: input,
+      });
+    },
+
+    delete: async (id: string): Promise<void> => {
+      return this.request({
+        method: 'DELETE',
+        path: `/channels/${id}`,
+      });
+    },
+
     connect: async (id: string): Promise<Channel> => {
       return this.request({
         method: 'POST',
@@ -336,6 +365,52 @@ export class LinktorClient {
       return this.request({
         method: 'POST',
         path: `/channels/${id}/disconnect`,
+      });
+    },
+
+    updateStatus: async (id: string, status: 'active' | 'inactive'): Promise<Channel> => {
+      return this.request({
+        method: 'PUT',
+        path: `/channels/${id}/status`,
+        body: { status },
+      });
+    },
+
+    updateEnabled: async (id: string, enabled: boolean): Promise<Channel> => {
+      return this.request({
+        method: 'PUT',
+        path: `/channels/${id}/enabled`,
+        body: { enabled },
+      });
+    },
+
+    requestPairCode: async (id: string, phoneNumber: string): Promise<unknown> => {
+      return this.request({
+        method: 'POST',
+        path: `/channels/${id}/pair`,
+        body: { phone_number: phoneNumber },
+      });
+    },
+
+    test: async (input: TestChannelInput): Promise<unknown> => {
+      return this.request({
+        method: 'POST',
+        path: '/channels/test',
+        body: input,
+      });
+    },
+
+    getCoexistenceStatus: async (id: string): Promise<unknown> => {
+      return this.request({
+        method: 'GET',
+        path: `/channels/${id}/coexistence-status`,
+      });
+    },
+
+    subscribeEchoes: async (id: string): Promise<unknown> => {
+      return this.request({
+        method: 'POST',
+        path: `/channels/${id}/subscribe-echoes`,
       });
     },
   };

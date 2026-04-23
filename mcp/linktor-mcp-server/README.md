@@ -25,7 +25,7 @@ The Linktor MCP Server allows AI assistants to:
 
 ## Features
 
-- **34 Tools** for managing conversations, messages, contacts, channels, bots, analytics, and visual responses
+- **51 Tools** for managing conversations, messages, contacts, channels, bots, analytics, and visual responses
 - **6 Resources** for reading platform data
 - **4 Prompts** for common customer support tasks
 - **Visual Response Engine (VRE)** for rich visual messages on channels without native buttons
@@ -44,12 +44,14 @@ The VRE enables sending rich visual responses on channels that don't support nat
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-### VRE Tools (8 tools)
+### VRE Tools (10 tools)
 
 | Tool | Description |
 |------|-------------|
 | `render_template` | Render template and return base64 image |
 | `render_and_send` | Render and send directly to conversation |
+| `list_templates` | List available VRE templates |
+| `preview_template` | Preview a VRE template with sample data |
 | `mostrar_menu` | Visual menu with up to 8 numbered options |
 | `mostrar_card_produto` | Product card with price and stock |
 | `mostrar_status_pedido` | Order status visual timeline |
@@ -374,7 +376,7 @@ npx @linktor/mcp-server
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `LINKTOR_API_URL` | Linktor API URL (default: `http://localhost:8080/api/v1`) | No |
+| `LINKTOR_API_URL` | Linktor API URL (default: `http://localhost:8081/api/v1`) | No |
 | `LINKTOR_API_KEY` | API Key for authentication | Yes* |
 | `LINKTOR_ACCESS_TOKEN` | JWT Access Token (alternative to API Key) | Yes* |
 | `LINKTOR_TIMEOUT` | Request timeout in ms (default: 30000) | No |
@@ -397,7 +399,7 @@ Add to your Claude Desktop config file:
       "command": "npx",
       "args": ["-y", "@linktor/mcp-server"],
       "env": {
-        "LINKTOR_API_URL": "https://api.linktor.io",
+        "LINKTOR_API_URL": "https://api.linktor.io/api/v1",
         "LINKTOR_API_KEY": "your-api-key"
       }
     }
@@ -456,13 +458,15 @@ linktor-mcp-server/
 | `reopen_conversation` | Reopen a resolved/closed conversation |
 | `close_conversation` | Close conversation permanently |
 
-### Messages (3 tools)
+### Messages (5 tools)
 
 | Tool | Description |
 |------|-------------|
 | `list_messages` | List messages in a conversation with pagination |
 | `get_message` | Get specific message details |
 | `send_message` | Send message (text, image, document, etc.) |
+| `send_channel_message` | Send through a channel using an existing conversation or by creating a conversation from `channel_id` + `contact_id` |
+| `receive_channel_messages` | Poll recent conversations and messages received through a channel |
 
 ### Contacts (5 tools)
 
@@ -474,14 +478,23 @@ linktor-mcp-server/
 | `update_contact` | Update contact information |
 | `delete_contact` | Delete a contact |
 
-### Channels (4 tools)
+### Channels (13 tools)
 
 | Tool | Description |
 |------|-------------|
 | `list_channels` | List channels (WhatsApp, Telegram, etc.) |
 | `get_channel` | Get channel configuration and status |
+| `create_channel` | Create a channel |
+| `update_channel` | Update channel configuration or credentials |
+| `delete_channel` | Delete a channel |
 | `connect_channel` | Connect/activate a channel |
 | `disconnect_channel` | Disconnect a channel |
+| `set_channel_enabled` | Enable or disable a channel |
+| `set_channel_status` | Set backwards-compatible active/inactive status |
+| `request_whatsapp_pair_code` | Request pair code for WhatsApp unofficial |
+| `test_channel_config` | Validate credentials/config without creating a channel |
+| `get_whatsapp_coexistence_status` | Read WhatsApp official coexistence status |
+| `subscribe_whatsapp_echoes` | Subscribe WhatsApp official message echoes |
 
 ### Bots (5 tools)
 
@@ -553,6 +566,13 @@ linktor-mcp-server/
 ```
 "Send 'Hello, how can I help you?' to conversation abc123"
 "Reply to the customer with our refund policy"
+"Send 'Your order is ready' through channel ch_whatsapp using contact contact123"
+```
+
+### Receive Messages by Channel
+```
+"Read recent messages from channel ch_whatsapp"
+"Show open conversations and latest messages for channel ch_telegram"
 ```
 
 ### Manage Contacts
@@ -604,7 +624,8 @@ npm run start
 
 The Linktor platform supports the following channels:
 - WebChat
-- WhatsApp (Business & Official API)
+- WhatsApp Official (Meta Cloud API)
+- WhatsApp Unofficial
 - Telegram
 - SMS
 - RCS

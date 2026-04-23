@@ -63,6 +63,7 @@ import { InstagramConfig } from './instagram-config'
 import { EmailConfig } from './email-config'
 import { RCSConfig } from './rcs-config'
 import { VoiceConfig } from './voice-config'
+import { CoexistenceStatusBadge } from '@/components/coexistence-status-widget'
 
 /**
  * Channel type icon config
@@ -209,6 +210,9 @@ function ChannelCard({
           <div className="flex items-center gap-2">
             <EnabledBadge enabled={channel.enabled} tCommon={tCommon} />
             <ConnectionStatusBadge connectionStatus={channel.connection_status} tCommon={tCommon} />
+            {channel.type === 'whatsapp_official' && (
+              <CoexistenceStatusBadge channelId={channel.id} />
+            )}
           </div>
           <Badge variant="outline" className="font-mono text-xs">
             {t(`types.${channel.type}`)}

@@ -352,6 +352,80 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Contains(t, err.Error(), "CONFLICT")
 	})
 
+	t.Run("Deduplication - Same ExternalID Different Channel Is Allowed", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel1 := makeChannel("ch-1", "tenant-1")
+		channel2 := makeChannel("ch-2", "tenant-1")
+		f.channelRepo.Channels[channel1.ID] = channel1
+		f.channelRepo.Channels[channel2.ID] = channel2
+
+		existingConv := &entity.Conversation{
+			ID:        "conv-existing",
+			TenantID:  "tenant-1",
+			ChannelID: "ch-1",
+			ContactID: "contact-existing",
+			Status:    entity.ConversationStatusOpen,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		f.conversationRepo.Conversations[existingConv.ID] = existingConv
+		f.messageRepo.Messages["msg-existing"] = &entity.Message{
+			ID:             "msg-existing",
+			ConversationID: "conv-existing",
+			ExternalID:     "ext-123",
+			Content:        "old message",
+		}
+
+		inbound := makeInbound("ch-2", "tenant-1")
+		inbound.ExternalID = "ext-123"
+
+		output, err := f.uc.Execute(ctx, inbound)
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		assert.Equal(t, "ch-2", output.Conversation.ChannelID)
+	})
+
+	t.Run("Rejects Tenant Mismatch For Channel", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		inbound := makeInbound("ch-1", "tenant-2")
+
+		output, err := f.uc.Execute(ctx, inbound)
+		assert.Nil(t, output)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "FORBIDDEN")
+	})
+
+	t.Run("Rejects Channel Type Mismatch", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		inbound := makeInbound("ch-1", "tenant-1")
+		inbound.ChannelType = "telegram"
+
+		output, err := f.uc.Execute(ctx, inbound)
+		assert.Nil(t, output)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "VALIDATION_ERROR")
+	})
+
+	t.Run("Rejects Inactive Channel", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		channel.ConnectionStatus = entity.ConnectionStatusDisconnected
+		f.channelRepo.Channels[channel.ID] = channel
+
+		inbound := makeInbound("ch-1", "tenant-1")
+
+		output, err := f.uc.Execute(ctx, inbound)
+		assert.Nil(t, output)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "CHANNEL_DISCONNECTED")
+	})
+
 	t.Run("Deduplication - Empty ExternalID Skips Check", func(t *testing.T) {
 		f := newReceiveMessageFixture()
 		channel := makeChannel("ch-1", "tenant-1")

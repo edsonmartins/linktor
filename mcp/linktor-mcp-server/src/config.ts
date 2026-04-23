@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const ConfigSchema = z.object({
-  apiUrl: z.string().url().default('http://localhost:8080/api/v1'),
+  apiUrl: z.string().url().default('http://localhost:8081/api/v1'),
   apiKey: z.string().optional(),
   accessToken: z.string().optional(),
   timeout: z.number().default(30000),
@@ -13,7 +13,7 @@ export type Config = z.infer<typeof ConfigSchema>;
 
 export function loadConfig(): Config {
   const rawConfig = {
-    apiUrl: process.env.LINKTOR_API_URL || 'http://localhost:8080/api/v1',
+    apiUrl: process.env.LINKTOR_API_URL || 'http://localhost:8081/api/v1',
     apiKey: process.env.LINKTOR_API_KEY,
     accessToken: process.env.LINKTOR_ACCESS_TOKEN,
     timeout: process.env.LINKTOR_TIMEOUT ? parseInt(process.env.LINKTOR_TIMEOUT, 10) : 30000,

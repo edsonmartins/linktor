@@ -134,13 +134,18 @@ func (h *ContactHandler) Create(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /contacts/{id} [get]
 func (h *ContactHandler) Get(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Contact ID is required", nil)
 		return
 	}
 
-	contact, err := h.contactService.GetByID(c.Request.Context(), id)
+	contact, err := h.contactService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -164,6 +169,11 @@ func (h *ContactHandler) Get(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /contacts/{id} [put]
 func (h *ContactHandler) Update(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Contact ID is required", nil)
@@ -185,7 +195,7 @@ func (h *ContactHandler) Update(c *gin.Context) {
 		Tags:         req.Tags,
 	}
 
-	contact, err := h.contactService.Update(c.Request.Context(), id, input)
+	contact, err := h.contactService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -207,13 +217,18 @@ func (h *ContactHandler) Update(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /contacts/{id} [delete]
 func (h *ContactHandler) Delete(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Contact ID is required", nil)
 		return
 	}
 
-	if err := h.contactService.Delete(c.Request.Context(), id); err != nil {
+	if err := h.contactService.DeleteForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -243,6 +258,11 @@ type AddIdentityRequest struct {
 // @Failure      404 {object} Response
 // @Router       /contacts/{id}/identities [post]
 func (h *ContactHandler) AddIdentity(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Contact ID is required", nil)
@@ -255,7 +275,7 @@ func (h *ContactHandler) AddIdentity(c *gin.Context) {
 		return
 	}
 
-	contact, err := h.contactService.AddIdentity(c.Request.Context(), id, req.ChannelType, req.Identifier, req.Metadata)
+	contact, err := h.contactService.AddIdentityForTenant(c.Request.Context(), tenantID, id, req.ChannelType, req.Identifier, req.Metadata)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -279,6 +299,11 @@ func (h *ContactHandler) AddIdentity(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /contacts/{id}/identities/{identityId} [delete]
 func (h *ContactHandler) RemoveIdentity(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	identityID := c.Param("identityId")
 
@@ -287,7 +312,7 @@ func (h *ContactHandler) RemoveIdentity(c *gin.Context) {
 		return
 	}
 
-	contact, err := h.contactService.RemoveIdentity(c.Request.Context(), id, identityID)
+	contact, err := h.contactService.RemoveIdentityForTenant(c.Request.Context(), tenantID, id, identityID)
 	if err != nil {
 		RespondError(c, err)
 		return

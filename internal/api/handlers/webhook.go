@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,18 +32,34 @@ import (
 
 // WebhookHandler handles incoming webhooks from external channels
 type WebhookHandler struct {
-	channelRepo repository.ChannelRepository
-	producer    nats.Publisher
-	templateSvc *appservice.TemplateService
+	channelRepo           repository.ChannelRepository
+	producer              nats.Publisher
+	templateSvc           *appservice.TemplateService
+	requireWebhookSecrets bool
 }
 
 // NewWebhookHandler creates a new webhook handler
-func NewWebhookHandler(channelRepo repository.ChannelRepository, producer nats.Publisher, templateSvc *appservice.TemplateService) *WebhookHandler {
+func NewWebhookHandler(channelRepo repository.ChannelRepository, producer nats.Publisher, templateSvc *appservice.TemplateService, requireWebhookSecrets bool) *WebhookHandler {
 	return &WebhookHandler{
-		channelRepo: channelRepo,
-		producer:    producer,
-		templateSvc: templateSvc,
+		channelRepo:           channelRepo,
+		producer:              producer,
+		templateSvc:           templateSvc,
+		requireWebhookSecrets: requireWebhookSecrets,
 	}
+}
+
+func (h *WebhookHandler) publishInbound(ctx context.Context, inbound *nats.InboundMessage) error {
+	if h.producer == nil {
+		return fmt.Errorf("message queue unavailable")
+	}
+	return h.producer.PublishInbound(ctx, inbound)
+}
+
+func (h *WebhookHandler) publishStatusUpdate(ctx context.Context, status *nats.StatusUpdate) error {
+	if h.producer == nil {
+		return fmt.Errorf("message queue unavailable")
+	}
+	return h.producer.PublishStatusUpdate(ctx, status)
 }
 
 // WhatsAppWebhook handles WhatsApp Cloud API webhooks
@@ -77,6 +95,10 @@ func (h *WebhookHandler) WhatsAppWebhook(c *gin.Context) {
 			return
 		}
 	} else {
+		if h.requireWebhookSecrets {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+			return
+		}
 		rawBody, err = io.ReadAll(c.Request.Body)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read payload"})
@@ -183,6 +205,20 @@ func (h *WebhookHandler) TelegramWebhook(c *gin.Context) {
 		return
 	}
 
+	secretToken := channel.Credentials["secret_token"]
+	if secretToken == "" {
+		secretToken = channel.Credentials["webhook_secret"]
+	}
+	if secretToken != "" {
+		if c.GetHeader("X-Telegram-Bot-Api-Secret-Token") != secretToken {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid secret token"})
+			return
+		}
+	} else if h.requireWebhookSecrets {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+		return
+	}
+
 	var update TelegramUpdate
 	if err := c.ShouldBindJSON(&update); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
@@ -208,10 +244,22 @@ func (h *WebhookHandler) GenericWebhook(c *gin.Context) {
 		return
 	}
 
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read payload"})
+		return
+	}
+	if !h.verifySharedSecretWebhook(c, body, channel.Credentials["webhook_secret"]) {
+		return
+	}
+
 	var payload GenericWebhookPayload
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
+	}
+	if payload.Metadata == nil {
+		payload.Metadata = make(map[string]string)
 	}
 
 	inbound := &nats.InboundMessage{
@@ -233,7 +281,7 @@ func (h *WebhookHandler) GenericWebhook(c *gin.Context) {
 		inbound.Metadata["sender_name"] = payload.SenderName
 	}
 
-	if err := h.producer.PublishInbound(c.Request.Context(), inbound); err != nil {
+	if err := h.publishInbound(c.Request.Context(), inbound); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process message"})
 		return
 	}
@@ -256,6 +304,18 @@ func (h *WebhookHandler) TwilioWebhook(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	authToken := channel.Credentials["auth_token"]
+	if authToken != "" {
+		values, _ := url.ParseQuery(string(body))
+		if !sms.ValidateSignature(authToken, requestURL(c), firstValues(values), c.GetHeader("X-Twilio-Signature")) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+			return
+		}
+	} else if h.requireWebhookSecrets {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
 		return
 	}
 
@@ -322,7 +382,7 @@ func (h *WebhookHandler) TwilioWebhook(c *gin.Context) {
 			Timestamp:   time.Now(),
 		}
 
-		if err := h.producer.PublishInbound(c.Request.Context(), inbound); err != nil {
+		if err := h.publishInbound(c.Request.Context(), inbound); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process message"})
 			return
 		}
@@ -361,7 +421,7 @@ func (h *WebhookHandler) TwilioWebhook(c *gin.Context) {
 			ErrorMessage: payload.ErrorMessage,
 			Timestamp:    time.Now(),
 		}
-		h.producer.PublishStatusUpdate(c.Request.Context(), statusUpdate)
+		h.publishStatusUpdate(c.Request.Context(), statusUpdate)
 
 		c.Header("Content-Type", "text/xml")
 		c.String(http.StatusOK, sms.EmptyTwiMLResponse())
@@ -391,6 +451,10 @@ func (h *WebhookHandler) FacebookWebhook(c *gin.Context) {
 	// Get app secret from credentials
 	appSecret := channel.Credentials["app_secret"]
 	verifyToken := channel.Credentials["verify_token"]
+	if appSecret == "" && h.requireWebhookSecrets {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+		return
+	}
 
 	// Create webhook handler
 	webhookHandler := facebook.NewWebhookHandler(appSecret, verifyToken)
@@ -456,6 +520,10 @@ func (h *WebhookHandler) InstagramWebhook(c *gin.Context) {
 	// Get app secret from credentials
 	appSecret := channel.Credentials["app_secret"]
 	verifyToken := channel.Credentials["verify_token"]
+	if appSecret == "" && h.requireWebhookSecrets {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+		return
+	}
 
 	// Create webhook handler
 	webhookHandler := instagram.NewWebhookHandler(appSecret, verifyToken)
@@ -504,8 +572,17 @@ func (h *WebhookHandler) StatusCallback(c *gin.Context) {
 		return
 	}
 
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read payload"})
+		return
+	}
+	if !h.verifySharedSecretWebhook(c, body, channel.Credentials["webhook_secret"]) {
+		return
+	}
+
 	var payload StatusCallbackPayload
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
 	}
@@ -519,7 +596,7 @@ func (h *WebhookHandler) StatusCallback(c *gin.Context) {
 		Timestamp:    time.Now(),
 	}
 
-	if err := h.producer.PublishStatusUpdate(c.Request.Context(), status); err != nil {
+	if err := h.publishStatusUpdate(c.Request.Context(), status); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process status"})
 		return
 	}
@@ -561,6 +638,159 @@ func (h *WebhookHandler) verifyWhatsAppSignature(body []byte, signature, secret 
 	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
 	return hmac.Equal([]byte(signature), []byte(expected))
+}
+
+func (h *WebhookHandler) verifySharedSecretWebhook(c *gin.Context, body []byte, secret string) bool {
+	if secret == "" {
+		if h.requireWebhookSecrets {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+			return false
+		}
+		return true
+	}
+
+	signature := c.GetHeader("X-Linktor-Signature")
+	if signature == "" {
+		signature = c.GetHeader("X-Hub-Signature-256")
+	}
+	if !h.verifyWhatsAppSignature(body, signature, secret) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+		return false
+	}
+	return true
+}
+
+func requestURL(c *gin.Context) string {
+	scheme := c.GetHeader("X-Forwarded-Proto")
+	if scheme == "" {
+		scheme = "http"
+		if c.Request.TLS != nil {
+			scheme = "https"
+		}
+	}
+	return scheme + "://" + c.Request.Host + c.Request.URL.RequestURI()
+}
+
+func firstValues(values url.Values) map[string]string {
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		if len(value) > 0 {
+			result[key] = value[0]
+		}
+	}
+	return result
+}
+
+func (h *WebhookHandler) verifyEmailWebhook(c *gin.Context, provider email.Provider, body []byte, headers map[string]string, credentials map[string]string) bool {
+	switch provider {
+	case email.ProviderMailgun:
+		apiKey := firstNonEmpty(credentials["mailgun_webhook_signing_key"], credentials["mailgun_api_key"], credentials["api_key"], credentials["webhook_secret"])
+		if apiKey == "" {
+			return h.allowMissingWebhookSecret(c)
+		}
+
+		token, timestamp, signature := mailgunSignatureParts(body, headers)
+		if token == "" || timestamp == "" || signature == "" || !email.ValidateMailgunWebhook(apiKey, token, timestamp, signature) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+			return false
+		}
+		return true
+
+	case email.ProviderPostmark:
+		password := firstNonEmpty(credentials["postmark_webhook_password"], credentials["webhook_password"], credentials["webhook_secret"])
+		if password == "" {
+			return h.allowMissingWebhookSecret(c)
+		}
+		if !validatePostmarkAuthorization(password, headers["Authorization"]) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization"})
+			return false
+		}
+		return true
+
+	case email.ProviderSendGrid, email.ProviderSES:
+		secret := credentials["webhook_secret"]
+		if secret == "" {
+			return h.allowMissingWebhookSecret(c)
+		}
+		return h.verifySharedSecretWebhook(c, body, secret)
+
+	default:
+		return h.allowMissingWebhookSecret(c)
+	}
+}
+
+func (h *WebhookHandler) allowMissingWebhookSecret(c *gin.Context) bool {
+	if h.requireWebhookSecrets {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+		return false
+	}
+	return true
+}
+
+func mailgunSignatureParts(body []byte, headers map[string]string) (token, timestamp, signature string) {
+	values, _ := url.ParseQuery(string(body))
+	token = values.Get("token")
+	timestamp = values.Get("timestamp")
+	signature = values.Get("signature")
+	if token != "" || timestamp != "" || signature != "" {
+		return token, timestamp, signature
+	}
+
+	var payload struct {
+		Signature struct {
+			Token     string `json:"token"`
+			Timestamp string `json:"timestamp"`
+			Signature string `json:"signature"`
+		} `json:"signature"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil {
+		token = payload.Signature.Token
+		timestamp = payload.Signature.Timestamp
+		signature = payload.Signature.Signature
+	}
+	if token == "" {
+		token = firstNonEmpty(headers["X-Mailgun-Token"], headers["X-Mailgun-Webhook-Token"])
+	}
+	if timestamp == "" {
+		timestamp = firstNonEmpty(headers["X-Mailgun-Timestamp"], headers["X-Mailgun-Webhook-Timestamp"])
+	}
+	if signature == "" {
+		signature = firstNonEmpty(headers["X-Mailgun-Signature"], headers["X-Mailgun-Webhook-Signature"])
+	}
+	return token, timestamp, signature
+}
+
+func validatePostmarkAuthorization(password, authorization string) bool {
+	if authorization == "" {
+		return false
+	}
+	if authorization == password {
+		return true
+	}
+	if strings.HasPrefix(authorization, "Bearer ") {
+		return strings.TrimPrefix(authorization, "Bearer ") == password
+	}
+	if strings.HasPrefix(authorization, "Basic ") {
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authorization, "Basic "))
+		if err != nil {
+			return false
+		}
+		parts := strings.SplitN(string(decoded), ":", 2)
+		if len(parts) != 2 {
+			return false
+		}
+		return parts[1] == password
+	}
+	return false
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (h *WebhookHandler) processWhatsAppTemplateWebhooks(ctx context.Context, payload *whatsappofficial.WebhookPayload) {
@@ -744,7 +974,7 @@ func (h *WebhookHandler) processWhatsAppMessage(ctx context.Context, channel *en
 		Timestamp:   time.Now(),
 	}
 
-	return h.producer.PublishInbound(ctx, inbound)
+	return h.publishInbound(ctx, inbound)
 }
 
 func (h *WebhookHandler) processWhatsAppStatus(ctx context.Context, channel *entity.Channel, status WhatsAppStatus) {
@@ -776,7 +1006,7 @@ func (h *WebhookHandler) processWhatsAppStatus(ctx context.Context, channel *ent
 		Timestamp:    time.Now(),
 	}
 
-	h.producer.PublishStatusUpdate(ctx, update)
+	h.publishStatusUpdate(ctx, update)
 }
 
 func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *entity.Channel, msg *TelegramMessage) error {
@@ -850,7 +1080,7 @@ func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *en
 		Timestamp:   time.Now(),
 	}
 
-	return h.producer.PublishInbound(ctx, inbound)
+	return h.publishInbound(ctx, inbound)
 }
 
 func (h *WebhookHandler) handleFacebookVerification(c *gin.Context, channel *entity.Channel) {
@@ -925,7 +1155,7 @@ func (h *WebhookHandler) processFacebookMessage(ctx context.Context, channel *en
 		Timestamp:   msg.Timestamp,
 	}
 
-	return h.producer.PublishInbound(ctx, inbound)
+	return h.publishInbound(ctx, inbound)
 }
 
 func (h *WebhookHandler) processFacebookDeliveryStatus(ctx context.Context, channel *entity.Channel, status *facebook.DeliveryStatus) {
@@ -936,7 +1166,7 @@ func (h *WebhookHandler) processFacebookDeliveryStatus(ctx context.Context, chan
 			Status:      "delivered",
 			Timestamp:   status.Watermark,
 		}
-		h.producer.PublishStatusUpdate(ctx, update)
+		h.publishStatusUpdate(ctx, update)
 	}
 }
 
@@ -978,7 +1208,7 @@ func (h *WebhookHandler) processInstagramMessage(ctx context.Context, channel *e
 		Timestamp:   msg.Timestamp,
 	}
 
-	return h.producer.PublishInbound(ctx, inbound)
+	return h.publishInbound(ctx, inbound)
 }
 
 // Payload types
@@ -1024,6 +1254,9 @@ func (h *WebhookHandler) RCSWebhook(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
 			return
 		}
+	} else if h.requireWebhookSecrets {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+		return
 	}
 
 	// Parse webhook payload
@@ -1104,7 +1337,7 @@ func (h *WebhookHandler) processRCSMessage(ctx context.Context, channel *entity.
 			Timestamp:   msg.Timestamp,
 		}
 
-		return h.producer.PublishInbound(ctx, inboundMsg)
+		return h.publishInbound(ctx, inboundMsg)
 	}
 
 	return nil
@@ -1127,7 +1360,7 @@ func (h *WebhookHandler) processRCSStatus(ctx context.Context, channel *entity.C
 	}
 
 	if h.producer != nil {
-		h.producer.PublishStatusUpdate(ctx, &nats.StatusUpdate{
+		h.publishStatusUpdate(ctx, &nats.StatusUpdate{
 			ExternalID:   report.MessageID,
 			ChannelType:  "rcs",
 			Status:       status,
@@ -1178,6 +1411,9 @@ func (h *WebhookHandler) EmailWebhook(c *gin.Context) {
 	headers := make(map[string]string)
 	for key := range c.Request.Header {
 		headers[key] = c.Request.Header.Get(key)
+	}
+	if !h.verifyEmailWebhook(c, provider, body, headers, channel.Credentials) {
+		return
 	}
 
 	// Parse webhook payload
@@ -1282,7 +1518,7 @@ func (h *WebhookHandler) processEmailMessage(ctx context.Context, channel *entit
 			Timestamp:   msg.ReceivedAt,
 		}
 
-		return h.producer.PublishInbound(ctx, inboundMsg)
+		return h.publishInbound(ctx, inboundMsg)
 	}
 
 	return nil
@@ -1305,7 +1541,7 @@ func (h *WebhookHandler) processEmailStatus(ctx context.Context, channel *entity
 	}
 
 	if h.producer != nil {
-		h.producer.PublishStatusUpdate(ctx, &nats.StatusUpdate{
+		h.publishStatusUpdate(ctx, &nats.StatusUpdate{
 			MessageID:    report.MessageID,
 			ExternalID:   report.ExternalID,
 			ChannelType:  "email",

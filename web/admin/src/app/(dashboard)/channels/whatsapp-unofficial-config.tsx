@@ -96,6 +96,22 @@ export function WhatsAppUnofficialConfig({
 
   const isEditing = !!channel
 
+  useEffect(() => {
+    if (!channel?.connection_status) return
+
+    if (channel.connection_status === 'connected') {
+      setConnectionStatus('connected')
+      return
+    }
+
+    if (channel.connection_status === 'connecting') {
+      setConnectionStatus('connecting')
+      return
+    }
+
+    setConnectionStatus('disconnected')
+  }, [channel?.connection_status])
+
   const form = useForm<WhatsAppConfigForm>({
     resolver: zodResolver(whatsappConfigSchema),
     defaultValues: {
@@ -238,10 +254,8 @@ export function WhatsAppUnofficialConfig({
     setQrCode(null)
 
     try {
-      // TODO: Backend needs to implement pair code support
-      // For now, use connect endpoint with phone_number
       const response = await api.post<{ channel: Channel; code?: string; expires_in?: number }>(
-        `/channels/${channel?.id}/connect`,
+        `/channels/${channel?.id}/pair`,
         { phone_number: phoneNumber }
       )
 

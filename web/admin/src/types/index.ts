@@ -98,6 +98,7 @@ export interface ContactIdentity {
   contact_id: string
   channel_type: ChannelType
   external_id: string
+  metadata?: Record<string, string>
   created_at: string
 }
 
@@ -151,6 +152,69 @@ export interface Message {
   imported_at?: string
   // Expanded relations
   sender?: User | Contact
+  reactions?: Reaction[]
+}
+
+export interface Reaction {
+  user_id: string
+  emoji: string
+  timestamp: string
+}
+
+export interface EscalationMessage {
+  id: string
+  sender_type: string
+  sender_name?: string
+  content: string
+  timestamp: string
+  is_bot: boolean
+}
+
+export interface EscalationCustomer {
+  id: string
+  name: string
+  email?: string
+  phone?: string
+  avatar_url?: string
+  tags?: string[]
+  custom_fields?: Record<string, string>
+  total_conversations: number
+  last_conversation?: string
+  is_vip: boolean
+}
+
+export interface EscalationContext {
+  id: string
+  conversation_id: string
+  tenant_id: string
+  summary: string
+  detected_intent?: string
+  sentiment?: string
+  sentiment_score?: number
+  escalation_reason: string
+  reason_detail?: string
+  priority: 'low' | 'normal' | 'high' | 'urgent'
+  suggested_team?: string
+  suggested_user_id?: string
+  collected_entities?: Record<string, string>
+  flow_data?: Record<string, string>
+  tags?: string[]
+  last_messages: EscalationMessage[]
+  message_count: number
+  bot_attempts: number
+  bot_success_rate: number
+  customer?: EscalationCustomer
+  channel_type: string
+  channel_name?: string
+  bot_id?: string
+  bot_name?: string
+  active_flow_id?: string
+  active_flow_name?: string
+  flow_node_id?: string
+  conversation_started_at: string
+  escalated_at: string
+  first_response_at?: string
+  wait_time_seconds: number
 }
 
 export type MessageContentType =

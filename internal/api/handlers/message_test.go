@@ -80,8 +80,9 @@ func parseMessageResponse(t *testing.T, w *httptest.ResponseRecorder) Response {
 // ---------------------------------------------------------------------------
 
 func TestMessageList_ValidConversationID_Returns200(t *testing.T) {
-	handler, msgRepo, _, _, _, _ := setupMessageHandler()
+	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
 
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
 	seedMessage(msgRepo, "msg-1", "conv-1")
 	seedMessage(msgRepo, "msg-2", "conv-1")
 	seedMessage(msgRepo, "msg-3", "conv-other") // different conversation
@@ -121,6 +122,25 @@ func TestMessageList_EmptyConversationID_Returns400(t *testing.T) {
 	assert.Equal(t, "VALIDATION_ERROR", resp.Error.Code)
 }
 
+func TestMessageList_OtherTenantConversation_ReturnsError(t *testing.T) {
+	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
+
+	seedConversation(convRepo, "conv-2", "tenant-2", entity.ConversationStatusOpen)
+	seedMessage(msgRepo, "msg-1", "conv-2")
+
+	c, w := newMessageAuthContext()
+	c.Params = gin.Params{{Key: "id", Value: "conv-2"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/conversations/conv-2/messages", nil)
+
+	handler.List(c)
+
+	assert.NotEqual(t, http.StatusOK, w.Code)
+
+	resp := parseMessageResponse(t, w)
+	assert.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
+}
+
 // ---------------------------------------------------------------------------
 // Send
 // ---------------------------------------------------------------------------
@@ -129,16 +149,7 @@ func TestMessageSend_ValidRequest_Returns201(t *testing.T) {
 	handler, _, convRepo, channelRepo, contactRepo, _ := setupMessageHandler()
 
 	// Seed conversation, channel, and contact for the Send flow
-	now := time.Now()
-	convRepo.Conversations["conv-1"] = &entity.Conversation{
-		ID:        "conv-1",
-		TenantID:  "tenant-1",
-		ContactID: "contact-1",
-		ChannelID: "channel-1",
-		Status:    entity.ConversationStatusOpen,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
 	channelRepo.Channels["channel-1"] = &entity.Channel{
 		ID:       "channel-1",
 		TenantID: "tenant-1",
@@ -237,13 +248,50 @@ func TestMessageSend_NoUserID_Returns401(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
+func TestMessageSend_OtherTenantConversation_ReturnsError(t *testing.T) {
+	handler, _, convRepo, channelRepo, contactRepo, _ := setupMessageHandler()
+
+	seedConversation(convRepo, "conv-2", "tenant-2", entity.ConversationStatusOpen)
+	channelRepo.Channels["channel-1"] = &entity.Channel{
+		ID:       "channel-1",
+		TenantID: "tenant-2",
+		Type:     entity.ChannelTypeWhatsApp,
+	}
+	contactRepo.Contacts["contact-1"] = &entity.Contact{
+		ID:       "contact-1",
+		TenantID: "tenant-2",
+		Name:     "Other Tenant Contact",
+		Phone:    "+5511888888888",
+	}
+
+	payload := SendMessageRequest{
+		ContentType: "text",
+		Content:     "cross-tenant attempt",
+	}
+	body, _ := json.Marshal(payload)
+
+	c, w := newMessageAuthContext()
+	c.Params = gin.Params{{Key: "id", Value: "conv-2"}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/conversations/conv-2/messages", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.Send(c)
+
+	assert.NotEqual(t, http.StatusCreated, w.Code)
+
+	resp := parseMessageResponse(t, w)
+	assert.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
+}
+
 // ---------------------------------------------------------------------------
 // Get
 // ---------------------------------------------------------------------------
 
 func TestMessageGet_ValidID_Returns200(t *testing.T) {
-	handler, msgRepo, _, _, _, _ := setupMessageHandler()
+	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
 
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
 	seedMessage(msgRepo, "msg-1", "conv-1")
 
 	c, w := newMessageAuthContext()
@@ -297,6 +345,25 @@ func TestMessageGet_NotFound_ReturnsError(t *testing.T) {
 	require.NotNil(t, resp.Error)
 }
 
+func TestMessageGet_OtherTenantMessage_ReturnsError(t *testing.T) {
+	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
+
+	seedConversation(convRepo, "conv-2", "tenant-2", entity.ConversationStatusOpen)
+	seedMessage(msgRepo, "msg-1", "conv-2")
+
+	c, w := newMessageAuthContext()
+	c.Params = gin.Params{{Key: "id", Value: "msg-1"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/messages/msg-1", nil)
+
+	handler.Get(c)
+
+	assert.NotEqual(t, http.StatusOK, w.Code)
+
+	resp := parseMessageResponse(t, w)
+	assert.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
+}
+
 // ---------------------------------------------------------------------------
 // SendReaction
 // ---------------------------------------------------------------------------
@@ -304,16 +371,7 @@ func TestMessageGet_NotFound_ReturnsError(t *testing.T) {
 func TestMessageSendReaction_Valid_Returns200(t *testing.T) {
 	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
 
-	now := time.Now()
-	convRepo.Conversations["conv-1"] = &entity.Conversation{
-		ID:        "conv-1",
-		TenantID:  "tenant-1",
-		ContactID: "contact-1",
-		ChannelID: "channel-1",
-		Status:    entity.ConversationStatusOpen,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
 	seedMessage(msgRepo, "msg-1", "conv-1")
 
 	payload := SendReactionRequest{Emoji: "thumbsup"}
@@ -412,16 +470,7 @@ func TestMessageSendReaction_NoUserID_Returns401(t *testing.T) {
 func TestMessageSendReaction_RemoveReaction_Returns200(t *testing.T) {
 	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
 
-	now := time.Now()
-	convRepo.Conversations["conv-1"] = &entity.Conversation{
-		ID:        "conv-1",
-		TenantID:  "tenant-1",
-		ContactID: "contact-1",
-		ChannelID: "channel-1",
-		Status:    entity.ConversationStatusOpen,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
 	seedMessage(msgRepo, "msg-1", "conv-1")
 
 	// Empty emoji means remove reaction
@@ -446,4 +495,57 @@ func TestMessageSendReaction_RemoveReaction_Returns200(t *testing.T) {
 	data, ok := resp.Data.(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "Reaction removed successfully", data["message"])
+}
+
+func TestMessageSendReaction_OtherTenantConversation_ReturnsError(t *testing.T) {
+	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
+
+	seedConversation(convRepo, "conv-2", "tenant-2", entity.ConversationStatusOpen)
+	seedMessage(msgRepo, "msg-1", "conv-2")
+
+	payload := SendReactionRequest{Emoji: "thumbsup"}
+	body, _ := json.Marshal(payload)
+
+	c, w := newMessageAuthContext()
+	c.Params = gin.Params{
+		{Key: "id", Value: "conv-2"},
+		{Key: "messageId", Value: "msg-1"},
+	}
+	c.Request = httptest.NewRequest(http.MethodPost, "/conversations/conv-2/messages/msg-1/reactions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.SendReaction(c)
+
+	assert.NotEqual(t, http.StatusOK, w.Code)
+
+	resp := parseMessageResponse(t, w)
+	assert.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
+}
+
+func TestMessageSendReaction_MessageOutsideConversation_ReturnsError(t *testing.T) {
+	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
+
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
+	seedConversation(convRepo, "conv-other", "tenant-1", entity.ConversationStatusOpen)
+	seedMessage(msgRepo, "msg-1", "conv-other")
+
+	payload := SendReactionRequest{Emoji: "thumbsup"}
+	body, _ := json.Marshal(payload)
+
+	c, w := newMessageAuthContext()
+	c.Params = gin.Params{
+		{Key: "id", Value: "conv-1"},
+		{Key: "messageId", Value: "msg-1"},
+	}
+	c.Request = httptest.NewRequest(http.MethodPost, "/conversations/conv-1/messages/msg-1/reactions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.SendReaction(c)
+
+	assert.NotEqual(t, http.StatusOK, w.Code)
+
+	resp := parseMessageResponse(t, w)
+	assert.False(t, resp.Success)
+	require.NotNil(t, resp.Error)
 }

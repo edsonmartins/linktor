@@ -93,6 +93,9 @@ func (uc *SendMessageUseCase) Execute(ctx context.Context, input *SendMessageInp
 	if err != nil {
 		return nil, err
 	}
+	if channel.TenantID != input.TenantID {
+		return nil, errors.Forbidden("channel does not belong to tenant")
+	}
 
 	// Check channel is active (enabled + connected)
 	if !channel.IsActive() {
@@ -103,6 +106,9 @@ func (uc *SendMessageUseCase) Execute(ctx context.Context, input *SendMessageInp
 	contact, err := uc.contactRepo.FindByID(ctx, conversation.ContactID)
 	if err != nil {
 		return nil, err
+	}
+	if contact.TenantID != input.TenantID {
+		return nil, errors.Forbidden("contact does not belong to tenant")
 	}
 
 	// Find recipient identifier for the channel
@@ -180,6 +186,10 @@ func (uc *SendMessageUseCase) Execute(ctx context.Context, input *SendMessageInp
 		Timestamp:      now,
 	}
 
+	if uc.producer == nil {
+		uc.messageRepo.UpdateStatus(ctx, message.ID, entity.MessageStatusFailed, "message queue unavailable")
+		return nil, errors.New(errors.ErrCodeInternal, "message queue unavailable")
+	}
 	if err := uc.producer.PublishOutbound(ctx, outbound); err != nil {
 		// Update message status to failed
 		uc.messageRepo.UpdateStatus(ctx, message.ID, entity.MessageStatusFailed, err.Error())
@@ -318,7 +328,7 @@ func buildInteractiveFromQuickReplies(bodyText string, quickReplies []entity.Qui
 			"text": bodyText,
 		},
 		"action": map[string]interface{}{
-			"button":   "Options",
+			"button": "Options",
 			"sections": []map[string]interface{}{
 				{
 					"rows": rows,

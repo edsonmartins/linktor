@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -21,13 +24,21 @@ import (
 type OAuthHandler struct {
 	channelRepo repository.ChannelRepository
 	baseURL     string // Base URL for callbacks (e.g., https://api.linktor.com)
+	stateSecret []byte
 }
 
 // NewOAuthHandler creates a new OAuth handler
 func NewOAuthHandler(channelRepo repository.ChannelRepository, baseURL string) *OAuthHandler {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		sum := sha256.Sum256([]byte(strings.TrimSuffix(baseURL, "/") + ":oauth-state"))
+		secret = sum[:]
+	}
+
 	return &OAuthHandler{
 		channelRepo: channelRepo,
 		baseURL:     strings.TrimSuffix(baseURL, "/"),
+		stateSecret: secret,
 	}
 }
 
@@ -69,6 +80,34 @@ func decodeState(encoded string) (*OAuthState, error) {
 	return &state, nil
 }
 
+func (h *OAuthHandler) encodeSignedState(state *OAuthState) (string, error) {
+	encoded, err := encodeState(state)
+	if err != nil {
+		return "", err
+	}
+
+	mac := hmac.New(sha256.New, h.stateSecret)
+	mac.Write([]byte(encoded))
+	signature := hex.EncodeToString(mac.Sum(nil))
+	return encoded + "." + signature, nil
+}
+
+func (h *OAuthHandler) decodeSignedState(encoded string) (*OAuthState, error) {
+	parts := strings.Split(encoded, ".")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid signed state")
+	}
+
+	mac := hmac.New(sha256.New, h.stateSecret)
+	mac.Write([]byte(parts[0]))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(parts[1]), []byte(expected)) {
+		return nil, fmt.Errorf("invalid state signature")
+	}
+
+	return decodeState(parts[0])
+}
+
 // FacebookLoginRequest represents a request to initiate Facebook OAuth
 type FacebookLoginRequest struct {
 	AppID       string   `json:"app_id" binding:"required"`
@@ -79,9 +118,9 @@ type FacebookLoginRequest struct {
 
 // FacebookCallbackRequest represents the OAuth callback data
 type FacebookCallbackRequest struct {
-	Code     string `json:"code" binding:"required"`
-	State    string `json:"state" binding:"required"`
-	AppID    string `json:"app_id" binding:"required"`
+	Code      string `json:"code" binding:"required"`
+	State     string `json:"state" binding:"required"`
+	AppID     string `json:"app_id" binding:"required"`
 	AppSecret string `json:"app_secret" binding:"required"`
 }
 
@@ -92,11 +131,11 @@ type FacebookPagesResponse struct {
 
 // PageInfo represents a Facebook Page
 type PageInfo struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	AccessToken string `json:"access_token"`
-	Category    string `json:"category"`
-	PictureURL  string `json:"picture_url,omitempty"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	AccessToken string         `json:"access_token"`
+	Category    string         `json:"category"`
+	PictureURL  string         `json:"picture_url,omitempty"`
 	Instagram   *InstagramInfo `json:"instagram,omitempty"`
 }
 
@@ -130,7 +169,7 @@ func (h *OAuthHandler) FacebookLogin(c *gin.Context) {
 		Timestamp:   time.Now().Unix(),
 	}
 
-	stateStr, err := encodeState(state)
+	stateStr, err := h.encodeSignedState(state)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create state"})
 		return
@@ -168,7 +207,7 @@ func (h *OAuthHandler) FacebookCallback(c *gin.Context) {
 	}
 
 	// Decode and validate state
-	state, err := decodeState(req.State)
+	state, err := h.decodeSignedState(req.State)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state"})
 		return
@@ -177,6 +216,10 @@ func (h *OAuthHandler) FacebookCallback(c *gin.Context) {
 	// Check state age (max 10 minutes)
 	if time.Now().Unix()-state.Timestamp > 600 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "state expired"})
+		return
+	}
+	if state.ChannelType != "facebook" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state"})
 		return
 	}
 
@@ -292,7 +335,7 @@ func (h *OAuthHandler) InstagramLogin(c *gin.Context) {
 		Timestamp:   time.Now().Unix(),
 	}
 
-	stateStr, err := encodeState(state)
+	stateStr, err := h.encodeSignedState(state)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create state"})
 		return
@@ -339,7 +382,7 @@ func (h *OAuthHandler) InstagramCallback(c *gin.Context) {
 	}
 
 	// Decode and validate state
-	state, err := decodeState(req.State)
+	state, err := h.decodeSignedState(req.State)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state"})
 		return
@@ -348,6 +391,10 @@ func (h *OAuthHandler) InstagramCallback(c *gin.Context) {
 	// Check state age
 	if time.Now().Unix()-state.Timestamp > 600 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "state expired"})
+		return
+	}
+	if state.ChannelType != "instagram" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state"})
 		return
 	}
 
@@ -386,15 +433,15 @@ func (h *OAuthHandler) InstagramCallback(c *gin.Context) {
 
 // OAuthCreateChannelRequest represents a request to create a channel from OAuth
 type OAuthCreateChannelRequest struct {
-	Name         string            `json:"name" binding:"required"`
-	Type         string            `json:"type" binding:"required"`
-	PageID       string            `json:"page_id"`
-	AccessToken  string            `json:"access_token" binding:"required"`
-	AppID        string            `json:"app_id" binding:"required"`
-	AppSecret    string            `json:"app_secret" binding:"required"`
-	VerifyToken  string            `json:"verify_token"`
-	InstagramID  string            `json:"instagram_id"`
-	Config       map[string]string `json:"config"`
+	Name        string            `json:"name" binding:"required"`
+	Type        string            `json:"type" binding:"required"`
+	PageID      string            `json:"page_id"`
+	AccessToken string            `json:"access_token" binding:"required"`
+	AppID       string            `json:"app_id" binding:"required"`
+	AppSecret   string            `json:"app_secret" binding:"required"`
+	VerifyToken string            `json:"verify_token"`
+	InstagramID string            `json:"instagram_id"`
+	Config      map[string]string `json:"config"`
 }
 
 // CreateChannel creates a new channel from OAuth credentials
@@ -488,9 +535,9 @@ func (h *OAuthHandler) CreateChannel(c *gin.Context) {
 
 // RefreshTokenRequest represents a request to refresh an access token
 type RefreshTokenRequest struct {
-	ChannelID   string `json:"channel_id" binding:"required"`
-	AppID       string `json:"app_id" binding:"required"`
-	AppSecret   string `json:"app_secret" binding:"required"`
+	ChannelID string `json:"channel_id" binding:"required"`
+	AppID     string `json:"app_id" binding:"required"`
+	AppSecret string `json:"app_secret" binding:"required"`
 }
 
 // RefreshToken refreshes the access token for a channel

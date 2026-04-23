@@ -16,14 +16,23 @@ Channels are integrations with external messaging platforms (WhatsApp, Telegram,
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/channels` | List all channels |
-| GET | `/channels/:id` | Get a specific channel |
 | POST | `/channels` | Create a new channel |
-| PATCH | `/channels/:id` | Update a channel |
+| POST | `/channels/test` | Test channel configuration without creating it |
+| POST | `/channels/test-whatsapp` | Test WhatsApp official configuration |
+| POST | `/channels/test-telegram` | Test Telegram configuration |
+| POST | `/channels/test-twilio` | Test SMS/Twilio configuration |
+| POST | `/channels/test-facebook` | Test Facebook configuration |
+| POST | `/channels/test-instagram` | Test Instagram configuration |
+| GET | `/channels/:id` | Get a specific channel |
+| PUT | `/channels/:id` | Update a channel |
 | DELETE | `/channels/:id` | Delete a channel |
-| POST | `/channels/:id/test` | Test channel connection |
-| POST | `/channels/:id/activate` | Activate a channel |
-| POST | `/channels/:id/deactivate` | Deactivate a channel |
-| GET | `/channels/:id/stats` | Get channel statistics |
+| PUT | `/channels/:id/status` | Set backwards-compatible active/inactive status |
+| PUT | `/channels/:id/enabled` | Enable or disable a channel |
+| POST | `/channels/:id/connect` | Connect a channel |
+| POST | `/channels/:id/disconnect` | Disconnect a channel |
+| POST | `/channels/:id/pair` | Request WhatsApp unofficial pair code |
+| GET | `/channels/:id/coexistence-status` | Get WhatsApp official coexistence status |
+| POST | `/channels/:id/subscribe-echoes` | Subscribe WhatsApp official message echoes |
 
 ---
 
@@ -409,7 +418,7 @@ curl -X POST https://api.linktor.io/v1/channels \
 Update an existing channel.
 
 ```
-PATCH /channels/:id
+PUT /channels/:id
 ```
 
 ### Path Parameters
@@ -424,18 +433,18 @@ PATCH /channels/:id
 |-------|------|-------------|
 | `name` | string | Display name |
 | `config` | object | Configuration updates |
-| `defaultBotId` | string | Default bot ID |
-| `metadata` | object | Custom metadata |
+| `identifier` | string | Channel identifier |
+| `config` | object | Configuration updates |
+| `credentials` | object | Sensitive credential updates |
 
 ### Example Request
 
 ```bash
-curl -X PATCH https://api.linktor.io/v1/channels/ch_abc123 \
+curl -X PUT https://api.linktor.io/v1/channels/ch_abc123 \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "WhatsApp Business - Main",
-    "defaultBotId": "bot_new456"
+    "name": "WhatsApp Business - Main"
   }'
 ```
 
@@ -449,11 +458,7 @@ curl -X PATCH https://api.linktor.io/v1/channels/ch_abc123 \
     "attributes": {
       "name": "WhatsApp Business - Main",
       "channelType": "whatsapp",
-      "status": "active",
-      "defaultBot": {
-        "id": "bot_new456",
-        "name": "New Bot"
-      },
+      "connection_status": "connected",
       "updatedAt": "2024-01-15T12:00:00Z"
     }
   }
@@ -504,154 +509,27 @@ HTTP/1.1 204 No Content
 
 ---
 
-## Test Connection
+## Test Channel Configuration
 
-Test the channel connection and verify credentials.
+Validate credentials and configuration before creating or updating a channel.
 
 ```
-POST /channels/:id/test
+POST /channels/test
 ```
 
-### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | Channel ID |
+Specialized aliases are also available: `/channels/test-whatsapp`, `/channels/test-telegram`, `/channels/test-twilio`, `/channels/test-facebook`, and `/channels/test-instagram`.
 
 ### Example Request
 
 ```bash
-curl -X POST https://api.linktor.io/v1/channels/ch_abc123/test \
-  -H "Authorization: Bearer YOUR_API_KEY"
-```
-
-### Response (Success)
-
-```json
-{
-  "data": {
-    "success": true,
-    "channelId": "ch_abc123",
-    "tests": [
-      {
-        "name": "credentials",
-        "status": "passed",
-        "message": "API credentials are valid"
-      },
-      {
-        "name": "webhook",
-        "status": "passed",
-        "message": "Webhook is reachable"
-      },
-      {
-        "name": "permissions",
-        "status": "passed",
-        "message": "All required permissions granted"
-      }
-    ],
-    "testedAt": "2024-01-15T10:30:00Z"
-  }
-}
-```
-
-### Response (Failure)
-
-```json
-{
-  "data": {
-    "success": false,
-    "channelId": "ch_abc123",
-    "tests": [
-      {
-        "name": "credentials",
-        "status": "passed",
-        "message": "API credentials are valid"
-      },
-      {
-        "name": "webhook",
-        "status": "failed",
-        "message": "Webhook URL returned 404",
-        "details": {
-          "url": "https://api.linktor.io/webhooks/ch_abc123",
-          "statusCode": 404
-        }
-      }
-    ],
-    "testedAt": "2024-01-15T10:30:00Z"
-  }
-}
-```
-
----
-
-## Activate Channel
-
-Enable a channel to start receiving and sending messages.
-
-```
-POST /channels/:id/activate
-```
-
-### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | Channel ID |
-
-### Example Request
-
-```bash
-curl -X POST https://api.linktor.io/v1/channels/ch_abc123/activate \
-  -H "Authorization: Bearer YOUR_API_KEY"
-```
-
-### Response
-
-```json
-{
-  "data": {
-    "id": "ch_abc123",
-    "type": "channel",
-    "attributes": {
-      "status": "active",
-      "activatedAt": "2024-01-15T10:30:00Z"
-    }
-  }
-}
-```
-
----
-
-## Deactivate Channel
-
-Disable a channel. New messages will not be received or sent.
-
-```
-POST /channels/:id/deactivate
-```
-
-### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | Channel ID |
-
-### Request Body
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `reason` | string | No | Reason for deactivation |
-| `closeConversations` | boolean | No | Close active conversations |
-
-### Example Request
-
-```bash
-curl -X POST https://api.linktor.io/v1/channels/ch_abc123/deactivate \
+curl -X POST https://api.linktor.io/v1/channels/test \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "reason": "Maintenance",
-    "closeConversations": false
+    "type": "telegram",
+    "credentials": {
+      "bot_token": "YOUR_BOT_TOKEN"
+    }
   }'
 ```
 
@@ -660,78 +538,67 @@ curl -X POST https://api.linktor.io/v1/channels/ch_abc123/deactivate \
 ```json
 {
   "data": {
-    "id": "ch_abc123",
-    "type": "channel",
-    "attributes": {
-      "status": "inactive",
-      "deactivatedAt": "2024-01-15T10:30:00Z",
-      "deactivationReason": "Maintenance"
-    }
+    "status": "ok",
+    "type": "telegram",
+    "valid": true,
+    "message": "configuration accepted"
   }
 }
 ```
 
 ---
 
-## Get Channel Statistics
+## Connect Channel
 
-Retrieve detailed statistics for a channel.
+Connect a channel to start receiving messages.
 
 ```
-GET /channels/:id/stats
+POST /channels/:id/connect
 ```
 
-### Path Parameters
+## Disconnect Channel
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | Channel ID |
+Disconnect a channel to stop receiving messages.
 
-### Query Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `period` | string | `24h` | Time period: `1h`, `24h`, `7d`, `30d` |
-| `granularity` | string | `hour` | Data granularity: `minute`, `hour`, `day` |
-
-### Example Request
-
-```bash
-curl "https://api.linktor.io/v1/channels/ch_abc123/stats?period=7d&granularity=day" \
-  -H "Authorization: Bearer YOUR_API_KEY"
+```
+POST /channels/:id/disconnect
 ```
 
-### Response
+## Enable Or Disable Channel
+
+Enable or disable a channel at system level without changing its connection session.
+
+```
+PUT /channels/:id/enabled
+```
 
 ```json
 {
-  "data": {
-    "channelId": "ch_abc123",
-    "period": "7d",
-    "summary": {
-      "messagesReceived": 1050,
-      "messagesSent": 980,
-      "conversationsStarted": 150,
-      "conversationsClosed": 120,
-      "avgResponseTime": 45,
-      "avgResolutionTime": 1800
-    },
-    "timeSeries": [
-      {
-        "timestamp": "2024-01-09T00:00:00Z",
-        "messagesReceived": 140,
-        "messagesSent": 130,
-        "conversationsStarted": 20
-      },
-      {
-        "timestamp": "2024-01-10T00:00:00Z",
-        "messagesReceived": 155,
-        "messagesSent": 145,
-        "conversationsStarted": 22
-      }
-    ]
-  }
+  "enabled": true
 }
+```
+
+## WhatsApp Pair Code
+
+Request a pair code for WhatsApp unofficial authentication.
+
+```
+POST /channels/:id/pair
+```
+
+```json
+{
+  "phone_number": "+5511999999999"
+}
+```
+
+## WhatsApp Coexistence
+
+WhatsApp official channels expose coexistence helpers:
+
+```
+GET /channels/:id/coexistence-status
+POST /channels/:id/subscribe-echoes
 ```
 
 ---
@@ -740,10 +607,12 @@ curl "https://api.linktor.io/v1/channels/ch_abc123/stats?period=7d&granularity=d
 
 | Status | Description |
 |--------|-------------|
-| `active` | Channel is operational |
-| `inactive` | Channel is disabled |
+| `connected` | Channel connection is established |
+| `connecting` | Channel is connecting |
+| `disconnected` | Channel is disconnected |
 | `error` | Channel has connection issues |
-| `pending` | Channel setup incomplete |
+| `active` | Backwards-compatible active status |
+| `inactive` | Backwards-compatible inactive status |
 
 ---
 
@@ -752,6 +621,8 @@ curl "https://api.linktor.io/v1/channels/ch_abc123/stats?period=7d&granularity=d
 | Type | Description |
 |------|-------------|
 | `whatsapp` | WhatsApp Business API |
+| `whatsapp_official` | WhatsApp Official / Meta Cloud API |
+| `whatsapp_unofficial` | WhatsApp unofficial session-based channel |
 | `telegram` | Telegram Bot API |
 | `sms` | SMS via Twilio, Vonage, etc. |
 | `email` | Email via SMTP/IMAP |

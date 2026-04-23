@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/pkg/testutil"
@@ -48,6 +50,35 @@ func TestEncodeDecodeState(t *testing.T) {
 	assert.Equal(t, original.ChannelType, decoded.ChannelType)
 	assert.Equal(t, original.RedirectURL, decoded.RedirectURL)
 	assert.Equal(t, original.Timestamp, decoded.Timestamp)
+}
+
+func TestOAuthHandler_SignedStateRejectsTampering(t *testing.T) {
+	handler, _ := setupOAuthTest(t)
+	original := &OAuthState{
+		TenantID:    "tenant-1",
+		UserID:      "user-1",
+		ChannelType: "facebook",
+		RedirectURL: "https://example.com/callback",
+		Timestamp:   time.Now().Unix(),
+	}
+
+	encoded, err := handler.encodeSignedState(original)
+	require.NoError(t, err)
+
+	decoded, err := handler.decodeSignedState(encoded)
+	require.NoError(t, err)
+	assert.Equal(t, original.TenantID, decoded.TenantID)
+
+	tampered := strings.Replace(encoded, "facebook", "instagram", 1)
+	if tampered == encoded {
+		replacement := "0"
+		if strings.HasSuffix(encoded, "0") {
+			replacement = "1"
+		}
+		tampered = encoded[:len(encoded)-1] + replacement
+	}
+	_, err = handler.decodeSignedState(tampered)
+	assert.Error(t, err)
 }
 
 func TestDecodeState_Invalid(t *testing.T) {

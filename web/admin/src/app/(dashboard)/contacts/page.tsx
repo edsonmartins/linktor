@@ -14,6 +14,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -42,6 +49,19 @@ import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { useToast } from '@/hooks/use-toast'
 import type { Contact } from '@/types'
+
+const identityChannelOptions = [
+  'webchat',
+  'whatsapp',
+  'whatsapp_official',
+  'telegram',
+  'sms',
+  'instagram',
+  'facebook',
+  'rcs',
+  'email',
+  'voice',
+] as const
 
 /**
  * Contact Card Component
@@ -148,6 +168,10 @@ export default function ContactsPage() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
+  const [identityForm, setIdentityForm] = useState({
+    channel_type: 'webchat',
+    identifier: '',
+  })
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -216,9 +240,48 @@ export default function ContactsPage() {
     },
   })
 
+  const addIdentityMutation = useMutation({
+    mutationFn: (payload: { contactID: string; channel_type: string; identifier: string }) =>
+      api.post<Contact>(`/contacts/${payload.contactID}/identities`, {
+        channel_type: payload.channel_type,
+        identifier: payload.identifier,
+      }),
+    onSuccess: (updatedContact) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      setSelectedContact(updatedContact)
+      setIdentityForm({ channel_type: 'webchat', identifier: '' })
+      toast({
+        title: tCommon('updated'),
+        description: 'Identity added',
+      })
+    },
+  })
+
+  const removeIdentityMutation = useMutation({
+    mutationFn: (payload: { contactID: string; identityID: string }) =>
+      api.delete<Contact>(`/contacts/${payload.contactID}/identities/${payload.identityID}`),
+    onSuccess: (updatedContact) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      setSelectedContact(updatedContact)
+      toast({
+        title: tCommon('updated'),
+        description: 'Identity removed',
+      })
+    },
+  })
+
   const openCreateDialog = () => {
     resetForm()
     setIsDialogOpen(true)
+  }
+
+  const handleAddIdentity = (contact: Contact) => {
+    if (!identityForm.identifier.trim()) return
+    addIdentityMutation.mutate({
+      contactID: contact.id,
+      channel_type: identityForm.channel_type,
+      identifier: identityForm.identifier.trim(),
+    })
   }
 
   const openEditDialog = (contact: Contact) => {
@@ -425,7 +488,22 @@ export default function ContactsPage() {
                           <Badge variant={identity.channel_type as 'webchat' | undefined || 'secondary'}>
                             {identity.channel_type}
                           </Badge>
-                          <span className="truncate text-muted-foreground">{identity.external_id}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="truncate text-muted-foreground">{identity.external_id}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                removeIdentityMutation.mutate({
+                                  contactID: selectedContact.id,
+                                  identityID: identity.id,
+                                })}
+                              disabled={removeIdentityMutation.isPending}
+                            >
+                              {tCommon('delete')}
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -433,6 +511,35 @@ export default function ContactsPage() {
                 ) : (
                   <p className="text-sm text-muted-foreground">-</p>
                 )}
+                <div className="grid gap-2 rounded-md border border-dashed p-3 sm:grid-cols-[160px_1fr_auto]">
+                  <Select
+                    value={identityForm.channel_type}
+                    onValueChange={(value) => setIdentityForm((current) => ({ ...current, channel_type: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {identityChannelOptions.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    value={identityForm.identifier}
+                    onChange={(e) => setIdentityForm((current) => ({ ...current, identifier: e.target.value }))}
+                    placeholder="Identifier"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => handleAddIdentity(selectedContact)}
+                    disabled={!identityForm.identifier.trim() || addIdentityMutation.isPending}
+                  >
+                    Add
+                  </Button>
+                </div>
               </div>
             </div>
           )}
