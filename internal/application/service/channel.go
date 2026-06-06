@@ -160,15 +160,13 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 // Delete deletes a channel
 func (s *ChannelService) Delete(ctx context.Context, id string) error {
 	// Load first so lifecycle hooks (e.g. outbound sender-cache invalidation)
-	// receive the channel identity after a successful delete.
-	channel, err := s.repo.FindByID(ctx, id)
-	if err != nil {
-		return err
-	}
+	// receive the channel identity. If the lookup fails, fall back to a plain
+	// delete to preserve the repository's idempotent semantics.
+	channel, lookupErr := s.repo.FindByID(ctx, id)
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
-	if s.hooks.OnDeleted != nil {
+	if lookupErr == nil && s.hooks.OnDeleted != nil {
 		s.hooks.OnDeleted(ctx, channel)
 	}
 	return nil
