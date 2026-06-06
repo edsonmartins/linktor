@@ -218,7 +218,7 @@ func TestOrderHandler_ListOrders(t *testing.T) {
 	h := NewOrderHandler(repo)
 
 	w, c := newTestContext(http.MethodGet, "/orders", nil)
-	c.Set("organization_id", "org-1")
+	c.Set("tenant_id", "org-1")
 
 	h.ListOrders(c)
 
@@ -242,7 +242,7 @@ func TestOrderHandler_GetOrder_Found(t *testing.T) {
 	h := NewOrderHandler(repo)
 
 	w, c := newTestContext(http.MethodGet, "/orders/order-1", nil)
-	c.Set("organization_id", "org-1")
+	c.Set("tenant_id", "org-1")
 	c.Params = gin.Params{{Key: "orderId", Value: "order-1"}}
 
 	h.GetOrder(c)
@@ -259,7 +259,7 @@ func TestOrderHandler_GetOrder_NotFound(t *testing.T) {
 	h := NewOrderHandler(repo)
 
 	w, c := newTestContext(http.MethodGet, "/orders/order-999", nil)
-	c.Set("organization_id", "org-1")
+	c.Set("tenant_id", "org-1")
 	c.Params = gin.Params{{Key: "orderId", Value: "order-999"}}
 
 	h.GetOrder(c)
@@ -280,7 +280,7 @@ func TestOrderHandler_UpdateOrderStatus_Valid(t *testing.T) {
 		"status": "confirmed",
 		"notes":  "Order confirmed by admin",
 	})
-	c.Set("organization_id", "org-1")
+	c.Set("tenant_id", "org-1")
 	c.Params = gin.Params{{Key: "orderId", Value: "order-1"}}
 
 	h.UpdateOrderStatus(c)
@@ -299,7 +299,7 @@ func TestOrderHandler_UpdateOrderStatus_InvalidStatus(t *testing.T) {
 	w, c := newTestContext(http.MethodPatch, "/orders/order-1/status", map[string]string{
 		"status": "invalid_status",
 	})
-	c.Set("organization_id", "org-1")
+	c.Set("tenant_id", "org-1")
 	c.Params = gin.Params{{Key: "orderId", Value: "order-1"}}
 
 	h.UpdateOrderStatus(c)
@@ -316,7 +316,7 @@ func TestOrderHandler_UpdateOrderStatus_InvalidBody(t *testing.T) {
 	h := NewOrderHandler(repo)
 
 	w, c := newTestContext(http.MethodPatch, "/orders/order-1/status", nil)
-	c.Set("organization_id", "org-1")
+	c.Set("tenant_id", "org-1")
 	c.Params = gin.Params{{Key: "orderId", Value: "order-1"}}
 
 	h.UpdateOrderStatus(c)
@@ -358,7 +358,7 @@ func TestOrderHandler_GetOrderStats(t *testing.T) {
 	h := NewOrderHandler(repo)
 
 	w, c := newTestContext(http.MethodGet, "/orders/stats", nil)
-	c.Set("organization_id", "org-1")
+	c.Set("tenant_id", "org-1")
 
 	h.GetOrderStats(c)
 
@@ -377,7 +377,7 @@ func TestOrderHandler_CancelOrder_NotFound(t *testing.T) {
 	w, c := newTestContext(http.MethodPost, "/orders/order-999/cancel", map[string]string{
 		"reason": "customer request",
 	})
-	c.Set("organization_id", "org-1")
+	c.Set("tenant_id", "org-1")
 	c.Params = gin.Params{{Key: "orderId", Value: "order-999"}}
 
 	h.CancelOrder(c)
@@ -392,7 +392,7 @@ func TestOrderHandler_UpdateShipping_NotFound(t *testing.T) {
 	w, c := newTestContext(http.MethodPatch, "/orders/order-999/shipping", map[string]string{
 		"tracking_number": "BR123456789",
 	})
-	c.Set("organization_id", "org-1")
+	c.Set("tenant_id", "org-1")
 	c.Params = gin.Params{{Key: "orderId", Value: "order-999"}}
 
 	h.UpdateShipping(c)
