@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="rbacHeader" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0F3460"/>
+      <stop offset="100%" style="stop-color:#1A1A2E"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="400" height="300" rx="14" fill="white"/>
+
+  <!-- Header -->
+  <rect width="400" height="60" rx="14" fill="url(#rbacHeader)"/>
+  <rect y="46" width="400" height="14" fill="url(#rbacHeader)"/>
+  <text x="16" y="28" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="white">Papel: Supervisor</text>
+  <rect x="150" y="16" width="62" height="22" rx="11" fill="rgba(255,255,255,0.18)"/>
+  <text x="181" y="31" font-family="system-ui, sans-serif" font-size="10" fill="white" text-anchor="middle">sistema</text>
+  <text x="384" y="36" font-family="system-ui, sans-serif" font-size="10" fill="rgba(255,255,255,0.7)" text-anchor="end">recurso × ação</text>
+
+  <!-- Column headers -->
+  <g font-family="system-ui, sans-serif" font-size="9" fill="#8B95A2" text-anchor="middle">
+    <text x="110" y="84">read</text>
+    <text x="170" y="84">create</text>
+    <text x="232" y="84">update</text>
+    <text x="294" y="84">delete</text>
+    <text x="356" y="84">manage</text>
+  </g>
+  <text x="16" y="84" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#8B95A2">Recurso</text>
+  <line x1="16" y1="92" x2="384" y2="92" stroke="#F0F2F5" stroke-width="1"/>
+
+  <!-- Rows -->
+  <g font-family="monospace" font-size="10" fill="#1A1A2E">
+    <text x="16" y="116">conversations</text>
+    <text x="16" y="148">contacts</text>
+    <text x="16" y="180">campaigns</text>
+    <text x="16" y="212">templates</text>
+    <text x="16" y="244">analytics</text>
+    <text x="16" y="276">users</text>
+  </g>
+
+  <!-- checkmarks (green) and dashes (grey). cols x: 110,170,232,294,356 ; rows y: 112,144,176,208,240,272 -->
+  <g font-family="system-ui, sans-serif" font-size="13" text-anchor="middle">
+    <!-- conversations: manage -->
+    <text x="110" y="116" fill="#16C79A">✓</text><text x="170" y="116" fill="#16C79A">✓</text><text x="232" y="116" fill="#16C79A">✓</text><text x="294" y="116" fill="#16C79A">✓</text><text x="356" y="116" fill="#16C79A">★</text>
+    <!-- contacts: manage -->
+    <text x="110" y="148" fill="#16C79A">✓</text><text x="170" y="148" fill="#16C79A">✓</text><text x="232" y="148" fill="#16C79A">✓</text><text x="294" y="148" fill="#16C79A">✓</text><text x="356" y="148" fill="#16C79A">★</text>
+    <!-- campaigns: manage -->
+    <text x="110" y="180" fill="#16C79A">✓</text><text x="170" y="180" fill="#16C79A">✓</text><text x="232" y="180" fill="#16C79A">✓</text><text x="294" y="180" fill="#16C79A">✓</text><text x="356" y="180" fill="#16C79A">★</text>
+    <!-- templates: manage -->
+    <text x="110" y="212" fill="#16C79A">✓</text><text x="170" y="212" fill="#16C79A">✓</text><text x="232" y="212" fill="#16C79A">✓</text><text x="294" y="212" fill="#16C79A">✓</text><text x="356" y="212" fill="#16C79A">★</text>
+    <!-- analytics: read only -->
+    <text x="110" y="244" fill="#16C79A">✓</text><text x="170" y="244" fill="#B0B8C4">–</text><text x="232" y="244" fill="#B0B8C4">–</text><text x="294" y="244" fill="#B0B8C4">–</text><text x="356" y="244" fill="#B0B8C4">–</text>
+    <!-- users: read only -->
+    <text x="110" y="276" fill="#16C79A">✓</text><text x="170" y="276" fill="#B0B8C4">–</text><text x="232" y="276" fill="#B0B8C4">–</text><text x="294" y="276" fill="#B0B8C4">–</text><text x="356" y="276" fill="#B0B8C4">–</text>
+  </g>
+
+  <!-- row separators -->
+  <g stroke="#F8F9FB" stroke-width="1">
+    <line x1="16" y1="128" x2="384" y2="128"/>
+    <line x1="16" y1="160" x2="384" y2="160"/>
+    <line x1="16" y1="192" x2="384" y2="192"/>
+    <line x1="16" y1="224" x2="384" y2="224"/>
+    <line x1="16" y1="256" x2="384" y2="256"/>
+  </g>
+</svg>

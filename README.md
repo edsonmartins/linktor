@@ -102,6 +102,10 @@ msgfy (GitHub org: msgfy)
 > entregam pela sessão/conexão viva. Adicionar um canal novo é implementar uma
 > única interface `outbound.Factory`.
 
+<p align="center">
+  <img src="imagens/outbound-architecture.svg" alt="Arquitetura de entrega outbound unificada" width="720"/>
+</p>
+
 ### WhatsApp Coexistence (SMB)
 
 O Linktor suporta **WhatsApp Coexistence**, uma feature crítica que permite uso simultâneo do WhatsApp Business App (celular) + Cloud API (plataforma) **no mesmo número de telefone**.
@@ -303,6 +307,10 @@ PUT /api/v1/vre/config
 
 Disparo de templates para muitos destinatários, com entrega assíncrona sobre NATS.
 
+<p align="center">
+  <img src="imagens/campaign-progress.svg" alt="Tela de progresso de campanha" width="380"/>
+</p>
+
 - **Modelo de fila**: a campanha apenas **enfileira** os destinatários; o _worker_ de outbound entrega, faz retry e atualiza o status por destinatário
 - **Acompanhamento ao vivo**: contadores de enviadas/entregues/leituras/falhas como projeção do status real (correlacionado pelos webhooks de status)
 - **Retry de falhas** e **cancelamento**; _sweep_ periódico reconcilia destinatários presos em `queued`
@@ -320,6 +328,10 @@ GET    /api/v1/campaigns/:id/recipients  # destinatários (filtro ?status=)
 #### 10. RBAC Granular (Papéis Customizados)
 
 Controle de acesso por **recurso × ação**, com papéis customizáveis por tenant.
+
+<p align="center">
+  <img src="imagens/rbac-matrix.svg" alt="Matriz de permissões recurso×ação" width="380"/>
+</p>
 
 - Papéis de sistema (`owner`/`admin`/`supervisor`/`agent`) seedados por tenant + papéis customizados
 - Permissões `resource:action` (ex.: `campaigns:create`, `analytics:read`), com `manage` implicando todas as ações
