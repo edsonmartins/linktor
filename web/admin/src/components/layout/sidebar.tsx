@@ -23,6 +23,10 @@ import {
   FileText,
   Sparkles,
   Megaphone,
+  MessageSquareText,
+  ShieldCheck,
+  SlidersHorizontal,
+  ScrollText,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -81,6 +85,11 @@ const navItems = [
     icon: Megaphone,
   },
   {
+    labelKey: 'cannedResponses',
+    href: '/canned-responses',
+    icon: MessageSquareText,
+  },
+  {
     labelKey: 'vre',
     href: '/vre',
     icon: Sparkles,
@@ -104,6 +113,21 @@ const navItems = [
     labelKey: 'team',
     href: '/users',
     icon: UsersRound,
+  },
+  {
+    labelKey: 'roles',
+    href: '/roles',
+    icon: ShieldCheck,
+  },
+  {
+    labelKey: 'operations',
+    href: '/operations',
+    icon: SlidersHorizontal,
+  },
+  {
+    labelKey: 'audit',
+    href: '/audit-logs',
+    icon: ScrollText,
   },
 ]
 
