@@ -381,6 +381,7 @@ func main() {
 	// actually delivers send_message and campaign messages over the Cloud API.
 	outboundResolver := outbound.NewResolver(channelRepo)
 	outboundResolver.Register(whatsappofficial.NewSenderFactory())
+	outboundResolver.Register(telegram.NewSenderFactory())
 	var outboundWorker *outbound.Worker
 	if consumer != nil && producer != nil {
 		// 80 msg/s/channel ~ WhatsApp Cloud API default throughput tier.
