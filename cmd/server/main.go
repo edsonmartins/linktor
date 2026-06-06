@@ -100,6 +100,7 @@ import (
 	"github.com/msgfy/linktor/internal/infrastructure/database"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	storageLib "github.com/msgfy/linktor/internal/infrastructure/storage"
+	"github.com/msgfy/linktor/internal/outbound"
 	"github.com/msgfy/linktor/internal/whatsapp/analytics"
 	"github.com/msgfy/linktor/internal/whatsapp/calling"
 	"github.com/msgfy/linktor/internal/whatsapp/ctwa"
@@ -374,6 +375,17 @@ func main() {
 	assignmentService := service.NewAssignmentService(assignmentRepo, conversationRepo, tenantSettingsRepo)
 	slaMonitor := service.NewSLAMonitorService(slaRepo, tenantSettingsRepo)
 	campaignService := service.NewCampaignService(campaignRepo, channelRepo, producer)
+
+	// Outbound delivery subsystem: per-channel stateless senders resolved from
+	// (decrypted) credentials, driven by a NATS-backed worker. This is what
+	// actually delivers send_message and campaign messages over the Cloud API.
+	outboundResolver := outbound.NewResolver(channelRepo)
+	outboundResolver.Register(whatsappofficial.NewSenderFactory())
+	var outboundWorker *outbound.Worker
+	if consumer != nil && producer != nil {
+		// 80 msg/s/channel ~ WhatsApp Cloud API default throughput tier.
+		outboundWorker = outbound.NewWorker(consumer, producer, outboundResolver, campaignRepo, 80)
+	}
 
 	// Enable automatic conversation routing on inbound messages.
 	receiveMessageUC.SetAssignmentService(assignmentService)
@@ -678,9 +690,16 @@ func main() {
 
 		// Subscribe to status updates
 		if err := consumer.SubscribeStatus(ctx, func(ctx context.Context, status *nats.StatusUpdate) error {
-			return handleMessageStatusUpdate(ctx, messageRepo, status)
+			return handleMessageStatusUpdate(ctx, messageRepo, campaignRepo, status)
 		}); err != nil {
 			logger.Warn("Failed to subscribe to status updates")
+		}
+
+		// Start the outbound delivery worker.
+		if outboundWorker != nil {
+			if err := outboundWorker.Start(ctx); err != nil {
+				logger.Warn("Failed to start outbound delivery worker: " + err.Error())
+			}
 		}
 
 		// Initialize AI consumer
@@ -1404,9 +1423,39 @@ func toMessageStatus(status string) entity.MessageStatus {
 	}
 }
 
-func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.MessageRepository, status *nats.StatusUpdate) error {
+// toRecipientStatus maps a wire status to a campaign recipient status, or ""
+// when the status is not one tracked per recipient.
+func toRecipientStatus(status string) entity.RecipientStatus {
+	switch status {
+	case "sent":
+		return entity.RecipientSent
+	case "delivered":
+		return entity.RecipientDelivered
+	case "read":
+		return entity.RecipientRead
+	case "failed":
+		return entity.RecipientFailed
+	default:
+		return ""
+	}
+}
+
+func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.MessageRepository, campaignRepo *database.CampaignRepository, status *nats.StatusUpdate) error {
 	if status == nil {
 		return nil
+	}
+
+	// Correlate delivery/read/failed status back to a campaign recipient by the
+	// provider message ID (stored on the recipient when the worker sent it).
+	if campaignRepo != nil {
+		if rs := toRecipientStatus(status.Status); rs != "" {
+			if status.ExternalID != "" {
+				_ = campaignRepo.UpdateRecipientStatusByMessageID(ctx, status.ExternalID, rs)
+			}
+			if status.MessageID != "" && status.MessageID != status.ExternalID {
+				_ = campaignRepo.UpdateRecipientStatusByMessageID(ctx, status.MessageID, rs)
+			}
+		}
 	}
 
 	messageID := status.MessageID

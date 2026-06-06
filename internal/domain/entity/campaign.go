@@ -19,6 +19,7 @@ type RecipientStatus string
 
 const (
 	RecipientPending   RecipientStatus = "pending"
+	RecipientQueued    RecipientStatus = "queued" // published to the delivery worker, not yet sent
 	RecipientSent      RecipientStatus = "sent"
 	RecipientDelivered RecipientStatus = "delivered"
 	RecipientRead      RecipientStatus = "read"

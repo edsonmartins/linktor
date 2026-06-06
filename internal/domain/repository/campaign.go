@@ -22,6 +22,12 @@ type CampaignRepository interface {
 	ListRecipients(ctx context.Context, campaignID string, params *ListParams) ([]*entity.CampaignRecipient, int64, error)
 	// UpdateRecipientStatus sets a recipient's status/messageID/error and bumps attempts.
 	UpdateRecipientStatus(ctx context.Context, recipientID string, status entity.RecipientStatus, messageID, errReason string) error
+	// MarkRecipientQueued moves a recipient to 'queued' without bumping attempts
+	// (enqueue is not a delivery attempt).
+	MarkRecipientQueued(ctx context.Context, recipientID string) error
+	// UpdateRecipientStatusByMessageID updates a recipient by its provider message
+	// ID, used to apply delivery/read status from webhooks. No-op if unmatched.
+	UpdateRecipientStatusByMessageID(ctx context.Context, messageID string, status entity.RecipientStatus) error
 	// ResetFailedRecipients moves failed recipients back to pending for retry; returns count.
 	ResetFailedRecipients(ctx context.Context, campaignID string) (int64, error)
 	// RecountStatuses recomputes the campaign counters from its recipients.

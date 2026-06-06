@@ -134,7 +134,8 @@ func (s *CampaignService) Create(ctx context.Context, tenantID, createdBy string
 	return campaign, nil
 }
 
-// Get returns a campaign scoped to the tenant.
+// Get returns a campaign scoped to the tenant, with counters refreshed from
+// recipient status and completion derived.
 func (s *CampaignService) Get(ctx context.Context, tenantID, id string) (*entity.Campaign, error) {
 	c, err := s.repo.FindByID(ctx, id)
 	if err != nil {
@@ -143,7 +144,7 @@ func (s *CampaignService) Get(ctx context.Context, tenantID, id string) (*entity
 	if c.TenantID != tenantID {
 		return nil, errors.New(errors.ErrCodeNotFound, "campaign not found")
 	}
-	return c, nil
+	return s.deriveStatus(ctx, c), nil
 }
 
 // List returns campaigns for a tenant.
@@ -182,7 +183,7 @@ func (s *CampaignService) Start(ctx context.Context, tenantID, campaignID string
 		return nil, err
 	}
 
-	go s.dispatch(campaign)
+	go s.enqueue(campaign)
 	return campaign, nil
 }
 
@@ -197,8 +198,7 @@ func (s *CampaignService) RetryFailed(ctx context.Context, tenantID, campaignID 
 		return 0, err
 	}
 	if count > 0 {
-		// Skip silently if a dispatch is already running; the reset recipients
-		// will be picked up by that in-flight loop.
+		// Skip if an enqueue is already running; it will pick up the reset rows.
 		if !s.tryAcquire(campaignID) {
 			return count, nil
 		}
@@ -206,7 +206,7 @@ func (s *CampaignService) RetryFailed(ctx context.Context, tenantID, campaignID 
 		campaign.Status = entity.CampaignStatusProcessing
 		campaign.StartedAt = &now
 		_ = s.repo.Update(ctx, campaign)
-		go s.dispatch(campaign)
+		go s.enqueue(campaign)
 	}
 	return count, nil
 }
@@ -221,48 +221,32 @@ func (s *CampaignService) Cancel(ctx context.Context, tenantID, campaignID strin
 	return s.repo.Update(ctx, campaign)
 }
 
-// dispatch runs in the background, publishing one outbound template message per
-// pending recipient through NATS, then recomputes counters.
-func (s *CampaignService) dispatch(campaign *entity.Campaign) {
+// enqueue publishes one outbound template job per pending recipient onto NATS
+// and marks each 'queued'. Actual delivery, retry and per-recipient status are
+// owned by the outbound delivery worker — this service no longer sends inline,
+// so there is no resend loop, cancellation race, or duplicate-dispatch to guard
+// against here. Completion is derived from recipient status (see Get).
+func (s *CampaignService) enqueue(campaign *entity.Campaign) {
 	defer s.release(campaign.ID)
 	ctx := context.Background()
 
 	channel, err := s.channelRepo.FindByID(ctx, campaign.ChannelID)
 	if err != nil {
-		logger.Error("campaign dispatch: channel lookup failed: " + err.Error())
-		s.finish(ctx, campaign, entity.CampaignStatusFailed)
+		logger.Error("campaign enqueue: channel lookup failed: " + err.Error())
 		return
 	}
 
-	// seen guards against infinite loops: if a recipient's status update fails
-	// after a successful publish it stays 'pending' and would be re-selected
-	// forever. Tracking handled IDs lets us stop once a batch makes no progress.
-	seen := make(map[string]bool)
-
 	for {
-		// Honor a cancellation that landed mid-dispatch.
-		if fresh, err := s.repo.FindByID(ctx, campaign.ID); err == nil && fresh.Status == entity.CampaignStatusCancelled {
-			logger.Info("campaign " + campaign.ID + " dispatch stopped: cancelled")
+		recipients, err := s.repo.FindPendingRecipients(ctx, campaign.ID, dispatchBatchSize)
+		if err != nil {
+			logger.Error("campaign enqueue: pending query failed: " + err.Error())
+			return
+		}
+		if len(recipients) == 0 {
 			return
 		}
 
-		recipients, err := s.repo.FindPendingRecipients(ctx, campaign.ID, dispatchBatchSize)
-		if err != nil {
-			logger.Error("campaign dispatch: pending query failed: " + err.Error())
-			break
-		}
-		if len(recipients) == 0 {
-			break
-		}
-
-		progressed := false
 		for _, rec := range recipients {
-			if seen[rec.ID] {
-				continue // already attempted this run; avoid re-sending in a stuck loop
-			}
-			seen[rec.ID] = true
-			progressed = true
-
 			msg := &nats.OutboundMessage{
 				ID:          uuid.New().String(),
 				TenantID:    campaign.TenantID,
@@ -275,23 +259,34 @@ func (s *CampaignService) dispatch(campaign *entity.Campaign) {
 			}
 
 			if err := s.producer.PublishOutbound(ctx, msg); err != nil {
-				_ = s.repo.UpdateRecipientStatus(ctx, rec.ID, entity.RecipientFailed, "", err.Error())
+				// Could not even enqueue: mark failed (retryable via RetryFailed).
+				_ = s.repo.UpdateRecipientStatus(ctx, rec.ID, entity.RecipientFailed, "", "enqueue failed: "+err.Error())
 				continue
 			}
-			_ = s.repo.UpdateRecipientStatus(ctx, rec.ID, entity.RecipientSent, msg.ID, "")
-		}
-
-		_ = s.repo.RecountStatuses(ctx, campaign.ID)
-
-		// Every recipient in this batch was already handled this run but is still
-		// pending (status writes are failing): stop to avoid a hot re-send loop.
-		if !progressed {
-			logger.Error("campaign dispatch: no progress, stopping to avoid resend loop for campaign " + campaign.ID)
-			break
+			// Move out of 'pending' so we don't re-enqueue; the worker will set
+			// the recipient to sent/failed once it actually delivers.
+			_ = s.repo.MarkRecipientQueued(ctx, rec.ID)
 		}
 	}
+}
 
-	s.finish(ctx, campaign, entity.CampaignStatusCompleted)
+// deriveStatus recomputes counters from recipient status and marks a processing
+// campaign completed once no recipient remains pending/queued.
+func (s *CampaignService) deriveStatus(ctx context.Context, campaign *entity.Campaign) *entity.Campaign {
+	_ = s.repo.RecountStatuses(ctx, campaign.ID)
+	fresh, err := s.repo.FindByID(ctx, campaign.ID)
+	if err != nil {
+		return campaign
+	}
+	if fresh.Status == entity.CampaignStatusProcessing &&
+		fresh.TotalRecipients > 0 &&
+		fresh.SentCount+fresh.FailedCount >= fresh.TotalRecipients {
+		now := time.Now()
+		fresh.Status = entity.CampaignStatusCompleted
+		fresh.CompletedAt = &now
+		_ = s.repo.Update(ctx, fresh)
+	}
+	return fresh
 }
 
 // templateMetadata builds the OutboundMessage metadata the WhatsApp adapter
@@ -340,18 +335,3 @@ func buildBodyComponents(params []string) string {
 	return string(raw)
 }
 
-func (s *CampaignService) finish(ctx context.Context, campaign *entity.Campaign, status entity.CampaignStatus) {
-	_ = s.repo.RecountStatuses(ctx, campaign.ID)
-	fresh, err := s.repo.FindByID(ctx, campaign.ID)
-	if err != nil {
-		return
-	}
-	if fresh.Status == entity.CampaignStatusCancelled {
-		return // respect a cancellation that landed mid-dispatch
-	}
-	now := time.Now()
-	fresh.Status = status
-	fresh.CompletedAt = &now
-	_ = s.repo.Update(ctx, fresh)
-	logger.Info("campaign " + campaign.ID + " finished with status " + string(status))
-}

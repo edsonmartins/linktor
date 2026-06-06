@@ -181,6 +181,29 @@ func (r *CampaignRepository) UpdateRecipientStatus(ctx context.Context, recipien
 	return nil
 }
 
+func (r *CampaignRepository) MarkRecipientQueued(ctx context.Context, recipientID string) error {
+	_, err := r.db.Pool.Exec(ctx,
+		`UPDATE campaign_recipients SET status = 'queued' WHERE id = $1 AND status = 'pending'`,
+		recipientID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to mark recipient queued")
+	}
+	return nil
+}
+
+func (r *CampaignRepository) UpdateRecipientStatusByMessageID(ctx context.Context, messageID string, status entity.RecipientStatus) error {
+	if messageID == "" {
+		return nil
+	}
+	_, err := r.db.Pool.Exec(ctx,
+		`UPDATE campaign_recipients SET status = $1 WHERE message_id = $2`,
+		string(status), messageID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to update recipient by message id")
+	}
+	return nil
+}
+
 func (r *CampaignRepository) ResetFailedRecipients(ctx context.Context, campaignID string) (int64, error) {
 	result, err := r.db.Pool.Exec(ctx,
 		`UPDATE campaign_recipients SET status='pending', error_reason=NULL WHERE campaign_id=$1 AND status='failed'`,
