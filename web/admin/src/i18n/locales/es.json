@@ -81,7 +81,8 @@
     "observability": "Observabilidad",
     "team": "Equipo",
     "settings": "Configuración",
-    "logout": "Cerrar sesión"
+    "logout": "Cerrar sesión",
+    "campaigns": "Campañas"
   },
   "auth": {
     "login": "Iniciar sesión",
@@ -1823,5 +1824,34 @@
     "maxLength": "Máximo {max} caracteres",
     "passwordMatch": "Las contraseñas no coinciden",
     "invalidFormat": "Formato inválido"
+  },
+  "campaigns": {
+    "title": "Campañas",
+    "subtitle": "Envíos masivos por plantilla",
+    "newCampaign": "Nueva campaña",
+    "name": "Nombre",
+    "channel": "Canal",
+    "template": "Plantilla",
+    "language": "Idioma",
+    "recipients": "Destinatarios",
+    "status": "Estado",
+    "progress": "Progreso",
+    "sent": "Enviadas",
+    "delivered": "Entregadas",
+    "read": "Leídas",
+    "failed": "Fallidas",
+    "total": "Total",
+    "start": "Iniciar",
+    "retry": "Reintentar fallidas",
+    "cancel": "Cancelar",
+    "created": "Creada",
+    "empty": "Aún no hay campañas",
+    "recipientsHelp": "Uno por línea: teléfono,param1,param2",
+    "phone": "Teléfono",
+    "createTitle": "Nueva campaña",
+    "createCta": "Crear campaña",
+    "backToList": "Volver a campañas",
+    "recipientsList": "Destinatarios",
+    "errorReason": "Error"
   }
 }

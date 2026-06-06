@@ -82,7 +82,8 @@
     "observability": "Observability",
     "team": "Team",
     "settings": "Settings",
-    "logout": "Logout"
+    "logout": "Logout",
+    "campaigns": "Campaigns"
   },
   "auth": {
     "login": "Login",
@@ -1807,5 +1808,34 @@
     "maxLength": "Maximum {max} characters",
     "passwordMatch": "Passwords do not match",
     "invalidFormat": "Invalid format"
+  },
+  "campaigns": {
+    "title": "Campaigns",
+    "subtitle": "Bulk template broadcasts",
+    "newCampaign": "New campaign",
+    "name": "Name",
+    "channel": "Channel",
+    "template": "Template",
+    "language": "Language",
+    "recipients": "Recipients",
+    "status": "Status",
+    "progress": "Progress",
+    "sent": "Sent",
+    "delivered": "Delivered",
+    "read": "Read",
+    "failed": "Failed",
+    "total": "Total",
+    "start": "Start",
+    "retry": "Retry failed",
+    "cancel": "Cancel",
+    "created": "Created",
+    "empty": "No campaigns yet",
+    "recipientsHelp": "One per line: phone,param1,param2",
+    "phone": "Phone",
+    "createTitle": "New campaign",
+    "createCta": "Create campaign",
+    "backToList": "Back to campaigns",
+    "recipientsList": "Recipients",
+    "errorReason": "Error"
   }
 }

@@ -22,6 +22,7 @@ import {
   Activity,
   FileText,
   Sparkles,
+  Megaphone,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -73,6 +74,11 @@ const navItems = [
     labelKey: 'templates',
     href: '/templates',
     icon: FileText,
+  },
+  {
+    labelKey: 'campaigns',
+    href: '/campaigns',
+    icon: Megaphone,
   },
   {
     labelKey: 'vre',

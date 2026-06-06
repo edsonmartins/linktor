@@ -220,6 +220,18 @@ export const queryKeys = {
     stats: (period: string) =>
       [...queryKeys.observability.all, 'stats', period] as const,
   },
+
+  // Campaigns
+  campaigns: {
+    all: ['campaigns'] as const,
+    lists: () => [...queryKeys.campaigns.all, 'list'] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...queryKeys.campaigns.lists(), filters] as const,
+    details: () => [...queryKeys.campaigns.all, 'detail'] as const,
+    detail: (id: string) => [...queryKeys.campaigns.details(), id] as const,
+    recipients: (id: string) =>
+      [...queryKeys.campaigns.detail(id), 'recipients'] as const,
+  },
 }
 
 export { getQueryClient }

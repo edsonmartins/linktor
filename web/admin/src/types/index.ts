@@ -874,3 +874,62 @@ export interface ResetConsumerRequest {
   stream: string
   consumer: string
 }
+
+// Campaigns
+export type CampaignStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type RecipientStatus =
+  | 'pending'
+  | 'queued'
+  | 'sent'
+  | 'delivered'
+  | 'read'
+  | 'failed'
+
+export interface Campaign {
+  id: string
+  tenant_id: string
+  channel_id: string
+  name: string
+  template_name: string
+  template_language: string
+  status: CampaignStatus
+  total_recipients: number
+  sent_count: number
+  delivered_count: number
+  read_count: number
+  failed_count: number
+  scheduled_at?: string
+  started_at?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CampaignRecipient {
+  id: string
+  campaign_id: string
+  contact_id?: string
+  phone: string
+  params?: string[]
+  status: RecipientStatus
+  message_id?: string
+  error_reason?: string
+  attempts: number
+  sent_at?: string
+  created_at: string
+}
+
+export interface CreateCampaignRequest {
+  name: string
+  channel_id: string
+  template_name: string
+  template_language?: string
+  recipients: { phone: string; params?: string[] }[]
+}
