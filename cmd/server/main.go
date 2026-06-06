@@ -383,6 +383,11 @@ func main() {
 	outboundResolver := outbound.NewResolver(channelRepo)
 	outboundResolver.Register(whatsappofficial.NewSenderFactory())
 	outboundResolver.Register(telegram.NewSenderFactory())
+	outboundResolver.Register(sms.NewSenderFactory())
+	outboundResolver.Register(facebook.NewSenderFactory())
+	outboundResolver.Register(instagram.NewSenderFactory())
+	outboundResolver.Register(rcs.NewSenderFactory())
+	outboundResolver.Register(email.NewSenderFactory())
 	var outboundWorker *outbound.Worker
 	if consumer != nil && producer != nil {
 		// 80 msg/s/channel ~ WhatsApp Cloud API default throughput tier.
