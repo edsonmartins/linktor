@@ -135,6 +135,22 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Storage:      jetstream.FileStorage,
 			Replicas:     1,
 		},
+		{
+			Name:        StreamDLQ,
+			Description: "Linktor dead-letter stream for messages that exhausted retries",
+			Subjects: []string{
+				SubjectDLQAll,
+			},
+			Retention:    jetstream.LimitsPolicy, // retain for inspection/replay
+			MaxConsumers: -1,
+			MaxMsgs:      -1,
+			MaxBytes:     128 * 1024 * 1024,  // 128MB
+			MaxAge:       14 * 24 * time.Hour, // 14 days
+			MaxMsgSize:   4 * 1024 * 1024,     // 4MB per message
+			Discard:      jetstream.DiscardOld,
+			Storage:      jetstream.FileStorage,
+			Replicas:     1,
+		},
 	}
 
 	for _, streamCfg := range streams {

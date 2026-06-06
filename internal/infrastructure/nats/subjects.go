@@ -7,7 +7,21 @@ const (
 	StreamMessages = "LINKTOR_MESSAGES"
 	StreamEvents   = "LINKTOR_EVENTS"
 	StreamWebhooks = "LINKTOR_WEBHOOKS"
+	StreamDLQ      = "LINKTOR_DLQ"
 )
+
+// Dead-letter subjects. Messages that exhaust their delivery attempts on any
+// consumer are published here (one subject per consumer name) for inspection
+// and replay instead of being silently dropped.
+const (
+	SubjectDLQAll     = "linktor.dlq.>"
+	SubjectDLQPattern = "linktor.dlq.%s" // %s = consumer name
+)
+
+// SubjectDLQ returns the dead-letter subject for a consumer.
+func SubjectDLQ(consumerName string) string {
+	return fmt.Sprintf(SubjectDLQPattern, consumerName)
+}
 
 // Subject patterns for messages
 const (

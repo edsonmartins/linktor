@@ -211,6 +211,27 @@ func (s *CampaignService) RetryFailed(ctx context.Context, tenantID, campaignID 
 	return count, nil
 }
 
+// SweepStale fails campaign recipients stuck in 'queued' (the delivery worker
+// never confirmed them — exhausted retries, dead-lettered, or worker down),
+// then recomputes the affected campaigns' counters/completion. Intended to run
+// periodically. staleAfter should comfortably exceed the worker's retry window.
+func (s *CampaignService) SweepStale(ctx context.Context, staleAfter time.Duration) (int, error) {
+	campaignIDs, err := s.repo.SweepStaleQueued(ctx, staleAfter)
+	if err != nil {
+		return 0, err
+	}
+	for _, id := range campaignIDs {
+		_ = s.repo.RecountStatuses(ctx, id)
+		if c, err := s.repo.FindByID(ctx, id); err == nil {
+			s.deriveStatus(ctx, c)
+		}
+	}
+	if len(campaignIDs) > 0 {
+		logger.Warn("campaign sweep: failed stale 'queued' recipients in some campaigns")
+	}
+	return len(campaignIDs), nil
+}
+
 // Cancel stops a campaign (pending recipients are left untouched).
 func (s *CampaignService) Cancel(ctx context.Context, tenantID, campaignID string) error {
 	campaign, err := s.Get(ctx, tenantID, campaignID)

@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -212,6 +213,38 @@ func (r *CampaignRepository) ResetFailedRecipients(ctx context.Context, campaign
 		return 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to reset failed recipients")
 	}
 	return result.RowsAffected(), nil
+}
+
+func (r *CampaignRepository) SweepStaleQueued(ctx context.Context, olderThan time.Duration) ([]string, error) {
+	seconds := int(olderThan.Seconds())
+	if seconds <= 0 {
+		seconds = 1
+	}
+	query := `
+		UPDATE campaign_recipients
+		SET status = 'failed', error_reason = 'delivery not confirmed (timed out / retries exhausted)'
+		WHERE status = 'queued'
+		  AND updated_at < NOW() - ($1 * INTERVAL '1 second')
+		RETURNING campaign_id`
+	rows, err := r.db.Pool.Query(ctx, query, seconds)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to sweep stale queued recipients")
+	}
+	defer rows.Close()
+
+	seen := make(map[string]bool)
+	var campaignIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan campaign id")
+		}
+		if !seen[id] {
+			seen[id] = true
+			campaignIDs = append(campaignIDs, id)
+		}
+	}
+	return campaignIDs, nil
 }
 
 func (r *CampaignRepository) RecountStatuses(ctx context.Context, campaignID string) error {

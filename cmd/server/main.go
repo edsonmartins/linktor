@@ -676,6 +676,24 @@ func main() {
 	// Start SLA monitor (auto-close idle conversations, flag first-response breaches).
 	go slaMonitor.Start(ctx, 1*time.Minute)
 
+	// Start campaign sweeper: reconcile recipients stuck in 'queued' (worker never
+	// confirmed them — dead-lettered or down) into 'failed' so they can be retried.
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := campaignService.SweepStale(ctx, 15*time.Minute); err != nil {
+					logger.Warn("campaign sweep failed: " + err.Error())
+				}
+			}
+		}
+	}()
+	logger.Info("Campaign sweeper started (every 5m, stale threshold 15m)")
+
 	var aiConsumer *nats.AIConsumer
 
 	if consumer != nil {

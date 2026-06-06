@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 )
@@ -30,6 +31,10 @@ type CampaignRepository interface {
 	UpdateRecipientStatusByMessageID(ctx context.Context, messageID string, status entity.RecipientStatus) error
 	// ResetFailedRecipients moves failed recipients back to pending for retry; returns count.
 	ResetFailedRecipients(ctx context.Context, campaignID string) (int64, error)
+	// SweepStaleQueued fails recipients stuck in 'queued' longer than olderThan
+	// (the delivery worker never confirmed them — exhausted retries / DLQ / down).
+	// Returns the distinct campaign IDs that were touched.
+	SweepStaleQueued(ctx context.Context, olderThan time.Duration) ([]string, error)
 	// RecountStatuses recomputes the campaign counters from its recipients.
 	RecountStatuses(ctx context.Context, campaignID string) error
 }
