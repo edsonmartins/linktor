@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="opsHeader" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0F3460"/>
+      <stop offset="100%" style="stop-color:#1A1A2E"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="400" height="300" rx="14" fill="white"/>
+
+  <!-- Header -->
+  <rect width="400" height="56" rx="14" fill="url(#opsHeader)"/>
+  <rect y="42" width="400" height="14" fill="url(#opsHeader)"/>
+  <text x="16" y="28" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="white">Operações</text>
+  <text x="16" y="45" font-family="system-ui, sans-serif" font-size="10" fill="rgba(255,255,255,0.7)">Roteamento de conversas e SLA</text>
+
+  <!-- Atribuição card -->
+  <rect x="16" y="72" width="368" height="84" rx="10" fill="#F8F9FB"/>
+  <text x="30" y="94" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#1A1A2E">Atribuição</text>
+
+  <text x="30" y="118" font-family="system-ui, sans-serif" font-size="10" fill="#8B95A2">Estratégia</text>
+  <rect x="200" y="106" width="170" height="22" rx="6" fill="white" stroke="#E5E8ED"/>
+  <text x="212" y="121" font-family="system-ui, sans-serif" font-size="10" fill="#0F3460">Balanceado (menos abertas)</text>
+  <polyline points="356,114 360,119 364,114" fill="none" stroke="#8B95A2" stroke-width="1.5"/>
+
+  <text x="30" y="146" font-family="system-ui, sans-serif" font-size="10" fill="#8B95A2">Atribuir novas conversas automaticamente</text>
+  <!-- toggle ON -->
+  <rect x="338" y="137" width="32" height="16" rx="8" fill="#16C79A"/>
+  <circle cx="362" cy="145" r="6" fill="white"/>
+
+  <!-- SLA card -->
+  <rect x="16" y="166" width="368" height="96" rx="10" fill="#F8F9FB"/>
+  <text x="30" y="188" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#1A1A2E">SLA &amp; auto-close</text>
+
+  <g font-family="system-ui, sans-serif" font-size="10">
+    <text x="30" y="212" fill="#8B95A2">SLA de primeira resposta (min)</text>
+    <rect x="300" y="200" width="70" height="22" rx="6" fill="white" stroke="#E5E8ED"/>
+    <text x="335" y="215" fill="#1A1A2E" text-anchor="middle" font-weight="600">15</text>
+
+    <text x="30" y="238" fill="#8B95A2">SLA de resolução (min)</text>
+    <rect x="300" y="226" width="70" height="22" rx="6" fill="white" stroke="#E5E8ED"/>
+    <text x="335" y="241" fill="#1A1A2E" text-anchor="middle" font-weight="600">240</text>
+
+    <text x="30" y="264" fill="#8B95A2">Auto-fechar após inatividade (min)</text>
+    <rect x="300" y="252" width="70" height="22" rx="6" fill="white" stroke="#E5E8ED"/>
+    <text x="335" y="267" fill="#1A1A2E" text-anchor="middle" font-weight="600">60</text>
+  </g>
+
+  <!-- Save button -->
+  <rect x="290" y="278" width="94" height="16" rx="8" fill="#16C79A"/>
+  <text x="337" y="290" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="white" text-anchor="middle">Salvar</text>
+</svg>

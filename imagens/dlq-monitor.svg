@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="280" viewBox="0 0 400 280" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="dlqHeader" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0F3460"/>
+      <stop offset="100%" style="stop-color:#1A1A2E"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="400" height="280" rx="14" fill="white"/>
+
+  <!-- Header -->
+  <rect width="400" height="56" rx="14" fill="url(#dlqHeader)"/>
+  <rect y="42" width="400" height="14" fill="url(#dlqHeader)"/>
+  <text x="16" y="28" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="white">Observabilidade · Fila</text>
+  <text x="16" y="45" font-family="system-ui, sans-serif" font-size="10" fill="rgba(255,255,255,0.7)">Streams NATS JetStream</text>
+
+  <!-- Stream rows -->
+  <g font-family="system-ui, sans-serif">
+    <!-- LINKTOR_MESSAGES -->
+    <rect x="16" y="72" width="368" height="40" rx="10" fill="#F8F9FB"/>
+    <circle cx="34" cy="92" r="5" fill="#16C79A"/>
+    <text x="48" y="90" font-family="monospace" font-size="10" font-weight="600" fill="#1A1A2E">LINKTOR_MESSAGES</text>
+    <text x="48" y="104" font-size="8.5" fill="#8B95A2">inbound · outbound · status</text>
+    <text x="372" y="89" font-size="13" font-weight="700" fill="#1A1A2E" text-anchor="end">12.480</text>
+    <text x="372" y="103" font-size="8" fill="#8B95A2" text-anchor="end">msgs</text>
+
+    <!-- LINKTOR_EVENTS -->
+    <rect x="16" y="118" width="368" height="40" rx="10" fill="#F8F9FB"/>
+    <circle cx="34" cy="138" r="5" fill="#16C79A"/>
+    <text x="48" y="136" font-family="monospace" font-size="10" font-weight="600" fill="#1A1A2E">LINKTOR_EVENTS</text>
+    <text x="48" y="150" font-size="8.5" fill="#8B95A2">eventos de sistema</text>
+    <text x="372" y="135" font-size="13" font-weight="700" fill="#1A1A2E" text-anchor="end">3.902</text>
+    <text x="372" y="149" font-size="8" fill="#8B95A2" text-anchor="end">msgs</text>
+
+    <!-- LINKTOR_WEBHOOKS -->
+    <rect x="16" y="164" width="368" height="40" rx="10" fill="#F8F9FB"/>
+    <circle cx="34" cy="184" r="5" fill="#16C79A"/>
+    <text x="48" y="182" font-family="monospace" font-size="10" font-weight="600" fill="#1A1A2E">LINKTOR_WEBHOOKS</text>
+    <text x="48" y="196" font-size="8.5" fill="#8B95A2">entrega de webhooks</text>
+    <text x="372" y="181" font-size="13" font-weight="700" fill="#1A1A2E" text-anchor="end">214</text>
+    <text x="372" y="195" font-size="8" fill="#8B95A2" text-anchor="end">msgs</text>
+
+    <!-- LINKTOR_DLQ (highlighted) -->
+    <rect x="16" y="210" width="368" height="46" rx="10" fill="#FDECEF" stroke="#E94560"/>
+    <circle cx="34" cy="233" r="5" fill="#E94560"/>
+    <text x="48" y="229" font-family="monospace" font-size="10" font-weight="700" fill="#E94560">LINKTOR_DLQ</text>
+    <text x="48" y="244" font-size="8.5" fill="#92400E">dead-letter · retido 14d · inspeção/replay</text>
+    <text x="372" y="230" font-size="14" font-weight="700" fill="#E94560" text-anchor="end">7</text>
+    <text x="372" y="244" font-size="8" fill="#92400E" text-anchor="end">a revisar</text>
+  </g>
+</svg>

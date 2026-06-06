@@ -30,6 +30,22 @@
 
 ---
 
+### ✨ Destaques desta versão
+
+| Recurso | O que é |
+|---------|---------|
+| 📣 **Campanhas em massa** | Disparo de templates com entrega assíncrona, progresso ao vivo, retry e DLQ |
+| 🔐 **RBAC granular** | Papéis customizados por tenant (recurso × ação) com cache no Redis |
+| 🎯 **Atribuição + SLA** | Roteamento automático (round-robin/balanceado) + breach de SLA e auto-close |
+| ⚡ **Respostas rápidas** | Atalhos `/comando` com placeholders e contador de uso |
+| 📜 **Trilha de auditoria** | Registro automático de toda mutação relevante de segurança |
+| 🔑 **Criptografia em repouso** | Credenciais cifradas (AES-256-GCM) com rotação de chave sem downtime |
+| 🚚 **Entrega unificada** | Um worker para todos os canais — stateless e stateful — com DLQ e rate-limit |
+
+> Histórico completo em [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## Sobre
 
 **Linktor** é uma plataforma B2B de mensageria multicanal, open source e extensível via plugins, que unifica a comunicação de empresas com seus clientes através de múltiplos canais em uma única interface. O projeto resolve o problema da fragmentação de canais, permitindo que equipes de atendimento gerenciem conversas de WhatsApp, Telegram, SMS, WebChat, Instagram e Facebook Messenger em um só lugar.
@@ -351,6 +367,10 @@ DELETE /api/v1/roles/:id       # excluir (apenas customizados)
 
 Roteamento de conversas e enforcement de SLA por tenant.
 
+<p align="center">
+  <img src="imagens/operations-sla.svg" alt="Página de Operações: atribuição e SLA" width="380"/>
+</p>
+
 - **Estratégias de atribuição**: `manual`, `round_robin`, `load_balanced` (menos conversas abertas) — aplicado na entrada de mensagens
 - **SLA & auto-close**: _ticker_ marca _breach_ de primeira resposta e auto-fecha conversas ociosas conforme os limites configurados
 - **UI**: página de Operações (estratégia, auto-assign, limites de SLA/auto-close)
@@ -377,6 +397,10 @@ DELETE /api/v1/canned-responses/:id            # excluir
 
 Registro de toda mutação relevante de segurança.
 
+<p align="center">
+  <img src="imagens/audit-log.svg" alt="Trilha de auditoria" width="380"/>
+</p>
+
 - Middleware deriva **ação/recurso** da rota (ex.: `channel.create`, `contact.delete`), cobrindo channels/contacts/users/tenant automaticamente
 - Handlers especializados (campanhas, papéis, settings, canned) gravam registros mais ricos
 - **UI**: trilha read-only paginada com filtros por ação/recurso
@@ -400,6 +424,10 @@ O monitor de fila (Observability) lista os streams JetStream, incluindo a
 **`LINKTOR_DLQ`**: mensagens que esgotam as tentativas em qualquer _consumer_
 são _dead-lettered_ (em vez de loop ou descarte silencioso) e ficam retidas
 para inspeção/replay.
+
+<p align="center">
+  <img src="imagens/dlq-monitor.svg" alt="Monitor de fila com a DLQ" width="380"/>
+</p>
 
 ---
 
