@@ -172,7 +172,8 @@ func main() {
 	}
 
 	// Initialize the secret-at-rest encryptor for channel credentials/tokens.
-	encryptor, err := crypto.NewEncryptor(cfg.Crypto.EncryptionKey)
+	// Previous keys are accepted for decryption during a key rotation.
+	encryptor, err := crypto.NewEncryptorWithKeys(cfg.Crypto.EncryptionKey, cfg.Crypto.PreviousKeys...)
 	if err != nil {
 		logger.Fatal("Failed to initialize crypto encryptor: " + err.Error())
 	}
@@ -932,6 +933,7 @@ func main() {
 				channels.GET("", channelHandler.List)
 				channels.POST("", channelHandler.Create)
 				// Specific routes must come before generic /:id
+				channels.POST("/reencrypt", authMiddleware.RequireRole("admin", "owner"), channelHandler.Reencrypt)
 				channels.POST("/test", channelHandler.TestConnection)
 				channels.POST("/test-whatsapp", channelHandler.TestWhatsAppConnection)
 				channels.POST("/test-telegram", channelHandler.TestTelegramConnection)

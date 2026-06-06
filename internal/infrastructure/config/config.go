@@ -18,11 +18,12 @@ type Config struct {
 	Crypto   CryptoConfig   `mapstructure:"crypto"`
 }
 
-// CryptoConfig holds secret-at-rest encryption configuration. The key is used
-// to derive an AES-256 key for encrypting channel credentials and provider
-// access tokens stored in the database.
+// CryptoConfig holds secret-at-rest encryption configuration. EncryptionKey is
+// the primary key (used to encrypt). PreviousKeys are older keys still accepted
+// for decryption during a rotation, until everything has been re-encrypted.
 type CryptoConfig struct {
-	EncryptionKey string `mapstructure:"encryption_key"`
+	EncryptionKey string   `mapstructure:"encryption_key"`
+	PreviousKeys  []string `mapstructure:"previous_keys"`
 }
 
 // ServerConfig holds HTTP server configuration

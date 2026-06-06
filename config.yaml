@@ -36,11 +36,15 @@ jwt:
   issuer: "linktor"
 
 crypto:
-  # Key used to derive the AES-256 key that encrypts channel credentials and
-  # provider access tokens at rest. MUST be changed and >= 32 chars in release.
-  # Override via LINKTOR_CRYPTO_ENCRYPTION_KEY. Rotating this key makes existing
-  # encrypted secrets unreadable until they are re-saved.
+  # Primary key used to derive the AES-256 key that encrypts channel credentials
+  # and provider access tokens at rest. MUST be changed and >= 32 chars in
+  # release. Override via LINKTOR_CRYPTO_ENCRYPTION_KEY.
   encryption_key: "change-me-in-production-use-strong-secret"
+  # Rotation: keep the OLD key(s) here after promoting a new encryption_key, so
+  # existing secrets stay decryptable. Then call POST /api/v1/channels/reencrypt
+  # (per tenant) to re-encrypt everything with the new key, and remove the old
+  # key from this list.
+  previous_keys: []
 
 log:
   level: "debug"   # debug, info, warn, error

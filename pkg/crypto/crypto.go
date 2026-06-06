@@ -26,31 +26,53 @@ const encPrefix = "enc:v1:"
 // cannot be decoded or authenticated (wrong key, tampering, truncation).
 var ErrInvalidCiphertext = errors.New("crypto: invalid ciphertext")
 
-// Encryptor encrypts and decrypts short secret strings.
+// Encryptor encrypts and decrypts short secret strings. It encrypts with a
+// single primary key but can decrypt with any of several keys, which makes
+// key rotation non-destructive: set the new key as primary and the old one as
+// a previous key, then re-encrypt at leisure.
 type Encryptor struct {
-	gcm cipher.AEAD
+	gcm      cipher.AEAD   // primary: used for Encrypt and tried first on Decrypt
+	previous []cipher.AEAD // older keys, tried on Decrypt only
 }
 
-// NewEncryptor derives a 256-bit key from the supplied secret (SHA-256) and
-// returns an Encryptor. The secret should be a high-entropy value of at least
-// 16 characters; shorter secrets are rejected to avoid trivially weak keys.
-func NewEncryptor(secret string) (*Encryptor, error) {
+func aeadFromSecret(secret string) (cipher.AEAD, error) {
 	if len(strings.TrimSpace(secret)) < 16 {
 		return nil, errors.New("crypto: encryption key must be at least 16 characters")
 	}
-
 	key := sha256.Sum256([]byte(secret))
 	block, err := aes.NewCipher(key[:])
 	if err != nil {
 		return nil, err
 	}
+	return cipher.NewGCM(block)
+}
 
-	gcm, err := cipher.NewGCM(block)
+// NewEncryptor derives a 256-bit key from the supplied secret (SHA-256) and
+// returns an Encryptor with no rotation keys.
+func NewEncryptor(secret string) (*Encryptor, error) {
+	return NewEncryptorWithKeys(secret)
+}
+
+// NewEncryptorWithKeys returns an Encryptor that encrypts with primary and can
+// also decrypt values produced by any of the previous keys (for rotation).
+// Blank previous keys are ignored.
+func NewEncryptorWithKeys(primary string, previous ...string) (*Encryptor, error) {
+	gcm, err := aeadFromSecret(primary)
 	if err != nil {
 		return nil, err
 	}
-
-	return &Encryptor{gcm: gcm}, nil
+	e := &Encryptor{gcm: gcm}
+	for _, p := range previous {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		prev, err := aeadFromSecret(p)
+		if err != nil {
+			return nil, err
+		}
+		e.previous = append(e.previous, prev)
+	}
+	return e, nil
 }
 
 // IsEncrypted reports whether a value was produced by Encrypt.
@@ -91,18 +113,48 @@ func (e *Encryptor) Decrypt(value string) (string, error) {
 		return "", ErrInvalidCiphertext
 	}
 
-	nonceSize := e.gcm.NonceSize()
-	if len(raw) < nonceSize {
-		return "", ErrInvalidCiphertext
+	// Try the primary key first, then any rotation keys.
+	for _, gcm := range append([]cipher.AEAD{e.gcm}, e.previous...) {
+		nonceSize := gcm.NonceSize()
+		if len(raw) < nonceSize {
+			continue
+		}
+		nonce, ciphertext := raw[:nonceSize], raw[nonceSize:]
+		if plaintext, err := gcm.Open(nil, nonce, ciphertext, nil); err == nil {
+			return string(plaintext), nil
+		}
 	}
+	return "", ErrInvalidCiphertext
+}
 
-	nonce, ciphertext := raw[:nonceSize], raw[nonceSize:]
-	plaintext, err := e.gcm.Open(nil, nonce, ciphertext, nil)
+// NeedsReencrypt reports whether a value is encrypted but only decryptable with
+// a previous (rotation) key — i.e. it should be re-encrypted with the primary
+// key. Returns false for plaintext, primary-key values, and undecryptable values.
+func (e *Encryptor) NeedsReencrypt(value string) bool {
+	if !IsEncrypted(value) || len(e.previous) == 0 {
+		return false
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(value, encPrefix))
 	if err != nil {
-		return "", ErrInvalidCiphertext
+		return false
 	}
-
-	return string(plaintext), nil
+	nonceSize := e.gcm.NonceSize()
+	if len(raw) >= nonceSize {
+		if _, err := e.gcm.Open(nil, raw[:nonceSize], raw[nonceSize:], nil); err == nil {
+			return false // already primary
+		}
+	}
+	// Decryptable with a previous key?
+	for _, gcm := range e.previous {
+		ns := gcm.NonceSize()
+		if len(raw) < ns {
+			continue
+		}
+		if _, err := gcm.Open(nil, raw[:ns], raw[ns:], nil); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // EncryptMap returns a copy of m with every value encrypted. The input is not

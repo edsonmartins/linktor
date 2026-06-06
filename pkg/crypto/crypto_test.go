@@ -83,6 +83,64 @@ func TestDecryptWrongKeyFails(t *testing.T) {
 	}
 }
 
+func TestRotationDecryptsWithPreviousKey(t *testing.T) {
+	oldKey := "old-encryption-key-32-characters!!"
+	newKey := "new-encryption-key-32-characters!!"
+
+	// Encrypt with the old key.
+	oldEnc, err := NewEncryptor(oldKey)
+	if err != nil {
+		t.Fatalf("NewEncryptor(old): %v", err)
+	}
+	ciphertext, _ := oldEnc.Encrypt("secret-token")
+
+	// New encryptor: primary=new, previous=[old].
+	rotated, err := NewEncryptorWithKeys(newKey, oldKey)
+	if err != nil {
+		t.Fatalf("NewEncryptorWithKeys: %v", err)
+	}
+
+	// Can still decrypt the old-key value.
+	got, err := rotated.Decrypt(ciphertext)
+	if err != nil || got != "secret-token" {
+		t.Fatalf("rotation decrypt failed: got %q err %v", got, err)
+	}
+
+	// And it flags it as needing re-encryption.
+	if !rotated.NeedsReencrypt(ciphertext) {
+		t.Fatal("old-key value should need re-encryption")
+	}
+
+	// After re-encrypting, it's on the primary key and no longer flagged.
+	reenc, _ := rotated.Encrypt(got)
+	if rotated.NeedsReencrypt(reenc) {
+		t.Fatal("primary-key value must not need re-encryption")
+	}
+	if again, _ := rotated.Decrypt(reenc); again != "secret-token" {
+		t.Fatalf("re-encrypted round trip failed: %q", again)
+	}
+}
+
+func TestNeedsReencryptFalseWithoutPreviousKeys(t *testing.T) {
+	e := newTestEncryptor(t)
+	ct, _ := e.Encrypt("x")
+	if e.NeedsReencrypt(ct) {
+		t.Fatal("no previous keys => never needs re-encrypt")
+	}
+	if e.NeedsReencrypt("plaintext") {
+		t.Fatal("plaintext never needs re-encrypt")
+	}
+}
+
+func TestRotationUnknownKeyStillFails(t *testing.T) {
+	enc, _ := NewEncryptorWithKeys("primary-key-32-characters-long!!", "previous-key-32-characters-long!")
+	other, _ := NewEncryptor("a-totally-unrelated-key-32-chars!")
+	ct, _ := other.Encrypt("secret")
+	if _, err := enc.Decrypt(ct); err != ErrInvalidCiphertext {
+		t.Fatalf("expected ErrInvalidCiphertext for unknown key, got %v", err)
+	}
+}
+
 func TestEncryptKeysOnlyTouchesListed(t *testing.T) {
 	e := newTestEncryptor(t)
 	in := map[string]string{
