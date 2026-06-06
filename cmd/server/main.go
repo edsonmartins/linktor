@@ -388,6 +388,11 @@ func main() {
 	outboundResolver.Register(instagram.NewSenderFactory())
 	outboundResolver.Register(rcs.NewSenderFactory())
 	outboundResolver.Register(email.NewSenderFactory())
+	// Stateful channels deliver through their live plugin adapter (whatsmeow
+	// session / webchat WebSocket hub) but ride the same unified worker.
+	outboundResolver.Register(outbound.NewPluginSenderFactory("webchat", plugin.GetGlobalRegistry()))
+	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp", plugin.GetGlobalRegistry()))
+	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp_unofficial", plugin.GetGlobalRegistry()))
 	var outboundWorker *outbound.Worker
 	if consumer != nil && producer != nil {
 		// 80 msg/s/channel ~ WhatsApp Cloud API default throughput tier.

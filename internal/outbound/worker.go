@@ -148,6 +148,7 @@ func translate(raw *nats.OutboundMessage) *Message {
 		To:                  raw.RecipientID,
 		CampaignID:          meta["campaign_id"],
 		CampaignRecipientID: meta["campaign_recipient_id"],
+		Metadata:            meta,
 	}
 
 	switch raw.ContentType {

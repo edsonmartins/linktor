@@ -63,11 +63,16 @@ func (s *emailSender) Send(ctx context.Context, msg *outbound.Message) (*outboun
 	return &outbound.Receipt{ProviderMessageID: id}, nil
 }
 
-// emailSubjectBody derives a subject and text body from the content. The
-// outbound model carries no subject, so a generic default is used; richer
-// subject handling can be added if the typed model grows a field for it.
+// emailSubjectBody derives the subject (from the "subject"/"email_subject"
+// metadata, defaulting to "Message") and a text body from the content.
 func emailSubjectBody(msg *outbound.Message) (subject, body string) {
-	subject = "Message"
+	subject = msg.Meta("subject")
+	if subject == "" {
+		subject = msg.Meta("email_subject")
+	}
+	if subject == "" {
+		subject = "Message"
+	}
 
 	switch c := msg.Content.(type) {
 	case outbound.Text:

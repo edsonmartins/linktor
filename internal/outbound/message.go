@@ -80,4 +80,16 @@ type Message struct {
 	CampaignRecipientID string
 	// CampaignID, when set, lets the worker honor a campaign cancellation.
 	CampaignID string
+
+	// Metadata carries the original transport-level metadata for channel-specific
+	// fields that don't fit the typed content (e.g. an email subject).
+	Metadata map[string]string
+}
+
+// Meta returns the metadata value for key, or "" when absent.
+func (m *Message) Meta(key string) string {
+	if m.Metadata == nil {
+		return ""
+	}
+	return m.Metadata[key]
 }
