@@ -2,10 +2,12 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/msgfy/linktor/internal/outbound"
 )
 
@@ -45,11 +47,28 @@ func (s *telegramSender) Send(ctx context.Context, msg *outbound.Message) (*outb
 
 	providerID, err := s.dispatch(chatID, msg.Content)
 	if err != nil {
-		// Telegram client errors are treated as transient (retried via NATS);
-		// payload-level problems are surfaced as Permanent in dispatch.
-		return nil, err
+		return nil, classifyError(err)
 	}
 	return &outbound.Receipt{ProviderMessageID: providerID}, nil
+}
+
+// classifyError marks Telegram failures as permanent when the Bot API returned
+// a 4xx that is not a rate limit (bad chat, blocked bot, bad payload). 429 and
+// 5xx stay transient for NATS/DLQ retry. Already-permanent errors pass through.
+func classifyError(err error) error {
+	if outbound.IsPermanent(err) {
+		return err
+	}
+	var tgErr *tgbotapi.Error
+	if errors.As(err, &tgErr) {
+		if tgErr.Code == 429 || tgErr.Code >= 500 {
+			return err // transient
+		}
+		if tgErr.Code >= 400 {
+			return outbound.Permanent(err) // 4xx (non-rate-limit) → permanent
+		}
+	}
+	return err // network/unknown → transient
 }
 
 func (s *telegramSender) dispatch(chatID int64, content outbound.Content) (string, error) {

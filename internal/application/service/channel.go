@@ -58,6 +58,7 @@ type ChannelLifecycleHooks struct {
 	OnConnected    func(ctx context.Context, channel *entity.Channel)
 	OnDisconnected func(ctx context.Context, channel *entity.Channel)
 	OnUpdated      func(ctx context.Context, channel *entity.Channel)
+	OnDeleted      func(ctx context.Context, channel *entity.Channel)
 }
 
 // ChannelService handles channel operations
@@ -158,7 +159,19 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 
 // Delete deletes a channel
 func (s *ChannelService) Delete(ctx context.Context, id string) error {
-	return s.repo.Delete(ctx, id)
+	// Load first so lifecycle hooks (e.g. outbound sender-cache invalidation)
+	// receive the channel identity after a successful delete.
+	channel, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+	if s.hooks.OnDeleted != nil {
+		s.hooks.OnDeleted(ctx, channel)
+	}
+	return nil
 }
 
 // UpdateEnabled updates the channel enabled state

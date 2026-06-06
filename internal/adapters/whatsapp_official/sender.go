@@ -3,6 +3,7 @@ package whatsapp_official
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/msgfy/linktor/internal/outbound"
@@ -58,12 +59,30 @@ func (s *cloudSender) Send(ctx context.Context, msg *outbound.Message) (*outboun
 
 	resp, err := s.dispatch(ctx, msg)
 	if err != nil {
-		return nil, err
+		return nil, classifyError(err)
 	}
 	if resp == nil || len(resp.Messages) == 0 {
 		return nil, outbound.Permanentf("provider returned no message ID")
 	}
 	return &outbound.Receipt{ProviderMessageID: resp.Messages[0].ID}, nil
+}
+
+// classifyError marks Cloud API failures as permanent (do not retry) when Meta
+// returned a 4xx that is not a rate limit — invalid template, bad recipient,
+// auth. Rate limits and 5xx stay transient so NATS/DLQ retry handles them.
+// Errors already tagged permanent (payload validation) pass through unchanged.
+func classifyError(err error) error {
+	if outbound.IsPermanent(err) {
+		return err
+	}
+	var apiErr *APIRequestError
+	if errors.As(err, &apiErr) {
+		if apiErr.IsRateLimitError() || apiErr.StatusCode >= 500 {
+			return err // transient
+		}
+		return outbound.Permanent(err) // 4xx (non-rate-limit) → permanent
+	}
+	return err // network/unknown → transient
 }
 
 func (s *cloudSender) dispatch(ctx context.Context, msg *outbound.Message) (*SendMessageResponse, error) {

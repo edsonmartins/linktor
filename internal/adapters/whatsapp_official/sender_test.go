@@ -2,10 +2,33 @@ package whatsapp_official
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/msgfy/linktor/internal/outbound"
 )
+
+func TestClassifyError(t *testing.T) {
+	cases := []struct {
+		name      string
+		err       error
+		permanent bool
+	}{
+		{"4xx invalid template", &APIRequestError{StatusCode: 400}, true},
+		{"401 auth", &APIRequestError{StatusCode: 401}, true},
+		{"429 rate limit", &APIRequestError{StatusCode: 429}, false},
+		{"500 server", &APIRequestError{StatusCode: 500}, false},
+		{"network", errors.New("request failed"), false},
+		{"already permanent", outbound.Permanentf("bad payload"), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := outbound.IsPermanent(classifyError(c.err)); got != c.permanent {
+				t.Fatalf("classifyError(%v) permanent=%v, want %v", c.err, got, c.permanent)
+			}
+		})
+	}
+}
 
 func TestSenderFactoryRequiresCredentials(t *testing.T) {
 	f := NewSenderFactory()

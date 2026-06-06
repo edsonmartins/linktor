@@ -572,6 +572,7 @@ func main() {
 	settingsHandler := handlers.NewSettingsHandler(settingsService, assignmentService, auditService)
 	campaignHandler := handlers.NewCampaignHandler(campaignService, auditService)
 	permission := middleware.NewPermissionMiddleware(roleService)
+	auditMw := middleware.NewAuditMiddleware(auditService)
 
 	// Create Order handler (commerce)
 	orderHandler := handlers.NewOrderHandler(orderRepo)
@@ -583,12 +584,18 @@ func main() {
 			registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
 		},
 		OnUpdated: func(ctx context.Context, channel *entity.Channel) {
+			// Credentials may have changed: drop the cached outbound sender.
+			outboundResolver.Invalidate(channel.ID)
 			if channel.IsConnected() {
 				registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
 			}
 		},
 		OnDisconnected: func(ctx context.Context, channel *entity.Channel) {
+			outboundResolver.Invalidate(channel.ID)
 			unregisterWhatsAppAdvancedClient(channel.ID, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
+		},
+		OnDeleted: func(ctx context.Context, channel *entity.Channel) {
+			outboundResolver.Invalidate(channel.ID)
 		},
 	})
 
@@ -881,7 +888,7 @@ func main() {
 
 			// Tenant/Organization
 			protected.GET("/tenant", tenantHandler.Get)
-			protected.PUT("/tenant", authMiddleware.RequireRole("admin", "owner"), tenantHandler.Update)
+			protected.PUT("/tenant", authMiddleware.RequireRole("admin", "owner"), auditMw.Record(), tenantHandler.Update)
 			protected.GET("/tenant/usage", tenantHandler.GetUsage)
 
 			// Conversations
@@ -907,6 +914,7 @@ func main() {
 
 			// Contacts
 			contacts := protected.Group("/contacts")
+			contacts.Use(auditMw.Record())
 			{
 				contacts.GET("", contactHandler.List)
 				contacts.POST("", contactHandler.Create)
@@ -919,6 +927,7 @@ func main() {
 
 			// Channels
 			channels := protected.Group("/channels")
+			channels.Use(auditMw.Record())
 			{
 				channels.GET("", channelHandler.List)
 				channels.POST("", channelHandler.Create)
@@ -1161,6 +1170,7 @@ func main() {
 			// User management (admin only)
 			users := protected.Group("/users")
 			users.Use(authMiddleware.RequireRole("admin", "owner"))
+			users.Use(auditMw.Record())
 			{
 				users.GET("", userHandler.List)
 				users.POST("", userHandler.Create)
