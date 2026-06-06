@@ -10,27 +10,35 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/pkg/crypto"
 	"github.com/msgfy/linktor/pkg/errors"
 )
 
 // ChannelRepository implements repository.ChannelRepository with PostgreSQL
 type ChannelRepository struct {
-	db *PostgresDB
+	db  *PostgresDB
+	enc *crypto.Encryptor // optional; encrypts credentials/secret config keys at rest
 }
 
-// NewChannelRepository creates a new PostgreSQL channel repository
-func NewChannelRepository(db *PostgresDB) *ChannelRepository {
-	return &ChannelRepository{db: db}
+// NewChannelRepository creates a new PostgreSQL channel repository.
+// enc may be nil, in which case secrets are stored as-is (no encryption).
+func NewChannelRepository(db *PostgresDB, enc *crypto.Encryptor) *ChannelRepository {
+	return &ChannelRepository{db: db, enc: enc}
 }
 
 // Create creates a new channel
 func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel) error {
-	credentials, err := json.Marshal(channel.Credentials)
+	encCreds, encConfig, err := r.encryptChannelSecrets(channel)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to encrypt channel secrets")
+	}
+
+	credentials, err := json.Marshal(encCreds)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal credentials")
 	}
 
-	config, err := json.Marshal(channel.Config)
+	config, err := json.Marshal(encConfig)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal config")
 	}
@@ -223,12 +231,17 @@ func (r *ChannelRepository) FindActiveByTenant(ctx context.Context, tenantID str
 func (r *ChannelRepository) Update(ctx context.Context, channel *entity.Channel) error {
 	channel.UpdatedAt = time.Now()
 
-	credentials, err := json.Marshal(channel.Credentials)
+	encCreds, encConfig, err := r.encryptChannelSecrets(channel)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to encrypt channel secrets")
+	}
+
+	credentials, err := json.Marshal(encCreds)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal credentials")
 	}
 
-	config, err := json.Marshal(channel.Config)
+	config, err := json.Marshal(encConfig)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal config")
 	}
@@ -477,6 +490,10 @@ func (r *ChannelRepository) scanChannel(row pgx.Row) (*entity.Channel, error) {
 		c.Config = make(map[string]string)
 	}
 
+	if err := r.decryptChannelSecrets(&c); err != nil {
+		return nil, err
+	}
+
 	return &c, nil
 }
 
@@ -517,6 +534,10 @@ func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel,
 
 	if err := json.Unmarshal(config, &c.Config); err != nil {
 		c.Config = make(map[string]string)
+	}
+
+	if err := r.decryptChannelSecrets(&c); err != nil {
+		return nil, err
 	}
 
 	return &c, nil

@@ -72,7 +72,7 @@ func TestNewMessageRepository_NilDB(t *testing.T) {
 }
 
 func TestNewChannelRepository_NilDB(t *testing.T) {
-	repo := NewChannelRepository(nil)
+	repo := NewChannelRepository(nil, nil)
 	assert.NotNil(t, repo)
 }
 

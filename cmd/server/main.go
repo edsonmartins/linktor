@@ -104,6 +104,7 @@ import (
 	"github.com/msgfy/linktor/internal/whatsapp/calling"
 	"github.com/msgfy/linktor/internal/whatsapp/ctwa"
 	"github.com/msgfy/linktor/internal/whatsapp/payments"
+	"github.com/msgfy/linktor/pkg/crypto"
 	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 
@@ -169,6 +170,12 @@ func main() {
 		consumer = nats.NewConsumer(natsClient)
 	}
 
+	// Initialize the secret-at-rest encryptor for channel credentials/tokens.
+	encryptor, err := crypto.NewEncryptor(cfg.Crypto.EncryptionKey)
+	if err != nil {
+		logger.Fatal("Failed to initialize crypto encryptor: " + err.Error())
+	}
+
 	// Initialize repositories
 	logger.Info("Initializing repositories...")
 	tenantRepo := database.NewTenantRepository(db)
@@ -176,7 +183,7 @@ func main() {
 	messageRepo := database.NewMessageRepository(db)
 	conversationRepo := database.NewConversationRepository(db)
 	contactRepo := database.NewContactRepository(db)
-	channelRepo := database.NewChannelRepository(db)
+	channelRepo := database.NewChannelRepository(db, encryptor)
 	botRepo := database.NewBotRepository(db)
 	contextRepo := database.NewConversationContextRepository(db)
 	aiResponseRepo := database.NewAIResponseRepository(db)
@@ -189,6 +196,13 @@ func main() {
 	paymentRepo := database.NewPaymentRepository(db)
 	observabilityRepo := database.NewObservabilityRepository(db)
 	apiKeyRepo := database.NewAPIKeyRepository(db)
+	orderRepo := database.NewOrderRepository(db)
+	cartRepo := database.NewCartRepository(db)
+	auditLogRepo := database.NewAuditLogRepository(db)
+	cannedRepo := database.NewCannedResponseRepository(db)
+	roleRepo := database.NewRoleRepository(db)
+	tenantSettingsRepo := database.NewTenantSettingsRepository(db)
+	campaignRepo := database.NewCampaignRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
@@ -252,6 +266,10 @@ func main() {
 	// Initialize analytics service
 	analyticsService := service.NewAnalyticsService(analyticsRepo, nil)
 	observabilityService := service.NewObservabilityService(observabilityRepo, nats.NewMonitor(natsClient))
+
+	// Initialize commerce + WhatsApp Flows services
+	commerceService := service.NewCommerceService(channelRepo, orderRepo, cartRepo)
+	whatsappFlowsService := service.NewWhatsAppFlowsService(flowRepo, channelRepo)
 
 	// Initialize template service
 	templateService := service.NewTemplateService(templateRepo, channelRepo)
@@ -345,6 +363,20 @@ func main() {
 		producer,
 		normalizer,
 	)
+
+	// whatomate-inspired services: audit, canned, RBAC, assignment, SLA, campaigns.
+	assignmentRepo := database.NewAssignmentRepository(db)
+	slaRepo := database.NewSLARepository(db)
+	auditService := service.NewAuditService(auditLogRepo)
+	cannedService := service.NewCannedResponseService(cannedRepo)
+	roleService := service.NewRoleService(roleRepo, redisClient)
+	settingsService := service.NewSettingsService(tenantSettingsRepo)
+	assignmentService := service.NewAssignmentService(assignmentRepo, conversationRepo, tenantSettingsRepo)
+	slaMonitor := service.NewSLAMonitorService(slaRepo, tenantSettingsRepo)
+	campaignService := service.NewCampaignService(campaignRepo, channelRepo, producer)
+
+	// Enable automatic conversation routing on inbound messages.
+	receiveMessageUC.SetAssignmentService(assignmentService)
 
 	// Initialize embedding service
 	embeddingService := service.NewEmbeddingService(aiFactory, nil)
@@ -520,6 +552,19 @@ func main() {
 	// Create CTWA handler
 	ctwaHandler := handlers.NewCTWAHandler()
 
+	// whatomate-inspired handlers
+	auditHandler := handlers.NewAuditHandler(auditService)
+	cannedHandler := handlers.NewCannedResponseHandler(cannedService, auditService)
+	roleHandler := handlers.NewRoleHandler(roleService, auditService)
+	settingsHandler := handlers.NewSettingsHandler(settingsService, assignmentService, auditService)
+	campaignHandler := handlers.NewCampaignHandler(campaignService, auditService)
+	permission := middleware.NewPermissionMiddleware(roleService)
+
+	// Create Order handler (commerce)
+	orderHandler := handlers.NewOrderHandler(orderRepo)
+	whatsappFlowsHandler := handlers.NewWhatsAppFlowsHandler(whatsappFlowsService)
+	_ = commerceService
+
 	channelService.SetLifecycleHooks(service.ChannelLifecycleHooks{
 		OnConnected: func(ctx context.Context, channel *entity.Channel) {
 			registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
@@ -615,6 +660,9 @@ func main() {
 		}
 	}()
 	logger.Info("Coexistence monitor started (runs every hour)")
+
+	// Start SLA monitor (auto-close idle conversations, flag first-response breaches).
+	go slaMonitor.Start(ctx, 1*time.Minute)
 
 	var aiConsumer *nats.AIConsumer
 
@@ -752,6 +800,11 @@ func main() {
 			webhooks.Use(rateLimiter.LimitByKey(func(c *gin.Context) string {
 				return "webhook:" + c.ClientIP()
 			}))
+		}
+		if rateLimiter != nil {
+			webhookDedup := middleware.NewWebhookDedup(rateRedis, 6*time.Hour)
+			webhooks.Use(webhookDedup.Middleware("global"))
+			logger.Info("Webhook deduplication enabled (Redis-backed, 6h TTL)")
 		}
 		{
 			webhooks.Any("/whatsapp/:channelId", webhookHandler.WhatsAppWebhook)
@@ -988,6 +1041,30 @@ func main() {
 				waAnalytics.GET("/dashboard", whatsappAnalyticsHandler.GetDashboardData)
 			}
 
+			// WhatsApp Flows (Meta API)
+			waFlows := protected.Group("/whatsapp/flows")
+			{
+				waFlows.POST("", whatsappFlowsHandler.CreateFlow)
+				waFlows.PUT("/:id", whatsappFlowsHandler.UpdateFlow)
+				waFlows.DELETE("/:id", whatsappFlowsHandler.DeleteFlow)
+				waFlows.POST("/:id/publish", whatsappFlowsHandler.PublishFlow)
+				waFlows.GET("/:id/preview", whatsappFlowsHandler.GetFlowPreview)
+				waFlows.POST("/sync", whatsappFlowsHandler.SyncFlows)
+			}
+
+			// Orders (commerce)
+			orderRoutes := protected.Group("/orders")
+			{
+				orderRoutes.GET("", orderHandler.ListOrders)
+				orderRoutes.GET("/stats", orderHandler.GetOrderStats)
+				orderRoutes.GET("/:orderId", orderHandler.GetOrder)
+				orderRoutes.GET("/:orderId/history", orderHandler.GetOrderHistory)
+				orderRoutes.PATCH("/:orderId/status", orderHandler.UpdateOrderStatus)
+				orderRoutes.PATCH("/:orderId/shipping", orderHandler.UpdateShipping)
+				orderRoutes.POST("/:orderId/cancel", orderHandler.CancelOrder)
+			}
+			protected.GET("/customers/:phone/orders", orderHandler.GetCustomerOrders)
+
 			// Payments (per-channel)
 			paymentsRoutes := protected.Group("/channels/:id/payments")
 			{
@@ -1061,6 +1138,57 @@ func main() {
 				apiKeys.GET("", apiKeyHandler.List)
 				apiKeys.POST("", apiKeyHandler.Create)
 				apiKeys.DELETE("/:id", apiKeyHandler.Delete)
+			}
+
+			// Canned responses (quick replies)
+			canned := protected.Group("/canned-responses")
+			{
+				canned.GET("", cannedHandler.List)
+				canned.POST("", permission.Require(entity.ResourceCanned, entity.ActionCreate), cannedHandler.Create)
+				canned.GET("/use/:shortcut", cannedHandler.Use)
+				canned.GET("/:id", cannedHandler.Get)
+				canned.PUT("/:id", permission.Require(entity.ResourceCanned, entity.ActionUpdate), cannedHandler.Update)
+				canned.DELETE("/:id", permission.Require(entity.ResourceCanned, entity.ActionDelete), cannedHandler.Delete)
+			}
+
+			// RBAC roles (admin only)
+			roles := protected.Group("/roles")
+			roles.Use(authMiddleware.RequireRole("admin", "owner"))
+			{
+				roles.GET("/catalog", roleHandler.Catalog)
+				roles.GET("", roleHandler.List)
+				roles.POST("", roleHandler.Create)
+				roles.GET("/:id", roleHandler.Get)
+				roles.PUT("/:id", roleHandler.Update)
+				roles.DELETE("/:id", roleHandler.Delete)
+			}
+
+			// Tenant operational settings (assignment + SLA)
+			settings := protected.Group("/settings")
+			{
+				settings.GET("", settingsHandler.Get)
+				settings.PUT("", authMiddleware.RequireRole("admin", "owner"), settingsHandler.Update)
+			}
+			// Auto-assign a conversation to an available agent now
+			protected.POST("/conversations/:id/auto-assign", settingsHandler.AutoAssign)
+
+			// Audit trail (admin only)
+			audit := protected.Group("/audit-logs")
+			audit.Use(authMiddleware.RequireRole("admin", "owner"))
+			{
+				audit.GET("", auditHandler.List)
+			}
+
+			// Bulk campaigns
+			campaigns := protected.Group("/campaigns")
+			{
+				campaigns.GET("", campaignHandler.List)
+				campaigns.POST("", permission.Require(entity.ResourceCampaigns, entity.ActionCreate), campaignHandler.Create)
+				campaigns.GET("/:id", campaignHandler.Get)
+				campaigns.GET("/:id/recipients", campaignHandler.ListRecipients)
+				campaigns.POST("/:id/start", permission.Require(entity.ResourceCampaigns, entity.ActionUpdate), campaignHandler.Start)
+				campaigns.POST("/:id/retry", permission.Require(entity.ResourceCampaigns, entity.ActionUpdate), campaignHandler.Retry)
+				campaigns.POST("/:id/cancel", permission.Require(entity.ResourceCampaigns, entity.ActionUpdate), campaignHandler.Cancel)
 			}
 		}
 

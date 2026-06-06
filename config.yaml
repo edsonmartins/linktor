@@ -35,6 +35,13 @@ jwt:
   refresh_token_ttl: 168  # hours (7 days)
   issuer: "linktor"
 
+crypto:
+  # Key used to derive the AES-256 key that encrypts channel credentials and
+  # provider access tokens at rest. MUST be changed and >= 32 chars in release.
+  # Override via LINKTOR_CRYPTO_ENCRYPTION_KEY. Rotating this key makes existing
+  # encrypted secrets unreadable until they are re-saved.
+  encryption_key: "change-me-in-production-use-strong-secret"
+
 log:
   level: "debug"   # debug, info, warn, error
   format: "console"  # json, console

@@ -91,7 +91,7 @@ func (db *PostgresDB) Seed(ctx context.Context) error {
 		UpdatedAt:   now,
 	}
 
-	channelRepo := NewChannelRepository(db)
+	channelRepo := NewChannelRepository(db, nil)
 	if err := channelRepo.Create(ctx, channel); err != nil {
 		return err
 	}
