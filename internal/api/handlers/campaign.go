@@ -117,7 +117,8 @@ func (h *CampaignHandler) ListRecipients(c *gin.Context) {
 	if pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "100")); err == nil && pageSize > 0 {
 		params.PageSize = pageSize
 	}
-	recipients, total, err := h.svc.ListRecipients(c.Request.Context(), tenantID, c.Param("id"), params)
+	status := c.Query("status")
+	recipients, total, err := h.svc.ListRecipients(c.Request.Context(), tenantID, c.Param("id"), status, params)
 	if err != nil {
 		RespondError(c, err)
 		return

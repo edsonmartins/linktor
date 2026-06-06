@@ -103,10 +103,10 @@ func (m *MockCampaignRepository) FindPendingRecipients(ctx context.Context, camp
 	return out, nil
 }
 
-func (m *MockCampaignRepository) ListRecipients(ctx context.Context, campaignID string, _ *repository.ListParams) ([]*entity.CampaignRecipient, int64, error) {
+func (m *MockCampaignRepository) ListRecipients(ctx context.Context, campaignID, status string, _ *repository.ListParams) ([]*entity.CampaignRecipient, int64, error) {
 	var out []*entity.CampaignRecipient
 	for _, r := range m.Recipients {
-		if r.CampaignID == campaignID {
+		if r.CampaignID == campaignID && (status == "" || string(r.Status) == status) {
 			out = append(out, r)
 		}
 	}

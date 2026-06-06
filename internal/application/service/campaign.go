@@ -152,12 +152,12 @@ func (s *CampaignService) List(ctx context.Context, tenantID string, params *rep
 	return s.repo.FindByTenant(ctx, tenantID, params)
 }
 
-// ListRecipients returns a campaign's recipients.
-func (s *CampaignService) ListRecipients(ctx context.Context, tenantID, campaignID string, params *repository.ListParams) ([]*entity.CampaignRecipient, int64, error) {
+// ListRecipients returns a campaign's recipients, optionally filtered by status.
+func (s *CampaignService) ListRecipients(ctx context.Context, tenantID, campaignID, status string, params *repository.ListParams) ([]*entity.CampaignRecipient, int64, error) {
 	if _, err := s.Get(ctx, tenantID, campaignID); err != nil {
 		return nil, 0, err
 	}
-	return s.repo.ListRecipients(ctx, campaignID, params)
+	return s.repo.ListRecipients(ctx, campaignID, status, params)
 }
 
 // Start marks the campaign processing and dispatches pending recipients in the

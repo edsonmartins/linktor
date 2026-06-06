@@ -19,8 +19,9 @@ type CampaignRepository interface {
 	AddRecipients(ctx context.Context, recipients []*entity.CampaignRecipient) error
 	// FindPendingRecipients returns recipients in pending status for a campaign.
 	FindPendingRecipients(ctx context.Context, campaignID string, limit int) ([]*entity.CampaignRecipient, error)
-	// ListRecipients returns recipients for a campaign with pagination.
-	ListRecipients(ctx context.Context, campaignID string, params *ListParams) ([]*entity.CampaignRecipient, int64, error)
+	// ListRecipients returns recipients for a campaign with pagination, optionally
+	// filtered by status ("" = all).
+	ListRecipients(ctx context.Context, campaignID, status string, params *ListParams) ([]*entity.CampaignRecipient, int64, error)
 	// UpdateRecipientStatus sets a recipient's status/messageID/error and bumps attempts.
 	UpdateRecipientStatus(ctx context.Context, recipientID string, status entity.RecipientStatus, messageID, errReason string) error
 	// MarkRecipientQueued moves a recipient to 'queued' without bumping attempts

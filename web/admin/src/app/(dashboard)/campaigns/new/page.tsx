@@ -72,6 +72,8 @@ export default function NewCampaignPage() {
   })
 
   const recipients = parseRecipients(recipientsRaw)
+  const nonEmptyLines = recipientsRaw.split('\n').filter((l) => l.trim()).length
+  const invalidCount = nonEmptyLines - recipients.length
   const canSubmit =
     name.trim() && channelId && templateName.trim() && recipients.length > 0
 
@@ -165,6 +167,11 @@ export default function NewCampaignPage() {
                 className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">{t('recipientsHelp')}</p>
+              {invalidCount > 0 && (
+                <p className="text-xs text-amber-600">
+                  {invalidCount} {t('invalidLines')}
+                </p>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-2">

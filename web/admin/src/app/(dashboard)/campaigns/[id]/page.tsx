@@ -1,16 +1,33 @@
 'use client'
 
-import { use } from 'react'
+import { use, useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
-import { ArrowLeft, Play, RotateCcw, Ban } from 'lucide-react'
+import { ArrowLeft, Play, RotateCcw, Ban, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Table,
   TableBody,
@@ -47,6 +64,17 @@ const RECIPIENT_VARIANT: Record<RecipientStatus, 'default' | 'secondary' | 'dest
   failed: 'destructive',
 }
 
+const RECIPIENT_STATUSES: RecipientStatus[] = [
+  'pending',
+  'queued',
+  'sent',
+  'delivered',
+  'read',
+  'failed',
+]
+
+const PAGE_SIZE = 50
+
 export default function CampaignDetailPage({
   params,
 }: {
@@ -57,24 +85,40 @@ export default function CampaignDetailPage({
   const { toast } = useToast()
   const queryClient = useQueryClient()
 
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [page, setPage] = useState(1)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+
   const { data: campaign, isLoading } = useQuery({
     queryKey: queryKeys.campaigns.detail(id),
     queryFn: () => api.get<Campaign>(`/campaigns/${id}`),
-    // Live progress: poll while the campaign is still processing.
     refetchInterval: (query) =>
       query.state.data?.status === 'processing' ? 2000 : false,
   })
 
-  const { data: recipients } = useQuery({
-    queryKey: queryKeys.campaigns.recipients(id),
-    queryFn: () => api.get<CampaignRecipient[]>(`/campaigns/${id}/recipients`),
+  const { data: recipientsEnvelope } = useQuery({
+    queryKey: [...queryKeys.campaigns.recipients(id), statusFilter, page],
+    queryFn: () => {
+      const params: Record<string, string> = {
+        page: String(page),
+        page_size: String(PAGE_SIZE),
+      }
+      if (statusFilter !== 'all') params.status = statusFilter
+      return api.getEnvelope<CampaignRecipient[]>(`/campaigns/${id}/recipients`, params)
+    },
     refetchInterval: campaign?.status === 'processing' ? 3000 : false,
   })
+
+  const recipients = recipientsEnvelope?.data ?? []
+  const meta = recipientsEnvelope?.meta
 
   function refresh() {
     queryClient.invalidateQueries({ queryKey: queryKeys.campaigns.detail(id) })
     queryClient.invalidateQueries({ queryKey: queryKeys.campaigns.recipients(id) })
   }
+
+  const onErr = (e: Error) =>
+    toast({ title: 'Error', description: e.message, variant: 'destructive' })
 
   const startMutation = useMutation({
     mutationFn: () => api.post(`/campaigns/${id}/start`),
@@ -82,7 +126,7 @@ export default function CampaignDetailPage({
       toast({ title: t('start') })
       refresh()
     },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onError: onErr,
   })
   const retryMutation = useMutation({
     mutationFn: () => api.post(`/campaigns/${id}/retry`),
@@ -90,15 +134,16 @@ export default function CampaignDetailPage({
       toast({ title: t('retry') })
       refresh()
     },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onError: onErr,
   })
   const cancelMutation = useMutation({
     mutationFn: () => api.post(`/campaigns/${id}/cancel`),
     onSuccess: () => {
       toast({ title: t('cancel') })
+      setConfirmCancel(false)
       refresh()
     },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onError: onErr,
   })
 
   if (isLoading || !campaign) {
@@ -163,7 +208,7 @@ export default function CampaignDetailPage({
               </Button>
             )}
             {canCancel && (
-              <Button size="sm" variant="destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+              <Button size="sm" variant="destructive" onClick={() => setConfirmCancel(true)}>
                 <Ban className="mr-2 h-4 w-4" />
                 {t('cancel')}
               </Button>
@@ -189,7 +234,29 @@ export default function CampaignDetailPage({
         </Card>
 
         <div>
-          <h2 className="mb-3 text-sm font-semibold">{t('recipientsList')}</h2>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold">{t('recipientsList')}</h2>
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                setStatusFilter(v)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('filterAll')}</SelectItem>
+                {RECIPIENT_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s} className="capitalize">
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
@@ -201,7 +268,7 @@ export default function CampaignDetailPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(recipients ?? []).map((r) => (
+                {recipients.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-mono text-sm">{r.phone}</TableCell>
                     <TableCell>
@@ -217,11 +284,62 @@ export default function CampaignDetailPage({
                     </TableCell>
                   </TableRow>
                 ))}
+                {recipients.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                      —
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
+
+          {meta && meta.total_items > PAGE_SIZE && (
+            <div className="mt-3 flex items-center justify-end gap-2 text-sm">
+              <span className="text-muted-foreground">
+                {meta.total_items} · {meta.page}/{meta.total_pages}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!meta.has_previous}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                {t('prev')}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!meta.has_next}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                {t('next')}
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
       </div>
+
+      <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('confirmCancelTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('confirmCancelDesc')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('keepRunning')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => cancelMutation.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('confirmCancel')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

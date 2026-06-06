@@ -1852,6 +1852,14 @@
     "createCta": "Crear campaña",
     "backToList": "Volver a campañas",
     "recipientsList": "Destinatarios",
-    "errorReason": "Error"
+    "errorReason": "Error",
+    "filterAll": "Todos",
+    "prev": "Anterior",
+    "next": "Siguiente",
+    "confirmCancelTitle": "¿Cancelar esta campaña?",
+    "confirmCancelDesc": "Los destinatarios aún no enviados se detendrán. Esto no se puede deshacer.",
+    "confirmCancel": "Sí, cancelar campaña",
+    "keepRunning": "Seguir ejecutando",
+    "invalidLines": "línea(s) sin teléfono fueron ignoradas"
   }
 }

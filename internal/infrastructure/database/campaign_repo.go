@@ -149,18 +149,29 @@ func (r *CampaignRepository) FindPendingRecipients(ctx context.Context, campaign
 	return scanRecipients(rows)
 }
 
-func (r *CampaignRepository) ListRecipients(ctx context.Context, campaignID string, params *repository.ListParams) ([]*entity.CampaignRecipient, int64, error) {
+func (r *CampaignRepository) ListRecipients(ctx context.Context, campaignID, status string, params *repository.ListParams) ([]*entity.CampaignRecipient, int64, error) {
 	if params == nil {
 		params = repository.NewListParams()
 	}
+
+	where := "WHERE campaign_id = $1"
+	args := []interface{}{campaignID}
+	if status != "" {
+		where += " AND status = $2"
+		args = append(args, status)
+	}
+
 	var total int64
-	if err := r.db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM campaign_recipients WHERE campaign_id = $1`, campaignID).Scan(&total); err != nil {
+	if err := r.db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM campaign_recipients "+where, args...).Scan(&total); err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to count recipients")
 	}
-	rows, err := r.db.Pool.Query(ctx,
-		`SELECT id, campaign_id, contact_id, phone, params, status, message_id, error_reason, attempts, sent_at, created_at, updated_at
-		 FROM campaign_recipients WHERE campaign_id = $1 ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
-		campaignID, params.Limit(), params.Offset())
+
+	limitIdx := len(args) + 1
+	query := "SELECT id, campaign_id, contact_id, phone, params, status, message_id, error_reason, attempts, sent_at, created_at, updated_at" +
+		" FROM campaign_recipients " + where + " ORDER BY created_at ASC LIMIT $" + itoa(limitIdx) + " OFFSET $" + itoa(limitIdx+1)
+	args = append(args, params.Limit(), params.Offset())
+
+	rows, err := r.db.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to query recipients")
 	}

@@ -1836,6 +1836,14 @@
     "createCta": "Create campaign",
     "backToList": "Back to campaigns",
     "recipientsList": "Recipients",
-    "errorReason": "Error"
+    "errorReason": "Error",
+    "filterAll": "All",
+    "prev": "Previous",
+    "next": "Next",
+    "confirmCancelTitle": "Cancel this campaign?",
+    "confirmCancelDesc": "Recipients not yet sent will stop. This cannot be undone.",
+    "confirmCancel": "Yes, cancel campaign",
+    "keepRunning": "Keep running",
+    "invalidLines": "line(s) without a phone number were ignored"
   }
 }
