@@ -38,6 +38,14 @@ docker run --rm \
   minio/mc:latest \
   mirror --quiet --overwrite minio/ /backup/minio/ || true
 
+log "Snapshotting backend uploads + WhatsApp session storages"
+docker run --rm \
+  -v linktor_backend_uploads:/src/uploads:ro \
+  -v linktor_backend_storages:/src/storages:ro \
+  -v "$WORK_DIR:/backup" \
+  alpine:3.22 \
+  tar -czf /backup/backend-data.tar.gz -C /src uploads storages || true
+
 log "Capturing compose + traefik config"
 tar -czf "$WORK_DIR/config.tar.gz" \
   -C "$DEPLOY_DIR" docker-compose.prod.yml traefik

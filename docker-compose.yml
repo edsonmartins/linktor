@@ -1,7 +1,13 @@
+# Restart containers unless explicitly stopped, so a crashed dependency
+# (db/redis/nats) recovers on its own — matches the prod compose behavior.
+x-restart: &restart
+  restart: unless-stopped
+
 services:
   # PostgreSQL Database
   postgres:
     image: pgvector/pgvector:pg16
+    <<: *restart
     container_name: linktor-postgres
     environment:
       POSTGRES_USER: linktor
@@ -21,7 +27,8 @@ services:
 
   # Redis Cache & Rate Limiting
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
+    <<: *restart
     container_name: linktor-redis
     command: redis-server --appendonly yes
     ports:
@@ -39,6 +46,7 @@ services:
   # NATS JetStream Message Broker
   nats:
     image: nats:2.10-alpine
+    <<: *restart
     container_name: linktor-nats
     command: ["-js", "-m", "8222"]
     ports:
@@ -47,7 +55,9 @@ services:
     volumes:
       - nats_data:/data
     healthcheck:
-      test: ["CMD", "nats-server", "--help"]
+      # Probe the real monitoring endpoint (the old `--help` check always
+      # passed even when JetStream was unhealthy).
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,8 +65,12 @@ services:
       - linktor-network
 
   # MinIO - S3 Compatible Storage for Media
+  # NOTE: MinIO ended community Docker image publishing in Oct/2025; this is the
+  # last known-good pinned release. Migrating to an actively-maintained image
+  # (bitnami/minio, chainguard) is tracked as a follow-up decision.
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    <<: *restart
     container_name: linktor-minio
     command: server /data --console-address ":9001"
     environment:
@@ -80,6 +94,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    <<: *restart
     container_name: linktor-backend
     environment:
       LINKTOR_SERVER_PORT: ${LINKTOR_API_PORT:-8081}
@@ -95,9 +110,15 @@ services:
       LINKTOR_REDIS_PORT: 6379
       LINKTOR_NATS_URL: nats://nats:4222
       LINKTOR_JWT_SECRET: change-me-in-development
+      # Local dev is plain http, so auth cookies must not require HTTPS.
+      LINKTOR_JWT_COOKIE_SECURE: "false"
       BASE_URL: ${LINKTOR_BASE_URL:-http://localhost:${LINKTOR_API_PORT:-8081}}
+      VRE_UPLOAD_DIR: /app/uploads/vre
     ports:
       - "${LINKTOR_API_PORT:-8081}:${LINKTOR_API_PORT:-8081}"
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_storages:/app/storages
     depends_on:
       postgres:
         condition: service_healthy
@@ -111,8 +132,8 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:${LINKTOR_API_PORT:-8081}/health"]
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 20s
+      retries: 6
+      start_period: 30s
     networks:
       - linktor-network
 
@@ -125,6 +146,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${LINKTOR_API_PORT:-8081}/api/v1}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:${LINKTOR_API_PORT:-8081}/api/v1/ws}
         NEXT_PUBLIC_WEBHOOK_BASE_URL: ${NEXT_PUBLIC_WEBHOOK_BASE_URL:-http://localhost:${LINKTOR_API_PORT:-8081}}
+    <<: *restart
     container_name: linktor-admin
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${LINKTOR_API_PORT:-8081}/api/v1}
@@ -143,6 +165,8 @@ volumes:
   redis_data:
   nats_data:
   minio_data:
+  backend_uploads:
+  backend_storages:
 
 networks:
   linktor-network:
