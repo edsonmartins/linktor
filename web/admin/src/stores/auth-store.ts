@@ -27,7 +27,7 @@ interface AuthState {
 
 interface AuthActions {
   login: (email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   refreshToken: () => Promise<void>
   setUser: (user: User | null) => void
   clearError: () => void
@@ -36,8 +36,6 @@ interface AuthActions {
 type AuthStore = AuthState & AuthActions
 
 interface LoginResponse {
-  access_token: string
-  refresh_token: string
   user: User
 }
 
@@ -60,7 +58,9 @@ export const useAuthStore = create<AuthStore>()(
             password,
           })
 
-          tokenStorage.setTokens(response.access_token, response.refresh_token)
+          // Tokens are set as HttpOnly cookies by the API; only mark the
+          // session present for the server-side middleware.
+          tokenStorage.setAuthenticated()
 
           set({
             user: response.user,
@@ -80,8 +80,15 @@ export const useAuthStore = create<AuthStore>()(
         }
       },
 
-      logout: () => {
-        tokenStorage.clearTokens()
+      logout: async () => {
+        // Clear cookies server-side; ignore network errors so logout always
+        // succeeds locally.
+        try {
+          await api.post('/auth/logout')
+        } catch {
+          // no-op
+        }
+        tokenStorage.clear()
         set({
           user: null,
           isAuthenticated: false,
@@ -90,21 +97,13 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       refreshToken: async () => {
-        const refreshToken = tokenStorage.getRefreshToken()
-        if (!refreshToken) {
-          get().logout()
-          return
-        }
-
         try {
-          const response = await api.post<LoginResponse>('/auth/refresh', {
-            refresh_token: refreshToken,
-          })
-
-          tokenStorage.setTokens(response.access_token, response.refresh_token)
-          set({ user: response.user, isAuthenticated: true })
+          // Refresh token travels as an HttpOnly cookie; the API rotates it.
+          await api.post('/auth/refresh')
+          tokenStorage.setAuthenticated()
+          set({ isAuthenticated: true })
         } catch {
-          get().logout()
+          await get().logout()
         }
       },
 

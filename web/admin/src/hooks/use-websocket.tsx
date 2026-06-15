@@ -150,9 +150,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   // Connect to WebSocket
   const connect = useCallback(() => {
-    const token = tokenStorage.getAccessToken()
-    if (!token) {
-      if (process.env.NODE_ENV === 'development') console.warn('[WebSocket] No auth token available')
+    if (!tokenStorage.isAuthenticated()) {
+      if (process.env.NODE_ENV === 'development') console.warn('[WebSocket] Not authenticated')
       return
     }
 
@@ -161,7 +160,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
 
     setConnectionState('connecting')
-    const url = `${WS_BASE_URL}?token=${encodeURIComponent(token)}`
+    // The HttpOnly access_token cookie is sent automatically with the WS
+    // handshake (same-site); no token in the URL.
+    const url = WS_BASE_URL
 
     try {
       wsRef.current = new WebSocket(url)
@@ -220,9 +221,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       }
 
       wsRef.current.onerror = (error) => {
-        // Only log error if we have a token (user is authenticated)
-        const token = tokenStorage.getAccessToken()
-        if (token) {
+        // Only surface errors when the user is authenticated.
+        if (tokenStorage.isAuthenticated()) {
           if (process.env.NODE_ENV === 'development') console.warn('[WebSocket] Connection error')
           onError?.(error)
         }
@@ -249,13 +249,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     setConnectionState('disconnected')
   }, [reconnectAttempts])
 
-  // Auto connect on mount (only if token exists)
+  // Auto connect on mount (only when authenticated)
   useEffect(() => {
-    if (autoConnect) {
-      const token = tokenStorage.getAccessToken()
-      if (token) {
-        connect()
-      }
+    if (autoConnect && tokenStorage.isAuthenticated()) {
+      connect()
     }
 
     return () => {

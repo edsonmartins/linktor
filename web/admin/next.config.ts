@@ -2,6 +2,19 @@ import type { NextConfig } from 'next'
 import createNextIntlPlugin from 'next-intl/plugin'
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
+
+// NEXT_PUBLIC_* values are inlined at build time; a production build without
+// them would silently ship localhost fallbacks. Fail the build instead.
+if (process.env.NODE_ENV === 'production') {
+  for (const required of ['NEXT_PUBLIC_API_URL', 'NEXT_PUBLIC_WS_URL']) {
+    if (!process.env[required]) {
+      throw new Error(
+        `${required} must be set for production builds (see .env.example)`
+      )
+    }
+  }
+}
+
 const apiOrigin =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/v1\/?$/, '') ||
   process.env.NEXT_PROXY_API_ORIGIN ||

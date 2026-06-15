@@ -1,8 +1,27 @@
 'use client'
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryCache,
+} from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { useState, type ReactNode } from 'react'
+import { ApiError } from '@/lib/api'
+import { toastError } from '@/hooks/use-toast'
+
+/**
+ * Surfaces an API failure as an error toast. 401 is swallowed because the API
+ * client already handles session expiry (refresh + redirect to /login), and
+ * errors can opt out via `meta.skipGlobalError` when the caller shows its own
+ * inline feedback.
+ */
+function reportError(error: unknown, meta?: Record<string, unknown>) {
+  if (meta?.skipGlobalError) return
+  if (error instanceof ApiError && error.status === 401) return
+  const message = error instanceof Error ? error.message : 'Unexpected error'
+  toastError('Error', message)
+}
 
 /**
  * Query Client Factory
@@ -10,6 +29,12 @@ import { useState, type ReactNode } from 'react'
  */
 function makeQueryClient() {
   return new QueryClient({
+    // QueryCache.onError fires for every failing query (React Query v5 removed
+    // per-query onError). This is what turns a silently-empty list into a
+    // visible "request failed" toast.
+    queryCache: new QueryCache({
+      onError: (error, query) => reportError(error, query.meta),
+    }),
     defaultOptions: {
       queries: {
         // Stale time of 1 minute for most queries
@@ -22,6 +47,8 @@ function makeQueryClient() {
       mutations: {
         // Retry mutations once
         retry: 1,
+        // Fallback error feedback for mutations without their own onError.
+        onError: (error) => reportError(error),
       },
     },
   })

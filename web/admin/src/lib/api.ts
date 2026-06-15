@@ -60,24 +60,42 @@ class ApiError extends Error {
 }
 
 /**
- * Token management - uses localStorage for persistence
+ * Session management.
+ *
+ * Access/refresh tokens live in HttpOnly cookies set by the API and are never
+ * readable by JS (XSS cannot exfiltrate them). The browser attaches them
+ * automatically because every request uses `credentials: 'include'`.
+ *
+ * A separate, non-sensitive `linktor_authed` marker cookie (readable by JS)
+ * mirrors session presence so middleware.ts can redirect unauthenticated
+ * visitors server-side. It is NOT an auth credential.
  */
+const AUTH_MARKER_COOKIE = 'linktor_authed'
+
+function setAuthMarkerCookie(present: boolean) {
+  if (typeof document === 'undefined') return
+  if (present) {
+    document.cookie = `${AUTH_MARKER_COOKIE}=1; path=/; max-age=${60 * 60 * 24 * 30}; samesite=lax`
+  } else {
+    document.cookie = `${AUTH_MARKER_COOKIE}=; path=/; max-age=0; samesite=lax`
+  }
+}
+
+// One-time cleanup: drop tokens left in localStorage by pre-cookie sessions.
+if (typeof window !== 'undefined') {
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+}
+
 const tokenStorage = {
-  getAccessToken: () => {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('access_token')
-  },
-  getRefreshToken: () => {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('refresh_token')
-  },
-  setTokens: (accessToken: string, refreshToken: string) => {
-    localStorage.setItem('access_token', accessToken)
-    localStorage.setItem('refresh_token', refreshToken)
-  },
-  clearTokens: () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
+  /** Marks the session as authenticated for the server-side middleware. */
+  setAuthenticated: () => setAuthMarkerCookie(true),
+  /** Clears the client-visible session marker (cookies are cleared by the API). */
+  clear: () => setAuthMarkerCookie(false),
+  /** Whether a session marker is present (HttpOnly auth cookies aren't readable). */
+  isAuthenticated: () => {
+    if (typeof document === 'undefined') return false
+    return document.cookie.split('; ').some((c) => c === `${AUTH_MARKER_COOKIE}=1`)
   },
 }
 
@@ -90,20 +108,9 @@ type ResponseInterceptor = (response: Response) => Response | Promise<Response>
 const requestInterceptors: RequestInterceptor[] = []
 const responseInterceptors: ResponseInterceptor[] = []
 
-// Add auth token to requests
-requestInterceptors.push((config) => {
-  const token = tokenStorage.getAccessToken()
-  if (token) {
-    config.headers = {
-      ...config.headers,
-      Authorization: `Bearer ${token}`,
-    }
-  }
-  return config
-})
-
 /**
- * Refresh the access token using the refresh token
+ * Refresh the access token. The refresh token travels as an HttpOnly cookie,
+ * so there is no token to read or send — the API rotates both cookies.
  */
 async function refreshAccessToken(): Promise<boolean> {
   // If already refreshing, wait for the existing promise
@@ -111,38 +118,27 @@ async function refreshAccessToken(): Promise<boolean> {
     return refreshPromise
   }
 
-  const refreshToken = tokenStorage.getRefreshToken()
-  if (!refreshToken) {
-    return false
-  }
-
   isRefreshing = true
   refreshPromise = (async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ refresh_token: refreshToken }),
       })
 
       if (!response.ok) {
-        tokenStorage.clearTokens()
+        tokenStorage.clear()
         return false
       }
 
-      const data = await response.json()
-      const tokens = data.data || data
-
-      if (tokens.access_token && tokens.refresh_token) {
-        tokenStorage.setTokens(tokens.access_token, tokens.refresh_token)
-        return true
-      }
-
-      return false
+      // Success rotates the auth cookies server-side; keep the marker fresh.
+      tokenStorage.setAuthenticated()
+      return true
     } catch {
-      tokenStorage.clearTokens()
+      tokenStorage.clear()
       return false
     } finally {
       isRefreshing = false
@@ -171,9 +167,10 @@ async function request<T>(endpoint: string, config: RequestConfig = {}, isRetry 
     url += `?${searchParams.toString()}`
   }
 
-  // Make request
+  // Make request. credentials:'include' sends the HttpOnly auth cookies.
   let response = await fetch(url, {
     method: finalConfig.method || 'GET',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...finalConfig.headers,
@@ -195,7 +192,7 @@ async function request<T>(endpoint: string, config: RequestConfig = {}, isRetry 
     } else {
       // Refresh failed - redirect to login
       if (typeof window !== 'undefined') {
-        tokenStorage.clearTokens()
+        tokenStorage.clear()
         window.location.href = '/login'
       }
       throw new ApiError(401, 'Unauthorized', { message: 'Session expired' })

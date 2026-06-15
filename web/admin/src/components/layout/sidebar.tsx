@@ -37,6 +37,7 @@ import { Separator } from '@/components/ui/separator'
 import { useAuthStore, useUser } from '@/stores/auth-store'
 import { useUIStore, useSidebarCollapsed, useUnreadCount } from '@/stores/ui-store'
 import { LocaleSwitcher } from '@/components/locale-switcher'
+import { isAdmin } from '@/lib/rbac'
 
 /**
  * Navigation items - Plugin Pattern
@@ -108,16 +109,19 @@ const navItems = [
     labelKey: 'observability',
     href: '/observability',
     icon: Activity,
+    adminOnly: true,
   },
   {
     labelKey: 'team',
     href: '/users',
     icon: UsersRound,
+    adminOnly: true,
   },
   {
     labelKey: 'roles',
     href: '/roles',
     icon: ShieldCheck,
+    adminOnly: true,
   },
   {
     labelKey: 'operations',
@@ -128,6 +132,7 @@ const navItems = [
     labelKey: 'audit',
     href: '/audit-logs',
     icon: ScrollText,
+    adminOnly: true,
   },
 ]
 
@@ -151,6 +156,10 @@ export function Sidebar() {
   const collapsed = useSidebarCollapsed()
   const unreadCount = useUnreadCount()
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+
+  // Hide admin-only entries from non-admin roles (the API enforces this too).
+  const userIsAdmin = isAdmin(user?.role)
+  const visibleNavItems = navItems.filter((item) => !item.adminOnly || userIsAdmin)
 
   return (
     <aside
@@ -191,7 +200,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-2">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const isActive = pathname.startsWith(item.href)
           const Icon = item.icon
           const label = t(item.labelKey)

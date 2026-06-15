@@ -66,7 +66,9 @@
     "deselectAll": "Deselect all",
     "required": "Required",
     "optional": "Optional",
-    "channelNameRequired": "Channel name is required"
+    "channelNameRequired": "Channel name is required",
+    "accessDeniedTitle": "Access denied",
+    "accessDeniedDescription": "You do not have permission to view this page. Contact an administrator if you need access."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -1791,7 +1793,8 @@
     "copy": "Copy",
     "loadingApiKeys": "Loading API keys...",
     "prefix": "Prefix",
-    "created": "Created"
+    "created": "Created",
+    "avatarUrlPrompt": "Enter the URL of your avatar image:"
   },
   "errors": {
     "generic": "An error occurred. Please try again.",

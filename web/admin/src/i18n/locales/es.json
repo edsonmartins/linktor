@@ -65,7 +65,9 @@
     "deselectAll": "Deseleccionar todo",
     "required": "Obligatorio",
     "optional": "Opcional",
-    "channelNameRequired": "El nombre del canal es obligatorio"
+    "channelNameRequired": "El nombre del canal es obligatorio",
+    "accessDeniedTitle": "Acceso denegado",
+    "accessDeniedDescription": "No tienes permiso para ver esta página. Contacta a un administrador si necesitas acceso."
   },
   "nav": {
     "dashboard": "Panel",
@@ -1807,7 +1809,8 @@
     "copy": "Copiar",
     "loadingApiKeys": "Cargando claves API...",
     "prefix": "Prefijo",
-    "created": "Creado"
+    "created": "Creado",
+    "avatarUrlPrompt": "Ingresa la URL de tu imagen de avatar:"
   },
   "errors": {
     "generic": "Ocurrió un error. Por favor, inténtalo de nuevo.",

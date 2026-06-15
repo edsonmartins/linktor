@@ -67,7 +67,7 @@ export default function NewCampaignPage() {
       router.push(`/campaigns/${campaign.id}`)
     },
     onError: (err: Error) => {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' })
+      toast({ title: 'Error', description: err.message, variant: 'error' })
     },
   })
 

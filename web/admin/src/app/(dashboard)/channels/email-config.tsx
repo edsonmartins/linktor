@@ -202,10 +202,11 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
       }
 
       onSuccess?.()
-    } catch (error: any) {
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : t('saveError')
       toast({
         title: tCommon('error'),
-        description: error.message || t('saveError'),
+        description: msg,
         variant: 'error',
       })
     } finally {
@@ -223,10 +224,11 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
         title: t('connectionSuccess'),
         description: t('emailConnectionVerified'),
       })
-    } catch (error: any) {
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : t('emailConnectionError')
       toast({
         title: t('connectionFailed'),
-        description: error.message || t('emailConnectionError'),
+        description: msg,
         variant: 'error',
       })
     } finally {
@@ -266,7 +268,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
           <Label htmlFor="provider">{t('emailProvider')}</Label>
           <Select
             value={selectedProvider}
-            onValueChange={(value) => setValue('provider', value as any)}
+            onValueChange={(value) => setValue('provider', value as EmailConfigForm['provider'])}
           >
             <SelectTrigger>
               <SelectValue placeholder={t('selectProvider')} />
@@ -347,7 +349,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     <Input
                       id="smtp_host"
                       placeholder="smtp.example.com"
-                      {...register('smtp_host' as any)}
+                      {...register('smtp_host')}
                     />
                   </div>
                   <div className="space-y-2">
@@ -356,7 +358,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                       id="smtp_port"
                       type="number"
                       placeholder="587"
-                      {...register('smtp_port' as any)}
+                      {...register('smtp_port')}
                     />
                   </div>
                 </div>
@@ -367,7 +369,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     <Input
                       id="smtp_username"
                       placeholder={tCommon('username').toLowerCase()}
-                      {...register('smtp_username' as any)}
+                      {...register('smtp_username')}
                     />
                   </div>
                   <div className="space-y-2">
@@ -377,7 +379,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                         id="smtp_password"
                         type={showPassword['smtp'] ? 'text' : 'password'}
                         placeholder="••••••••"
-                        {...register('smtp_password' as any)}
+                        {...register('smtp_password')}
                       />
                       <Button
                         type="button"
@@ -400,7 +402,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                   <Label htmlFor="smtp_encryption">{t('encryption')}</Label>
                   <Select
                     defaultValue="tls"
-                    onValueChange={(value) => setValue('smtp_encryption' as any, value)}
+                    onValueChange={(value) => setValue('smtp_encryption', value as EmailConfigForm['smtp_encryption'])}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -445,7 +447,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                       id="sendgrid_api_key"
                       type={showPassword['sendgrid'] ? 'text' : 'password'}
                       placeholder="SG.xxxx..."
-                      {...register('sendgrid_api_key' as any)}
+                      {...register('sendgrid_api_key')}
                     />
                     <Button
                       type="button"
@@ -501,14 +503,14 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     <Input
                       id="mailgun_domain"
                       placeholder="mg.example.com"
-                      {...register('mailgun_domain' as any)}
+                      {...register('mailgun_domain')}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="mailgun_region">{t('region')}</Label>
                     <Select
                       defaultValue="us"
-                      onValueChange={(value) => setValue('mailgun_region' as any, value)}
+                      onValueChange={(value) => setValue('mailgun_region', value as EmailConfigForm['mailgun_region'])}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -528,7 +530,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                       id="mailgun_api_key"
                       type={showPassword['mailgun'] ? 'text' : 'password'}
                       placeholder="key-xxxx..."
-                      {...register('mailgun_api_key' as any)}
+                      {...register('mailgun_api_key')}
                     />
                     <Button
                       type="button"
@@ -565,7 +567,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                 <div className="space-y-2">
                   <Label htmlFor="ses_region">{t('region')}</Label>
                   <Select
-                    onValueChange={(value) => setValue('ses_region' as any, value)}
+                    onValueChange={(value) => setValue('ses_region', value)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder={t('selectRegion')} />
@@ -586,7 +588,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                   <Input
                     id="ses_access_key_id"
                     placeholder="AKIAIOSFODNN7EXAMPLE"
-                    {...register('ses_access_key_id' as any)}
+                    {...register('ses_access_key_id')}
                   />
                 </div>
 
@@ -597,7 +599,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                       id="ses_secret_key"
                       type={showPassword['ses'] ? 'text' : 'password'}
                       placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-                      {...register('ses_secret_key' as any)}
+                      {...register('ses_secret_key')}
                     />
                     <Button
                       type="button"
@@ -654,7 +656,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                       id="postmark_server_token"
                       type={showPassword['postmark'] ? 'text' : 'password'}
                       placeholder="xxxx-xxxx-xxxx-xxxx"
-                      {...register('postmark_server_token' as any)}
+                      {...register('postmark_server_token')}
                     />
                     <Button
                       type="button"
@@ -703,7 +705,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     <Input
                       id="imap_host"
                       placeholder="imap.example.com"
-                      {...register('imap_host' as any)}
+                      {...register('imap_host')}
                     />
                   </div>
                   <div className="space-y-2">
@@ -713,7 +715,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                       type="number"
                       placeholder="993"
                       defaultValue={993}
-                      {...register('imap_port' as any)}
+                      {...register('imap_port')}
                     />
                   </div>
                 </div>
@@ -724,7 +726,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                     <Input
                       id="imap_username"
                       placeholder={tCommon('username').toLowerCase()}
-                      {...register('imap_username' as any)}
+                      {...register('imap_username')}
                     />
                   </div>
                   <div className="space-y-2">
@@ -734,7 +736,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                         id="imap_password"
                         type={showPassword['imap'] ? 'text' : 'password'}
                         placeholder="••••••••"
-                        {...register('imap_password' as any)}
+                        {...register('imap_password')}
                       />
                       <Button
                         type="button"
@@ -760,7 +762,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                       id="imap_folder"
                       placeholder="INBOX"
                       defaultValue="INBOX"
-                      {...register('imap_folder' as any)}
+                      {...register('imap_folder')}
                     />
                   </div>
                   <div className="space-y-2">
@@ -770,7 +772,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
                       type="number"
                       placeholder="30"
                       defaultValue={30}
-                      {...register('imap_poll_interval' as any)}
+                      {...register('imap_poll_interval')}
                     />
                   </div>
                 </div>

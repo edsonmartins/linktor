@@ -1,11 +1,12 @@
 import type { Page } from '@playwright/test'
 
-const mockUser = {
+export type UserRole = 'admin' | 'supervisor' | 'agent' | 'viewer'
+
+const baseMockUser = {
   id: 'user-1',
   tenant_id: 'tenant-1',
   email: 'admin@demo.com',
   name: 'Admin User',
-  role: 'admin',
   avatar_url: null,
 }
 
@@ -13,28 +14,30 @@ const mockUser = {
  * Sets up authenticated state in localStorage and mocks common API routes.
  * Must be called BEFORE page.goto().
  */
-export async function setupAuth(page: Page) {
+export async function setupAuth(page: Page, role: UserRole = 'admin') {
+  const mockUser = { ...baseMockUser, role }
+
+  // Auth marker cookie must exist before navigation: middleware.ts redirects
+  // to /login server-side when it is missing.
+  await page.context().addCookies([
+    { name: 'linktor_authed', value: '1', url: 'http://localhost:3000' },
+  ])
+
   // Set tokens + zustand persisted auth store
-  await page.addInitScript(() => {
+  await page.addInitScript((user) => {
     localStorage.setItem('access_token', 'mock-access-token')
     localStorage.setItem('refresh_token', 'mock-refresh-token')
     localStorage.setItem(
       'auth-storage',
       JSON.stringify({
         state: {
-          user: {
-            id: 'user-1',
-            tenant_id: 'tenant-1',
-            email: 'admin@demo.com',
-            name: 'Admin User',
-            role: 'admin',
-          },
+          user,
           isAuthenticated: true,
         },
         version: 0,
       })
     )
-  })
+  }, mockUser)
 
   // Mock auth refresh
   await page.route('**/api/v1/auth/refresh', async (route) => {
@@ -67,6 +70,69 @@ export async function setupAuth(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ success: true, data: {} }),
+    })
+  })
+}
+
+/**
+ * Convenience wrappers for non-admin roles.
+ */
+export const setupAgentAuth = (page: Page) => setupAuth(page, 'agent')
+export const setupViewerAuth = (page: Page) => setupAuth(page, 'viewer')
+
+/**
+ * Makes an endpoint fail with the given HTTP status. Register AFTER other
+ * routes for the same pattern so it takes precedence (Playwright matches the
+ * most recently registered route first).
+ */
+export async function mockAPIError(
+  page: Page,
+  endpoint: string,
+  status: number,
+  message = 'Something went wrong'
+) {
+  await page.route(`**/api/v1/${endpoint}`, async (route) => {
+    await route.fulfill({
+      status,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: false,
+        error: { code: String(status), message },
+        message,
+      }),
+    })
+  })
+}
+
+/**
+ * Mocks an endpoint that never responds within the test's patience, to
+ * exercise loading states. Aborts after `delayMs` to avoid leaking requests.
+ */
+export async function mockSlowAPI(page: Page, endpoint: string, delayMs = 5_000) {
+  await page.route(`**/api/v1/${endpoint}`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+    await route.abort('timedout')
+  })
+}
+
+/**
+ * Fulfills a list endpoint with the provided items in the standard envelope.
+ */
+export async function mockList(
+  page: Page,
+  endpoint: string,
+  items: unknown[],
+  meta: Record<string, unknown> = {}
+) {
+  await page.route(`**/api/v1/${endpoint}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: items,
+        meta: { page: 1, page_size: 20, total_items: items.length, ...meta },
+      }),
     })
   })
 }

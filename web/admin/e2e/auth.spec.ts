@@ -63,7 +63,7 @@ test.describe('Login Page', () => {
     await expect(page.locator('button[type="submit"]')).toBeVisible()
   })
 
-  test('shows demo credentials hint', async ({ page }) => {
+  test('shows demo credentials hint when NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS is enabled', async ({ page }) => {
     await page.goto('/login')
 
     await expect(page.getByText('admin@demo.com')).toBeVisible({ timeout: 15000 })
