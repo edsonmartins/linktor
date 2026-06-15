@@ -111,9 +111,12 @@ func (h *Handler) WebSocketHandler(c *gin.Context) {
 		return h.handleClientMessage(c.Request.Context(), client, channel, msg)
 	})
 
-	// Set disconnect handler
+	// Set disconnect handler. The request ctx is already cancelled when the
+	// connection drops, so use a fresh bounded ctx for the cleanup work.
 	client.SetDisconnectHandler(func() {
-		h.adapter.HandleClientDisconnect(context.Background(), sessionID)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		h.adapter.HandleClientDisconnect(ctx, sessionID)
 	})
 
 	// Register client
@@ -134,7 +137,7 @@ func (h *Handler) WebSocketHandler(c *gin.Context) {
 	})
 
 	// Handle connect event
-	h.adapter.HandleClientConnect(context.Background(), sessionID, client.Metadata)
+	h.adapter.HandleClientConnect(c.Request.Context(), sessionID, client.Metadata)
 
 	// Start pumps
 	go client.WritePump()

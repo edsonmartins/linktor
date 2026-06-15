@@ -22,7 +22,24 @@ const (
 	UserRoleKey = "user_role"
 	// UserEmailKey is the context key for user email
 	UserEmailKey = "user_email"
+	// AccessTokenCookie is the cookie name browsers use to carry the access token
+	AccessTokenCookie = "access_token"
 )
+
+// extractToken pulls the access token from the Authorization header (Bearer),
+// falling back to the HttpOnly access_token cookie used by browser clients.
+func extractToken(c *gin.Context) string {
+	authHeader := c.GetHeader(AuthorizationHeader)
+	if strings.HasPrefix(authHeader, BearerPrefix) {
+		if token := strings.TrimPrefix(authHeader, BearerPrefix); token != "" {
+			return token
+		}
+	}
+	if cookie, err := c.Cookie(AccessTokenCookie); err == nil {
+		return cookie
+	}
+	return ""
+}
 
 // AuthMiddleware handles JWT authentication
 type AuthMiddleware struct {
@@ -39,23 +56,11 @@ func NewAuthMiddleware(authService *service.AuthService) *AuthMiddleware {
 // Authenticate returns a gin middleware that validates JWT tokens
 func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get authorization header
-		authHeader := c.GetHeader(AuthorizationHeader)
-		if authHeader == "" {
-			abortWithError(c, errors.Unauthorized("missing authorization header"))
-			return
-		}
-
-		// Check bearer prefix
-		if !strings.HasPrefix(authHeader, BearerPrefix) {
-			abortWithError(c, errors.Unauthorized("invalid authorization header format"))
-			return
-		}
-
-		// Extract token
-		token := strings.TrimPrefix(authHeader, BearerPrefix)
+		// Token comes from the Authorization header (API/CLI) or the HttpOnly
+		// access_token cookie (browser).
+		token := extractToken(c)
 		if token == "" {
-			abortWithError(c, errors.Unauthorized("missing token"))
+			abortWithError(c, errors.Unauthorized("missing authentication credentials"))
 			return
 		}
 
@@ -106,18 +111,7 @@ func (m *AuthMiddleware) RequireRole(roles ...string) gin.HandlerFunc {
 // OptionalAuth returns a gin middleware that optionally validates JWT tokens
 func (m *AuthMiddleware) OptionalAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader(AuthorizationHeader)
-		if authHeader == "" {
-			c.Next()
-			return
-		}
-
-		if !strings.HasPrefix(authHeader, BearerPrefix) {
-			c.Next()
-			return
-		}
-
-		token := strings.TrimPrefix(authHeader, BearerPrefix)
+		token := extractToken(c)
 		if token == "" {
 			c.Next()
 			return

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -97,7 +98,16 @@ func (h *UserHandler) List(c *gin.Context) {
 	}
 
 	params := repository.NewListParams()
-	// TODO: Parse query params for pagination
+	if s := c.Query("page"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			params.Page = n
+		}
+	}
+	if s := c.Query("page_size"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 250 {
+			params.PageSize = n
+		}
+	}
 
 	users, total, err := h.userService.List(c.Request.Context(), tenantID, params)
 	if err != nil {

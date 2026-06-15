@@ -84,7 +84,7 @@ func (c *AIConsumer) EnsureStream(ctx context.Context) error {
 		MaxBytes:     -1,
 		MaxAge:       24 * time.Hour,
 		Storage:      jetstream.FileStorage,
-		Replicas:     1,
+		Replicas:     c.client.streamReplicas,
 		Duplicates:   5 * time.Minute,
 	}
 
@@ -199,8 +199,13 @@ func (c *AIConsumer) subscribe(ctx context.Context, cfg ConsumerConfig, handler 
 
 				for msg := range msgs.Messages() {
 					if err := handler(msg); err != nil {
-						// NAK with delay for retry
-						msg.NakWithDelay(5 * time.Second)
+						if deliveryExhausted(msg, cfg.MaxDeliver) {
+							// Final attempt failed: dead-letter instead of
+							// silently dropping on the work-queue stream.
+							deadLetter(ctx, c.client, cfg.Name, msg, err)
+						} else {
+							msg.NakWithDelay(5 * time.Second)
+						}
 					} else {
 						msg.Ack()
 					}

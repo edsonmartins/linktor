@@ -482,6 +482,15 @@ func (a *Adapter) eventLoop() {
 		return
 	}
 
+	// Lifecycle ctx for handlers: cancelled when the adapter stops so
+	// in-flight processing does not outlive the event loop.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		<-stopCh
+		cancel()
+	}()
+
 	eventCh := client.GetEventChannel()
 
 	for {
@@ -504,7 +513,7 @@ func (a *Adapter) eventLoop() {
 			case *IncomingMessage:
 				if msgHandler != nil && !v.IsFromMe {
 					inbound := convertToInboundMessage(v)
-					if err := msgHandler(context.Background(), inbound); err != nil {
+					if err := msgHandler(ctx, inbound); err != nil {
 						// Log error but continue
 					}
 				}
@@ -512,7 +521,7 @@ func (a *Adapter) eventLoop() {
 			case *Receipt:
 				if statusHandler != nil {
 					status := convertToStatusCallback(v)
-					if err := statusHandler(context.Background(), status); err != nil {
+					if err := statusHandler(ctx, status); err != nil {
 						// Log error but continue
 					}
 				}
@@ -525,7 +534,7 @@ func (a *Adapter) eventLoop() {
 
 				// Notify connection handler
 				if connHandler != nil {
-					if err := connHandler(context.Background(), connected, string(v.State)); err != nil {
+					if err := connHandler(ctx, connected, string(v.State)); err != nil {
 						// Log error but continue
 					}
 				}
@@ -537,7 +546,7 @@ func (a *Adapter) eventLoop() {
 
 				// Notify connection handler about logout
 				if connHandler != nil {
-					if err := connHandler(context.Background(), false, v.Reason); err != nil {
+					if err := connHandler(ctx, false, v.Reason); err != nil {
 						// Log error but continue
 					}
 				}

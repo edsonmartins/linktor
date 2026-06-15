@@ -61,6 +61,12 @@ func isAllowedOrigin(origin string, allowed map[string]struct{}) bool {
 		return false
 	}
 
+	// No origins configured: deny-by-default in release mode. The localhost
+	// fallback below is a development convenience only.
+	if gin.Mode() == gin.ReleaseMode {
+		return false
+	}
+
 	return strings.HasPrefix(origin, "http://localhost:") ||
 		strings.HasPrefix(origin, "http://127.0.0.1:") ||
 		strings.HasPrefix(origin, "https://localhost:") ||

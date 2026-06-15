@@ -32,7 +32,12 @@ func setupAuthTest(t *testing.T) (*AuthHandler, *testutil.MockUserRepository, *t
 
 	authService := service.NewAuthService(userRepo, jwtCfg)
 	userService := service.NewUserService(userRepo, tenantRepo)
-	handler := NewAuthHandler(authService, userService)
+	handler := NewAuthHandler(authService, userService, AuthCookieConfig{
+		Secure:        false,
+		SameSite:      ParseSameSite("lax"),
+		AccessMaxAge:  900,
+		RefreshMaxAge: 86400,
+	})
 
 	return handler, userRepo, tenantRepo
 }
@@ -205,24 +210,103 @@ func TestRefreshToken_Valid(t *testing.T) {
 	assert.NotEmpty(t, respData["refresh_token"])
 }
 
-func TestRefreshToken_InvalidBody(t *testing.T) {
+func TestRefreshToken_NoTokenInBodyOrCookie(t *testing.T) {
 	handler, _, _ := setupAuthTest(t)
 
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	// Malformed/blank body and no refresh cookie: the body is now optional
+	// (browsers send the token as a cookie), so a missing token is a 401.
 	c.Request = httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewBufferString("{bad"))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	handler.RefreshToken(c)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	var resp Response
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.False(t, resp.Success)
-	assert.Equal(t, "VALIDATION_ERROR", resp.Error.Code)
+}
+
+func TestRefreshToken_FromCookie(t *testing.T) {
+	handler, userRepo, _ := setupAuthTest(t)
+	user := createTestUser(t)
+	userRepo.Users[user.ID] = user
+
+	// Login to mint a valid refresh token.
+	loginW, loginC := newTestContext(http.MethodPost, "/auth/login", LoginRequest{
+		Email:    "test@example.com",
+		Password: "password123",
+	})
+	handler.Login(loginC)
+	require.Equal(t, http.StatusOK, loginW.Code)
+
+	var loginResp Response
+	require.NoError(t, json.Unmarshal(loginW.Body.Bytes(), &loginResp))
+	dataMap := loginResp.Data.(map[string]interface{})
+	refreshToken := dataMap["refresh_token"].(string)
+
+	// Present the refresh token only as a cookie (no JSON body).
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	c.Request.AddCookie(&http.Cookie{Name: "refresh_token", Value: refreshToken})
+
+	handler.RefreshToken(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	// New auth cookies are issued on the response (HttpOnly).
+	setCookie := w.Header().Get("Set-Cookie")
+	assert.Contains(t, setCookie, "access_token=")
+}
+
+func TestLogin_SetsHttpOnlyCookies(t *testing.T) {
+	handler, userRepo, _ := setupAuthTest(t)
+	user := createTestUser(t)
+	userRepo.Users[user.ID] = user
+
+	w, c := newTestContext(http.MethodPost, "/auth/login", LoginRequest{
+		Email:    "test@example.com",
+		Password: "password123",
+	})
+	handler.Login(c)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	cookies := w.Result().Cookies()
+	var access, refresh *http.Cookie
+	for _, ck := range cookies {
+		switch ck.Name {
+		case "access_token":
+			access = ck
+		case "refresh_token":
+			refresh = ck
+		}
+	}
+	require.NotNil(t, access, "access_token cookie must be set")
+	require.NotNil(t, refresh, "refresh_token cookie must be set")
+	assert.True(t, access.HttpOnly, "access_token cookie must be HttpOnly")
+	assert.True(t, refresh.HttpOnly, "refresh_token cookie must be HttpOnly")
+	assert.NotEmpty(t, access.Value)
+}
+
+func TestLogout_ClearsCookies(t *testing.T) {
+	handler, _, _ := setupAuthTest(t)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+
+	handler.Logout(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == "access_token" || ck.Name == "refresh_token" {
+			assert.True(t, ck.MaxAge < 0, "%s cookie should be expired", ck.Name)
+		}
+	}
 }
 
 // --- Me tests ---

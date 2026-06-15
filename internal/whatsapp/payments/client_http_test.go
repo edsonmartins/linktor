@@ -185,7 +185,7 @@ func TestClient_CreatePayment_SendsMessage(t *testing.T) {
 		OrganizationID: "org-1",
 		ChannelID:      "chan-1",
 		GatewayConfig: &GatewayConfig{
-			// Type left zero-valued to fall through to NewMockGateway
+			Type: GatewayMock,
 		},
 	})
 	client.httpClient = &http.Client{Transport: &rewriteTransport{baseURL: server.URL, rt: http.DefaultTransport}}

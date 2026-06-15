@@ -214,6 +214,7 @@ const (
 	GatewayPagSeguro GatewayType = "pagseguro" // Brazil
 	GatewayMercadoPago GatewayType = "mercadopago" // Brazil
 	GatewayStripe   GatewayType = "stripe"    // Global
+	GatewayMock     GatewayType = "mock"      // Testing only — never use in production
 )
 
 // GatewayConfig represents payment gateway configuration

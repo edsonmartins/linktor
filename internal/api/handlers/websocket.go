@@ -254,8 +254,14 @@ func NewWebSocketHandler(hub *AgentHub, jwtSecret string) *WebSocketHandler {
 
 // HandleConnection handles WebSocket upgrade and connection
 func (h *WebSocketHandler) HandleConnection(c *gin.Context) {
-	// Get token from query param
+	// Token comes from the query param (legacy/CLI) or the HttpOnly
+	// access_token cookie the browser sends with the WS handshake.
 	token := c.Query("token")
+	if token == "" {
+		if cookie, err := c.Cookie("access_token"); err == nil {
+			token = cookie
+		}
+	}
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
 		return

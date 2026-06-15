@@ -68,6 +68,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -650,8 +651,15 @@ func main() {
 	// Create auth middleware
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
-	// Create auth handler
-	authHandler := handlers.NewAuthHandler(authService, userService)
+	// Create auth handler. Tokens are delivered to browsers as HttpOnly
+	// cookies; TTLs mirror the JWT config (access in minutes, refresh in hours).
+	authHandler := handlers.NewAuthHandler(authService, userService, handlers.AuthCookieConfig{
+		Secure:        cfg.JWT.CookieSecure,
+		Domain:        cfg.JWT.CookieDomain,
+		SameSite:      handlers.ParseSameSite(cfg.JWT.CookieSameSite),
+		AccessMaxAge:  cfg.JWT.AccessTokenTTL * 60,
+		RefreshMaxAge: cfg.JWT.RefreshTokenTTL * 3600,
+	})
 
 	// Create user handler
 	userHandler := handlers.NewUserHandler(userService)
@@ -668,8 +676,14 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Background monitors are tracked so shutdown can wait for an in-flight
+	// iteration (e.g. a sweep mid-write) instead of exiting under it.
+	var backgroundJobs sync.WaitGroup
+
 	// Start coexistence monitor background job (runs every hour)
+	backgroundJobs.Add(1)
 	go func() {
+		defer backgroundJobs.Done()
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 
@@ -693,11 +707,17 @@ func main() {
 	logger.Info("Coexistence monitor started (runs every hour)")
 
 	// Start SLA monitor (auto-close idle conversations, flag first-response breaches).
-	go slaMonitor.Start(ctx, 1*time.Minute)
+	backgroundJobs.Add(1)
+	go func() {
+		defer backgroundJobs.Done()
+		slaMonitor.Start(ctx, 1*time.Minute)
+	}()
 
 	// Start campaign sweeper: reconcile recipients stuck in 'queued' (worker never
 	// confirmed them — dead-lettered or down) into 'failed' so they can be retried.
+	backgroundJobs.Add(1)
 	go func() {
+		defer backgroundJobs.Done()
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -717,6 +737,14 @@ func main() {
 
 	if consumer != nil {
 		logger.Info("Starting message consumers...")
+
+		// Observe the dead-letter stream so exhausted messages surface in the
+		// logs instead of dying silently.
+		dlqConsumer := nats.NewDLQConsumer(natsClient)
+		if err := dlqConsumer.Subscribe(ctx, nil); err != nil {
+			logger.Warn("Failed to subscribe DLQ observer: " + err.Error())
+		}
+
 		// Subscribe to inbound messages
 		if err := consumer.SubscribeAllInbound(ctx, func(ctx context.Context, msg *nats.InboundMessage) error {
 			_, err := receiveMessageUC.Execute(ctx, msg)
@@ -802,6 +830,7 @@ func main() {
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestID())
 	router.Use(middleware.Logger())
+	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.CORS())
 
 	// Health check endpoints
@@ -845,6 +874,7 @@ func main() {
 		{
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/refresh", authHandler.RefreshToken)
+			auth.POST("/logout", authHandler.Logout)
 		}
 
 		// WebChat widget config (no auth required)
@@ -1289,6 +1319,18 @@ func main() {
 	// Stop AI consumers
 	if aiConsumer != nil {
 		aiConsumer.Stop()
+	}
+
+	// Wait (bounded) for background monitors to finish their current iteration.
+	backgroundDone := make(chan struct{})
+	go func() {
+		backgroundJobs.Wait()
+		close(backgroundDone)
+	}()
+	select {
+	case <-backgroundDone:
+	case <-time.After(10 * time.Second):
+		logger.Warn("Background monitors did not stop within 10s, continuing shutdown")
 	}
 
 	// Disconnect adapters

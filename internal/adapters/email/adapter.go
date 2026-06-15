@@ -480,7 +480,8 @@ func (a *Adapter) startIMAPPolling() {
 
 		if handler != nil {
 			inbound := a.convertToInboundMessage(email)
-			handler(context.Background(), inbound)
+			// Use the polling ctx so in-flight handling stops with the adapter.
+			handler(ctx, inbound)
 		}
 	})
 

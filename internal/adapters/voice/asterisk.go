@@ -118,7 +118,7 @@ func (p *AsteriskProvider) Capabilities() ProviderCapabilities {
 
 // connectAMI establishes connection to Asterisk Manager Interface
 func (p *AsteriskProvider) connectAMI(ctx context.Context) error {
-	addr := fmt.Sprintf("%s:%d", p.amiHost, p.amiPort)
+	addr := net.JoinHostPort(p.amiHost, strconv.Itoa(p.amiPort))
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		return err

@@ -78,7 +78,7 @@ func (p *FreeSWITCHProvider) Initialize(ctx context.Context, config VoiceConfig)
 	}
 
 	// Connect to FreeSWITCH ESL
-	address := fmt.Sprintf("%s:%s", eslHost, eslPort)
+	address := net.JoinHostPort(eslHost, eslPort)
 	conn, err := net.DialTimeout("tcp", address, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to connect to FreeSWITCH ESL: %w", err)
