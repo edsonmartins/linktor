@@ -98,6 +98,16 @@ func (db *PostgresDB) RunMigrations(ctx context.Context) error {
 		createWhatsAppPaymentsTables,
 		createWhatsAppHistoryImportsTable,
 		createWhatsAppCoexistenceTables,
+		createOrdersTables,
+		createCartsTables,
+		// whatomate-inspired features (audit, canned, RBAC, assignment, SLA, campaigns)
+		createAuditLogsTable,
+		createCannedResponsesTable,
+		createRolesTables,
+		addUserAssignmentState,
+		createTenantSettingsTable,
+		addConversationSLAColumns,
+		createCampaignsTables,
 	}
 
 	for _, migration := range migrations {
@@ -754,4 +764,120 @@ CREATE INDEX IF NOT EXISTS idx_wa_coexistence_activity_created ON whatsapp_coexi
 CREATE INDEX IF NOT EXISTS idx_wa_coexistence_notifications_channel ON whatsapp_coexistence_notifications(channel_id);
 CREATE INDEX IF NOT EXISTS idx_wa_coexistence_notifications_tenant ON whatsapp_coexistence_notifications(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_wa_coexistence_notifications_read_at ON whatsapp_coexistence_notifications(read_at);
+`
+
+const createOrdersTables = `
+CREATE TABLE IF NOT EXISTS orders (
+    id VARCHAR(64) PRIMARY KEY,
+    organization_id VARCHAR(64) NOT NULL,
+    channel_id VARCHAR(64) NOT NULL,
+    conversation_id UUID,
+    catalog_id VARCHAR(128) NOT NULL DEFAULT '',
+    customer_phone VARCHAR(50) NOT NULL,
+    customer_name VARCHAR(255),
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    subtotal BIGINT NOT NULL DEFAULT 0,
+    tax BIGINT NOT NULL DEFAULT 0,
+    shipping BIGINT NOT NULL DEFAULT 0,
+    discount BIGINT NOT NULL DEFAULT 0,
+    total BIGINT NOT NULL DEFAULT 0,
+    currency VARCHAR(10) NOT NULL DEFAULT 'BRL',
+    notes TEXT,
+    message_id VARCHAR(255),
+    tracking_number VARCHAR(128),
+    tracking_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    confirmed_at TIMESTAMP WITH TIME ZONE,
+    shipped_at TIMESTAMP WITH TIME ZONE,
+    delivered_at TIMESTAMP WITH TIME ZONE,
+    cancelled_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_organization ON orders(organization_id);
+CREATE INDEX IF NOT EXISTS idx_orders_channel ON orders(channel_id);
+CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_message_id ON orders(message_id);
+
+CREATE TABLE IF NOT EXISTS order_items (
+    id VARCHAR(64) PRIMARY KEY,
+    order_id VARCHAR(64) NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id VARCHAR(128) NOT NULL,
+    product_name VARCHAR(255) NOT NULL,
+    product_sku VARCHAR(128),
+    quantity INT NOT NULL DEFAULT 1,
+    unit_price BIGINT NOT NULL DEFAULT 0,
+    total_price BIGINT NOT NULL DEFAULT 0,
+    currency VARCHAR(10) NOT NULL DEFAULT 'BRL',
+    image_url TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
+
+CREATE TABLE IF NOT EXISTS order_status_history (
+    id VARCHAR(64) PRIMARY KEY,
+    order_id VARCHAR(64) NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    status VARCHAR(32) NOT NULL,
+    notes TEXT,
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_history_order ON order_status_history(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_history_created ON order_status_history(created_at DESC);
+
+DROP TRIGGER IF EXISTS update_orders_updated_at ON orders;
+CREATE TRIGGER update_orders_updated_at
+    BEFORE UPDATE ON orders
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+`
+
+const createCartsTables = `
+CREATE TABLE IF NOT EXISTS carts (
+    id VARCHAR(64) PRIMARY KEY,
+    organization_id VARCHAR(64) NOT NULL,
+    channel_id VARCHAR(64) NOT NULL,
+    customer_phone VARCHAR(50) NOT NULL,
+    catalog_id VARCHAR(128) NOT NULL DEFAULT '',
+    subtotal BIGINT NOT NULL DEFAULT 0,
+    currency VARCHAR(10) NOT NULL DEFAULT 'BRL',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (NOW() + INTERVAL '7 days'),
+    abandoned BOOLEAN NOT NULL DEFAULT FALSE,
+    abandoned_at TIMESTAMP WITH TIME ZONE,
+    recovered_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_carts_organization ON carts(organization_id);
+CREATE INDEX IF NOT EXISTS idx_carts_channel ON carts(channel_id);
+CREATE INDEX IF NOT EXISTS idx_carts_customer ON carts(customer_phone);
+CREATE INDEX IF NOT EXISTS idx_carts_expires ON carts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_carts_abandoned ON carts(abandoned, abandoned_at);
+
+CREATE TABLE IF NOT EXISTS cart_items (
+    id VARCHAR(64) PRIMARY KEY,
+    cart_id VARCHAR(64) NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+    product_id VARCHAR(128) NOT NULL,
+    product_name VARCHAR(255) NOT NULL,
+    product_sku VARCHAR(128),
+    quantity INT NOT NULL DEFAULT 1,
+    unit_price BIGINT NOT NULL DEFAULT 0,
+    currency VARCHAR(10) NOT NULL DEFAULT 'BRL',
+    image_url TEXT,
+    added_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items(cart_id);
+CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items(product_id);
+
+DROP TRIGGER IF EXISTS update_carts_updated_at ON carts;
+CREATE TRIGGER update_carts_updated_at
+    BEFORE UPDATE ON carts
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
 `

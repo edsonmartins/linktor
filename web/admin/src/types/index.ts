@@ -874,3 +874,151 @@ export interface ResetConsumerRequest {
   stream: string
   consumer: string
 }
+
+// Campaigns
+export type CampaignStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type RecipientStatus =
+  | 'pending'
+  | 'queued'
+  | 'sent'
+  | 'delivered'
+  | 'read'
+  | 'failed'
+
+export interface Campaign {
+  id: string
+  tenant_id: string
+  channel_id: string
+  name: string
+  template_name: string
+  template_language: string
+  status: CampaignStatus
+  total_recipients: number
+  sent_count: number
+  delivered_count: number
+  read_count: number
+  failed_count: number
+  scheduled_at?: string
+  started_at?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CampaignRecipient {
+  id: string
+  campaign_id: string
+  contact_id?: string
+  phone: string
+  params?: string[]
+  status: RecipientStatus
+  message_id?: string
+  error_reason?: string
+  attempts: number
+  sent_at?: string
+  created_at: string
+}
+
+export interface CreateCampaignRequest {
+  name: string
+  channel_id: string
+  template_name: string
+  template_language?: string
+  recipients: { phone: string; params?: string[] }[]
+}
+
+// Tenant operational settings (assignment + SLA)
+export type AssignmentStrategy = 'manual' | 'round_robin' | 'load_balanced'
+
+export interface TenantSettings {
+  tenant_id: string
+  assignment_strategy: AssignmentStrategy
+  auto_assign_enabled: boolean
+  sla_first_response_minutes: number
+  sla_resolution_minutes: number
+  auto_close_after_minutes: number
+  business_hours?: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface UpdateSettingsRequest {
+  assignment_strategy: AssignmentStrategy
+  auto_assign_enabled: boolean
+  sla_first_response_minutes: number
+  sla_resolution_minutes: number
+  auto_close_after_minutes: number
+}
+
+// RBAC roles
+export interface Permission {
+  resource: string
+  action: string
+}
+
+export interface Role {
+  id: string
+  tenant_id: string
+  name: string
+  description?: string
+  is_system: boolean
+  is_default: boolean
+  permissions: Permission[]
+  created_at: string
+  updated_at: string
+}
+
+export interface RoleCatalog {
+  resources: string[]
+  actions: string[]
+}
+
+export interface RoleRequest {
+  name: string
+  description?: string
+  permissions: Permission[]
+}
+
+// Canned responses
+export interface CannedResponse {
+  id: string
+  tenant_id: string
+  shortcut: string
+  title: string
+  content: string
+  tags: string[]
+  usage_count: number
+  created_by?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CannedRequest {
+  shortcut: string
+  title: string
+  content: string
+  tags?: string[]
+}
+
+// Audit log
+export interface AuditLog {
+  id: string
+  tenant_id: string
+  actor_id?: string
+  actor_email?: string
+  actor_name?: string
+  action: string
+  resource_type?: string
+  resource_id?: string
+  changes?: Record<string, unknown>
+  ip_address?: string
+  user_agent?: string
+  created_at: string
+}

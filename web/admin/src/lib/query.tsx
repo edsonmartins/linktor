@@ -220,6 +220,47 @@ export const queryKeys = {
     stats: (period: string) =>
       [...queryKeys.observability.all, 'stats', period] as const,
   },
+
+  // Campaigns
+  campaigns: {
+    all: ['campaigns'] as const,
+    lists: () => [...queryKeys.campaigns.all, 'list'] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...queryKeys.campaigns.lists(), filters] as const,
+    details: () => [...queryKeys.campaigns.all, 'detail'] as const,
+    detail: (id: string) => [...queryKeys.campaigns.details(), id] as const,
+    recipients: (id: string) =>
+      [...queryKeys.campaigns.detail(id), 'recipients'] as const,
+  },
+
+  // Tenant operational settings
+  tenantSettings: {
+    all: ['tenant-settings'] as const,
+    detail: () => [...queryKeys.tenantSettings.all, 'detail'] as const,
+  },
+
+  // RBAC roles
+  roles: {
+    all: ['roles'] as const,
+    lists: () => [...queryKeys.roles.all, 'list'] as const,
+    catalog: () => [...queryKeys.roles.all, 'catalog'] as const,
+    detail: (id: string) => [...queryKeys.roles.all, 'detail', id] as const,
+  },
+
+  // Canned responses
+  canned: {
+    all: ['canned-responses'] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...queryKeys.canned.all, 'list', filters] as const,
+    detail: (id: string) => [...queryKeys.canned.all, 'detail', id] as const,
+  },
+
+  // Audit log
+  audit: {
+    all: ['audit-logs'] as const,
+    list: (filters: Record<string, unknown>) =>
+      [...queryKeys.audit.all, 'list', filters] as const,
+  },
 }
 
 export { getQueryClient }

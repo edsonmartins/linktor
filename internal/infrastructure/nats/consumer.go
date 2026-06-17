@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -212,8 +213,13 @@ func (c *Consumer) subscribe(ctx context.Context, cfg ConsumerConfig, handler fu
 
 				for msg := range msgs.Messages() {
 					if err := handler(msg); err != nil {
-						// NAK with delay for retry
-						msg.NakWithDelay(5 * time.Second)
+						if c.deliveryExhausted(msg, cfg.MaxDeliver) {
+							// Final attempt failed: dead-letter instead of looping
+							// or silently dropping on the work-queue stream.
+							c.deadLetter(ctx, cfg.Name, msg, err)
+						} else {
+							msg.NakWithDelay(5 * time.Second)
+						}
 					} else {
 						msg.Ack()
 					}
@@ -223,6 +229,30 @@ func (c *Consumer) subscribe(ctx context.Context, cfg ConsumerConfig, handler fu
 	}()
 
 	return nil
+}
+
+// deliveryExhausted reports whether this is the last allowed delivery attempt.
+func (c *Consumer) deliveryExhausted(msg jetstream.Msg, maxDeliver int) bool {
+	if maxDeliver <= 0 {
+		return false
+	}
+	meta, err := msg.Metadata()
+	if err != nil {
+		return false
+	}
+	return meta.NumDelivered >= uint64(maxDeliver)
+}
+
+// deadLetter publishes the raw message to the consumer's DLQ subject and acks
+// it. If the DLQ publish fails, the message is NAK'd so it is not lost.
+func (c *Consumer) deadLetter(ctx context.Context, consumerName string, msg jetstream.Msg, cause error) {
+	if _, err := c.client.JetStream().Publish(ctx, SubjectDLQ(consumerName), msg.Data()); err != nil {
+		logger.Error("failed to dead-letter message, will retry delivery: " + err.Error())
+		msg.NakWithDelay(30 * time.Second)
+		return
+	}
+	logger.Warn("message dead-lettered after exhausting retries (consumer=" + consumerName + "): " + cause.Error())
+	msg.Ack()
 }
 
 // Stop stops all consumers

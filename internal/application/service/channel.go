@@ -58,6 +58,7 @@ type ChannelLifecycleHooks struct {
 	OnConnected    func(ctx context.Context, channel *entity.Channel)
 	OnDisconnected func(ctx context.Context, channel *entity.Channel)
 	OnUpdated      func(ctx context.Context, channel *entity.Channel)
+	OnDeleted      func(ctx context.Context, channel *entity.Channel)
 }
 
 // ChannelService handles channel operations
@@ -156,9 +157,38 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 	return channel, nil
 }
 
+// ReencryptCredentials re-saves every channel of a tenant so its credentials
+// are re-encrypted with the current primary key. Used after a key rotation:
+// channels are loaded (decrypted via the primary or a previous key) and written
+// back (encrypted with the primary key). Returns how many channels were rewritten.
+func (s *ChannelService) ReencryptCredentials(ctx context.Context, tenantID string) (int, error) {
+	channels, _, err := s.repo.FindByTenant(ctx, tenantID, nil)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, channel := range channels {
+		if err := s.repo.Update(ctx, channel); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, nil
+}
+
 // Delete deletes a channel
 func (s *ChannelService) Delete(ctx context.Context, id string) error {
-	return s.repo.Delete(ctx, id)
+	// Load first so lifecycle hooks (e.g. outbound sender-cache invalidation)
+	// receive the channel identity. If the lookup fails, fall back to a plain
+	// delete to preserve the repository's idempotent semantics.
+	channel, lookupErr := s.repo.FindByID(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+	if lookupErr == nil && s.hooks.OnDeleted != nil {
+		s.hooks.OnDeleted(ctx, channel)
+	}
+	return nil
 }
 
 // UpdateEnabled updates the channel enabled state

@@ -100,10 +100,12 @@ import (
 	"github.com/msgfy/linktor/internal/infrastructure/database"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	storageLib "github.com/msgfy/linktor/internal/infrastructure/storage"
+	"github.com/msgfy/linktor/internal/outbound"
 	"github.com/msgfy/linktor/internal/whatsapp/analytics"
 	"github.com/msgfy/linktor/internal/whatsapp/calling"
 	"github.com/msgfy/linktor/internal/whatsapp/ctwa"
 	"github.com/msgfy/linktor/internal/whatsapp/payments"
+	"github.com/msgfy/linktor/pkg/crypto"
 	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 
@@ -169,6 +171,13 @@ func main() {
 		consumer = nats.NewConsumer(natsClient)
 	}
 
+	// Initialize the secret-at-rest encryptor for channel credentials/tokens.
+	// Previous keys are accepted for decryption during a key rotation.
+	encryptor, err := crypto.NewEncryptorWithKeys(cfg.Crypto.EncryptionKey, cfg.Crypto.PreviousKeys...)
+	if err != nil {
+		logger.Fatal("Failed to initialize crypto encryptor: " + err.Error())
+	}
+
 	// Initialize repositories
 	logger.Info("Initializing repositories...")
 	tenantRepo := database.NewTenantRepository(db)
@@ -176,7 +185,7 @@ func main() {
 	messageRepo := database.NewMessageRepository(db)
 	conversationRepo := database.NewConversationRepository(db)
 	contactRepo := database.NewContactRepository(db)
-	channelRepo := database.NewChannelRepository(db)
+	channelRepo := database.NewChannelRepository(db, encryptor)
 	botRepo := database.NewBotRepository(db)
 	contextRepo := database.NewConversationContextRepository(db)
 	aiResponseRepo := database.NewAIResponseRepository(db)
@@ -189,6 +198,13 @@ func main() {
 	paymentRepo := database.NewPaymentRepository(db)
 	observabilityRepo := database.NewObservabilityRepository(db)
 	apiKeyRepo := database.NewAPIKeyRepository(db)
+	orderRepo := database.NewOrderRepository(db)
+	cartRepo := database.NewCartRepository(db)
+	auditLogRepo := database.NewAuditLogRepository(db)
+	cannedRepo := database.NewCannedResponseRepository(db)
+	roleRepo := database.NewRoleRepository(db)
+	tenantSettingsRepo := database.NewTenantSettingsRepository(db)
+	campaignRepo := database.NewCampaignRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
@@ -252,6 +268,10 @@ func main() {
 	// Initialize analytics service
 	analyticsService := service.NewAnalyticsService(analyticsRepo, nil)
 	observabilityService := service.NewObservabilityService(observabilityRepo, nats.NewMonitor(natsClient))
+
+	// Initialize commerce + WhatsApp Flows services
+	commerceService := service.NewCommerceService(channelRepo, orderRepo, cartRepo)
+	whatsappFlowsService := service.NewWhatsAppFlowsService(flowRepo, channelRepo)
 
 	// Initialize template service
 	templateService := service.NewTemplateService(templateRepo, channelRepo)
@@ -345,6 +365,42 @@ func main() {
 		producer,
 		normalizer,
 	)
+
+	// whatomate-inspired services: audit, canned, RBAC, assignment, SLA, campaigns.
+	assignmentRepo := database.NewAssignmentRepository(db)
+	slaRepo := database.NewSLARepository(db)
+	auditService := service.NewAuditService(auditLogRepo)
+	cannedService := service.NewCannedResponseService(cannedRepo)
+	roleService := service.NewRoleService(roleRepo, redisClient)
+	settingsService := service.NewSettingsService(tenantSettingsRepo)
+	assignmentService := service.NewAssignmentService(assignmentRepo, conversationRepo, tenantSettingsRepo)
+	slaMonitor := service.NewSLAMonitorService(slaRepo, tenantSettingsRepo)
+	campaignService := service.NewCampaignService(campaignRepo, channelRepo, producer)
+
+	// Outbound delivery subsystem: per-channel stateless senders resolved from
+	// (decrypted) credentials, driven by a NATS-backed worker. This is what
+	// actually delivers send_message and campaign messages over the Cloud API.
+	outboundResolver := outbound.NewResolver(channelRepo)
+	outboundResolver.Register(whatsappofficial.NewSenderFactory())
+	outboundResolver.Register(telegram.NewSenderFactory())
+	outboundResolver.Register(sms.NewSenderFactory())
+	outboundResolver.Register(facebook.NewSenderFactory())
+	outboundResolver.Register(instagram.NewSenderFactory())
+	outboundResolver.Register(rcs.NewSenderFactory())
+	outboundResolver.Register(email.NewSenderFactory())
+	// Stateful channels deliver through their live plugin adapter (whatsmeow
+	// session / webchat WebSocket hub) but ride the same unified worker.
+	outboundResolver.Register(outbound.NewPluginSenderFactory("webchat", plugin.GetGlobalRegistry()))
+	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp", plugin.GetGlobalRegistry()))
+	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp_unofficial", plugin.GetGlobalRegistry()))
+	var outboundWorker *outbound.Worker
+	if consumer != nil && producer != nil {
+		// 80 msg/s/channel ~ WhatsApp Cloud API default throughput tier.
+		outboundWorker = outbound.NewWorker(consumer, producer, outboundResolver, campaignRepo, 80)
+	}
+
+	// Enable automatic conversation routing on inbound messages.
+	receiveMessageUC.SetAssignmentService(assignmentService)
 
 	// Initialize embedding service
 	embeddingService := service.NewEmbeddingService(aiFactory, nil)
@@ -520,17 +576,37 @@ func main() {
 	// Create CTWA handler
 	ctwaHandler := handlers.NewCTWAHandler()
 
+	// whatomate-inspired handlers
+	auditHandler := handlers.NewAuditHandler(auditService)
+	cannedHandler := handlers.NewCannedResponseHandler(cannedService, auditService)
+	roleHandler := handlers.NewRoleHandler(roleService, auditService)
+	settingsHandler := handlers.NewSettingsHandler(settingsService, assignmentService, auditService)
+	campaignHandler := handlers.NewCampaignHandler(campaignService, auditService)
+	permission := middleware.NewPermissionMiddleware(roleService)
+	auditMw := middleware.NewAuditMiddleware(auditService)
+
+	// Create Order handler (commerce)
+	orderHandler := handlers.NewOrderHandler(orderRepo)
+	whatsappFlowsHandler := handlers.NewWhatsAppFlowsHandler(whatsappFlowsService)
+	_ = commerceService
+
 	channelService.SetLifecycleHooks(service.ChannelLifecycleHooks{
 		OnConnected: func(ctx context.Context, channel *entity.Channel) {
 			registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
 		},
 		OnUpdated: func(ctx context.Context, channel *entity.Channel) {
+			// Credentials may have changed: drop the cached outbound sender.
+			outboundResolver.Invalidate(channel.ID)
 			if channel.IsConnected() {
 				registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
 			}
 		},
 		OnDisconnected: func(ctx context.Context, channel *entity.Channel) {
+			outboundResolver.Invalidate(channel.ID)
 			unregisterWhatsAppAdvancedClient(channel.ID, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
+		},
+		OnDeleted: func(ctx context.Context, channel *entity.Channel) {
+			outboundResolver.Invalidate(channel.ID)
 		},
 	})
 
@@ -616,6 +692,27 @@ func main() {
 	}()
 	logger.Info("Coexistence monitor started (runs every hour)")
 
+	// Start SLA monitor (auto-close idle conversations, flag first-response breaches).
+	go slaMonitor.Start(ctx, 1*time.Minute)
+
+	// Start campaign sweeper: reconcile recipients stuck in 'queued' (worker never
+	// confirmed them — dead-lettered or down) into 'failed' so they can be retried.
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := campaignService.SweepStale(ctx, 15*time.Minute); err != nil {
+					logger.Warn("campaign sweep failed: " + err.Error())
+				}
+			}
+		}
+	}()
+	logger.Info("Campaign sweeper started (every 5m, stale threshold 15m)")
+
 	var aiConsumer *nats.AIConsumer
 
 	if consumer != nil {
@@ -630,9 +727,16 @@ func main() {
 
 		// Subscribe to status updates
 		if err := consumer.SubscribeStatus(ctx, func(ctx context.Context, status *nats.StatusUpdate) error {
-			return handleMessageStatusUpdate(ctx, messageRepo, status)
+			return handleMessageStatusUpdate(ctx, messageRepo, campaignRepo, status)
 		}); err != nil {
 			logger.Warn("Failed to subscribe to status updates")
+		}
+
+		// Start the outbound delivery worker.
+		if outboundWorker != nil {
+			if err := outboundWorker.Start(ctx); err != nil {
+				logger.Warn("Failed to start outbound delivery worker: " + err.Error())
+			}
 		}
 
 		// Initialize AI consumer
@@ -753,6 +857,11 @@ func main() {
 				return "webhook:" + c.ClientIP()
 			}))
 		}
+		if rateLimiter != nil {
+			webhookDedup := middleware.NewWebhookDedup(rateRedis, 6*time.Hour)
+			webhooks.Use(webhookDedup.Middleware("global"))
+			logger.Info("Webhook deduplication enabled (Redis-backed, 6h TTL)")
+		}
 		{
 			webhooks.Any("/whatsapp/:channelId", webhookHandler.WhatsAppWebhook)
 			webhooks.POST("/telegram/:channelId", webhookHandler.TelegramWebhook)
@@ -790,7 +899,7 @@ func main() {
 
 			// Tenant/Organization
 			protected.GET("/tenant", tenantHandler.Get)
-			protected.PUT("/tenant", authMiddleware.RequireRole("admin", "owner"), tenantHandler.Update)
+			protected.PUT("/tenant", authMiddleware.RequireRole("admin", "owner"), auditMw.Record(), tenantHandler.Update)
 			protected.GET("/tenant/usage", tenantHandler.GetUsage)
 
 			// Conversations
@@ -816,6 +925,7 @@ func main() {
 
 			// Contacts
 			contacts := protected.Group("/contacts")
+			contacts.Use(auditMw.Record())
 			{
 				contacts.GET("", contactHandler.List)
 				contacts.POST("", contactHandler.Create)
@@ -828,10 +938,12 @@ func main() {
 
 			// Channels
 			channels := protected.Group("/channels")
+			channels.Use(auditMw.Record())
 			{
 				channels.GET("", channelHandler.List)
 				channels.POST("", channelHandler.Create)
 				// Specific routes must come before generic /:id
+				channels.POST("/reencrypt", authMiddleware.RequireRole("admin", "owner"), channelHandler.Reencrypt)
 				channels.POST("/test", channelHandler.TestConnection)
 				channels.POST("/test-whatsapp", channelHandler.TestWhatsAppConnection)
 				channels.POST("/test-telegram", channelHandler.TestTelegramConnection)
@@ -988,6 +1100,30 @@ func main() {
 				waAnalytics.GET("/dashboard", whatsappAnalyticsHandler.GetDashboardData)
 			}
 
+			// WhatsApp Flows (Meta API)
+			waFlows := protected.Group("/whatsapp/flows")
+			{
+				waFlows.POST("", whatsappFlowsHandler.CreateFlow)
+				waFlows.PUT("/:id", whatsappFlowsHandler.UpdateFlow)
+				waFlows.DELETE("/:id", whatsappFlowsHandler.DeleteFlow)
+				waFlows.POST("/:id/publish", whatsappFlowsHandler.PublishFlow)
+				waFlows.GET("/:id/preview", whatsappFlowsHandler.GetFlowPreview)
+				waFlows.POST("/sync", whatsappFlowsHandler.SyncFlows)
+			}
+
+			// Orders (commerce)
+			orderRoutes := protected.Group("/orders")
+			{
+				orderRoutes.GET("", orderHandler.ListOrders)
+				orderRoutes.GET("/stats", orderHandler.GetOrderStats)
+				orderRoutes.GET("/:orderId", orderHandler.GetOrder)
+				orderRoutes.GET("/:orderId/history", orderHandler.GetOrderHistory)
+				orderRoutes.PATCH("/:orderId/status", orderHandler.UpdateOrderStatus)
+				orderRoutes.PATCH("/:orderId/shipping", orderHandler.UpdateShipping)
+				orderRoutes.POST("/:orderId/cancel", orderHandler.CancelOrder)
+			}
+			protected.GET("/customers/:phone/orders", orderHandler.GetCustomerOrders)
+
 			// Payments (per-channel)
 			paymentsRoutes := protected.Group("/channels/:id/payments")
 			{
@@ -1046,6 +1182,7 @@ func main() {
 			// User management (admin only)
 			users := protected.Group("/users")
 			users.Use(authMiddleware.RequireRole("admin", "owner"))
+			users.Use(auditMw.Record())
 			{
 				users.GET("", userHandler.List)
 				users.POST("", userHandler.Create)
@@ -1061,6 +1198,57 @@ func main() {
 				apiKeys.GET("", apiKeyHandler.List)
 				apiKeys.POST("", apiKeyHandler.Create)
 				apiKeys.DELETE("/:id", apiKeyHandler.Delete)
+			}
+
+			// Canned responses (quick replies)
+			canned := protected.Group("/canned-responses")
+			{
+				canned.GET("", cannedHandler.List)
+				canned.POST("", permission.Require(entity.ResourceCanned, entity.ActionCreate), cannedHandler.Create)
+				canned.GET("/use/:shortcut", cannedHandler.Use)
+				canned.GET("/:id", cannedHandler.Get)
+				canned.PUT("/:id", permission.Require(entity.ResourceCanned, entity.ActionUpdate), cannedHandler.Update)
+				canned.DELETE("/:id", permission.Require(entity.ResourceCanned, entity.ActionDelete), cannedHandler.Delete)
+			}
+
+			// RBAC roles (admin only)
+			roles := protected.Group("/roles")
+			roles.Use(authMiddleware.RequireRole("admin", "owner"))
+			{
+				roles.GET("/catalog", roleHandler.Catalog)
+				roles.GET("", roleHandler.List)
+				roles.POST("", roleHandler.Create)
+				roles.GET("/:id", roleHandler.Get)
+				roles.PUT("/:id", roleHandler.Update)
+				roles.DELETE("/:id", roleHandler.Delete)
+			}
+
+			// Tenant operational settings (assignment + SLA)
+			settings := protected.Group("/settings")
+			{
+				settings.GET("", settingsHandler.Get)
+				settings.PUT("", authMiddleware.RequireRole("admin", "owner"), settingsHandler.Update)
+			}
+			// Auto-assign a conversation to an available agent now
+			protected.POST("/conversations/:id/auto-assign", settingsHandler.AutoAssign)
+
+			// Audit trail (admin only)
+			audit := protected.Group("/audit-logs")
+			audit.Use(authMiddleware.RequireRole("admin", "owner"))
+			{
+				audit.GET("", auditHandler.List)
+			}
+
+			// Bulk campaigns
+			campaigns := protected.Group("/campaigns")
+			{
+				campaigns.GET("", campaignHandler.List)
+				campaigns.POST("", permission.Require(entity.ResourceCampaigns, entity.ActionCreate), campaignHandler.Create)
+				campaigns.GET("/:id", campaignHandler.Get)
+				campaigns.GET("/:id/recipients", campaignHandler.ListRecipients)
+				campaigns.POST("/:id/start", permission.Require(entity.ResourceCampaigns, entity.ActionUpdate), campaignHandler.Start)
+				campaigns.POST("/:id/retry", permission.Require(entity.ResourceCampaigns, entity.ActionUpdate), campaignHandler.Retry)
+				campaigns.POST("/:id/cancel", permission.Require(entity.ResourceCampaigns, entity.ActionUpdate), campaignHandler.Cancel)
 			}
 		}
 
@@ -1276,9 +1464,39 @@ func toMessageStatus(status string) entity.MessageStatus {
 	}
 }
 
-func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.MessageRepository, status *nats.StatusUpdate) error {
+// toRecipientStatus maps a wire status to a campaign recipient status, or ""
+// when the status is not one tracked per recipient.
+func toRecipientStatus(status string) entity.RecipientStatus {
+	switch status {
+	case "sent":
+		return entity.RecipientSent
+	case "delivered":
+		return entity.RecipientDelivered
+	case "read":
+		return entity.RecipientRead
+	case "failed":
+		return entity.RecipientFailed
+	default:
+		return ""
+	}
+}
+
+func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.MessageRepository, campaignRepo *database.CampaignRepository, status *nats.StatusUpdate) error {
 	if status == nil {
 		return nil
+	}
+
+	// Correlate delivery/read/failed status back to a campaign recipient by the
+	// provider message ID (stored on the recipient when the worker sent it).
+	if campaignRepo != nil {
+		if rs := toRecipientStatus(status.Status); rs != "" {
+			if status.ExternalID != "" {
+				_ = campaignRepo.UpdateRecipientStatusByMessageID(ctx, status.ExternalID, rs)
+			}
+			if status.MessageID != "" && status.MessageID != status.ExternalID {
+				_ = campaignRepo.UpdateRecipientStatusByMessageID(ctx, status.MessageID, rs)
+			}
+		}
 	}
 
 	messageID := status.MessageID

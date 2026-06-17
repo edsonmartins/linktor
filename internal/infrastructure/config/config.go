@@ -15,6 +15,15 @@ type Config struct {
 	NATS     NATSConfig     `mapstructure:"nats"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Log      LogConfig      `mapstructure:"log"`
+	Crypto   CryptoConfig   `mapstructure:"crypto"`
+}
+
+// CryptoConfig holds secret-at-rest encryption configuration. EncryptionKey is
+// the primary key (used to encrypt). PreviousKeys are older keys still accepted
+// for decryption during a rotation, until everything has been re-encrypted.
+type CryptoConfig struct {
+	EncryptionKey string   `mapstructure:"encryption_key"`
+	PreviousKeys  []string `mapstructure:"previous_keys"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -131,6 +140,18 @@ func validateProductionConfig(cfg *Config) error {
 		return fmt.Errorf("jwt.secret must be at least 32 characters in release mode")
 	}
 
+	encKey := strings.TrimSpace(cfg.Crypto.EncryptionKey)
+	switch {
+	case encKey == "":
+		return fmt.Errorf("crypto.encryption_key is required in release mode")
+	case encKey == "change-me-in-production",
+		encKey == "change-me-in-production-use-strong-secret",
+		encKey == secret:
+		return fmt.Errorf("crypto.encryption_key must be changed to a unique value in release mode")
+	case len(encKey) < 32:
+		return fmt.Errorf("crypto.encryption_key must be at least 32 characters in release mode")
+	}
+
 	return nil
 }
 
@@ -172,4 +193,7 @@ func setDefaults() {
 	// Log defaults
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.format", "json")
+
+	// Crypto defaults (must be overridden in release mode)
+	viper.SetDefault("crypto.encryption_key", "change-me-in-production")
 }

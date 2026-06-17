@@ -271,6 +271,21 @@ func (h *ChannelHandler) Delete(c *gin.Context) {
 	RespondNoContent(c)
 }
 
+// Reencrypt re-encrypts all of the tenant's channel credentials with the
+// current primary key (used after a crypto key rotation).
+func (h *ChannelHandler) Reencrypt(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+	count, err := h.channelService.ReencryptCredentials(c.Request.Context(), tenantID)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	RespondSuccess(c, gin.H{"reencrypted": count})
+}
+
 // Connect godoc
 // @Summary      Connect channel
 // @Description  Connect a channel to start receiving messages

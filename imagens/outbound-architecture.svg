@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="760" height="380" viewBox="0 0 760 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="obNavy" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0F3460"/>
+      <stop offset="100%" style="stop-color:#1A1A2E"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#8B95A2"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#16C79A"/>
+    </marker>
+  </defs>
+
+  <rect width="760" height="380" rx="16" fill="#F8F9FB"/>
+  <text x="24" y="36" font-family="system-ui, sans-serif" font-size="16" font-weight="700" fill="#1A1A2E">Entrega outbound unificada</text>
+  <text x="24" y="54" font-family="system-ui, sans-serif" font-size="11" fill="#8B95A2">Um worker para todos os canais · retry · DLQ · rate-limit · correlação de status</text>
+
+  <!-- Publishers -->
+  <rect x="24" y="78" width="150" height="96" rx="12" fill="white" stroke="#E5E8ED"/>
+  <text x="99" y="100" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="#1A1A2E" text-anchor="middle">Publishers</text>
+  <text x="99" y="124" font-family="monospace" font-size="10" fill="#0F3460" text-anchor="middle">send_message</text>
+  <text x="99" y="142" font-family="monospace" font-size="10" fill="#0F3460" text-anchor="middle">campanhas (bulk)</text>
+  <text x="99" y="160" font-family="monospace" font-size="10" fill="#0F3460" text-anchor="middle">flows / bots</text>
+
+  <!-- NATS -->
+  <rect x="206" y="78" width="150" height="96" rx="12" fill="url(#obNavy)"/>
+  <text x="281" y="104" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="white" text-anchor="middle">NATS JetStream</text>
+  <text x="281" y="126" font-family="monospace" font-size="9" fill="rgba(255,255,255,0.8)" text-anchor="middle">outbound.&gt;</text>
+  <text x="281" y="150" font-family="system-ui, sans-serif" font-size="9" fill="rgba(255,255,255,0.6)" text-anchor="middle">ack · nak · MaxDeliver</text>
+
+  <!-- Worker -->
+  <rect x="388" y="78" width="150" height="96" rx="12" fill="url(#obNavy)"/>
+  <text x="463" y="104" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="white" text-anchor="middle">Outbound Worker</text>
+  <text x="463" y="126" font-family="system-ui, sans-serif" font-size="9" fill="rgba(255,255,255,0.8)" text-anchor="middle">retry · rate-limit/canal</text>
+  <text x="463" y="150" font-family="system-ui, sans-serif" font-size="9" fill="rgba(255,255,255,0.8)" text-anchor="middle">Resolver: channelID → Sender</text>
+
+  <!-- Senders: stateless -->
+  <rect x="570" y="64" width="166" height="76" rx="12" fill="white" stroke="#16C79A"/>
+  <text x="653" y="86" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#16C79A" text-anchor="middle">Senders stateless</text>
+  <text x="653" y="106" font-family="system-ui, sans-serif" font-size="8.5" fill="#5B6472" text-anchor="middle">WhatsApp · Telegram · SMS</text>
+  <text x="653" y="122" font-family="system-ui, sans-serif" font-size="8.5" fill="#5B6472" text-anchor="middle">Email · FB · IG · RCS</text>
+
+  <!-- Senders: stateful -->
+  <rect x="570" y="150" width="166" height="68" rx="12" fill="white" stroke="#0F3460"/>
+  <text x="653" y="172" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#0F3460" text-anchor="middle">Plugin Sender</text>
+  <text x="653" y="192" font-family="system-ui, sans-serif" font-size="8.5" fill="#5B6472" text-anchor="middle">WebChat (hub WS)</text>
+  <text x="653" y="206" font-family="system-ui, sans-serif" font-size="8.5" fill="#5B6472" text-anchor="middle">whatsmeow (sessão viva)</text>
+
+  <!-- Flow arrows -->
+  <line x1="174" y1="126" x2="204" y2="126" stroke="#8B95A2" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="356" y1="126" x2="386" y2="126" stroke="#8B95A2" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="538" y1="116" x2="568" y2="102" stroke="#16C79A" stroke-width="2" marker-end="url(#arrowGreen)"/>
+  <line x1="538" y1="140" x2="568" y2="176" stroke="#0F3460" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- DLQ -->
+  <rect x="388" y="214" width="150" height="56" rx="12" fill="#FDECEF" stroke="#E94560"/>
+  <text x="463" y="238" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#E94560" text-anchor="middle">DLQ · LINKTOR_DLQ</text>
+  <text x="463" y="256" font-family="system-ui, sans-serif" font-size="9" fill="#92400E" text-anchor="middle">esgotou retries → inspeção/replay</text>
+  <line x1="463" y1="174" x2="463" y2="212" stroke="#E94560" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <text x="474" y="198" font-family="system-ui, sans-serif" font-size="8.5" fill="#E94560">nak ✕ N</text>
+
+  <!-- Status loop -->
+  <rect x="206" y="214" width="150" height="56" rx="12" fill="white" stroke="#E5E8ED"/>
+  <text x="281" y="238" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#1A1A2E" text-anchor="middle">Status webhooks</text>
+  <text x="281" y="256" font-family="system-ui, sans-serif" font-size="9" fill="#8B95A2" text-anchor="middle">sent → delivered → read</text>
+  <line x1="463" y1="270" x2="463" y2="290" stroke="#8B95A2" stroke-width="1.5"/>
+  <line x1="463" y1="290" x2="281" y2="290" stroke="#8B95A2" stroke-width="1.5"/>
+  <line x1="281" y1="290" x2="281" y2="272" stroke="#8B95A2" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="372" y="304" font-family="system-ui, sans-serif" font-size="8.5" fill="#8B95A2" text-anchor="middle">correlação por message id → status do destinatário</text>
+
+  <!-- Footnote -->
+  <text x="24" y="352" font-family="system-ui, sans-serif" font-size="9.5" fill="#8B95A2">Adicionar um canal novo = implementar uma única interface  </text>
+  <text x="392" y="352" font-family="monospace" font-size="9.5" fill="#0F3460">outbound.Factory</text>
+</svg>

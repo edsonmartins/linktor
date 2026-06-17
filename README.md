@@ -30,6 +30,22 @@
 
 ---
 
+### ✨ Destaques desta versão
+
+| Recurso | O que é |
+|---------|---------|
+| 📣 **Campanhas em massa** | Disparo de templates com entrega assíncrona, progresso ao vivo, retry e DLQ |
+| 🔐 **RBAC granular** | Papéis customizados por tenant (recurso × ação) com cache no Redis |
+| 🎯 **Atribuição + SLA** | Roteamento automático (round-robin/balanceado) + breach de SLA e auto-close |
+| ⚡ **Respostas rápidas** | Atalhos `/comando` com placeholders e contador de uso |
+| 📜 **Trilha de auditoria** | Registro automático de toda mutação relevante de segurança |
+| 🔑 **Criptografia em repouso** | Credenciais cifradas (AES-256-GCM) com rotação de chave sem downtime |
+| 🚚 **Entrega unificada** | Um worker para todos os canais — stateless e stateful — com DLQ e rate-limit |
+
+> Histórico completo em [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## Sobre
 
 **Linktor** é uma plataforma B2B de mensageria multicanal, open source e extensível via plugins, que unifica a comunicação de empresas com seus clientes através de múltiplos canais em uma única interface. O projeto resolve o problema da fragmentação de canais, permitindo que equipes de atendimento gerenciem conversas de WhatsApp, Telegram, SMS, WebChat, Instagram e Facebook Messenger em um só lugar.
@@ -93,6 +109,18 @@ msgfy (GitHub org: msgfy)
 | Facebook Messenger | ✅ Completo | Meta Graph API |
 | RCS | ✅ Completo | Google RCS Business Messaging |
 | Voice | ✅ Completo | Twilio Voice, Vonage, Amazon Connect, Asterisk, FreeSWITCH |
+
+> **Entrega unificada (outbound):** todos os canais entregam mensagens pelo mesmo
+> _worker_ sobre NATS JetStream — com **retry**, **dead-letter queue (DLQ)** e
+> **rate-limit por canal**. Canais stateless (WhatsApp Cloud API, Telegram, SMS,
+> Facebook, Instagram, RCS, Email) usam um `Sender` por canal construído a partir
+> das credenciais; canais stateful (WebChat, WhatsApp não-oficial/whatsmeow)
+> entregam pela sessão/conexão viva. Adicionar um canal novo é implementar uma
+> única interface `outbound.Factory`.
+
+<p align="center">
+  <img src="imagens/outbound-architecture.svg" alt="Arquitetura de entrega outbound unificada" width="720"/>
+</p>
 
 ### WhatsApp Coexistence (SMB)
 
@@ -291,6 +319,116 @@ PUT /api/v1/vre/config
 | `confirmacao` | Resumo para confirmação | Checkout |
 | `cobranca_pix` | QR code PIX + código copia-cola | Pagamentos |
 
+#### 9. Campanhas em Massa (Bulk)
+
+Disparo de templates para muitos destinatários, com entrega assíncrona sobre NATS.
+
+<p align="center">
+  <img src="imagens/campaign-progress.svg" alt="Tela de progresso de campanha" width="380"/>
+</p>
+
+- **Modelo de fila**: a campanha apenas **enfileira** os destinatários; o _worker_ de outbound entrega, faz retry e atualiza o status por destinatário
+- **Acompanhamento ao vivo**: contadores de enviadas/entregues/leituras/falhas como projeção do status real (correlacionado pelos webhooks de status)
+- **Retry de falhas** e **cancelamento**; _sweep_ periódico reconcilia destinatários presos em `queued`
+- **UI**: lista, criação (canal + template + destinatários), tela de progresso ao vivo, filtro por status e paginação
+
+```bash
+POST   /api/v1/campaigns                 # criar (rascunho) + destinatários
+POST   /api/v1/campaigns/:id/start       # iniciar (enfileira)
+POST   /api/v1/campaigns/:id/retry       # reenfileirar falhas
+POST   /api/v1/campaigns/:id/cancel      # cancelar
+GET    /api/v1/campaigns/:id             # status + contadores
+GET    /api/v1/campaigns/:id/recipients  # destinatários (filtro ?status=)
+```
+
+#### 10. RBAC Granular (Papéis Customizados)
+
+Controle de acesso por **recurso × ação**, com papéis customizáveis por tenant.
+
+<p align="center">
+  <img src="imagens/rbac-matrix.svg" alt="Matriz de permissões recurso×ação" width="380"/>
+</p>
+
+- Papéis de sistema (`owner`/`admin`/`supervisor`/`agent`) seedados por tenant + papéis customizados
+- Permissões `resource:action` (ex.: `campaigns:create`, `analytics:read`), com `manage` implicando todas as ações
+- Resolução com cache no Redis; middleware `RequirePermission`
+- **Retrocompatível**: papéis legados (string) resolvem pelos padrões internos
+- **UI**: lista de papéis + matriz recurso×ação (papéis de sistema read-only)
+
+```bash
+GET    /api/v1/roles/catalog   # recursos e ações disponíveis
+GET    /api/v1/roles           # listar (semeia papéis de sistema)
+POST   /api/v1/roles           # criar papel customizado
+PUT    /api/v1/roles/:id       # editar (permissões)
+DELETE /api/v1/roles/:id       # excluir (apenas customizados)
+```
+
+#### 11. Atribuição Automática + SLA
+
+Roteamento de conversas e enforcement de SLA por tenant.
+
+<p align="center">
+  <img src="imagens/operations-sla.svg" alt="Página de Operações: atribuição e SLA" width="380"/>
+</p>
+
+- **Estratégias de atribuição**: `manual`, `round_robin`, `load_balanced` (menos conversas abertas) — aplicado na entrada de mensagens
+- **SLA & auto-close**: _ticker_ marca _breach_ de primeira resposta e auto-fecha conversas ociosas conforme os limites configurados
+- **UI**: página de Operações (estratégia, auto-assign, limites de SLA/auto-close)
+
+```bash
+GET  /api/v1/settings                          # configurações operacionais
+PUT  /api/v1/settings                          # atualizar (admin)
+POST /api/v1/conversations/:id/auto-assign     # rotear conversa agora
+```
+
+#### 12. Respostas Rápidas (Canned Responses)
+
+Respostas reutilizáveis que o agente insere por atalho (`/atalho`), com placeholders e contador de uso.
+
+```bash
+GET    /api/v1/canned-responses                # listar (busca ?search=)
+POST   /api/v1/canned-responses                # criar
+GET    /api/v1/canned-responses/use/:shortcut  # resolver atalho (+1 uso)
+PUT    /api/v1/canned-responses/:id            # editar
+DELETE /api/v1/canned-responses/:id            # excluir
+```
+
+#### 13. Trilha de Auditoria
+
+Registro de toda mutação relevante de segurança.
+
+<p align="center">
+  <img src="imagens/audit-log.svg" alt="Trilha de auditoria" width="380"/>
+</p>
+
+- Middleware deriva **ação/recurso** da rota (ex.: `channel.create`, `contact.delete`), cobrindo channels/contacts/users/tenant automaticamente
+- Handlers especializados (campanhas, papéis, settings, canned) gravam registros mais ricos
+- **UI**: trilha read-only paginada com filtros por ação/recurso
+
+```bash
+GET /api/v1/audit-logs   # ?action= &resource_type= &page=
+```
+
+#### 14. Criptografia de Credenciais em Repouso
+
+Tokens e segredos dos canais são cifrados no banco.
+
+- **AES-256-GCM**, prefixo `enc:v1:` — **retrocompatível** com dados em texto puro
+- Chaves não-sensíveis (ex.: `phone_number_id`) permanecem em claro e consultáveis
+- **Rotação de chave sem downtime**: chave primária + `crypto.previous_keys` (decrypt com fallback); `POST /api/v1/channels/reencrypt` re-encripta com a chave nova
+- Em release, a chave é **obrigatória**, ≥32 chars e distinta do `jwt.secret`
+
+#### 15. Observabilidade da Fila + DLQ
+
+O monitor de fila (Observability) lista os streams JetStream, incluindo a
+**`LINKTOR_DLQ`**: mensagens que esgotam as tentativas em qualquer _consumer_
+são _dead-lettered_ (em vez de loop ou descarte silencioso) e ficam retidas
+para inspeção/replay.
+
+<p align="center">
+  <img src="imagens/dlq-monitor.svg" alt="Monitor de fila com a DLQ" width="380"/>
+</p>
+
 ---
 
 ## Arquitetura
@@ -416,6 +554,9 @@ linktor/
 │   │   ├── meta/                 # Meta shared client
 │   │   ├── rcs/                  # RCS Business Messaging
 │   │   └── voice/                # Voice (Twilio, Vonage, Amazon Connect, Asterisk, FreeSWITCH)
+│   │   # cada adapter expõe um sender.go (outbound.Factory)
+│   │
+│   ├── outbound/                 # Entrega unificada (Sender/Factory/Resolver/Worker, DLQ, rate-limit)
 │   │
 │   └── infrastructure/           # Infraestrutura
 │       ├── database/             # PostgreSQL + pgvector
@@ -658,6 +799,15 @@ jwt:
   secret: "sua-chave-secreta-muito-segura-aqui"
   access_token_ttl: 15    # minutos
   refresh_token_ttl: 168  # horas (7 dias)
+
+crypto:
+  # Chave para cifrar credenciais/tokens dos canais em repouso (AES-256-GCM).
+  # Em release: obrigatória, >= 32 chars e diferente do jwt.secret.
+  # Override: LINKTOR_CRYPTO_ENCRYPTION_KEY
+  encryption_key: "outra-chave-forte-distinta-do-jwt"
+  # Rotação: mantenha aqui a(s) chave(s) antiga(s) até re-encriptar tudo via
+  # POST /api/v1/channels/reencrypt, depois remova.
+  previous_keys: []
 
 log:
   level: "debug"

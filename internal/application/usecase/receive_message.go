@@ -28,6 +28,13 @@ type ReceiveMessageUseCase struct {
 	contactRepo      repository.ContactRepository
 	producer         nats.Publisher
 	normalizer       *service.MessageNormalizer
+	assignmentSvc    *service.AssignmentService // optional; auto-routes new conversations
+}
+
+// SetAssignmentService enables automatic conversation assignment. Optional so
+// existing constructors and tests are unaffected.
+func (uc *ReceiveMessageUseCase) SetAssignmentService(s *service.AssignmentService) {
+	uc.assignmentSvc = s
 }
 
 // NewReceiveMessageUseCase creates a new receive message use case
@@ -262,6 +269,14 @@ func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, te
 
 	if err := uc.conversationRepo.Create(ctx, conversation); err != nil {
 		return nil, false, err
+	}
+
+	// Auto-assign to an agent if the tenant enabled it (best-effort).
+	if uc.assignmentSvc != nil {
+		if _, err := uc.assignmentSvc.AutoAssign(ctx, conversation); err != nil {
+			// Routing must never block message intake.
+			_ = err
+		}
 	}
 
 	// Publish conversation created event

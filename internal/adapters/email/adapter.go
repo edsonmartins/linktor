@@ -75,7 +75,15 @@ func (a *Adapter) Initialize(config map[string]string) error {
 		return err
 	}
 
-	a.config = &Config{
+	a.config = ConfigFromMap(config)
+	return nil
+}
+
+// ConfigFromMap builds an email Config from a channel credentials/config map.
+// Single source of truth shared by the adapter Initialize and the outbound
+// SenderFactory.
+func ConfigFromMap(config map[string]string) *Config {
+	cfg := &Config{
 		Provider:  Provider(config["provider"]),
 		FromEmail: config["from_email"],
 		FromName:  config["from_name"],
@@ -113,18 +121,16 @@ func (a *Adapter) Initialize(config map[string]string) error {
 		WebhookSecret: config["webhook_secret"],
 	}
 
-	// Parse numeric config
 	if port := config["smtp_port"]; port != "" {
-		fmt.Sscanf(port, "%d", &a.config.SMTPPort)
+		fmt.Sscanf(port, "%d", &cfg.SMTPPort)
 	}
 	if port := config["imap_port"]; port != "" {
-		fmt.Sscanf(port, "%d", &a.config.IMAPPort)
+		fmt.Sscanf(port, "%d", &cfg.IMAPPort)
 	}
 	if interval := config["imap_poll_interval"]; interval != "" {
-		fmt.Sscanf(interval, "%d", &a.config.IMAPPollInterval)
+		fmt.Sscanf(interval, "%d", &cfg.IMAPPollInterval)
 	}
-
-	return nil
+	return cfg
 }
 
 // Connect establishes connection to the email provider

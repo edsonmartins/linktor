@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 )
@@ -25,7 +26,10 @@ func NewOrderHandler(orderRepo repository.OrderRepository) *OrderHandler {
 // ListOrders handles GET /orders
 func (h *OrderHandler) ListOrders(c *gin.Context) {
 	ctx := c.Request.Context()
-	orgID := c.GetString("organization_id")
+	orgID := middleware.MustGetTenantID(c)
+	if orgID == "" {
+		return
+	}
 
 	// Parse query parameters
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -75,7 +79,10 @@ func (h *OrderHandler) ListOrders(c *gin.Context) {
 // GetOrder handles GET /orders/:orderId
 func (h *OrderHandler) GetOrder(c *gin.Context) {
 	ctx := c.Request.Context()
-	orgID := c.GetString("organization_id")
+	orgID := middleware.MustGetTenantID(c)
+	if orgID == "" {
+		return
+	}
 	orderID := c.Param("orderId")
 
 	order, err := h.orderRepo.GetByID(ctx, orgID, orderID)
@@ -96,7 +103,10 @@ func (h *OrderHandler) GetOrder(c *gin.Context) {
 // UpdateOrderStatus handles PATCH /orders/:orderId/status
 func (h *OrderHandler) UpdateOrderStatus(c *gin.Context) {
 	ctx := c.Request.Context()
-	orgID := c.GetString("organization_id")
+	orgID := middleware.MustGetTenantID(c)
+	if orgID == "" {
+		return
+	}
 	orderID := c.Param("orderId")
 
 	var req struct {
@@ -162,7 +172,10 @@ func (h *OrderHandler) GetOrderHistory(c *gin.Context) {
 // GetOrderStats handles GET /orders/stats
 func (h *OrderHandler) GetOrderStats(c *gin.Context) {
 	ctx := c.Request.Context()
-	orgID := c.GetString("organization_id")
+	orgID := middleware.MustGetTenantID(c)
+	if orgID == "" {
+		return
+	}
 
 	filters := repository.StatsFilters{
 		ChannelID: c.Query("channel_id"),
@@ -180,7 +193,10 @@ func (h *OrderHandler) GetOrderStats(c *gin.Context) {
 // CancelOrder handles POST /orders/:orderId/cancel
 func (h *OrderHandler) CancelOrder(c *gin.Context) {
 	ctx := c.Request.Context()
-	orgID := c.GetString("organization_id")
+	orgID := middleware.MustGetTenantID(c)
+	if orgID == "" {
+		return
+	}
 	orderID := c.Param("orderId")
 
 	var req struct {
@@ -222,7 +238,10 @@ func (h *OrderHandler) CancelOrder(c *gin.Context) {
 // UpdateShipping handles PATCH /orders/:orderId/shipping
 func (h *OrderHandler) UpdateShipping(c *gin.Context) {
 	ctx := c.Request.Context()
-	orgID := c.GetString("organization_id")
+	orgID := middleware.MustGetTenantID(c)
+	if orgID == "" {
+		return
+	}
 	orderID := c.Param("orderId")
 
 	var req struct {
@@ -257,7 +276,10 @@ func (h *OrderHandler) UpdateShipping(c *gin.Context) {
 // GetCustomerOrders handles GET /customers/:phone/orders
 func (h *OrderHandler) GetCustomerOrders(c *gin.Context) {
 	ctx := c.Request.Context()
-	orgID := c.GetString("organization_id")
+	orgID := middleware.MustGetTenantID(c)
+	if orgID == "" {
+		return
+	}
 	phone := c.Param("phone")
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))

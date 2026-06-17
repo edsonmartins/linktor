@@ -28,6 +28,9 @@ func (m *Monitor) GetQueueStats(ctx context.Context) (*entity.QueueStats, error)
 		StreamMessages,
 		StreamEvents,
 		StreamWebhooks,
+		StreamAI,
+		StreamWhatsApp,
+		StreamDLQ,
 	}
 
 	var streams []entity.StreamInfo
