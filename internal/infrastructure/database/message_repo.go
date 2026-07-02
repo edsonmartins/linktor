@@ -150,6 +150,10 @@ func (r *MessageRepository) FindByConversation(ctx context.Context, conversation
 		messages = append(messages, message)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate messages")
+	}
+
 	return messages, total, nil
 }
 
@@ -198,38 +202,79 @@ func (r *MessageRepository) Update(ctx context.Context, message *entity.Message)
 	return nil
 }
 
-// UpdateStatus updates only the message status
-func (r *MessageRepository) UpdateStatus(ctx context.Context, id string, status entity.MessageStatus, errorMessage string) error {
-	var query string
-	var args []interface{}
+// messageStatusRank returns the monotonic delivery rank of a status. A status
+// may only advance to a rank equal to or higher than the one already stored, so
+// an out-of-order (redelivered) event cannot regress a message's status. "failed"
+// is treated as recoverable (same rank as "sent") so a later successful delivery
+// receipt can still advance the message.
+func messageStatusRank(status entity.MessageStatus) int {
+	switch status {
+	case entity.MessageStatusRead:
+		return 4
+	case entity.MessageStatusDelivered:
+		return 3
+	case entity.MessageStatusSent, entity.MessageStatusFailed:
+		return 2
+	case entity.MessageStatusPending:
+		return 1
+	default:
+		return 0
+	}
+}
 
+// sqlMessageStatusRank is the SQL CASE expression equivalent of messageStatusRank,
+// used to compute the rank of the currently stored status inside the guard clause.
+const sqlMessageStatusRank = `CASE status
+	WHEN 'read' THEN 4
+	WHEN 'delivered' THEN 3
+	WHEN 'sent' THEN 2
+	WHEN 'failed' THEN 2
+	WHEN 'pending' THEN 1
+	ELSE 0 END`
+
+// UpdateStatus updates only the message status, advancing it monotonically.
+func (r *MessageRepository) UpdateStatus(ctx context.Context, id string, status entity.MessageStatus, errorMessage string) error {
 	now := time.Now()
 
+	// "failed" is always writable so a delivery failure is never lost.
+	if status == entity.MessageStatusFailed {
+		result, err := r.db.Pool.Exec(ctx,
+			`UPDATE messages SET status = $1, error_message = $2 WHERE id = $3`,
+			string(status), errorMessage, id)
+		if err != nil {
+			return errors.Wrap(err, errors.ErrCodeInternal, "failed to update message status")
+		}
+		if result.RowsAffected() == 0 {
+			return errors.New(errors.ErrCodeMessageNotFound, "message not found")
+		}
+		return nil
+	}
+
+	// Only advance forward: block writes whose target rank is lower than the
+	// rank already persisted (e.g. a redelivered "sent" after "delivered"/"read").
+	newRank := messageStatusRank(status)
+
+	var query string
+	var args []interface{}
 	switch status {
 	case entity.MessageStatusSent:
-		query = `UPDATE messages SET status = $1, sent_at = $2 WHERE id = $3`
-		args = []interface{}{string(status), now, id}
+		query = fmt.Sprintf(`UPDATE messages SET status = $1, sent_at = $2 WHERE id = $3 AND (%s) <= $4`, sqlMessageStatusRank)
+		args = []interface{}{string(status), now, id, newRank}
 	case entity.MessageStatusDelivered:
-		query = `UPDATE messages SET status = $1, delivered_at = $2 WHERE id = $3`
-		args = []interface{}{string(status), now, id}
+		query = fmt.Sprintf(`UPDATE messages SET status = $1, delivered_at = $2 WHERE id = $3 AND (%s) <= $4`, sqlMessageStatusRank)
+		args = []interface{}{string(status), now, id, newRank}
 	case entity.MessageStatusRead:
-		query = `UPDATE messages SET status = $1, read_at = $2 WHERE id = $3`
-		args = []interface{}{string(status), now, id}
-	case entity.MessageStatusFailed:
-		query = `UPDATE messages SET status = $1, error_message = $2 WHERE id = $3`
-		args = []interface{}{string(status), errorMessage, id}
+		query = fmt.Sprintf(`UPDATE messages SET status = $1, read_at = $2 WHERE id = $3 AND (%s) <= $4`, sqlMessageStatusRank)
+		args = []interface{}{string(status), now, id, newRank}
 	default:
-		query = `UPDATE messages SET status = $1 WHERE id = $2`
-		args = []interface{}{string(status), id}
+		query = fmt.Sprintf(`UPDATE messages SET status = $1 WHERE id = $2 AND (%s) <= $3`, sqlMessageStatusRank)
+		args = []interface{}{string(status), id, newRank}
 	}
 
-	result, err := r.db.Pool.Exec(ctx, query, args...)
-	if err != nil {
+	// A zero RowsAffected here is expected when the monotonic guard blocks a stale
+	// out-of-order event; that is a benign no-op, not a "not found" error.
+	if _, err := r.db.Pool.Exec(ctx, query, args...); err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to update message status")
-	}
-
-	if result.RowsAffected() == 0 {
-		return errors.New(errors.ErrCodeMessageNotFound, "message not found")
 	}
 
 	return nil
@@ -287,6 +332,7 @@ func (r *MessageRepository) MarkAsRead(ctx context.Context, conversationID strin
 		SET status = 'read', read_at = $1
 		WHERE conversation_id = $2
 		  AND status != 'read'
+		  AND sender_type = 'contact'
 		  AND created_at <= (SELECT created_at FROM messages WHERE id = $3)
 	`
 
@@ -377,6 +423,10 @@ func (r *MessageRepository) FindAttachmentsByMessage(ctx context.Context, messag
 		}
 
 		attachments = append(attachments, &a)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate attachments")
 	}
 
 	return attachments, nil

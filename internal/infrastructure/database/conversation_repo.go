@@ -278,15 +278,17 @@ func (r *ConversationRepository) CountByStatus(ctx context.Context, tenantID str
 // Helper methods
 
 func (r *ConversationRepository) findWithFilter(ctx context.Context, whereClause string, args []interface{}, params *repository.ListParams) ([]*entity.Conversation, int64, error) {
-	// Count total
+	// Apply filters first so both the count and the page query share the same
+	// predicate — otherwise the total ignores status/priority/assignee filters
+	// and the paginator reports the wrong number of pages.
+	whereClause, args = applyConversationFilters(whereClause, args, params.Filters)
+
+	// Count total (with filters applied)
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM conversations c WHERE %s", whereClause)
 	var total int64
 	if err := r.db.Pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to count conversations")
 	}
-
-	// Apply filters
-	whereClause, args = applyConversationFilters(whereClause, args, params.Filters)
 
 	// Get conversations with last_message_at computed via subquery
 	query := fmt.Sprintf(`
@@ -314,6 +316,10 @@ func (r *ConversationRepository) findWithFilter(ctx context.Context, whereClause
 			return nil, 0, err
 		}
 		conversations = append(conversations, conversation)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate conversations")
 	}
 
 	return conversations, total, nil
