@@ -26,6 +26,31 @@ geram mensagem de entrada?):
   read-only; requer decisão de modelagem.
 - **WebChat**: entrada via WebSocket (não é parse de webhook) — fora deste padrão.
 
+## Reativação de canais fora de escopo (auditoria 2026-07-02, parte 15)
+Os canais SMS/RCS/Email/Voz estão desabilitados pelo allowlist `LINKTOR_ENABLED_CHANNEL_TYPES`
+(ver `ChannelService.checkChannelTypeEnabled`) por terem "bugs abertos". Auditoria paralela
+mapeou o esforço de reativação por canal:
+
+- **SMS (Twilio) — Pequeno/Médio — REATIVADO nesta parte.** Bug principal: `ParseWebhook`
+  classificava `SmsStatus=received` (inbound real) como status callback → SMS de entrada nunca
+  virava conversa. Corrigido (`internal/adapters/sms/webhook.go`) + fail-open do adapter
+  `ValidateWebhook` fechado (`adapter.go`) + testes de handler de produção (assinatura + inbound).
+  Adicionado ao allowlist de exemplo. Outbound/registro já OK. MMS: URLs do Twilio exigem auth p/
+  buscar (re-host pendente, não bloqueia texto).
+- **Email — Médio.** Outbound `sender.go:48` descarta threading/HTML/anexos (usa SendText); IMAP
+  `parseSearchResponse` é stub (sempre vazio) + `parseMIMEEmail` nunca chamado. Webhooks hospedados
+  (Mailgun HMAC ok; SendGrid/SES sem assinatura nativa). Caminho rápido: escopar a Mailgun + corrigir
+  outbound.
+- **RCS — Grande (Médio se só Zenvia).** Esqueleto text-only: cards/carrosséis/sugestões nunca
+  serializados nos `send*`/parsers; auth Google RBM errada (Bearer api_key vs OAuth2); `RCSWebhook`
+  dá 500 sem `provider` default.
+- **Voz — Grande + descompasso.** Adapter existe mas NÃO integrado: sem `plugin.Register`, sem rota
+  de webhook, sem ponte call→conversa; IVR síncrono não encaixa no worker outbound assíncrono.
+  Vários `ValidateWebhook` fail-open (Vonage/Asterisk/Connect) e stubs (Connect recording).
+
+Padrão comum a todos: produção usa handler HTTP + funcs de pacote, não `Adapter.ProcessWebhook`;
+adapters têm `ValidateWebhook` fail-open (código morto mas perigoso).
+
 ## Como ler este plano
 - **ID** — identificador estável para commits/PRs (ex.: `WS1-CANAIS`).
 - **Prioridade** — P0 (gate de homologação, bloqueador), P1 (obrigatório p/ produto funcionar),
