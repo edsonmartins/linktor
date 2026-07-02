@@ -1,0 +1,125 @@
+# Prometheus alerting rules for LINKTOR.
+#
+# These fire on the metrics exported by the app at GET /metrics (namespace
+# `linktor_`). Thresholds are starting points tuned for a single homologation
+# instance — adjust to your traffic. Load this file from prometheus.yml via
+# `rule_files: [ alerts.yml ]` and point an Alertmanager at Prometheus.
+#
+# Validate with:  promtool check rules alerts.yml
+groups:
+  - name: linktor.availability
+    rules:
+      - alert: LinktorInstanceDown
+        expr: up{job="linktor"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LINKTOR instance is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for over 1m."
+
+      - alert: LinktorNATSDown
+        expr: linktor_nats_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LINKTOR lost the NATS connection"
+          description: "linktor_nats_up=0 on {{ $labels.instance }}: the messaging pipeline cannot process inbound/outbound traffic."
+
+  - name: linktor.queues
+    rules:
+      # Any dead-lettered message is worth attention; a large backlog is critical.
+      - alert: LinktorDLQBacklog
+        expr: linktor_stream_messages{stream="LINKTOR_DLQ"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Messages in the dead-letter queue"
+          description: "{{ $value }} message(s) in LINKTOR_DLQ for 5m on {{ $labels.instance }}."
+
+      - alert: LinktorDLQBacklogCritical
+        expr: linktor_stream_messages{stream="LINKTOR_DLQ"} > 50
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Dead-letter queue backlog is large"
+          description: "{{ $value }} messages stuck in LINKTOR_DLQ for 5m — a pipeline stage is failing."
+
+      # Consumer delivery backlog (lag) staying high means processing can't keep up.
+      - alert: LinktorConsumerLagHigh
+        expr: linktor_consumer_pending > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer lag is high"
+          description: "Consumer {{ $labels.consumer }} on {{ $labels.stream }} has {{ $value }} pending messages for 10m."
+
+      # Rising redeliveries indicate repeated processing failures (poison messages).
+      - alert: LinktorConsumerRedeliveriesRising
+        expr: delta(linktor_consumer_redelivered[10m]) > 20
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer redeliveries rising"
+          description: "Consumer {{ $labels.consumer }} on {{ $labels.stream }} redelivered {{ $value }} messages in 10m — likely a failing/poison message."
+
+  - name: linktor.pipeline
+    rules:
+      - alert: LinktorPublishFailures
+        expr: sum(rate(linktor_nats_publish_failures_total[5m])) by (kind) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NATS publish failures"
+          description: "Publish failures for kind={{ $labels.kind }} over the last 5m — events may be delayed or dropped."
+
+      - alert: LinktorInboundFailureRatioHigh
+        expr: |
+          sum(rate(linktor_inbound_messages_total{result="failed"}[5m]))
+            / sum(rate(linktor_inbound_messages_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Inbound failure ratio above 5%"
+          description: "More than 5% of inbound messages failed processing over 10m."
+
+      - alert: LinktorOutboundFailureRatioHigh
+        expr: |
+          sum(rate(linktor_outbound_messages_total{result="failed"}[5m]))
+            / sum(rate(linktor_outbound_messages_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbound failure ratio above 5%"
+          description: "More than 5% of outbound sends failed over 10m — check channel credentials/rate limits."
+
+  - name: linktor.http
+    rules:
+      - alert: LinktorHTTP5xxHigh
+        expr: |
+          sum(rate(linktor_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(linktor_http_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP 5xx ratio above 5%"
+          description: "More than 5% of HTTP responses are 5xx over 10m."
+
+      - alert: LinktorHTTPLatencyHigh
+        expr: |
+          histogram_quantile(0.99, sum(rate(linktor_http_request_seconds_bucket[5m])) by (le)) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP p99 latency above 1s"
+          description: "p99 request latency has exceeded 1s for 10m."

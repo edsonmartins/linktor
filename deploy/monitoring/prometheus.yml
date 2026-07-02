@@ -1,0 +1,23 @@
+# Minimal Prometheus config that scrapes LINKTOR and loads the alert rules.
+# Adjust the target(s) to your deployment (service DNS, ports, TLS).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alerts.yml
+
+# Wire an Alertmanager here to actually route the alerts.
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: linktor
+    metrics_path: /metrics
+    static_configs:
+      # The app serves /metrics on the same HTTP port as the API (default 8081).
+      - targets: ["linktor:8081"]
+        labels:
+          service: linktor
