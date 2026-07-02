@@ -326,7 +326,29 @@ func (c *Client) GetPayment(ctx context.Context, paymentID string) (*Payment, er
 	if c.store == nil {
 		return nil, fmt.Errorf("payment store not configured")
 	}
-	return c.store.GetByID(ctx, paymentID)
+	payment, err := c.store.GetByID(ctx, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.assertOwns(payment); err != nil {
+		return nil, err
+	}
+	return payment, nil
+}
+
+// assertOwns rejects a payment that belongs to another organization. The payment
+// store is queried by a global id/reference, so without this a client scoped to
+// org A could read — or refund — a payment belonging to org B by guessing its id.
+// The error deliberately mirrors "not found" so cross-tenant existence does not
+// leak.
+func (c *Client) assertOwns(p *Payment) error {
+	if p == nil {
+		return fmt.Errorf("payment not found")
+	}
+	if p.OrganizationID != c.organizationID {
+		return fmt.Errorf("payment not found")
+	}
+	return nil
 }
 
 // GetPaymentByReference retrieves a payment by reference ID
@@ -334,7 +356,14 @@ func (c *Client) GetPaymentByReference(ctx context.Context, referenceID string) 
 	if c.store == nil {
 		return nil, fmt.Errorf("payment store not configured")
 	}
-	return c.store.GetByReference(ctx, referenceID)
+	payment, err := c.store.GetByReference(ctx, referenceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.assertOwns(payment); err != nil {
+		return nil, err
+	}
+	return payment, nil
 }
 
 // UpdatePaymentStatus updates the status of a payment
@@ -345,6 +374,9 @@ func (c *Client) UpdatePaymentStatus(ctx context.Context, paymentID string, stat
 
 	payment, err := c.store.GetByID(ctx, paymentID)
 	if err != nil {
+		return fmt.Errorf("payment not found: %s", paymentID)
+	}
+	if err := c.assertOwns(payment); err != nil {
 		return fmt.Errorf("payment not found: %s", paymentID)
 	}
 
