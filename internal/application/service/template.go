@@ -94,14 +94,21 @@ func (s *TemplateService) Create(ctx context.Context, input *CreateTemplateInput
 		UpdatedAt:             time.Now(),
 	}
 
-	// Try to create template on Meta if credentials are available.
+	// Create the template on Meta when credentials are available. If Meta
+	// rejects it (invalid format, duplicate name, policy violation) we must NOT
+	// persist a local phantom template: it would have no ExternalID, appear
+	// "created" to the user, and fail at send time. Fail closed instead. Local-
+	// only templates remain allowed when no credentials are configured (drafts).
 	creds := s.getChannelCredentials(ctx, input.ChannelID)
 	if creds != nil {
 		if err := s.writeLimiter.Allow(creds.wabaID); err != nil {
 			return nil, err
 		}
 		externalID, err := s.createTemplateOnMeta(ctx, creds, template)
-		if err == nil && externalID != "" {
+		if err != nil {
+			return nil, fmt.Errorf("Meta rejected the template: %w", err)
+		}
+		if externalID != "" {
 			template.ExternalID = externalID
 		}
 	}
