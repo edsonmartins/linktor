@@ -276,8 +276,10 @@ func (a *Adapter) ValidateWebhook(headers map[string]string, body []byte) bool {
 
 	webhookURL := config.StatusCallbackURL
 	if webhookURL == "" {
-		// Cannot validate without knowing the URL
-		return true
+		// Fail closed: Twilio signs the exact public callback URL, so without it
+		// we cannot verify the signature. Accepting unverified requests here would
+		// let a forged POST through, so reject instead.
+		return false
 	}
 
 	// Parse form-encoded body and build validation string
