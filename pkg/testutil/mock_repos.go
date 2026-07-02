@@ -14,9 +14,13 @@ import (
 
 // MockContactRepository is a mock implementation of repository.ContactRepository
 type MockContactRepository struct {
-	Contacts    map[string]*entity.Contact
-	Identities  map[string][]*entity.ContactIdentity
-	ReturnError error
+	Contacts   map[string]*entity.Contact
+	Identities map[string][]*entity.ContactIdentity
+	// CreateIdentityHook, when set, runs at the start of CreateIdentityIfAbsent
+	// before the uniqueness check. Tests use it to deterministically simulate a
+	// concurrent request winning the identity race.
+	CreateIdentityHook func()
+	ReturnError        error
 }
 
 // NewMockContactRepository creates a new MockContactRepository
@@ -134,7 +138,51 @@ func (m *MockContactRepository) AddIdentity(ctx context.Context, identity *entit
 		return m.ReturnError
 	}
 	m.Identities[identity.ContactID] = append(m.Identities[identity.ContactID], identity)
+	if c, ok := m.Contacts[identity.ContactID]; ok {
+		c.Identities = append(c.Identities, identity)
+	}
 	return nil
+}
+
+// CreateIdentityIfAbsent models the tenant-scoped partial UNIQUE index on
+// (tenant_id, channel_type, identifier): if any contact in the same tenant
+// already owns a matching identity, the insert is a no-op and reports
+// inserted=false, mirroring the ON CONFLICT DO NOTHING behavior of Postgres.
+func (m *MockContactRepository) CreateIdentityIfAbsent(ctx context.Context, identity *entity.ContactIdentity) (bool, error) {
+	if m.ReturnError != nil {
+		return false, m.ReturnError
+	}
+	if m.CreateIdentityHook != nil {
+		m.CreateIdentityHook()
+	}
+
+	// Determine the tenant scope. Fall back to the owning contact's tenant when
+	// the identity does not carry one explicitly.
+	tenantID := identity.TenantID
+	if tenantID == "" {
+		if c, ok := m.Contacts[identity.ContactID]; ok {
+			tenantID = c.TenantID
+		}
+	}
+
+	// Enforce (tenant_id, channel_type, identifier) uniqueness across contacts.
+	for _, c := range m.Contacts {
+		if c.TenantID != tenantID {
+			continue
+		}
+		for _, existing := range c.Identities {
+			if existing.ChannelType == identity.ChannelType && existing.Identifier == identity.Identifier {
+				return false, nil
+			}
+		}
+	}
+
+	identity.TenantID = tenantID
+	m.Identities[identity.ContactID] = append(m.Identities[identity.ContactID], identity)
+	if c, ok := m.Contacts[identity.ContactID]; ok {
+		c.Identities = append(c.Identities, identity)
+	}
+	return true, nil
 }
 
 func (m *MockContactRepository) RemoveIdentity(ctx context.Context, contactID, identityID string) error {

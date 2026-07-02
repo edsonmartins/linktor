@@ -214,6 +214,85 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		}
 	})
 
+	// WS10-GETORCREATE: two inbound webhooks from the SAME brand-new contact
+	// arriving concurrently must not create two contact rows. This drives the
+	// identity race deterministically: the identity insert reports inserted=false
+	// because a winner committed first, so the loser reuses the winner and rolls
+	// back its orphan contact.
+	t.Run("Concurrent New Contact - Identity Race Reuses Winner", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		// Simulate the winning request committing its contact + identity in the
+		// window between the loser's find-miss and its own identity insert.
+		winner := &entity.Contact{
+			ID:       "contact-winner",
+			TenantID: "tenant-1",
+			Name:     "Winner",
+			Phone:    "+5511888888888",
+			Identities: []*entity.ContactIdentity{{
+				ID:          "identity-winner",
+				ContactID:   "contact-winner",
+				TenantID:    "tenant-1",
+				ChannelType: "whatsapp",
+				Identifier:  "+5511888888888",
+			}},
+			CustomFields: make(map[string]string),
+			Tags:         []string{},
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		var injected bool
+		f.contactRepo.CreateIdentityHook = func() {
+			if injected {
+				return
+			}
+			injected = true
+			f.contactRepo.Contacts[winner.ID] = winner
+		}
+
+		inbound := makeInbound("ch-1", "tenant-1")
+
+		output, err := f.uc.Execute(ctx, inbound)
+		require.NoError(t, err)
+		require.NotNil(t, output)
+
+		// The loser reused the winning contact, not its own freshly-created one.
+		assert.Equal(t, "contact-winner", output.Contact.ID)
+
+		// Exactly one contact remains: the orphan was rolled back.
+		assert.Len(t, f.contactRepo.Contacts, 1)
+
+		// No duplicate ContactCreated event for the loser's orphan.
+		for _, evt := range f.producer.Events {
+			assert.NotEqual(t, nats.EventContactCreated, evt.Type)
+		}
+	})
+
+	// Same identity arriving twice sequentially reuses the existing contact via
+	// the find fast path and never leaves a duplicate.
+	t.Run("Repeated New Contact - No Duplicate", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		first, err := f.uc.Execute(ctx, makeInbound("ch-1", "tenant-1"))
+		require.NoError(t, err)
+		require.NotNil(t, first)
+		assert.True(t, first.IsNew)
+
+		second := makeInbound("ch-1", "tenant-1")
+		second.ExternalID = "ext-456" // distinct message, same contact identity
+		out, err := f.uc.Execute(ctx, second)
+		require.NoError(t, err)
+		require.NotNil(t, out)
+
+		// Same contact reused, only one contact row.
+		assert.Equal(t, first.Contact.ID, out.Contact.ID)
+		assert.Len(t, f.contactRepo.Contacts, 1)
+	})
+
 	t.Run("Existing Open Conversation", func(t *testing.T) {
 		f := newReceiveMessageFixture()
 		channel := makeChannel("ch-1", "tenant-1")

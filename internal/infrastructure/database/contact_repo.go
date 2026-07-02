@@ -279,8 +279,8 @@ func (r *ContactRepository) AddIdentity(ctx context.Context, identity *entity.Co
 
 	query := `
 		INSERT INTO contact_identities (
-			id, contact_id, channel_type, identifier, metadata, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6)
+			id, contact_id, tenant_id, channel_type, identifier, metadata, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (contact_id, channel_type, identifier) DO UPDATE SET
 			metadata = EXCLUDED.metadata
 	`
@@ -288,6 +288,7 @@ func (r *ContactRepository) AddIdentity(ctx context.Context, identity *entity.Co
 	_, err = r.db.Pool.Exec(ctx, query,
 		identity.ID,
 		identity.ContactID,
+		nullString(identity.TenantID),
 		identity.ChannelType,
 		identity.Identifier,
 		metadata,
@@ -299,6 +300,42 @@ func (r *ContactRepository) AddIdentity(ctx context.Context, identity *entity.Co
 	}
 
 	return nil
+}
+
+// CreateIdentityIfAbsent atomically inserts a tenant-scoped channel identity.
+// It relies on the partial unique index uq_contact_identities_tenant_channel_identifier
+// (tenant_id, channel_type, identifier) so that when two concurrent inbound
+// webhooks from the same brand-new contact race, only one insert wins. The
+// loser gets inserted=false and can resolve to the winning contact instead of
+// leaving a duplicate. tenant_id must be set for the conflict clause to apply.
+func (r *ContactRepository) CreateIdentityIfAbsent(ctx context.Context, identity *entity.ContactIdentity) (bool, error) {
+	metadata, err := json.Marshal(identity.Metadata)
+	if err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal metadata")
+	}
+
+	query := `
+		INSERT INTO contact_identities (
+			id, contact_id, tenant_id, channel_type, identifier, metadata, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (tenant_id, channel_type, identifier) WHERE tenant_id IS NOT NULL
+		DO NOTHING
+	`
+
+	tag, err := r.db.Pool.Exec(ctx, query,
+		identity.ID,
+		identity.ContactID,
+		nullString(identity.TenantID),
+		identity.ChannelType,
+		identity.Identifier,
+		metadata,
+		identity.CreatedAt,
+	)
+	if err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to create identity")
+	}
+
+	return tag.RowsAffected() > 0, nil
 }
 
 // RemoveIdentity removes a channel identity from a contact

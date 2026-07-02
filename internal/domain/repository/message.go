@@ -131,6 +131,12 @@ type ContactRepository interface {
 	// AddIdentity adds a channel identity to a contact
 	AddIdentity(ctx context.Context, identity *entity.ContactIdentity) error
 
+	// CreateIdentityIfAbsent atomically inserts a channel identity scoped to a
+	// tenant. It returns inserted=false (without error) when an identity for the
+	// same (tenant_id, channel_type, identifier) already exists, letting the
+	// caller resolve the race to the winning contact instead of duplicating it.
+	CreateIdentityIfAbsent(ctx context.Context, identity *entity.ContactIdentity) (inserted bool, err error)
+
 	// RemoveIdentity removes a channel identity from a contact
 	RemoveIdentity(ctx context.Context, contactID, identityID string) error
 

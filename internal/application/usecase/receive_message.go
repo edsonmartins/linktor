@@ -199,6 +199,7 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 			identity := &entity.ContactIdentity{
 				ID:          uuid.New().String(),
 				ContactID:   contact.ID,
+				TenantID:    inbound.TenantID,
 				ChannelType: inbound.ChannelType,
 				Identifier:  identifier,
 				Metadata:    inbound.Metadata,
@@ -239,17 +240,38 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 		return nil, false, err
 	}
 
-	// Add identity
+	// Add identity atomically. The tenant-scoped unique index on
+	// (tenant_id, channel_type, identifier) is the arbiter of the race: if a
+	// concurrent inbound webhook for the same brand-new contact already inserted
+	// this identity, our insert is a no-op (inserted=false). In that case we
+	// discard the contact we just created and reuse the winner, so one person
+	// never ends up with two contact rows.
 	identity := &entity.ContactIdentity{
 		ID:          uuid.New().String(),
 		ContactID:   contact.ID,
+		TenantID:    inbound.TenantID,
 		ChannelType: inbound.ChannelType,
 		Identifier:  identifier,
 		Metadata:    inbound.Metadata,
 		CreatedAt:   now,
 	}
-	if err := uc.contactRepo.AddIdentity(ctx, identity); err != nil {
-		// Log but continue
+	inserted, err := uc.contactRepo.CreateIdentityIfAbsent(ctx, identity)
+	if err != nil {
+		return nil, false, err
+	}
+	if !inserted {
+		// Lost the race: another request already owns this identity. Fetch the
+		// winning contact and roll back the orphan we just created.
+		winner, findErr := uc.contactRepo.FindByIdentity(ctx, inbound.TenantID, inbound.ChannelType, identifier)
+		if findErr == nil && winner != nil {
+			if delErr := uc.contactRepo.Delete(ctx, contact.ID); delErr != nil {
+				// Best effort: the identity insert already failed, so the
+				// orphan carries no identity and will not be found again.
+			}
+			return winner, false, nil
+		}
+		// Could not resolve the winner; fall through and keep our contact so the
+		// message is not lost. The identity simply was not attached.
 	}
 
 	// Publish contact created event
