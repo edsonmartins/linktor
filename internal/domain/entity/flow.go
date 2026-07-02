@@ -98,6 +98,7 @@ type Flow struct {
 	BotID        *string         `json:"bot_id,omitempty"` // Optional - can be global
 	Name         string          `json:"name"`
 	Description  string          `json:"description,omitempty"`
+	MetaFlowID   string          `json:"meta_flow_id,omitempty"` // Meta-side Flow ID; used for all Cloud API lifecycle calls
 	Trigger      FlowTriggerType `json:"trigger"`
 	TriggerValue string          `json:"trigger_value,omitempty"` // Intent name, keyword, etc.
 	StartNodeID  string          `json:"start_node_id"`           // Entry point

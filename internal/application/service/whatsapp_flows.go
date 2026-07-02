@@ -84,7 +84,8 @@ func (s *WhatsAppFlowsService) CreateFlow(ctx context.Context, tenantID, channel
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
 		Name:        name,
-		Description: fmt.Sprintf("WhatsApp Flow %s (Meta ID: %s)", name, metaFlow.ID),
+		Description: fmt.Sprintf("WhatsApp Flow %s", name),
+		MetaFlowID:  metaFlow.ID,
 		Trigger:     entity.FlowTriggerManual,
 		Nodes:       []entity.FlowNode{},
 		IsActive:    false,
@@ -127,12 +128,16 @@ func (s *WhatsAppFlowsService) UpdateFlow(ctx context.Context, tenantID, channel
 		return nil, errors.New(errors.ErrCodeNotFound, "flow not found")
 	}
 
+	if flow.MetaFlowID == "" {
+		return nil, errors.New(errors.ErrCodeValidation, "flow is not synced to Meta")
+	}
+
 	client, err := s.createFlowClient(ctx, tenantID, channelID)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = client.UpdateFlow(ctx, flowID, &flows.UpdateFlowRequest{
+	_, err = client.UpdateFlow(ctx, flow.MetaFlowID, &flows.UpdateFlowRequest{
 		Name:        name,
 		Categories:  categories,
 		EndpointURI: endpointURI,
@@ -153,23 +158,29 @@ func (s *WhatsAppFlowsService) UpdateFlow(ctx context.Context, tenantID, channel
 	return flow, nil
 }
 
-// ensureFlowTenant verifies that the flow belongs to tenantID, reporting a
-// not-found error otherwise (prevents cross-tenant flow operations).
-func (s *WhatsAppFlowsService) ensureFlowTenant(ctx context.Context, tenantID, flowID string) error {
+// ensureFlowTenant loads the flow and verifies that it belongs to tenantID,
+// reporting a not-found error otherwise (prevents cross-tenant flow
+// operations). The loaded flow is returned so callers can address the Meta API
+// by its persisted MetaFlowID.
+func (s *WhatsAppFlowsService) ensureFlowTenant(ctx context.Context, tenantID, flowID string) (*entity.Flow, error) {
 	flow, err := s.flowRepo.FindByID(ctx, flowID)
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeNotFound, "flow not found")
+		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "flow not found")
 	}
 	if flow == nil || flow.TenantID != tenantID {
-		return errors.New(errors.ErrCodeNotFound, "flow not found")
+		return nil, errors.New(errors.ErrCodeNotFound, "flow not found")
 	}
-	return nil
+	return flow, nil
 }
 
 // DeleteFlow deletes a WhatsApp Flow via the Meta API and removes it locally.
 func (s *WhatsAppFlowsService) DeleteFlow(ctx context.Context, tenantID, channelID, flowID string) error {
-	if err := s.ensureFlowTenant(ctx, tenantID, flowID); err != nil {
+	flow, err := s.ensureFlowTenant(ctx, tenantID, flowID)
+	if err != nil {
 		return err
+	}
+	if flow.MetaFlowID == "" {
+		return errors.New(errors.ErrCodeValidation, "flow is not synced to Meta")
 	}
 
 	client, err := s.createFlowClient(ctx, tenantID, channelID)
@@ -177,7 +188,7 @@ func (s *WhatsAppFlowsService) DeleteFlow(ctx context.Context, tenantID, channel
 		return err
 	}
 
-	if err := client.DeleteFlow(ctx, flowID); err != nil {
+	if err := client.DeleteFlow(ctx, flow.MetaFlowID); err != nil {
 		return fmt.Errorf("failed to delete flow on Meta: %w", err)
 	}
 
@@ -190,8 +201,12 @@ func (s *WhatsAppFlowsService) DeleteFlow(ctx context.Context, tenantID, channel
 
 // PublishFlow publishes a WhatsApp Flow via the Meta API and updates its status locally.
 func (s *WhatsAppFlowsService) PublishFlow(ctx context.Context, tenantID, channelID, flowID string) error {
-	if err := s.ensureFlowTenant(ctx, tenantID, flowID); err != nil {
+	flow, err := s.ensureFlowTenant(ctx, tenantID, flowID)
+	if err != nil {
 		return err
+	}
+	if flow.MetaFlowID == "" {
+		return errors.New(errors.ErrCodeValidation, "flow is not synced to Meta")
 	}
 
 	client, err := s.createFlowClient(ctx, tenantID, channelID)
@@ -199,7 +214,7 @@ func (s *WhatsAppFlowsService) PublishFlow(ctx context.Context, tenantID, channe
 		return err
 	}
 
-	if err := client.PublishFlow(ctx, flowID); err != nil {
+	if err := client.PublishFlow(ctx, flow.MetaFlowID); err != nil {
 		return fmt.Errorf("failed to publish flow on Meta: %w", err)
 	}
 
@@ -212,8 +227,12 @@ func (s *WhatsAppFlowsService) PublishFlow(ctx context.Context, tenantID, channe
 
 // GetFlowPreview retrieves the preview URL for a WhatsApp Flow from Meta.
 func (s *WhatsAppFlowsService) GetFlowPreview(ctx context.Context, tenantID, channelID, flowID string) (string, error) {
-	if err := s.ensureFlowTenant(ctx, tenantID, flowID); err != nil {
+	flow, err := s.ensureFlowTenant(ctx, tenantID, flowID)
+	if err != nil {
 		return "", err
+	}
+	if flow.MetaFlowID == "" {
+		return "", errors.New(errors.ErrCodeValidation, "flow is not synced to Meta")
 	}
 
 	client, err := s.createFlowClient(ctx, tenantID, channelID)
@@ -221,7 +240,7 @@ func (s *WhatsAppFlowsService) GetFlowPreview(ctx context.Context, tenantID, cha
 		return "", err
 	}
 
-	previewURL, err := client.GetFlowPreviewURL(ctx, flowID)
+	previewURL, err := client.GetFlowPreviewURL(ctx, flow.MetaFlowID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get flow preview URL: %w", err)
 	}
@@ -251,7 +270,8 @@ func (s *WhatsAppFlowsService) SyncFlowsFromMeta(ctx context.Context, tenantID, 
 			ID:          uuid.New().String(),
 			TenantID:    tenantID,
 			Name:        mf.Name,
-			Description: fmt.Sprintf("Synced from Meta (ID: %s, Status: %s)", mf.ID, mf.Status),
+			Description: fmt.Sprintf("Synced from Meta (Status: %s)", mf.Status),
+			MetaFlowID:  mf.ID,
 			Trigger:     entity.FlowTriggerManual,
 			Nodes:       []entity.FlowNode{},
 			IsActive:    isActive,
