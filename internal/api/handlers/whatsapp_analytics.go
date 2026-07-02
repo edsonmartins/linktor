@@ -7,19 +7,25 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/whatsapp/analytics"
 )
 
 // WhatsAppAnalyticsHandler handles WhatsApp analytics HTTP requests
 type WhatsAppAnalyticsHandler struct {
-	mu      sync.RWMutex
-	clients map[string]*analytics.Client // key: channel_id
+	mu          sync.RWMutex
+	clients     map[string]*analytics.Client // key: channel_id
+	channelRepo repository.ChannelRepository
 }
 
-// NewWhatsAppAnalyticsHandler creates a new analytics handler
-func NewWhatsAppAnalyticsHandler() *WhatsAppAnalyticsHandler {
+// NewWhatsAppAnalyticsHandler creates a new analytics handler.
+//
+// channelRepo enforces tenant isolation: per-channel analytics operations verify
+// the channel belongs to the caller's tenant before its access_token is used.
+func NewWhatsAppAnalyticsHandler(channelRepo repository.ChannelRepository) *WhatsAppAnalyticsHandler {
 	return &WhatsAppAnalyticsHandler{
-		clients: make(map[string]*analytics.Client),
+		clients:     make(map[string]*analytics.Client),
+		channelRepo: channelRepo,
 	}
 }
 
@@ -62,6 +68,10 @@ func (h *WhatsAppAnalyticsHandler) getClient(channelID string) (*analytics.Clien
 // @Router       /channels/{channelId}/analytics/conversations [get]
 func (h *WhatsAppAnalyticsHandler) GetConversationAnalytics(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -113,6 +123,10 @@ func (h *WhatsAppAnalyticsHandler) GetConversationAnalytics(c *gin.Context) {
 func (h *WhatsAppAnalyticsHandler) GetPhoneNumberAnalytics(c *gin.Context) {
 	channelID := c.Param("id")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or analytics not configured"})
@@ -146,6 +160,10 @@ func (h *WhatsAppAnalyticsHandler) GetPhoneNumberAnalytics(c *gin.Context) {
 func (h *WhatsAppAnalyticsHandler) GetTemplateAnalytics(c *gin.Context) {
 	channelID := c.Param("id")
 	templateID := c.Param("templateId")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -189,6 +207,10 @@ func (h *WhatsAppAnalyticsHandler) GetTemplateAnalytics(c *gin.Context) {
 // @Router       /channels/{channelId}/analytics/stats [get]
 func (h *WhatsAppAnalyticsHandler) GetAggregatedStats(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -241,6 +263,10 @@ func (h *WhatsAppAnalyticsHandler) GetAggregatedStats(c *gin.Context) {
 // @Router       /channels/{channelId}/analytics/export [get]
 func (h *WhatsAppAnalyticsHandler) ExportAnalytics(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -312,6 +338,10 @@ func (h *WhatsAppAnalyticsHandler) ExportAnalytics(c *gin.Context) {
 // @Router       /channels/{channelId}/analytics/dashboard [get]
 func (h *WhatsAppAnalyticsHandler) GetDashboardData(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {

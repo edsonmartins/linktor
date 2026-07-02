@@ -194,3 +194,84 @@ func TestUserService_Delete_NotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "User not found")
 }
+
+func TestUserService_GetByTenantAndID_CrossTenant(t *testing.T) {
+	svc, userRepo, _ := setupUserService()
+
+	// User belongs to tenant B
+	userRepo.Users["user-b"] = &entity.User{
+		ID:       "user-b",
+		TenantID: "tenant-b",
+		Name:     "Tenant B User",
+	}
+
+	// Admin of tenant A must not see it
+	_, err := svc.GetByTenantAndID(context.Background(), "tenant-a", "user-b")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "User not found")
+}
+
+func TestUserService_UpdateForTenant_CrossTenantDenied(t *testing.T) {
+	svc, userRepo, _ := setupUserService()
+
+	// User belongs to tenant B
+	userRepo.Users["user-b"] = &entity.User{
+		ID:       "user-b",
+		TenantID: "tenant-b",
+		Name:     "Tenant B User",
+		Role:     entity.UserRoleAgent,
+		Status:   entity.UserStatusActive,
+	}
+
+	newName := "Hacked"
+	newRole := entity.UserRoleAdmin
+	// Admin of tenant A tries to update / escalate a tenant B user
+	_, err := svc.UpdateForTenant(context.Background(), "tenant-a", "user-b", &UpdateUserInput{
+		Name: &newName,
+		Role: &newRole,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "User not found")
+
+	// Ensure the target user was not mutated
+	assert.Equal(t, "Tenant B User", userRepo.Users["user-b"].Name)
+	assert.Equal(t, entity.UserRoleAgent, userRepo.Users["user-b"].Role)
+}
+
+func TestUserService_DeleteForTenant_CrossTenantDenied(t *testing.T) {
+	svc, userRepo, _ := setupUserService()
+
+	// User belongs to tenant B
+	userRepo.Users["user-b"] = &entity.User{
+		ID:       "user-b",
+		TenantID: "tenant-b",
+		Name:     "Tenant B User",
+	}
+
+	// Admin of tenant A tries to delete a tenant B user
+	err := svc.DeleteForTenant(context.Background(), "tenant-a", "user-b")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "User not found")
+
+	// Ensure the target user still exists
+	assert.NotNil(t, userRepo.Users["user-b"])
+}
+
+func TestUserService_UpdateForTenant_SameTenant(t *testing.T) {
+	svc, userRepo, _ := setupUserService()
+
+	userRepo.Users["user-1"] = &entity.User{
+		ID:       "user-1",
+		TenantID: "tenant-1",
+		Name:     "Old Name",
+		Role:     entity.UserRoleAgent,
+		Status:   entity.UserStatusActive,
+	}
+
+	newName := "New Name"
+	user, err := svc.UpdateForTenant(context.Background(), "tenant-1", "user-1", &UpdateUserInput{
+		Name: &newName,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "New Name", user.Name)
+}

@@ -9,6 +9,7 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/whatsapp/flows"
+	"github.com/msgfy/linktor/pkg/errors"
 )
 
 // WhatsAppFlowsService connects the WhatsApp Flows client to the application layer.
@@ -26,10 +27,16 @@ func NewWhatsAppFlowsService(flowRepo repository.FlowRepository, channelRepo rep
 }
 
 // createFlowClient builds a FlowClient from the channel's stored credentials.
-func (s *WhatsAppFlowsService) createFlowClient(ctx context.Context, channelID string) (*flows.FlowClient, error) {
+// It enforces tenant isolation: the channel must belong to tenantID, otherwise a
+// not-found error is returned so a tenant cannot use another tenant's channel
+// access_token.
+func (s *WhatsAppFlowsService) createFlowClient(ctx context.Context, tenantID, channelID string) (*flows.FlowClient, error) {
 	channel, err := s.channelRepo.FindByID(ctx, channelID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find channel %s: %w", channelID, err)
+		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "channel not found")
+	}
+	if channel == nil || channel.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "channel not found")
 	}
 
 	accessToken := channel.Config["access_token"]
@@ -58,7 +65,7 @@ func (s *WhatsAppFlowsService) createFlowClient(ctx context.Context, channelID s
 
 // CreateFlow creates a new WhatsApp Flow via the Meta API and persists it locally.
 func (s *WhatsAppFlowsService) CreateFlow(ctx context.Context, tenantID, channelID, name string, categories []string, endpointURI string) (*entity.Flow, error) {
-	client, err := s.createFlowClient(ctx, channelID)
+	client, err := s.createFlowClient(ctx, tenantID, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -92,11 +99,15 @@ func (s *WhatsAppFlowsService) CreateFlow(ctx context.Context, tenantID, channel
 	return flow, nil
 }
 
-// GetFlow retrieves a flow from the local repository.
-func (s *WhatsAppFlowsService) GetFlow(ctx context.Context, flowID string) (*entity.Flow, error) {
+// GetFlow retrieves a flow from the local repository, scoped to the tenant.
+// A flow belonging to another tenant is reported as not found.
+func (s *WhatsAppFlowsService) GetFlow(ctx context.Context, tenantID, flowID string) (*entity.Flow, error) {
 	flow, err := s.flowRepo.FindByID(ctx, flowID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get flow %s: %w", flowID, err)
+		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "flow not found")
+	}
+	if flow == nil || flow.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "flow not found")
 	}
 	return flow, nil
 }
@@ -110,10 +121,13 @@ func (s *WhatsAppFlowsService) ListFlows(ctx context.Context, tenantID string, f
 func (s *WhatsAppFlowsService) UpdateFlow(ctx context.Context, tenantID, channelID, flowID, name string, categories []string, endpointURI string) (*entity.Flow, error) {
 	flow, err := s.flowRepo.FindByID(ctx, flowID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find flow %s: %w", flowID, err)
+		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "flow not found")
+	}
+	if flow == nil || flow.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "flow not found")
 	}
 
-	client, err := s.createFlowClient(ctx, channelID)
+	client, err := s.createFlowClient(ctx, tenantID, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +153,26 @@ func (s *WhatsAppFlowsService) UpdateFlow(ctx context.Context, tenantID, channel
 	return flow, nil
 }
 
+// ensureFlowTenant verifies that the flow belongs to tenantID, reporting a
+// not-found error otherwise (prevents cross-tenant flow operations).
+func (s *WhatsAppFlowsService) ensureFlowTenant(ctx context.Context, tenantID, flowID string) error {
+	flow, err := s.flowRepo.FindByID(ctx, flowID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeNotFound, "flow not found")
+	}
+	if flow == nil || flow.TenantID != tenantID {
+		return errors.New(errors.ErrCodeNotFound, "flow not found")
+	}
+	return nil
+}
+
 // DeleteFlow deletes a WhatsApp Flow via the Meta API and removes it locally.
 func (s *WhatsAppFlowsService) DeleteFlow(ctx context.Context, tenantID, channelID, flowID string) error {
-	client, err := s.createFlowClient(ctx, channelID)
+	if err := s.ensureFlowTenant(ctx, tenantID, flowID); err != nil {
+		return err
+	}
+
+	client, err := s.createFlowClient(ctx, tenantID, channelID)
 	if err != nil {
 		return err
 	}
@@ -159,7 +190,11 @@ func (s *WhatsAppFlowsService) DeleteFlow(ctx context.Context, tenantID, channel
 
 // PublishFlow publishes a WhatsApp Flow via the Meta API and updates its status locally.
 func (s *WhatsAppFlowsService) PublishFlow(ctx context.Context, tenantID, channelID, flowID string) error {
-	client, err := s.createFlowClient(ctx, channelID)
+	if err := s.ensureFlowTenant(ctx, tenantID, flowID); err != nil {
+		return err
+	}
+
+	client, err := s.createFlowClient(ctx, tenantID, channelID)
 	if err != nil {
 		return err
 	}
@@ -177,7 +212,11 @@ func (s *WhatsAppFlowsService) PublishFlow(ctx context.Context, tenantID, channe
 
 // GetFlowPreview retrieves the preview URL for a WhatsApp Flow from Meta.
 func (s *WhatsAppFlowsService) GetFlowPreview(ctx context.Context, tenantID, channelID, flowID string) (string, error) {
-	client, err := s.createFlowClient(ctx, channelID)
+	if err := s.ensureFlowTenant(ctx, tenantID, flowID); err != nil {
+		return "", err
+	}
+
+	client, err := s.createFlowClient(ctx, tenantID, channelID)
 	if err != nil {
 		return "", err
 	}
@@ -192,7 +231,7 @@ func (s *WhatsAppFlowsService) GetFlowPreview(ctx context.Context, tenantID, cha
 
 // SyncFlowsFromMeta lists all flows from the Meta API and syncs them to the local repository.
 func (s *WhatsAppFlowsService) SyncFlowsFromMeta(ctx context.Context, tenantID, channelID string) ([]*entity.Flow, error) {
-	client, err := s.createFlowClient(ctx, channelID)
+	client, err := s.createFlowClient(ctx, tenantID, channelID)
 	if err != nil {
 		return nil, err
 	}

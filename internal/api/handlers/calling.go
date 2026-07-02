@@ -8,19 +8,25 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/whatsapp/calling"
 )
 
 // CallingHandler handles call-related HTTP requests
 type CallingHandler struct {
-	mu      sync.RWMutex
-	clients map[string]*calling.Client // key: channel_id
+	mu          sync.RWMutex
+	clients     map[string]*calling.Client // key: channel_id
+	channelRepo repository.ChannelRepository
 }
 
-// NewCallingHandler creates a new calling handler
-func NewCallingHandler() *CallingHandler {
+// NewCallingHandler creates a new calling handler.
+//
+// channelRepo enforces tenant isolation: per-channel call operations verify the
+// channel belongs to the caller's tenant before its access_token is used.
+func NewCallingHandler(channelRepo repository.ChannelRepository) *CallingHandler {
 	return &CallingHandler{
-		clients: make(map[string]*calling.Client),
+		clients:     make(map[string]*calling.Client),
+		channelRepo: channelRepo,
 	}
 }
 
@@ -62,6 +68,10 @@ func (h *CallingHandler) getClient(channelID string) (*calling.Client, bool) {
 // @Router       /channels/{channelId}/calls [post]
 func (h *CallingHandler) InitiateCall(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -109,6 +119,10 @@ func (h *CallingHandler) GetCall(c *gin.Context) {
 	channelID := c.Param("id")
 	callID := c.Param("callId")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or calling not configured"})
@@ -141,6 +155,10 @@ func (h *CallingHandler) EndCall(c *gin.Context) {
 	channelID := c.Param("id")
 	callID := c.Param("callId")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or calling not configured"})
@@ -171,6 +189,10 @@ func (h *CallingHandler) EndCall(c *gin.Context) {
 // @Router       /channels/{channelId}/calls/stats [get]
 func (h *CallingHandler) GetCallStats(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -218,6 +240,10 @@ func (h *CallingHandler) GetCallStats(c *gin.Context) {
 func (h *CallingHandler) GetRecentCalls(c *gin.Context) {
 	channelID := c.Param("id")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or calling not configured"})
@@ -263,6 +289,10 @@ func (h *CallingHandler) GetCallsByPhone(c *gin.Context) {
 	channelID := c.Param("id")
 	phone := c.Param("phone")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or calling not configured"})
@@ -288,6 +318,10 @@ func (h *CallingHandler) GetCallsByPhone(c *gin.Context) {
 func (h *CallingHandler) GetCallQuality(c *gin.Context) {
 	channelID := c.Param("id")
 	callID := c.Param("callId")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -319,6 +353,10 @@ func (h *CallingHandler) GetCallQuality(c *gin.Context) {
 func (h *CallingHandler) GetCallRecording(c *gin.Context) {
 	channelID := c.Param("id")
 	callID := c.Param("callId")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {

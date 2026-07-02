@@ -34,6 +34,7 @@ type CreateChannelInput struct {
 	Identifier  string
 	Config      map[string]string
 	Credentials map[string]string
+	WebhookURL  string
 }
 
 // UpdateChannelInput represents input for updating a channel
@@ -42,6 +43,7 @@ type UpdateChannelInput struct {
 	Identifier  *string
 	Config      map[string]string
 	Credentials map[string]string
+	WebhookURL  *string
 }
 
 // ConnectResult represents the result of connecting a channel
@@ -67,6 +69,12 @@ type ChannelService struct {
 	registry *plugin.Registry
 	producer nats.Publisher
 	hooks    ChannelLifecycleHooks
+	// enabledTypes is an optional allowlist of channel types this deployment may
+	// create/connect. nil means "no restriction" (all types allowed) — used by
+	// tests and deployments that ship every channel. Homologation sets it to the
+	// subset of channels that passed acceptance so out-of-scope adapters (which
+	// still have open bugs) cannot be activated. See SetEnabledChannelTypes.
+	enabledTypes map[entity.ChannelType]bool
 }
 
 // NewChannelService creates a new channel service
@@ -81,6 +89,32 @@ func NewChannelService(repo repository.ChannelRepository, registry *plugin.Regis
 // SetLifecycleHooks configures callbacks for channel lifecycle changes.
 func (s *ChannelService) SetLifecycleHooks(hooks ChannelLifecycleHooks) {
 	s.hooks = hooks
+}
+
+// SetEnabledChannelTypes restricts which channel types may be created or
+// connected. Passing an empty slice clears the restriction (all types allowed).
+// Unknown/misspelled type strings are ignored so a typo cannot silently disable
+// a channel that should be enabled.
+func (s *ChannelService) SetEnabledChannelTypes(types []entity.ChannelType) {
+	if len(types) == 0 {
+		s.enabledTypes = nil
+		return
+	}
+	set := make(map[entity.ChannelType]bool, len(types))
+	for _, t := range types {
+		set[t] = true
+	}
+	s.enabledTypes = set
+}
+
+// checkChannelTypeEnabled returns an error if the given type is not allowed by
+// the configured allowlist. When no allowlist is set, everything is allowed.
+func (s *ChannelService) checkChannelTypeEnabled(t entity.ChannelType) error {
+	if s.enabledTypes == nil || s.enabledTypes[t] {
+		return nil
+	}
+	return errors.New(errors.ErrCodeValidation,
+		fmt.Sprintf("channel type %q is not enabled for this deployment", t))
 }
 
 // List returns all channels for a tenant
@@ -101,6 +135,9 @@ func (s *ChannelService) List(ctx context.Context, tenantID string) ([]*entity.C
 
 // Create creates a new channel
 func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) (*entity.Channel, error) {
+	if err := s.checkChannelTypeEnabled(entity.ChannelType(input.Type)); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	channel := &entity.Channel{
 		ID:               uuid.New().String(),
@@ -112,6 +149,7 @@ func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) 
 		ConnectionStatus: entity.ConnectionStatusDisconnected,
 		Config:           input.Config,
 		Credentials:      input.Credentials,
+		WebhookURL:       input.WebhookURL,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -126,6 +164,76 @@ func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) 
 // GetByID returns a channel by ID
 func (s *ChannelService) GetByID(ctx context.Context, id string) (*entity.Channel, error) {
 	return s.repo.FindByID(ctx, id)
+}
+
+// GetByTenantAndID returns a channel only if it belongs to the tenant.
+// Returns a not-found error (never the other tenant's data) on mismatch so
+// callers cannot distinguish "does not exist" from "belongs to someone else".
+func (s *ChannelService) GetByTenantAndID(ctx context.Context, tenantID, id string) (*entity.Channel, error) {
+	channel, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if channel.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeChannelNotFound, "channel not found")
+	}
+	return channel, nil
+}
+
+// UpdateForTenant updates a channel only if it belongs to the tenant.
+func (s *ChannelService) UpdateForTenant(ctx context.Context, tenantID, id string, input *UpdateChannelInput) (*entity.Channel, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return s.Update(ctx, id, input)
+}
+
+// DeleteForTenant deletes a channel only if it belongs to the tenant.
+func (s *ChannelService) DeleteForTenant(ctx context.Context, tenantID, id string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return err
+	}
+	return s.Delete(ctx, id)
+}
+
+// UpdateEnabledForTenant toggles enabled only if the channel belongs to the tenant.
+func (s *ChannelService) UpdateEnabledForTenant(ctx context.Context, tenantID, id string, enabled bool) (*entity.Channel, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return s.UpdateEnabled(ctx, id, enabled)
+}
+
+// UpdateStatusForTenant updates status only if the channel belongs to the tenant.
+func (s *ChannelService) UpdateStatusForTenant(ctx context.Context, tenantID, id, status string) (*entity.Channel, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return s.UpdateStatus(ctx, id, status)
+}
+
+// ConnectForTenant connects a channel only if it belongs to the tenant.
+func (s *ChannelService) ConnectForTenant(ctx context.Context, tenantID, id string) (*ConnectResult, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return s.Connect(ctx, id)
+}
+
+// DisconnectForTenant disconnects a channel only if it belongs to the tenant.
+func (s *ChannelService) DisconnectForTenant(ctx context.Context, tenantID, id string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return err
+	}
+	return s.Disconnect(ctx, id)
+}
+
+// RequestPairCodeForTenant requests a pairing code only if the channel belongs to the tenant.
+func (s *ChannelService) RequestPairCodeForTenant(ctx context.Context, tenantID, id, phoneNumber string) (*ConnectResult, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return s.RequestPairCode(ctx, id, phoneNumber)
 }
 
 // Update updates a channel
@@ -145,7 +253,21 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 		channel.Config = input.Config
 	}
 	if input.Credentials != nil {
-		channel.Credentials = input.Credentials
+		// Merge, not replace: an edit form does not re-display existing secrets,
+		// so a blank incoming value means "keep the stored one" rather than wipe
+		// it. Non-empty values overwrite; new keys are added.
+		if channel.Credentials == nil {
+			channel.Credentials = map[string]string{}
+		}
+		for k, v := range input.Credentials {
+			if v == "" {
+				continue
+			}
+			channel.Credentials[k] = v
+		}
+	}
+	if input.WebhookURL != nil {
+		channel.WebhookURL = *input.WebhookURL
 	}
 	channel.UpdatedAt = time.Now()
 
@@ -242,6 +364,10 @@ func (s *ChannelService) Connect(ctx context.Context, id string) (*ConnectResult
 	channel, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		logger.Error("Failed to find channel", zap.String("channel_id", id), zap.Error(err))
+		return nil, err
+	}
+
+	if err := s.checkChannelTypeEnabled(channel.Type); err != nil {
 		return nil, err
 	}
 

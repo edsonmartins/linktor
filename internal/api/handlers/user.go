@@ -226,6 +226,11 @@ func (h *UserHandler) Update(c *gin.Context) {
 		return
 	}
 
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondValidationError(c, "Invalid request body", nil)
@@ -247,7 +252,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 		input.Status = &status
 	}
 
-	user, err := h.userService.Update(c.Request.Context(), id, input)
+	user, err := h.userService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -277,6 +282,11 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	// Prevent self-deletion
 	currentUserID := middleware.GetUserID(c)
 	if id == currentUserID {
@@ -284,7 +294,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.userService.Delete(c.Request.Context(), id); err != nil {
+	if err := h.userService.DeleteForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}

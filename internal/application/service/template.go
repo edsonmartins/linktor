@@ -118,6 +118,22 @@ func (s *TemplateService) GetByID(ctx context.Context, id string) (*entity.Templ
 	return s.templateRepo.FindByID(ctx, id)
 }
 
+// GetByTenantAndID returns a template only if it belongs to the tenant.
+// On mismatch it returns the same not-found error a missing row would
+// produce, so one tenant can't distinguish "does not exist" from "belongs
+// to another tenant" and can't read another tenant's template via UUID
+// guessing. Mirrors the Edit/Refresh tenant checks in this file.
+func (s *TemplateService) GetByTenantAndID(ctx context.Context, tenantID, id string) (*entity.Template, error) {
+	template, err := s.templateRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if tenantID != "" && template.TenantID != tenantID {
+		return nil, fmt.Errorf("template not found: %s", id)
+	}
+	return template, nil
+}
+
 // EditTemplateInput carries the fields Meta will accept on a template edit.
 // Components and Category are the two Meta actually allows to change on
 // already-approved templates; MessageSendTTLSeconds is also editable.
@@ -281,6 +297,17 @@ func (s *TemplateService) DeleteBulk(ctx context.Context, tenantID string, ids [
 		}
 	}
 	return nil
+}
+
+// DeleteForTenant deletes a template only if it belongs to the tenant.
+// Guards against one tenant deleting another's template via UUID guessing;
+// returns the not-found error on mismatch. Mirrors the Edit/Refresh tenant
+// checks in this file.
+func (s *TemplateService) DeleteForTenant(ctx context.Context, tenantID, id string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return err
+	}
+	return s.Delete(ctx, id)
 }
 
 func (s *TemplateService) Delete(ctx context.Context, id string) error {
@@ -681,13 +708,13 @@ func (s *TemplateService) ListTemplateLibrary(ctx context.Context, channelID str
 // Meta's library. library_template_name is required; body/button inputs
 // customise the optional placeholders the library exposes.
 type CreateFromLibraryInput struct {
-	TenantID                  string
-	ChannelID                 string
-	Name                      string
-	Language                  string
-	Category                  entity.TemplateCategory
-	LibraryTemplateName       string
-	LibraryTemplateBodyInputs map[string]interface{}
+	TenantID                    string
+	ChannelID                   string
+	Name                        string
+	Language                    string
+	Category                    entity.TemplateCategory
+	LibraryTemplateName         string
+	LibraryTemplateBodyInputs   map[string]interface{}
 	LibraryTemplateButtonInputs []map[string]interface{}
 }
 

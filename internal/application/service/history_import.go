@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,7 +22,11 @@ type HistoryImportService struct {
 	messageRepo      repository.MessageRepository
 	contactRepo      repository.ContactRepository
 	importRepo       repository.HistoryImportRepository
-	waClient         *whatsapp_official.Client
+
+	// mu guards the mutable fields below, which are accessed from the
+	// background import goroutines, StartImport and CancelImport concurrently.
+	mu       sync.Mutex
+	waClient *whatsapp_official.Client
 	// Track running imports for cancellation
 	runningImports map[string]context.CancelFunc
 }
@@ -76,6 +81,12 @@ func (s *HistoryImportService) StartImport(ctx context.Context, input *StartImpo
 		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "channel not found")
 	}
 
+	// Enforce tenant isolation: the channel must belong to the requesting tenant,
+	// otherwise report not-found so a tenant cannot import another tenant's history.
+	if channel == nil || channel.TenantID != input.TenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "channel not found")
+	}
+
 	if !channel.IsCoexistenceChannel() {
 		return nil, errors.New(errors.ErrCodeValidation, "channel is not coexistence enabled")
 	}
@@ -108,12 +119,16 @@ func (s *HistoryImportService) StartImport(ctx context.Context, input *StartImpo
 
 	// Create cancellable context for the import
 	importCtx, cancel := context.WithCancel(context.Background())
+	s.mu.Lock()
 	s.runningImports[importJob.ID] = cancel
+	s.mu.Unlock()
 
 	// Start import in background with cancellable context
 	go func() {
 		defer func() {
+			s.mu.Lock()
 			delete(s.runningImports, importJob.ID)
+			s.mu.Unlock()
 		}()
 		s.runImport(importCtx, importJob, channel)
 	}()
@@ -171,7 +186,10 @@ func (s *HistoryImportService) runImport(ctx context.Context, importJob *entity.
 		PhoneNumberID: phoneNumberID,
 		APIVersion:    apiVersion,
 	}
-	s.waClient = whatsapp_official.NewClient(waConfig)
+	waClient := whatsapp_official.NewClient(waConfig)
+	s.mu.Lock()
+	s.waClient = waClient
+	s.mu.Unlock()
 
 	// Fetch conversations from WhatsApp Cloud API
 	err := s.importConversations(ctx, importJob, channel)
@@ -264,12 +282,17 @@ func (s *HistoryImportService) ListImports(ctx context.Context, channelID string
 
 // CancelImport cancels a running import job
 func (s *HistoryImportService) CancelImport(ctx context.Context, importID string) error {
+	s.mu.Lock()
 	cancel, ok := s.runningImports[importID]
+	if ok {
+		delete(s.runningImports, importID)
+	}
+	s.mu.Unlock()
+
 	if !ok {
 		return errors.New(errors.ErrCodeNotFound, "import not found or not running")
 	}
 	cancel()
-	delete(s.runningImports, importID)
 	logger.Info("Import cancelled", zap.String("import_id", importID))
 	return nil
 }

@@ -582,6 +582,100 @@ func (s *BotServiceImpl) TestBot(ctx context.Context, botID, message string) (*B
 	}, nil
 }
 
+// ============================================================================
+// Tenant-scoped wrappers (IDOR protection)
+//
+// Each wrapper loads the bot, verifies it belongs to the caller's tenant, and
+// returns a not-found error on mismatch to avoid leaking another tenant's data.
+// ============================================================================
+
+// GetByTenantAndID returns a bot only if it belongs to the tenant.
+func (s *BotServiceImpl) GetByTenantAndID(ctx context.Context, tenantID, id string) (*entity.Bot, error) {
+	bot, err := s.botRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if bot.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "bot not found")
+	}
+	return bot, nil
+}
+
+// UpdateForTenant updates a bot only if it belongs to the tenant.
+func (s *BotServiceImpl) UpdateForTenant(ctx context.Context, tenantID, id string, input *UpdateBotInput) (*entity.Bot, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return s.Update(ctx, id, input)
+}
+
+// DeleteForTenant deletes a bot only if it belongs to the tenant.
+func (s *BotServiceImpl) DeleteForTenant(ctx context.Context, tenantID, id string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return err
+	}
+	return s.Delete(ctx, id)
+}
+
+// ActivateForTenant activates a bot only if it belongs to the tenant.
+func (s *BotServiceImpl) ActivateForTenant(ctx context.Context, tenantID, id string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return err
+	}
+	return s.Activate(ctx, id)
+}
+
+// DeactivateForTenant deactivates a bot only if it belongs to the tenant.
+func (s *BotServiceImpl) DeactivateForTenant(ctx context.Context, tenantID, id string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return err
+	}
+	return s.Deactivate(ctx, id)
+}
+
+// AssignChannelForTenant assigns a channel to a bot only if the bot belongs to
+// the tenant. Channel-tenant validation is handled by AssignChannel itself.
+func (s *BotServiceImpl) AssignChannelForTenant(ctx context.Context, tenantID, botID, channelID string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, botID); err != nil {
+		return err
+	}
+	return s.AssignChannel(ctx, botID, channelID)
+}
+
+// UnassignChannelForTenant unassigns a channel from a bot only if the bot
+// belongs to the tenant.
+func (s *BotServiceImpl) UnassignChannelForTenant(ctx context.Context, tenantID, botID, channelID string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, botID); err != nil {
+		return err
+	}
+	return s.UnassignChannel(ctx, botID, channelID)
+}
+
+// UpdateConfigForTenant updates a bot's config only if it belongs to the tenant.
+func (s *BotServiceImpl) UpdateConfigForTenant(ctx context.Context, tenantID, botID string, config entity.BotConfig) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, botID); err != nil {
+		return err
+	}
+	return s.UpdateConfig(ctx, botID, config)
+}
+
+// AddEscalationRuleForTenant adds an escalation rule only if the bot belongs to
+// the tenant.
+func (s *BotServiceImpl) AddEscalationRuleForTenant(ctx context.Context, tenantID, botID string, rule entity.EscalationRule) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, botID); err != nil {
+		return err
+	}
+	return s.AddEscalationRule(ctx, botID, rule)
+}
+
+// TestBotForTenant tests a bot only if it belongs to the tenant.
+func (s *BotServiceImpl) TestBotForTenant(ctx context.Context, tenantID, botID, message string) (*BotResponse, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, botID); err != nil {
+		return nil, err
+	}
+	return s.TestBot(ctx, botID, message)
+}
+
 // Helper methods
 
 func (s *BotServiceImpl) isWithinWorkingHours(wh *entity.WorkingHours) bool {

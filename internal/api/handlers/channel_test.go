@@ -420,9 +420,12 @@ func TestChannelDelete_NotFound(t *testing.T) {
 
 	handler.Delete(c)
 
-	// Mock repo Delete is a no-op on missing key, so handler returns 204.
-	if c.Writer.Status() != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", c.Writer.Status())
+	// Delete now validates tenant ownership before deleting, so it must load the
+	// channel first. A missing channel fails the lookup: the mock returns a plain
+	// error, which maps to 500 (same as TestChannelGet_NotFound). The previous
+	// idempotent 204 was exactly what allowed cross-tenant deletion.
+	if c.Writer.Status() != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", c.Writer.Status())
 	}
 }
 

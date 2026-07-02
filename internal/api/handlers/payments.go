@@ -8,20 +8,47 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/msgfy/linktor/internal/api/middleware"
+	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/whatsapp/payments"
 )
 
 // PaymentsHandler handles payment-related HTTP requests
 type PaymentsHandler struct {
-	mu      sync.RWMutex
-	clients map[string]*payments.Client // key: channel_id
+	mu          sync.RWMutex
+	clients     map[string]*payments.Client // key: channel_id
+	channelRepo repository.ChannelRepository
 }
 
-// NewPaymentsHandler creates a new payments handler
-func NewPaymentsHandler() *PaymentsHandler {
+// NewPaymentsHandler creates a new payments handler.
+//
+// channelRepo is used to enforce tenant isolation: every per-channel operation
+// verifies that the channel referenced in the request belongs to the caller's
+// tenant before the channel's access_token is used (prevents IDOR, e.g. a tenant
+// triggering a real refund on another tenant's payment channel).
+func NewPaymentsHandler(channelRepo repository.ChannelRepository) *PaymentsHandler {
 	return &PaymentsHandler{
-		clients: make(map[string]*payments.Client),
+		clients:     make(map[string]*payments.Client),
+		channelRepo: channelRepo,
 	}
+}
+
+// channelBelongsToTenant verifies that the channel identified by channelID
+// belongs to the caller's tenant. On any mismatch (not found, wrong tenant, or
+// missing tenant in context) it writes a 404 response and returns false so the
+// handler can abort without leaking whether the channel exists on another tenant.
+func channelBelongsToTenant(c *gin.Context, repo repository.ChannelRepository, channelID string) bool {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == "" || repo == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found"})
+		return false
+	}
+	channel, err := repo.FindByID(c.Request.Context(), channelID)
+	if err != nil || channel == nil || channel.TenantID != tenantID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found"})
+		return false
+	}
+	return true
 }
 
 // RegisterClient registers a payments client for a channel
@@ -62,6 +89,10 @@ func (h *PaymentsHandler) getClient(channelID string) (*payments.Client, bool) {
 // @Router       /channels/{channelId}/payments [post]
 func (h *PaymentsHandler) CreatePayment(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -117,6 +148,10 @@ func (h *PaymentsHandler) GetPayment(c *gin.Context) {
 	channelID := c.Param("id")
 	paymentID := c.Param("paymentId")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or payments not configured"})
@@ -147,6 +182,10 @@ func (h *PaymentsHandler) GetPayment(c *gin.Context) {
 func (h *PaymentsHandler) GetPaymentByReference(c *gin.Context) {
 	channelID := c.Param("id")
 	referenceID := c.Param("referenceId")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -181,6 +220,10 @@ func (h *PaymentsHandler) GetPaymentByReference(c *gin.Context) {
 func (h *PaymentsHandler) ProcessRefund(c *gin.Context) {
 	channelID := c.Param("id")
 	paymentID := c.Param("paymentId")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -227,6 +270,10 @@ func (h *PaymentsHandler) ProcessRefund(c *gin.Context) {
 func (h *PaymentsHandler) GetPaymentStats(c *gin.Context) {
 	channelID := c.Param("id")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or payments not configured"})
@@ -256,6 +303,10 @@ func (h *PaymentsHandler) GetPaymentStats(c *gin.Context) {
 func (h *PaymentsHandler) GetCustomerPayments(c *gin.Context) {
 	channelID := c.Param("id")
 	phone := c.Param("phone")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {

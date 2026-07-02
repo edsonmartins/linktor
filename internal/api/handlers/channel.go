@@ -1,17 +1,23 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/internal/adapters/facebook"
 	"github.com/msgfy/linktor/internal/adapters/instagram"
+	"github.com/msgfy/linktor/internal/adapters/mattermost"
 	"github.com/msgfy/linktor/internal/adapters/rcs"
+	"github.com/msgfy/linktor/internal/adapters/slack"
 	"github.com/msgfy/linktor/internal/adapters/sms"
+	"github.com/msgfy/linktor/internal/adapters/teams"
 	"github.com/msgfy/linktor/internal/adapters/telegram"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
+	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 )
 
@@ -36,6 +42,9 @@ type CreateChannelRequest struct {
 	Identifier  string            `json:"identifier"`
 	Config      map[string]string `json:"config"`
 	Credentials map[string]string `json:"credentials"`
+	// WebhookURL is the external consumer endpoint (e.g. DeskLenz) Linktor
+	// delivers signed inbound/status events to for this channel.
+	WebhookURL string `json:"webhook_url"`
 }
 
 type TestChannelRequest struct {
@@ -66,7 +75,11 @@ func (h *ChannelHandler) List(c *gin.Context) {
 		return
 	}
 
-	RespondSuccess(c, channels)
+	display := make([]*entity.Channel, len(channels))
+	for i, ch := range channels {
+		display[i] = withDisplayConfig(ch)
+	}
+	RespondSuccess(c, display)
 }
 
 // Create godoc
@@ -100,6 +113,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		Identifier:  req.Identifier,
 		Config:      req.Config,
 		Credentials: req.Credentials,
+		WebhookURL:  req.WebhookURL,
 	}
 
 	channel, err := h.channelService.Create(c.Request.Context(), input)
@@ -136,6 +150,18 @@ func (h *ChannelHandler) TestInstagramConnection(c *gin.Context) {
 	h.testConnection(c, "instagram")
 }
 
+func (h *ChannelHandler) TestTeamsConnection(c *gin.Context) {
+	h.testConnection(c, "teams")
+}
+
+func (h *ChannelHandler) TestSlackConnection(c *gin.Context) {
+	h.testConnection(c, "slack")
+}
+
+func (h *ChannelHandler) TestMattermostConnection(c *gin.Context) {
+	h.testConnection(c, "mattermost")
+}
+
 func (h *ChannelHandler) testConnection(c *gin.Context, forcedType string) {
 	var raw map[string]interface{}
 	if err := c.ShouldBindJSON(&raw); err != nil {
@@ -159,12 +185,54 @@ func (h *ChannelHandler) testConnection(c *gin.Context, forcedType string) {
 		return
 	}
 
+	// Live provider check for connectors that support one (Teams/Slack/Mattermost):
+	// actually reach the provider with the supplied credentials.
+	message := "configuration accepted"
+	if detail, ok, err := liveChannelCheck(c.Request.Context(), channelType, config); ok {
+		if err != nil {
+			RespondValidationError(c, "connection test failed: "+err.Error(), nil)
+			return
+		}
+		message = detail
+	}
+
 	RespondSuccess(c, gin.H{
 		"status":  "ok",
 		"type":    channelType,
 		"valid":   true,
-		"message": "configuration accepted",
+		"message": message,
 	})
+}
+
+// liveChannelCheck performs a real provider round-trip for connectors that
+// support one. The second return value reports whether a live check exists for
+// the type (false → caller keeps the static result). The check is time-bounded.
+func liveChannelCheck(ctx context.Context, channelType string, config map[string]string) (detail string, supported bool, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	switch channelType {
+	case "teams":
+		return "credentials valid (AAD token acquired)", true,
+			teams.NewClientFromCredentials(config).Ping(ctx)
+	case "slack":
+		team, user, e := slack.NewClient(config[slack.CredBotToken]).AuthTest(ctx)
+		if e != nil {
+			return "", true, e
+		}
+		return fmt.Sprintf("connected to Slack (team %q, bot %q)", team, user), true, nil
+	case "mattermost":
+		_, username, e := mattermost.NewClient(mattermost.Config{
+			BaseURL:  config[mattermost.CredBaseURL],
+			BotToken: config[mattermost.CredBotToken],
+		}).Me(ctx)
+		if e != nil {
+			return "", true, e
+		}
+		return fmt.Sprintf("connected to Mattermost (bot %q)", username), true, nil
+	default:
+		return "", false, nil
+	}
 }
 
 // Get godoc
@@ -186,13 +254,55 @@ func (h *ChannelHandler) Get(c *gin.Context) {
 		return
 	}
 
-	channel, err := h.channelService.GetByID(c.Request.Context(), id)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	channel, err := h.channelService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 
-	RespondSuccess(c, channel)
+	RespondSuccess(c, withDisplayConfig(channel))
+}
+
+// nonSecretCredentialKeys lists, per channel type, credential keys safe to surface
+// back to the admin UI for edit-form prefill. Secrets (tokens, passwords, signing
+// secrets) are deliberately excluded and never returned.
+var nonSecretCredentialKeys = map[string][]string{
+	teams.ChannelType:      {teams.CredAppID, teams.CredTenantID, teams.CredServiceURL},
+	slack.ChannelType:      {slack.CredAppID, slack.CredBotUserID},
+	mattermost.ChannelType: {mattermost.CredBaseURL, mattermost.CredBotUserID},
+}
+
+// withDisplayConfig returns a shallow copy of the channel with non-secret
+// credential fields merged into Config for UI prefill. The original entity is
+// never mutated and Credentials (json:"-") stay hidden. Existing Config keys win.
+func withDisplayConfig(channel *entity.Channel) *entity.Channel {
+	if channel == nil {
+		return channel
+	}
+	keys := nonSecretCredentialKeys[string(channel.Type)]
+	if len(keys) == 0 {
+		return channel
+	}
+
+	clone := *channel
+	clone.Config = map[string]string{}
+	for k, v := range channel.Config {
+		clone.Config[k] = v
+	}
+	for _, k := range keys {
+		if _, exists := clone.Config[k]; exists {
+			continue
+		}
+		if v := channel.Credentials[k]; v != "" {
+			clone.Config[k] = v
+		}
+	}
+	return &clone
 }
 
 // Update godoc
@@ -222,14 +332,20 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		return
 	}
 
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	input := &service.UpdateChannelInput{
 		Name:        &req.Name,
 		Identifier:  &req.Identifier,
 		Config:      req.Config,
 		Credentials: req.Credentials,
+		WebhookURL:  &req.WebhookURL,
 	}
 
-	channel, err := h.channelService.Update(c.Request.Context(), id, input)
+	channel, err := h.channelService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -257,7 +373,12 @@ func (h *ChannelHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.channelService.Delete(c.Request.Context(), id); err != nil {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	if err := h.channelService.DeleteForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -300,7 +421,12 @@ func (h *ChannelHandler) Connect(c *gin.Context) {
 		return
 	}
 
-	result, err := h.channelService.Connect(c.Request.Context(), id)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	result, err := h.channelService.ConnectForTenant(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -329,7 +455,12 @@ func (h *ChannelHandler) Disconnect(c *gin.Context) {
 		return
 	}
 
-	if err := h.channelService.Disconnect(c.Request.Context(), id); err != nil {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	if err := h.channelService.DisconnectForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -369,7 +500,12 @@ func (h *ChannelHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	channel, err := h.channelService.UpdateStatus(c.Request.Context(), id, req.Status)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	channel, err := h.channelService.UpdateStatusForTenant(c.Request.Context(), tenantID, id, req.Status)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -405,7 +541,12 @@ func (h *ChannelHandler) UpdateEnabled(c *gin.Context) {
 		return
 	}
 
-	channel, err := h.channelService.UpdateEnabled(c.Request.Context(), id, req.Enabled)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	channel, err := h.channelService.UpdateEnabledForTenant(c.Request.Context(), tenantID, id, req.Enabled)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -451,7 +592,12 @@ func (h *ChannelHandler) RequestPairCode(c *gin.Context) {
 		return
 	}
 
-	result, err := h.channelService.RequestPairCode(c.Request.Context(), id, req.PhoneNumber)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	result, err := h.channelService.RequestPairCodeForTenant(c.Request.Context(), tenantID, id, req.PhoneNumber)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -583,6 +729,27 @@ func validateChannelTestConfig(channelType string, config map[string]string) err
 			cfg.Provider = rcs.ProviderZenvia
 		}
 		return cfg.Validate()
+	case "teams":
+		if strings.TrimSpace(config[teams.CredAppID]) == "" {
+			return fmt.Errorf("app_id is required")
+		}
+		if strings.TrimSpace(config[teams.CredAppPassword]) == "" {
+			return fmt.Errorf("app_password is required")
+		}
+		return nil
+	case "slack":
+		if strings.TrimSpace(config[slack.CredBotToken]) == "" {
+			return fmt.Errorf("bot_token is required")
+		}
+		return nil
+	case "mattermost":
+		if strings.TrimSpace(config[mattermost.CredBaseURL]) == "" {
+			return fmt.Errorf("base_url is required")
+		}
+		if strings.TrimSpace(config[mattermost.CredBotToken]) == "" {
+			return fmt.Errorf("bot_token is required")
+		}
+		return nil
 	default:
 		return fmt.Errorf("unsupported channel type: %s", channelType)
 	}

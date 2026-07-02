@@ -25,9 +25,9 @@ func NewKnowledgeHandler(knowledgeService *service.KnowledgeService) *KnowledgeH
 
 // CreateKnowledgeBaseRequest represents a create knowledge base request
 type CreateKnowledgeBaseRequest struct {
-	Name        string                 `json:"name" binding:"required"`
-	Description string                 `json:"description"`
-	Type        string                 `json:"type" binding:"required"` // faq, documents, website
+	Name        string                  `json:"name" binding:"required"`
+	Description string                  `json:"description"`
+	Type        string                  `json:"type" binding:"required"` // faq, documents, website
 	Config      *entity.KnowledgeConfig `json:"config"`
 }
 
@@ -154,13 +154,18 @@ func (h *KnowledgeHandler) CreateKnowledgeBase(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id} [get]
 func (h *KnowledgeHandler) GetKnowledgeBase(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Knowledge base ID is required", nil)
 		return
 	}
 
-	kb, err := h.knowledgeService.GetKnowledgeBase(c.Request.Context(), id)
+	kb, err := h.knowledgeService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -184,6 +189,11 @@ func (h *KnowledgeHandler) GetKnowledgeBase(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id} [put]
 func (h *KnowledgeHandler) UpdateKnowledgeBase(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Knowledge base ID is required", nil)
@@ -202,7 +212,7 @@ func (h *KnowledgeHandler) UpdateKnowledgeBase(c *gin.Context) {
 		Config:      req.Config,
 	}
 
-	kb, err := h.knowledgeService.UpdateKnowledgeBase(c.Request.Context(), id, input)
+	kb, err := h.knowledgeService.UpdateKnowledgeBaseForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -224,13 +234,18 @@ func (h *KnowledgeHandler) UpdateKnowledgeBase(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id} [delete]
 func (h *KnowledgeHandler) DeleteKnowledgeBase(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Knowledge base ID is required", nil)
 		return
 	}
 
-	if err := h.knowledgeService.DeleteKnowledgeBase(c.Request.Context(), id); err != nil {
+	if err := h.knowledgeService.DeleteKnowledgeBaseForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -253,6 +268,11 @@ func (h *KnowledgeHandler) DeleteKnowledgeBase(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id}/items [get]
 func (h *KnowledgeHandler) ListItems(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	kbID := c.Param("id")
 	if kbID == "" {
 		RespondValidationError(c, "Knowledge base ID is required", nil)
@@ -270,7 +290,7 @@ func (h *KnowledgeHandler) ListItems(c *gin.Context) {
 		SortDir:  c.DefaultQuery("sort_dir", "desc"),
 	}
 
-	items, total, err := h.knowledgeService.ListItems(c.Request.Context(), kbID, params)
+	items, total, err := h.knowledgeService.ListItemsForTenant(c.Request.Context(), tenantID, kbID, params)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -294,6 +314,11 @@ func (h *KnowledgeHandler) ListItems(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id}/items [post]
 func (h *KnowledgeHandler) AddItem(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	kbID := c.Param("id")
 	if kbID == "" {
 		RespondValidationError(c, "Knowledge base ID is required", nil)
@@ -315,7 +340,7 @@ func (h *KnowledgeHandler) AddItem(c *gin.Context) {
 		Metadata:        req.Metadata,
 	}
 
-	item, err := h.knowledgeService.AddItem(c.Request.Context(), input)
+	item, err := h.knowledgeService.AddItemForTenant(c.Request.Context(), tenantID, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -338,13 +363,18 @@ func (h *KnowledgeHandler) AddItem(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id}/items/{itemId} [get]
 func (h *KnowledgeHandler) GetItem(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	itemID := c.Param("itemId")
 	if itemID == "" {
 		RespondValidationError(c, "Item ID is required", nil)
 		return
 	}
 
-	item, err := h.knowledgeService.GetItem(c.Request.Context(), itemID)
+	item, err := h.knowledgeService.GetItemForTenant(c.Request.Context(), tenantID, itemID)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -369,6 +399,11 @@ func (h *KnowledgeHandler) GetItem(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id}/items/{itemId} [put]
 func (h *KnowledgeHandler) UpdateItem(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	itemID := c.Param("itemId")
 	if itemID == "" {
 		RespondValidationError(c, "Item ID is required", nil)
@@ -389,7 +424,7 @@ func (h *KnowledgeHandler) UpdateItem(c *gin.Context) {
 		Metadata: req.Metadata,
 	}
 
-	item, err := h.knowledgeService.UpdateItem(c.Request.Context(), itemID, input)
+	item, err := h.knowledgeService.UpdateItemForTenant(c.Request.Context(), tenantID, itemID, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -412,13 +447,18 @@ func (h *KnowledgeHandler) UpdateItem(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id}/items/{itemId} [delete]
 func (h *KnowledgeHandler) DeleteItem(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	itemID := c.Param("itemId")
 	if itemID == "" {
 		RespondValidationError(c, "Item ID is required", nil)
 		return
 	}
 
-	if err := h.knowledgeService.DeleteItem(c.Request.Context(), itemID); err != nil {
+	if err := h.knowledgeService.DeleteItemForTenant(c.Request.Context(), tenantID, itemID); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -441,6 +481,11 @@ func (h *KnowledgeHandler) DeleteItem(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id}/search [post]
 func (h *KnowledgeHandler) Search(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	kbID := c.Param("id")
 	if kbID == "" {
 		RespondValidationError(c, "Knowledge base ID is required", nil)
@@ -461,7 +506,7 @@ func (h *KnowledgeHandler) Search(c *gin.Context) {
 		limit = 20
 	}
 
-	results, err := h.knowledgeService.Search(c.Request.Context(), kbID, req.Query, limit)
+	results, err := h.knowledgeService.SearchForTenant(c.Request.Context(), tenantID, kbID, req.Query, limit)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -487,13 +532,18 @@ func (h *KnowledgeHandler) Search(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id}/regenerate-embeddings [post]
 func (h *KnowledgeHandler) RegenerateEmbeddings(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	kbID := c.Param("id")
 	if kbID == "" {
 		RespondValidationError(c, "Knowledge base ID is required", nil)
 		return
 	}
 
-	if err := h.knowledgeService.RegenerateEmbeddings(c.Request.Context(), kbID); err != nil {
+	if err := h.knowledgeService.RegenerateEmbeddingsForTenant(c.Request.Context(), tenantID, kbID); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -516,6 +566,11 @@ func (h *KnowledgeHandler) RegenerateEmbeddings(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /knowledge-bases/{id}/items/bulk [post]
 func (h *KnowledgeHandler) BulkAddItems(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	kbID := c.Param("id")
 	if kbID == "" {
 		RespondValidationError(c, "Knowledge base ID is required", nil)
@@ -548,7 +603,7 @@ func (h *KnowledgeHandler) BulkAddItems(c *gin.Context) {
 			Metadata:        itemReq.Metadata,
 		}
 
-		item, err := h.knowledgeService.AddItem(c.Request.Context(), input)
+		item, err := h.knowledgeService.AddItemForTenant(c.Request.Context(), tenantID, input)
 		if err != nil {
 			errors = append(errors, "Item "+strconv.Itoa(i)+": "+err.Error())
 		} else {

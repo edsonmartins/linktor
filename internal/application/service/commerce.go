@@ -7,6 +7,7 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/whatsapp/commerce"
+	"github.com/msgfy/linktor/pkg/errors"
 )
 
 // CommerceService connects WhatsApp Commerce clients to the application layer.
@@ -29,11 +30,17 @@ func NewCommerceService(
 	}
 }
 
-// createCatalogClient looks up a channel and builds a CatalogClient from its configuration.
-func (s *CommerceService) createCatalogClient(ctx context.Context, channelID string) (*commerce.CatalogClient, error) {
+// createCatalogClient looks up a channel and builds a CatalogClient from its
+// configuration. It enforces tenant isolation: the channel must belong to
+// tenantID, otherwise a not-found error is returned so a tenant cannot use
+// another tenant's channel access_token.
+func (s *CommerceService) createCatalogClient(ctx context.Context, tenantID, channelID string) (*commerce.CatalogClient, error) {
 	channel, err := s.channelRepo.FindByID(ctx, channelID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find channel %s: %w", channelID, err)
+		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "channel not found")
+	}
+	if channel == nil || channel.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "channel not found")
 	}
 
 	accessToken := channel.Credentials["access_token"]
@@ -62,7 +69,7 @@ func (s *CommerceService) createCatalogClient(ctx context.Context, channelID str
 
 // GetCatalog retrieves a specific catalog by ID via the WhatsApp Commerce API.
 func (s *CommerceService) GetCatalog(ctx context.Context, tenantID, channelID, catalogID string) (*commerce.Catalog, error) {
-	client, err := s.createCatalogClient(ctx, channelID)
+	client, err := s.createCatalogClient(ctx, tenantID, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +78,7 @@ func (s *CommerceService) GetCatalog(ctx context.Context, tenantID, channelID, c
 
 // ListCatalogs lists all catalogs available on the channel.
 func (s *CommerceService) ListCatalogs(ctx context.Context, tenantID, channelID string) ([]commerce.Catalog, error) {
-	client, err := s.createCatalogClient(ctx, channelID)
+	client, err := s.createCatalogClient(ctx, tenantID, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +91,7 @@ func (s *CommerceService) ListCatalogs(ctx context.Context, tenantID, channelID 
 
 // ListProducts lists products from a catalog with pagination.
 func (s *CommerceService) ListProducts(ctx context.Context, tenantID, channelID, catalogID string, limit int, after string) (*commerce.ProductListResponse, error) {
-	client, err := s.createCatalogClient(ctx, channelID)
+	client, err := s.createCatalogClient(ctx, tenantID, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +100,7 @@ func (s *CommerceService) ListProducts(ctx context.Context, tenantID, channelID,
 
 // GetProduct retrieves a specific product by ID.
 func (s *CommerceService) GetProduct(ctx context.Context, tenantID, channelID, productID string) (*commerce.Product, error) {
-	client, err := s.createCatalogClient(ctx, channelID)
+	client, err := s.createCatalogClient(ctx, tenantID, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +109,7 @@ func (s *CommerceService) GetProduct(ctx context.Context, tenantID, channelID, p
 
 // SearchProducts searches for products in a catalog.
 func (s *CommerceService) SearchProducts(ctx context.Context, tenantID, channelID, catalogID, query string, limit int) ([]commerce.Product, error) {
-	client, err := s.createCatalogClient(ctx, channelID)
+	client, err := s.createCatalogClient(ctx, tenantID, channelID)
 	if err != nil {
 		return nil, err
 	}
