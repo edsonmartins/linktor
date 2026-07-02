@@ -216,6 +216,107 @@ func TestClient_SetHandlers(t *testing.T) {
 	assert.True(t, disconnCalled)
 }
 
+func TestClient_SendMessage_BufferFull(t *testing.T) {
+	hub := NewHub()
+
+	// Client with a tiny buffer so we can fill it deterministically.
+	client := &Client{
+		hub:       hub,
+		SessionID: "session-full",
+		send:      make(chan *WebSocketMessage, 1),
+		Metadata:  make(map[string]string),
+	}
+
+	msg := &WebSocketMessage{Type: MessageTypeMessage, Payload: MessagePayload{Content: "x"}}
+
+	// First send fills the buffer.
+	require.NoError(t, client.SendMessage(msg))
+
+	// Second send must fail (buffer full) instead of silently dropping.
+	err := client.SendMessage(msg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "buffer full")
+}
+
+func TestHub_StopWithActiveClient_NoPanicNoLeak(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	time.Sleep(10 * time.Millisecond)
+
+	client := &Client{
+		hub:       hub,
+		SessionID: "session-active",
+		send:      make(chan *WebSocketMessage, 1),
+		Metadata:  make(map[string]string),
+	}
+	hub.register <- client
+	time.Sleep(10 * time.Millisecond)
+	require.Equal(t, 1, hub.ClientCount())
+
+	// Stop the hub while a client is still registered. Run closes the client's
+	// send channel on shutdown.
+	hub.Stop()
+	time.Sleep(10 * time.Millisecond)
+
+	// A send after Stop must NOT panic (send on closed channel) and must
+	// report an error rather than a false success.
+	assert.NotPanics(t, func() {
+		err := client.SendMessage(&WebSocketMessage{
+			Type:    MessageTypeMessage,
+			Payload: MessagePayload{Content: "after stop"},
+		})
+		assert.Error(t, err)
+	})
+
+	// Register / Unregister after Stop must return promptly (non-blocking)
+	// rather than leak a goroutine blocked on the channel forever.
+	done := make(chan struct{})
+	go func() {
+		hub.Register(client)
+		hub.Unregister(client)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Register/Unregister blocked after Stop (goroutine leak)")
+	}
+
+	// BroadcastToConversation after Stop must also be panic-safe.
+	assert.NotPanics(t, func() {
+		hub.BroadcastToConversation("conv-x", &WebSocketMessage{Type: MessageTypeMessage})
+	})
+}
+
+func TestClient_ReadPumpUnregister_AfterStop_NoLeak(t *testing.T) {
+	hub := NewHub()
+	go hub.Run()
+	time.Sleep(10 * time.Millisecond)
+
+	client := &Client{
+		hub:       hub,
+		SessionID: "session-pump",
+		send:      make(chan *WebSocketMessage, 1),
+		Metadata:  make(map[string]string),
+	}
+
+	hub.Stop()
+	time.Sleep(10 * time.Millisecond)
+
+	// The deferred cleanup in ReadPump calls Unregister; ensure it does not
+	// block once the hub has stopped.
+	done := make(chan struct{})
+	go func() {
+		hub.Unregister(client)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Unregister blocked after Stop (goroutine leak)")
+	}
+}
+
 func TestNewClient(t *testing.T) {
 	hub := NewHub()
 	client := NewClient(hub, nil, "session-abc")

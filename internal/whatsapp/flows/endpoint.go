@@ -70,11 +70,12 @@ func (fe *FlowEndpoint) HTTPHandler() http.HandlerFunc {
 		}
 		defer r.Body.Close()
 
-		// Verify signature if app secret is configured
+		// Verify signature if app secret is configured.
+		// Meta expects HTTP 432 when the request signature cannot be verified.
 		if fe.config.AppSecret != "" {
 			signature := r.Header.Get("X-Hub-Signature-256")
 			if !fe.verifySignature(body, signature) {
-				http.Error(w, "Invalid signature", http.StatusUnauthorized)
+				w.WriteHeader(432) // Flows: signature verification failed
 				return
 			}
 		}
@@ -89,18 +90,43 @@ func (fe *FlowEndpoint) HTTPHandler() http.HandlerFunc {
 		// Process request
 		encryptedResp, err := fe.dataExchange.ProcessRequest(&encryptedReq)
 		if err != nil {
-			// Return error response
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"error": err.Error(),
-			})
+			// Never leak internal error text back to Meta. Map to the proper
+			// Flows error status so Meta can react (e.g. 421 => refresh the
+			// public key and retry). We only expose the status code.
+			w.WriteHeader(flowErrorStatus(err))
 			return
 		}
 
-		// Return encrypted response
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(encryptedResp)
+		// Meta expects the raw base64 ciphertext as a plain-text body, NOT a
+		// JSON object. Writing it as application/json or wrapping it in
+		// {"encrypted_flow_data": "..."} makes the client fail to decrypt.
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(encryptedResp.EncryptedFlowData))
+	}
+}
+
+// flowErrorStatus maps an internal processing error to the HTTP status code
+// expected by WhatsApp Flows, without exposing any internal error details.
+//
+//	421 -> request could not be decrypted (Meta refreshes the key and retries)
+//	432 -> request signature could not be verified
+//	427 -> flow token is invalid / expired
+//	500 -> any other server-side failure
+func flowErrorStatus(err error) int {
+	if err == nil {
+		return http.StatusInternalServerError
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "failed to decrypt request"):
+		return 421
+	case strings.Contains(msg, "signature"):
+		return 432
+	case strings.Contains(msg, "flow token"):
+		return 427
+	default:
+		return http.StatusInternalServerError
 	}
 }
 
@@ -231,8 +257,10 @@ func NewDecryptionMiddleware(privateKeyPEM, appSecret string) (*DecryptionMiddle
 	}, nil
 }
 
-// DecryptedHandler is a handler that receives decrypted flow requests
-type DecryptedHandler func(w http.ResponseWriter, r *http.Request, req *DecryptedRequest, aesKey []byte)
+// DecryptedHandler is a handler that receives decrypted flow requests.
+// requestIV is the original request IV; it must be passed to EncryptAndSend so
+// the response can be encrypted with the bit-flipped IV.
+type DecryptedHandler func(w http.ResponseWriter, r *http.Request, req *DecryptedRequest, aesKey []byte, requestIV []byte)
 
 // Wrap wraps a DecryptedHandler to handle encryption/decryption automatically
 func (dm *DecryptionMiddleware) Wrap(handler DecryptedHandler) http.HandlerFunc {
@@ -261,14 +289,15 @@ func (dm *DecryptionMiddleware) Wrap(handler DecryptedHandler) http.HandlerFunc 
 			return
 		}
 
-		decryptedReq, aesKey, err := dm.encryptor.DecryptRequest(&encryptedReq)
+		decryptedReq, aesKey, requestIV, err := dm.encryptor.DecryptRequest(&encryptedReq)
 		if err != nil {
-			http.Error(w, "Failed to decrypt request", http.StatusBadRequest)
+			// 421 => Meta refreshes the public key and retries. Do not leak details.
+			w.WriteHeader(421)
 			return
 		}
 
 		// Call handler
-		handler(w, r, decryptedReq, aesKey)
+		handler(w, r, decryptedReq, aesKey, requestIV)
 	}
 }
 
@@ -286,13 +315,15 @@ func (dm *DecryptionMiddleware) verifySignature(body []byte, signature string) b
 	return hmac.Equal([]byte(signature), []byte(expectedSig))
 }
 
-// EncryptAndSend encrypts a response and sends it
-func (dm *DecryptionMiddleware) EncryptAndSend(w http.ResponseWriter, response *FlowResponse, aesKey []byte) error {
-	encryptedResp, err := dm.encryptor.EncryptResponse(response, aesKey)
+// EncryptAndSend encrypts a response and sends it as the raw base64 body that
+// Meta expects (plain text, bit-flipped request IV).
+func (dm *DecryptionMiddleware) EncryptAndSend(w http.ResponseWriter, response *FlowResponse, aesKey []byte, requestIV []byte) error {
+	encryptedResp, err := dm.encryptor.EncryptResponse(response, aesKey, requestIV)
 	if err != nil {
 		return err
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(encryptedResp)
+	w.Header().Set("Content-Type", "text/plain")
+	_, err = w.Write([]byte(encryptedResp.EncryptedFlowData))
+	return err
 }

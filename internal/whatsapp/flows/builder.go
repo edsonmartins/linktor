@@ -7,17 +7,17 @@ import (
 
 // FlowJSON represents the complete JSON structure of a WhatsApp Flow
 type FlowJSON struct {
-	Version        string                 `json:"version"`
-	DataAPIVersion string                 `json:"data_api_version,omitempty"`
-	RoutingModel   map[string]interface{} `json:"routing_model,omitempty"`
+	Version        string                   `json:"version"`
+	DataAPIVersion string                   `json:"data_api_version,omitempty"`
+	RoutingModel   map[string]interface{}   `json:"routing_model,omitempty"`
 	Screens        []map[string]interface{} `json:"screens"`
 }
 
 // FlowJSONBuilder provides a fluent API for building flow JSON
 type FlowJSONBuilder struct {
-	json     *FlowJSON
-	screens  []*ScreenBuilder
-	errors   []error
+	json    *FlowJSON
+	screens []*ScreenBuilder
+	errors  []error
 }
 
 // NewFlowJSONBuilder creates a new flow JSON builder
@@ -66,10 +66,14 @@ func (b *FlowJSONBuilder) AddScreen(screen *Screen) *FlowJSONBuilder {
 
 // Build builds the final flow JSON
 func (b *FlowJSONBuilder) Build() (*FlowJSON, error) {
-	// Add screens from builders
+	// Merge screens from the fluent builders into json.Screens exactly once.
+	// Clearing b.screens afterwards prevents the same screens from being
+	// counted twice during validation (the historical "duplicate screen ID"
+	// bug) and avoids double-appending if Build is called more than once.
 	for _, sb := range b.screens {
 		b.json.Screens = append(b.json.Screens, sb.Build().ToMap())
 	}
+	b.screens = nil
 
 	// Validate
 	if err := b.Validate(); err != nil {

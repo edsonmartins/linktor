@@ -43,6 +43,33 @@ func createMessageInfo(id string, senderPhone string, isGroup bool, isFromMe boo
 	}
 }
 
+// dispatch() tests — a full event channel must drop without blocking or panicking
+// (and, with a logger set, log a warning instead of silently dropping).
+func (suite *EventsTestSuite) TestDispatch_DropsWhenFull() {
+	ch := make(chan any, 1)
+	c := &Client{eventCh: ch}
+
+	c.dispatch(ch, "first", "message") // fills the buffer
+
+	assert.NotPanics(suite.T(), func() {
+		c.dispatch(ch, "second", "message") // buffer full -> dropped, must not block
+	})
+
+	assert.Len(suite.T(), ch, 1)
+	got := <-ch
+	assert.Equal(suite.T(), "first", got)
+}
+
+func (suite *EventsTestSuite) TestDispatch_DeliversWhenSpaceAvailable() {
+	ch := make(chan any, 1)
+	c := &Client{eventCh: ch}
+
+	c.dispatch(ch, "hello", "message")
+
+	assert.Len(suite.T(), ch, 1)
+	assert.Equal(suite.T(), "hello", <-ch)
+}
+
 // convertMessage() tests
 func (suite *EventsTestSuite) TestConvertMessage_NilEvent() {
 	result := convertMessage(nil)
@@ -192,6 +219,9 @@ func (suite *EventsTestSuite) TestConvertMessage_ImageMessage() {
 	assert.Equal(suite.T(), uint64(12345), result.Attachments[0].FileSize)
 	assert.Equal(suite.T(), uint32(800), result.Attachments[0].Width)
 	assert.Equal(suite.T(), uint32(600), result.Attachments[0].Height)
+	// A downloadable reference must be carried so the adapter can eagerly
+	// download+decrypt the media.
+	assert.NotNil(suite.T(), result.Attachments[0].download)
 }
 
 func (suite *EventsTestSuite) TestConvertMessage_VideoMessage() {
@@ -328,6 +358,10 @@ func (suite *EventsTestSuite) TestConvertMessage_LocationMessage() {
 	assert.Equal(suite.T(), "São Paulo", result.Text)
 	assert.Len(suite.T(), result.Attachments, 1)
 	assert.Equal(suite.T(), "location", result.Attachments[0].Type)
+	// Coordinates must be extracted from the inbound location message.
+	assert.InDelta(suite.T(), -23.5505, result.Attachments[0].Latitude, 1e-9)
+	assert.InDelta(suite.T(), -46.6333, result.Attachments[0].Longitude, 1e-9)
+	assert.Equal(suite.T(), "São Paulo, Brazil", result.Attachments[0].Caption)
 }
 
 func (suite *EventsTestSuite) TestConvertMessage_ContactMessage() {

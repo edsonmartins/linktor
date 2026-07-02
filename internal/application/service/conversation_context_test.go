@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -10,8 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockConversationContextRepository is an inline mock for ConversationContextRepository
+// mockConversationContextRepository is an inline mock for ConversationContextRepository.
+// It is guarded by a mutex so it can be exercised from concurrent goroutines
+// under the race detector.
 type mockConversationContextRepository struct {
+	mu          sync.Mutex
 	contexts    map[string]*entity.ConversationContext // key by conversation_id
 	byID        map[string]*entity.ConversationContext // key by id
 	ReturnError error
@@ -25,6 +30,8 @@ func newMockConversationContextRepository() *mockConversationContextRepository {
 }
 
 func (m *mockConversationContextRepository) Create(ctx context.Context, convContext *entity.ConversationContext) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -34,6 +41,8 @@ func (m *mockConversationContextRepository) Create(ctx context.Context, convCont
 }
 
 func (m *mockConversationContextRepository) FindByID(ctx context.Context, id string) (*entity.ConversationContext, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.ReturnError != nil {
 		return nil, m.ReturnError
 	}
@@ -45,6 +54,8 @@ func (m *mockConversationContextRepository) FindByID(ctx context.Context, id str
 }
 
 func (m *mockConversationContextRepository) FindByConversation(ctx context.Context, conversationID string) (*entity.ConversationContext, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.ReturnError != nil {
 		return nil, m.ReturnError
 	}
@@ -56,6 +67,8 @@ func (m *mockConversationContextRepository) FindByConversation(ctx context.Conte
 }
 
 func (m *mockConversationContextRepository) Update(ctx context.Context, convContext *entity.ConversationContext) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -65,6 +78,8 @@ func (m *mockConversationContextRepository) Update(ctx context.Context, convCont
 }
 
 func (m *mockConversationContextRepository) UpdateIntent(ctx context.Context, id string, intent *entity.Intent) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -77,6 +92,8 @@ func (m *mockConversationContextRepository) UpdateIntent(ctx context.Context, id
 }
 
 func (m *mockConversationContextRepository) UpdateSentiment(ctx context.Context, id string, sentiment entity.Sentiment) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -89,6 +106,8 @@ func (m *mockConversationContextRepository) UpdateSentiment(ctx context.Context,
 }
 
 func (m *mockConversationContextRepository) UpdateContextWindow(ctx context.Context, id string, window []entity.ContextMessage) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -101,6 +120,8 @@ func (m *mockConversationContextRepository) UpdateContextWindow(ctx context.Cont
 }
 
 func (m *mockConversationContextRepository) Delete(ctx context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -389,4 +410,88 @@ func TestConversationContextService_TrimContextWindow(t *testing.T) {
 	// Messages 1-5: at msg 6 (len=6>5), trim to 3, then add msg 6 => 4
 	// At msg 7 (len=5, not >5) no trim => 5
 	assert.LessOrEqual(t, len(cc.ContextWindow), cfg.MaxContextWindowSize+1)
+}
+
+// TestConversationContextService_ConcurrentStateAccess reproduces the fatal
+// "concurrent map writes" bug: multiple goroutines handling the same
+// conversation used to share a single cached *ConversationContext and mutate
+// its State map concurrently. With copy-on-read each caller gets an independent
+// copy, so this must run cleanly under `go test -race`.
+func TestConversationContextService_ConcurrentStateAccess(t *testing.T) {
+	repo := newMockConversationContextRepository()
+	svc := NewConversationContextService(repo, nil)
+	ctx := context.Background()
+
+	const convID = "conv-concurrent"
+	_, err := svc.GetOrCreate(ctx, convID)
+	require.NoError(t, err)
+
+	const goroutines = 64
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(n int) {
+			defer wg.Done()
+
+			// Read a context and mutate its State map directly, mimicking the
+			// way bot.go / flow_engine.go mutate the returned context.
+			cc, err := svc.GetOrCreate(ctx, convID)
+			if err != nil {
+				return
+			}
+			cc.State[fmt.Sprintf("direct-%d", n)] = n
+			if cc.State["collected_data"] == nil {
+				cc.State["collected_data"] = map[string]string{}
+			}
+
+			// Exercise the service-level mutators and readers concurrently.
+			_ = svc.SetStateValue(ctx, convID, fmt.Sprintf("key-%d", n), n)
+			_ = svc.AddUserMessage(ctx, convID, "hello", fmt.Sprintf("m-%d", n))
+			_, _ = svc.GetContextWindow(ctx, convID, 5)
+			svc.InvalidateCache(convID)
+		}(i)
+	}
+	wg.Wait()
+}
+
+// TestConversationContextService_CacheEviction verifies the cache is bounded so
+// it cannot grow without limit (memory leak).
+func TestConversationContextService_CacheEviction(t *testing.T) {
+	repo := newMockConversationContextRepository()
+	svc := NewConversationContextService(repo, nil)
+	ctx := context.Background()
+
+	// Shrink the cache bound for the test.
+	svc.maxCacheSize = 8
+
+	for i := 0; i < 100; i++ {
+		_, err := svc.GetOrCreate(ctx, fmt.Sprintf("conv-%d", i))
+		require.NoError(t, err)
+	}
+
+	svc.mu.Lock()
+	size := len(svc.cache)
+	svc.mu.Unlock()
+	assert.LessOrEqual(t, size, svc.maxCacheSize, "cache must stay bounded")
+}
+
+// TestConversationContextService_CopyOnRead ensures mutating a returned context
+// does not corrupt the cached / persisted copy shared with other readers.
+func TestConversationContextService_CopyOnRead(t *testing.T) {
+	repo := newMockConversationContextRepository()
+	svc := NewConversationContextService(repo, nil)
+	ctx := context.Background()
+
+	require.NoError(t, svc.SetStateValue(ctx, "conv-x", "flow", "abc"))
+
+	a, err := svc.Get(ctx, "conv-x")
+	require.NoError(t, err)
+	b, err := svc.Get(ctx, "conv-x")
+	require.NoError(t, err)
+
+	// Distinct instances and distinct State maps.
+	assert.NotSame(t, a, b)
+	a.State["only_in_a"] = true
+	_, present := b.State["only_in_a"]
+	assert.False(t, present, "mutation of one copy must not leak into another")
 }

@@ -7,6 +7,20 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 )
 
+// dispatch performs a non-blocking send of an event onto the client's event
+// channel. If the channel buffer is full it logs a warning instead of silently
+// dropping the event, so back-pressure/consumer stalls become visible instead
+// of manifesting as lost inbound messages or receipts.
+func (c *Client) dispatch(eventCh chan any, evt any, kind string) {
+	select {
+	case eventCh <- evt:
+	default:
+		if c.logger != nil {
+			c.logger.Warnf("event channel full (cap=%d), dropping %s event", cap(eventCh), kind)
+		}
+	}
+}
+
 // handleEvent handles incoming WhatsApp events
 func (c *Client) handleEvent(evt any) {
 	c.mu.Lock()
@@ -18,49 +32,34 @@ func (c *Client) handleEvent(evt any) {
 		c.mu.Lock()
 		c.state = DeviceStateConnected
 		c.mu.Unlock()
-		select {
-		case eventCh <- ConnectionEvent{State: DeviceStateConnected, Time: time.Now()}:
-		default:
-		}
+		c.dispatch(eventCh, ConnectionEvent{State: DeviceStateConnected, Time: time.Now()}, "connected")
 
 	case *events.Disconnected:
 		c.mu.Lock()
 		c.state = DeviceStateDisconnected
 		c.mu.Unlock()
-		select {
-		case eventCh <- ConnectionEvent{State: DeviceStateDisconnected, Time: time.Now()}:
-		default:
-		}
+		c.dispatch(eventCh, ConnectionEvent{State: DeviceStateDisconnected, Time: time.Now()}, "disconnected")
 
 	case *events.LoggedOut:
 		c.mu.Lock()
 		c.state = DeviceStateLoggedOut
 		c.mu.Unlock()
-		select {
-		case eventCh <- LogoutEvent{
+		c.dispatch(eventCh, LogoutEvent{
 			Reason:    v.Reason.String(),
 			Time:      time.Now(),
 			FromPhone: v.OnConnect,
-		}:
-		default:
-		}
+		}, "logout")
 
 	case *events.Message:
 		msg := convertMessage(v)
 		if msg != nil {
-			select {
-			case eventCh <- msg:
-			default:
-			}
+			c.dispatch(eventCh, msg, "message")
 		}
 
 	case *events.Receipt:
 		receipt := convertReceipt(v)
 		if receipt != nil {
-			select {
-			case eventCh <- receipt:
-			default:
-			}
+			c.dispatch(eventCh, receipt, "receipt")
 		}
 
 	case *events.Presence:
@@ -70,10 +69,7 @@ func (c *Client) handleEvent(evt any) {
 			Unavailable: v.Unavailable,
 			LastSeenAt:  v.LastSeen,
 		}
-		select {
-		case eventCh <- presence:
-		default:
-		}
+		c.dispatch(eventCh, presence, "presence")
 
 	case *events.ChatPresence:
 		chatPresence := &ChatPresence{
@@ -88,19 +84,13 @@ func (c *Client) handleEvent(evt any) {
 		default:
 			chatPresence.State = ChatPresencePaused
 		}
-		select {
-		case eventCh <- chatPresence:
-		default:
-		}
+		c.dispatch(eventCh, chatPresence, "chat_presence")
 
 	case *events.HistorySync:
-		select {
-		case eventCh <- HistorySyncEvent{
+		c.dispatch(eventCh, HistorySyncEvent{
 			Complete: true,
 			Time:     time.Now(),
-		}:
-		default:
-		}
+		}, "history_sync")
 	}
 }
 
@@ -111,14 +101,14 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 	}
 
 	msg := &IncomingMessage{
-		ExternalID:  evt.Info.ID,
-		SenderJID:   evt.Info.Sender,
-		ChatJID:     evt.Info.Chat,
-		SenderName:  evt.Info.PushName,
-		Timestamp:   evt.Info.Timestamp,
-		IsFromMe:    evt.Info.IsFromMe,
-		IsGroup:     evt.Info.IsGroup,
-		RawMessage:  evt.Message,
+		ExternalID: evt.Info.ID,
+		SenderJID:  evt.Info.Sender,
+		ChatJID:    evt.Info.Chat,
+		SenderName: evt.Info.PushName,
+		Timestamp:  evt.Info.Timestamp,
+		IsFromMe:   evt.Info.IsFromMe,
+		IsGroup:    evt.Info.IsGroup,
+		RawMessage: evt.Message,
 	}
 
 	// Extract text content
@@ -164,6 +154,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 			Width:     img.GetWidth(),
 			Height:    img.GetHeight(),
 			Thumbnail: img.GetJPEGThumbnail(),
+			download:  img,
 		})
 		handleContextInfo(msg, img.GetContextInfo())
 	}
@@ -184,6 +175,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 			Height:    video.GetHeight(),
 			Duration:  video.GetSeconds(),
 			Thumbnail: video.GetJPEGThumbnail(),
+			download:  video,
 		})
 		handleContextInfo(msg, video.GetContextInfo())
 	}
@@ -196,14 +188,15 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 			msg.MessageType = "audio"
 		}
 		msg.Attachments = append(msg.Attachments, Attachment{
-			Type:     "audio",
-			URL:      audio.GetURL(),
-			MediaKey: audio.GetMediaKey(),
-			SHA256:   audio.GetFileSHA256(),
+			Type:      "audio",
+			URL:       audio.GetURL(),
+			MediaKey:  audio.GetMediaKey(),
+			SHA256:    audio.GetFileSHA256(),
 			EncSHA256: audio.GetFileEncSHA256(),
-			MimeType: audio.GetMimetype(),
-			FileSize: audio.GetFileLength(),
-			Duration: audio.GetSeconds(),
+			MimeType:  audio.GetMimetype(),
+			FileSize:  audio.GetFileLength(),
+			Duration:  audio.GetSeconds(),
+			download:  audio,
 		})
 		handleContextInfo(msg, audio.GetContextInfo())
 	}
@@ -222,6 +215,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 			FileSize:  doc.GetFileLength(),
 			Filename:  doc.GetFileName(),
 			Thumbnail: doc.GetJPEGThumbnail(),
+			download:  doc,
 		})
 		handleContextInfo(msg, doc.GetContextInfo())
 	}
@@ -239,6 +233,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 			FileSize:  sticker.GetFileLength(),
 			Width:     sticker.GetWidth(),
 			Height:    sticker.GetHeight(),
+			download:  sticker,
 		})
 		handleContextInfo(msg, sticker.GetContextInfo())
 	}
@@ -248,9 +243,11 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 		msg.MessageType = "location"
 		msg.Text = loc.GetName()
 		msg.Attachments = append(msg.Attachments, Attachment{
-			Type:     "location",
-			Caption:  loc.GetAddress(),
-			Filename: loc.GetName(),
+			Type:      "location",
+			Caption:   loc.GetAddress(),
+			Filename:  loc.GetName(),
+			Latitude:  loc.GetDegreesLatitude(),
+			Longitude: loc.GetDegreesLongitude(),
 		})
 	}
 
@@ -326,4 +323,3 @@ func convertReceipt(evt *events.Receipt) *Receipt {
 
 	return receipt
 }
-

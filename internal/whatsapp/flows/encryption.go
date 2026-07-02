@@ -10,24 +10,23 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"sync"
 )
 
 // EncryptedRequest represents an encrypted request from WhatsApp Flows
 type EncryptedRequest struct {
-	EncryptedFlowData   string `json:"encrypted_flow_data"`
-	EncryptedAESKey     string `json:"encrypted_aes_key"`
-	InitialVector       string `json:"initial_vector"`
+	EncryptedFlowData string `json:"encrypted_flow_data"`
+	EncryptedAESKey   string `json:"encrypted_aes_key"`
+	InitialVector     string `json:"initial_vector"`
 }
 
 // DecryptedRequest represents a decrypted request from WhatsApp Flows
 type DecryptedRequest struct {
-	Version        string                 `json:"version"`
-	Action         string                 `json:"action"`
-	Screen         string                 `json:"screen"`
-	Data           map[string]interface{} `json:"data"`
-	FlowToken      string                 `json:"flow_token"`
+	Version   string                 `json:"version"`
+	Action    string                 `json:"action"`
+	Screen    string                 `json:"screen"`
+	Data      map[string]interface{} `json:"data"`
+	FlowToken string                 `json:"flow_token"`
 }
 
 // EncryptedResponse represents an encrypted response to WhatsApp Flows
@@ -63,84 +62,108 @@ func NewFlowEncryptorFromPEM(privateKeyPEM string) (*FlowEncryptor, error) {
 	return NewFlowEncryptor(privateKey), nil
 }
 
-// DecryptRequest decrypts an incoming request from WhatsApp Flows
-func (fe *FlowEncryptor) DecryptRequest(req *EncryptedRequest) (*DecryptedRequest, []byte, error) {
+// DecryptRequest decrypts an incoming request from WhatsApp Flows.
+// It returns the decrypted request, the AES key and the request IV. The IV is
+// required by the caller so it can be bit-flipped (iv[i] ^ 0xFF) to encrypt the
+// response, as mandated by Meta's Flows data-exchange spec.
+func (fe *FlowEncryptor) DecryptRequest(req *EncryptedRequest) (*DecryptedRequest, []byte, []byte, error) {
 	// Decode base64 encrypted AES key
 	encryptedAESKey, err := base64.StdEncoding.DecodeString(req.EncryptedAESKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode encrypted AES key: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to decode encrypted AES key: %w", err)
 	}
 
 	// Decrypt AES key using RSA private key with OAEP padding
 	aesKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, fe.privateKey, encryptedAESKey, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decrypt AES key: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to decrypt AES key: %w", err)
 	}
 
 	// Decode base64 IV
 	iv, err := base64.StdEncoding.DecodeString(req.InitialVector)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode IV: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to decode IV: %w", err)
+	}
+	if len(iv) == 0 {
+		return nil, nil, nil, fmt.Errorf("invalid IV: empty")
 	}
 
 	// Decode base64 encrypted data
 	encryptedData, err := base64.StdEncoding.DecodeString(req.EncryptedFlowData)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode encrypted data: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to decode encrypted data: %w", err)
 	}
 
 	// Decrypt data using AES-GCM
 	decryptedData, err := decryptAESGCM(aesKey, iv, encryptedData)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decrypt data: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to decrypt data: %w", err)
 	}
 
 	// Parse JSON
 	var result DecryptedRequest
 	if err := json.Unmarshal(decryptedData, &result); err != nil {
-		return nil, nil, fmt.Errorf("failed to parse decrypted data: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to parse decrypted data: %w", err)
 	}
 
-	return &result, aesKey, nil
+	return &result, aesKey, iv, nil
 }
 
-// EncryptResponse encrypts a response to send back to WhatsApp Flows
-func (fe *FlowEncryptor) EncryptResponse(response *FlowResponse, aesKey []byte) (*EncryptedResponse, error) {
+// EncryptResponse encrypts a response to send back to WhatsApp Flows.
+//
+// Meta requires the response to be encrypted with AES-GCM using the SAME AES key
+// as the request and an IV derived from the request IV with every bit inverted
+// (requestIV[i] ^ 0xFF). The response body is the raw base64 of the GCM
+// ciphertext+tag (no IV prepended, no JSON wrapper) — Meta already knows the
+// flipped IV and decrypts the body directly.
+func (fe *FlowEncryptor) EncryptResponse(response *FlowResponse, aesKey []byte, requestIV []byte) (*EncryptedResponse, error) {
+	if len(requestIV) == 0 {
+		return nil, fmt.Errorf("invalid request IV: empty")
+	}
+
 	// Marshal response to JSON
 	responseJSON, err := json.Marshal(response)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal response: %w", err)
 	}
 
-	// Generate random IV
-	iv := make([]byte, 12) // GCM standard IV size
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, fmt.Errorf("failed to generate IV: %w", err)
+	// Derive the response IV by inverting every bit of the request IV.
+	flippedIV := make([]byte, len(requestIV))
+	for i := range requestIV {
+		flippedIV[i] = requestIV[i] ^ 0xFF
 	}
 
-	// Encrypt data using AES-GCM
-	encryptedData, err := encryptAESGCM(aesKey, iv, responseJSON)
+	// Encrypt data using AES-GCM with the flipped IV.
+	encryptedData, err := encryptAESGCM(aesKey, flippedIV, responseJSON)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt response: %w", err)
 	}
 
-	// Combine IV + encrypted data and encode as base64
-	combined := append(iv, encryptedData...)
-	encodedData := base64.StdEncoding.EncodeToString(combined)
+	// The body is the raw base64 of the ciphertext+tag (no IV prepended).
+	encodedData := base64.StdEncoding.EncodeToString(encryptedData)
 
 	return &EncryptedResponse{
 		EncryptedFlowData: encodedData,
 	}, nil
 }
 
-// decryptAESGCM decrypts data using AES-GCM
+// decryptAESGCM decrypts data using AES-GCM.
+//
+// Meta sends a 16-byte IV, but crypto/cipher.NewGCM only accepts the standard
+// 12-byte nonce and gcm.Open panics on a mismatched nonce length. We therefore
+// build the GCM AEAD with the actual IV length via NewGCMWithNonceSize after
+// validating it, which turns a would-be DoS panic into a normal error.
 func decryptAESGCM(key, iv, ciphertext []byte) ([]byte, error) {
+	if len(iv) == 0 {
+		return nil, fmt.Errorf("invalid IV length: %d", len(iv))
+	}
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cipher.NewGCMWithNonceSize(block, len(iv))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
@@ -153,14 +176,19 @@ func decryptAESGCM(key, iv, ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// encryptAESGCM encrypts data using AES-GCM
+// encryptAESGCM encrypts data using AES-GCM with an IV of arbitrary (validated)
+// length, matching the request IV length used by Meta.
 func encryptAESGCM(key, iv, plaintext []byte) ([]byte, error) {
+	if len(iv) == 0 {
+		return nil, fmt.Errorf("invalid IV length: %d", len(iv))
+	}
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cipher.NewGCMWithNonceSize(block, len(iv))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
@@ -261,7 +289,7 @@ func (fde *FlowDataExchange) RegisterHandler(action string, handler FlowActionHa
 // ProcessRequest processes an encrypted request and returns an encrypted response
 func (fde *FlowDataExchange) ProcessRequest(encryptedReq *EncryptedRequest) (*EncryptedResponse, error) {
 	// Decrypt request
-	decryptedReq, aesKey, err := fde.encryptor.DecryptRequest(encryptedReq)
+	decryptedReq, aesKey, requestIV, err := fde.encryptor.DecryptRequest(encryptedReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt request: %w", err)
 	}
@@ -275,7 +303,7 @@ func (fde *FlowDataExchange) ProcessRequest(encryptedReq *EncryptedRequest) (*En
 				"status": "active",
 			},
 		}
-		return fde.encryptor.EncryptResponse(response, aesKey)
+		return fde.encryptor.EncryptResponse(response, aesKey, requestIV)
 	}
 
 	// Get handler with read lock
@@ -307,7 +335,7 @@ func (fde *FlowDataExchange) ProcessRequest(encryptedReq *EncryptedRequest) (*En
 	}
 
 	// Encrypt and return response
-	return fde.encryptor.EncryptResponse(response, aesKey)
+	return fde.encryptor.EncryptResponse(response, aesKey, requestIV)
 }
 
 // CreateErrorResponse creates an error response
@@ -316,7 +344,7 @@ func CreateErrorResponse(version, screen, message string) *FlowResponse {
 		Version: version,
 		Screen:  screen,
 		Data: map[string]interface{}{
-			"error": true,
+			"error":         true,
 			"error_message": message,
 		},
 	}

@@ -755,6 +755,82 @@ func TestFlowEngine_ExecuteNode_QuestionCollectsData(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Cyclic condition-node protection (stack-overflow guard)
+// ---------------------------------------------------------------------------
+
+// makeCyclicFlow builds a flow whose condition nodes form a cycle:
+// start(message) -> cond-a -> cond-b -> cond-a -> ...
+// Flow CRUD does not validate cycles, so ExecuteNode must abort with an error
+// instead of recursing until the stack overflows.
+func makeCyclicFlow(tenantID string) *entity.Flow {
+	flow := entity.NewFlow(tenantID, "Cyclic Flow", entity.FlowTriggerKeyword, "loop")
+	flow.ID = "flow-cycle"
+	flow.IsActive = true
+	flow.StartNodeID = "start"
+	flow.Nodes = []entity.FlowNode{
+		{
+			ID:      "start",
+			Type:    entity.FlowNodeMessage,
+			Content: "starting",
+			Transitions: []entity.FlowTransition{
+				{ID: "t0", ToNodeID: "cond-a", Condition: entity.TransitionConditionDefault},
+			},
+		},
+		{
+			ID:   "cond-a",
+			Type: entity.FlowNodeCondition,
+			Transitions: []entity.FlowTransition{
+				{ID: "ta", ToNodeID: "cond-b", Condition: entity.TransitionConditionDefault},
+			},
+		},
+		{
+			ID:   "cond-b",
+			Type: entity.FlowNodeCondition,
+			Transitions: []entity.FlowTransition{
+				{ID: "tb", ToNodeID: "cond-a", Condition: entity.TransitionConditionDefault},
+			},
+		},
+	}
+	return flow
+}
+
+func TestFlowEngine_ExecuteNode_CyclicConditionReturnsError(t *testing.T) {
+	svc, _, _ := newFlowEngine()
+	flow := makeCyclicFlow("t-1")
+	convCtx := &entity.ConversationContext{State: make(map[string]interface{})}
+	condNode := flow.GetNode("cond-a")
+
+	// Must return an error rather than overflow the stack / hang.
+	result, err := svc.ExecuteNode(context.Background(), flow, condNode, convCtx, "")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "depth")
+}
+
+func TestFlowEngine_ExecuteNode_SelfLoopConditionReturnsError(t *testing.T) {
+	svc, _, _ := newFlowEngine()
+	flow := &entity.Flow{
+		ID:          "flow-self",
+		StartNodeID: "cond",
+		Nodes: []entity.FlowNode{
+			{
+				ID:   "cond",
+				Type: entity.FlowNodeCondition,
+				Transitions: []entity.FlowTransition{
+					{ID: "self", ToNodeID: "cond", Condition: entity.TransitionConditionDefault},
+				},
+			},
+		},
+	}
+	convCtx := &entity.ConversationContext{State: make(map[string]interface{})}
+
+	_, err := svc.ExecuteNode(context.Background(), flow, flow.GetNode("cond"), convCtx, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "depth")
+}
+
+// ---------------------------------------------------------------------------
 // FlowService CRUD tests
 // ---------------------------------------------------------------------------
 

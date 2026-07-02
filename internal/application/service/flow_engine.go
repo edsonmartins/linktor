@@ -11,6 +11,13 @@ import (
 	"github.com/msgfy/linktor/pkg/errors"
 )
 
+// maxFlowExecutionDepth bounds the number of consecutive condition-node
+// transitions that ExecuteNode will follow in a single call. Condition nodes
+// chain to the next node synchronously, and flow CRUD does not validate against
+// cycles (e.g. A -> B -> A), so without this guard a cyclic flow would recurse
+// until the goroutine stack overflows and crashes the whole process.
+const maxFlowExecutionDepth = 100
+
 // FlowEngineService handles conversational flow execution
 type FlowEngineService struct {
 	flowRepo    repository.FlowRepository
@@ -149,8 +156,20 @@ func (s *FlowEngineService) ContinueFlow(ctx context.Context, tenantID string, u
 	return s.ExecuteNode(ctx, flow, nextNode, convContext, userInput)
 }
 
-// ExecuteNode executes a flow node and returns the result
+// ExecuteNode executes a flow node and returns the result.
 func (s *FlowEngineService) ExecuteNode(ctx context.Context, flow *entity.Flow, node *entity.FlowNode, convContext *entity.ConversationContext, userInput string) (*entity.FlowExecutionResult, error) {
+	return s.executeNode(ctx, flow, node, convContext, userInput, 0)
+}
+
+// executeNode is the depth-tracked implementation of ExecuteNode. Condition
+// nodes advance synchronously to their target node, so a cyclic flow definition
+// would recurse forever; depth bounds that recursion and aborts with an error
+// instead of overflowing the stack.
+func (s *FlowEngineService) executeNode(ctx context.Context, flow *entity.Flow, node *entity.FlowNode, convContext *entity.ConversationContext, userInput string, depth int) (*entity.FlowExecutionResult, error) {
+	if depth >= maxFlowExecutionDepth {
+		return nil, errors.New(errors.ErrCodeBadRequest, "flow execution exceeded maximum depth (possible cyclic flow)")
+	}
+
 	result := &entity.FlowExecutionResult{}
 
 	// Store any collected data from user input
@@ -186,7 +205,7 @@ func (s *FlowEngineService) ExecuteNode(ctx context.Context, flow *entity.Flow, 
 			// Execute the next node immediately
 			nextNode := flow.GetNode(nextNodeID)
 			if nextNode != nil {
-				return s.ExecuteNode(ctx, flow, nextNode, convContext, "")
+				return s.executeNode(ctx, flow, nextNode, convContext, "", depth+1)
 			}
 		}
 
