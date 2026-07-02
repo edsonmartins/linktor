@@ -2,10 +2,12 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/lib/pq"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/pkg/errors"
@@ -23,14 +25,20 @@ func NewConversationRepository(db *PostgresDB) *ConversationRepository {
 
 // Create creates a new conversation
 func (r *ConversationRepository) Create(ctx context.Context, conversation *entity.Conversation) error {
+	metadata, err := json.Marshal(conversation.Metadata)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal conversation metadata")
+	}
+
 	query := `
 		INSERT INTO conversations (
 			id, tenant_id, channel_id, contact_id, assignee_id, status, priority,
-			subject, unread_count, first_reply_at, resolved_at, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			subject, unread_count, first_reply_at, resolved_at, created_at, updated_at,
+			tags, metadata
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 
-	_, err := r.db.Pool.Exec(ctx, query,
+	_, err = r.db.Pool.Exec(ctx, query,
 		conversation.ID,
 		conversation.TenantID,
 		conversation.ChannelID,
@@ -44,6 +52,8 @@ func (r *ConversationRepository) Create(ctx context.Context, conversation *entit
 		conversation.ResolvedAt,
 		conversation.CreatedAt,
 		conversation.UpdatedAt,
+		pq.Array(conversation.Tags),
+		metadata,
 	)
 
 	if err != nil {
@@ -58,7 +68,8 @@ func (r *ConversationRepository) FindByID(ctx context.Context, id string) (*enti
 	query := `
 		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
 		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
-		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at
+		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
+		       c.tags, c.metadata
 		FROM conversations c
 		WHERE c.id = $1
 	`
@@ -99,7 +110,8 @@ func (r *ConversationRepository) FindOpenByContactAndChannel(ctx context.Context
 	query := `
 		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
 		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
-		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at
+		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
+		       c.tags, c.metadata
 		FROM conversations c
 		WHERE c.contact_id = $1 AND c.channel_id = $2 AND c.status IN ('open', 'pending')
 		ORDER BY c.created_at DESC
@@ -121,6 +133,11 @@ func (r *ConversationRepository) FindOpenByContactAndChannel(ctx context.Context
 func (r *ConversationRepository) Update(ctx context.Context, conversation *entity.Conversation) error {
 	conversation.UpdatedAt = time.Now()
 
+	metadata, err := json.Marshal(conversation.Metadata)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal conversation metadata")
+	}
+
 	query := `
 		UPDATE conversations SET
 			assignee_id = $1,
@@ -130,8 +147,10 @@ func (r *ConversationRepository) Update(ctx context.Context, conversation *entit
 			unread_count = $5,
 			first_reply_at = $6,
 			resolved_at = $7,
-			updated_at = $8
-		WHERE id = $9
+			updated_at = $8,
+			tags = $9,
+			metadata = $10
+		WHERE id = $11
 	`
 
 	result, err := r.db.Pool.Exec(ctx, query,
@@ -143,6 +162,8 @@ func (r *ConversationRepository) Update(ctx context.Context, conversation *entit
 		conversation.FirstReplyAt,
 		conversation.ResolvedAt,
 		conversation.UpdatedAt,
+		pq.Array(conversation.Tags),
+		metadata,
 		conversation.ID,
 	)
 
@@ -294,7 +315,8 @@ func (r *ConversationRepository) findWithFilter(ctx context.Context, whereClause
 	query := fmt.Sprintf(`
 		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
 		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
-		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at
+		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
+		       c.tags, c.metadata
 		FROM conversations c
 		WHERE %s
 		ORDER BY %s %s
@@ -329,11 +351,14 @@ func (r *ConversationRepository) scanConversation(row pgx.Row) (*entity.Conversa
 	var c entity.Conversation
 	var assigneeID, subject *string
 	var status, priority string
+	var tags []string
+	var metadata []byte
 
 	err := row.Scan(
 		&c.ID, &c.TenantID, &c.ChannelID, &c.ContactID, &assigneeID, &status, &priority,
 		&subject, &c.UnreadCount, &c.FirstReplyAt, &c.ResolvedAt, &c.CreatedAt, &c.UpdatedAt,
 		&c.LastMessageAt,
+		&tags, &metadata,
 	)
 	if err != nil {
 		return nil, err
@@ -347,6 +372,9 @@ func (r *ConversationRepository) scanConversation(row pgx.Row) (*entity.Conversa
 		c.Subject = *subject
 	}
 
+	c.Tags = tags
+	c.Metadata = decodeConversationMetadata(metadata)
+
 	return &c, nil
 }
 
@@ -354,11 +382,14 @@ func (r *ConversationRepository) scanConversationFromRows(rows pgx.Rows) (*entit
 	var c entity.Conversation
 	var assigneeID, subject *string
 	var status, priority string
+	var tags []string
+	var metadata []byte
 
 	err := rows.Scan(
 		&c.ID, &c.TenantID, &c.ChannelID, &c.ContactID, &assigneeID, &status, &priority,
 		&subject, &c.UnreadCount, &c.FirstReplyAt, &c.ResolvedAt, &c.CreatedAt, &c.UpdatedAt,
 		&c.LastMessageAt,
+		&tags, &metadata,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan conversation")
@@ -372,7 +403,24 @@ func (r *ConversationRepository) scanConversationFromRows(rows pgx.Rows) (*entit
 		c.Subject = *subject
 	}
 
+	c.Tags = tags
+	c.Metadata = decodeConversationMetadata(metadata)
+
 	return &c, nil
+}
+
+// decodeConversationMetadata unmarshals the conversations.metadata JSONB column,
+// defaulting to an empty (non-nil) map for NULL/empty/"null" values so callers
+// never receive a nil map.
+func decodeConversationMetadata(raw []byte) map[string]string {
+	metadata := make(map[string]string)
+	if len(raw) == 0 {
+		return metadata
+	}
+	if err := json.Unmarshal(raw, &metadata); err != nil || metadata == nil {
+		return make(map[string]string)
+	}
+	return metadata
 }
 
 func sanitizeConversationColumn(col string) string {
