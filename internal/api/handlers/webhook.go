@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,12 +22,15 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/facebook"
 	"github.com/msgfy/linktor/internal/adapters/instagram"
 	"github.com/msgfy/linktor/internal/adapters/rcs"
+	"github.com/msgfy/linktor/internal/adapters/slack"
 	"github.com/msgfy/linktor/internal/adapters/sms"
+	"github.com/msgfy/linktor/internal/adapters/teams"
 	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	appservice "github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
+	"github.com/msgfy/linktor/internal/infrastructure/storage"
 	"github.com/msgfy/linktor/pkg/errors"
 )
 
@@ -36,15 +40,23 @@ type WebhookHandler struct {
 	producer              nats.Publisher
 	templateSvc           *appservice.TemplateService
 	requireWebhookSecrets bool
+	teamsValidator        *teams.Validator
+	// mediaStore re-hosts provider media that sits behind authenticated URLs
+	// (e.g. Slack url_private) so external consumers can fetch it. May be nil,
+	// in which case the original provider URL is passed through unchanged.
+	mediaStore storage.Client
 }
 
-// NewWebhookHandler creates a new webhook handler
-func NewWebhookHandler(channelRepo repository.ChannelRepository, producer nats.Publisher, templateSvc *appservice.TemplateService, requireWebhookSecrets bool) *WebhookHandler {
+// NewWebhookHandler creates a new webhook handler. mediaStore may be nil to
+// disable inbound media re-hosting.
+func NewWebhookHandler(channelRepo repository.ChannelRepository, producer nats.Publisher, templateSvc *appservice.TemplateService, requireWebhookSecrets bool, mediaStore storage.Client) *WebhookHandler {
 	return &WebhookHandler{
 		channelRepo:           channelRepo,
 		producer:              producer,
 		templateSvc:           templateSvc,
 		requireWebhookSecrets: requireWebhookSecrets,
+		teamsValidator:        teams.NewValidator(nil),
+		mediaStore:            mediaStore,
 	}
 }
 
@@ -225,8 +237,21 @@ func (h *WebhookHandler) TelegramWebhook(c *gin.Context) {
 		return
 	}
 
-	if update.Message != nil {
+	switch {
+	case update.Message != nil:
 		if err := h.processTelegramMessage(c.Request.Context(), channel, update.Message); err != nil {
+			// Log error but continue
+		}
+	case update.EditedMessage != nil:
+		// Treat an edited message like a fresh inbound so downstream sees the
+		// updated content; flag it so consumers can dedupe/annotate if needed.
+		if err := h.processTelegramMessage(c.Request.Context(), channel, update.EditedMessage); err != nil {
+			// Log error but continue
+		}
+	case update.CallbackQuery != nil:
+		// Inline-keyboard button taps arrive as callback queries, not messages;
+		// route them through the same inbound pipeline carrying callback_data.
+		if err := h.processTelegramCallback(c.Request.Context(), channel, update.CallbackQuery); err != nil {
 			// Log error but continue
 		}
 	}
@@ -1054,7 +1079,7 @@ func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *en
 	senderID := ""
 	senderName := ""
 	if msg.From != nil {
-		senderID = string(rune(msg.From.ID))
+		senderID = strconv.FormatInt(msg.From.ID, 10)
 		senderName = msg.From.FirstName
 		if msg.From.LastName != "" {
 			senderName += " " + msg.From.LastName
@@ -1064,7 +1089,7 @@ func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *en
 	metadata := map[string]string{
 		"sender_id":   senderID,
 		"sender_name": senderName,
-		"chat_id":     string(rune(msg.Chat.ID)),
+		"chat_id":     strconv.FormatInt(msg.Chat.ID, 10),
 	}
 
 	inbound := &nats.InboundMessage{
@@ -1072,7 +1097,7 @@ func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *en
 		TenantID:    channel.TenantID,
 		ChannelID:   channel.ID,
 		ChannelType: "telegram",
-		ExternalID:  string(rune(msg.MessageID)),
+		ExternalID:  strconv.FormatInt(int64(msg.MessageID), 10),
 		ContentType: contentType,
 		Content:     content,
 		Metadata:    metadata,
@@ -1081,6 +1106,441 @@ func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *en
 	}
 
 	return h.publishInbound(ctx, inbound)
+}
+
+// processTelegramCallback normalizes an inline-keyboard button tap
+// (update.callback_query) into an inbound event carrying the button's
+// callback_data. Without this, taps on interactive keyboards would never reach
+// the system. Sender/chat IDs are formatted as decimal strings (see the int64
+// handling in processTelegramMessage) so contact/status correlation stays intact.
+func (h *WebhookHandler) processTelegramCallback(ctx context.Context, channel *entity.Channel, cb *TelegramCallbackQuery) error {
+	senderID := ""
+	senderName := ""
+	if cb.From != nil {
+		senderID = strconv.FormatInt(cb.From.ID, 10)
+		senderName = cb.From.FirstName
+		if cb.From.LastName != "" {
+			senderName += " " + cb.From.LastName
+		}
+	}
+
+	metadata := map[string]string{
+		"sender_id":         senderID,
+		"sender_name":       senderName,
+		"callback_data":     cb.Data,
+		"callback_query_id": cb.ID,
+		"is_callback":       "true",
+	}
+	// The originating message carries the chat the keyboard lives in.
+	if cb.Message != nil {
+		metadata["chat_id"] = strconv.FormatInt(cb.Message.Chat.ID, 10)
+		metadata["callback_message_id"] = strconv.FormatInt(int64(cb.Message.MessageID), 10)
+	}
+
+	inbound := &nats.InboundMessage{
+		ID:          uuid.New().String(),
+		TenantID:    channel.TenantID,
+		ChannelID:   channel.ID,
+		ChannelType: "telegram",
+		ExternalID:  cb.ID,
+		ContentType: "interactive",
+		Content:     cb.Data,
+		Metadata:    metadata,
+		Timestamp:   time.Now(),
+	}
+
+	return h.publishInbound(ctx, inbound)
+}
+
+// TeamsWebhook handles Microsoft Teams Bot Framework Activity webhooks. It
+// validates the Bot Connector JWT, normalizes message Activities to the inbound
+// pipeline, and persists the conversation reference (service_url) needed for
+// proactive outbound replies.
+func (h *WebhookHandler) TeamsWebhook(c *gin.Context) {
+	channelID := c.Param("channelId")
+
+	channel, err := h.channelRepo.FindByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	// Validate the Bot Connector JWT. The audience is the channel's app_id; the
+	// same app may serve many tenants (multi-tenant ownership model).
+	appID := channel.Credentials[teams.CredAppID]
+	if appID != "" {
+		if err := h.teamsValidator.Validate(c.Request.Context(), c.GetHeader("Authorization"), appID); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid bot connector token"})
+			return
+		}
+	} else if h.requireWebhookSecrets {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "teams app_id not configured"})
+		return
+	}
+
+	var activity teams.Activity
+	if err := json.Unmarshal(rawBody, &activity); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid activity payload"})
+		return
+	}
+
+	if activity.Type == "message" {
+		if err := h.processTeamsActivity(c.Request.Context(), channel, &activity); err != nil {
+			// Log and continue; respond 200 so the Bot Connector does not retry storm.
+			_ = err
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// TeamsWebhookShared handles the multi-tenant Teams ownership model: one Azure
+// bot app (one Bot Framework messaging endpoint) serves many tenants. There is
+// no channelId in the URL, so the channel is resolved from the request itself —
+// the token's audience (the bot app id) plus the Activity's AAD tenant — and the
+// token is then fully validated against the resolved channel's app id.
+func (h *WebhookHandler) TeamsWebhookShared(c *gin.Context) {
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	var activity teams.Activity
+	if err := json.Unmarshal(rawBody, &activity); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid activity payload"})
+		return
+	}
+
+	// Read the audience UNVERIFIED only to find the channel; the token is fully
+	// validated (JWKS) against that channel's app id below before we trust it.
+	appID := teams.UnverifiedAudience(c.GetHeader("Authorization"))
+	if appID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bot connector token"})
+		return
+	}
+
+	candidates, err := h.channelRepo.FindAllByType(c.Request.Context(), teams.ChannelType)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "channel lookup failed"})
+		return
+	}
+	// SECURITY (trust boundary of the shared-app model): the Bot Connector JWT
+	// only proves issuer + signature + audience (the shared app_id); it does NOT
+	// cryptographically bind the AAD org tenant, which is read from the request
+	// body (channelData.tenant.id). A holder of any valid token for the shared
+	// app can therefore claim another tenant's id. This is inherent to running a
+	// single multi-tenant bot registration across tenants — tenants that share
+	// one app registration are within ONE trust boundary. For strict per-tenant
+	// isolation, use the per-channel endpoint (/webhooks/teams/:channelId) with a
+	// distinct app registration per tenant. The serviceUrl allowlist in
+	// processTeamsActivity prevents this from escalating into bearer-token
+	// exfiltration regardless.
+	channel := teams.MatchSharedChannel(candidates, appID, activity.AADTenant())
+	if channel == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no teams channel for this bot/tenant"})
+		return
+	}
+
+	if err := h.teamsValidator.Validate(c.Request.Context(), c.GetHeader("Authorization"), channel.Credentials[teams.CredAppID]); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid bot connector token"})
+		return
+	}
+
+	if activity.Type == "message" {
+		if err := h.processTeamsActivity(c.Request.Context(), channel, &activity); err != nil {
+			_ = err // log-and-continue; ack so the Bot Connector does not retry storm
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *WebhookHandler) processTeamsActivity(ctx context.Context, channel *entity.Channel, activity *teams.Activity) error {
+	// Persist the service URL so proactive (out-of-turn) outbound replies can
+	// reach the Bot Connector for this channel. serviceUrl is the destination for
+	// outbound calls that carry the bot's AAD bearer token, so we only trust (and
+	// persist) values on known Bot Framework / Teams connector hosts — never an
+	// arbitrary URL from the request body (which would exfiltrate the token).
+	trustedServiceURL := teams.IsTrustedServiceURL(activity.ServiceURL)
+	if trustedServiceURL && channel.Credentials[teams.CredServiceURL] != activity.ServiceURL {
+		if channel.Credentials == nil {
+			channel.Credentials = map[string]string{}
+		}
+		channel.Credentials[teams.CredServiceURL] = activity.ServiceURL
+		_ = h.channelRepo.Update(ctx, channel)
+	}
+
+	contentType := "text"
+	content := activity.Text
+	var attachments []nats.AttachmentData
+	for _, att := range activity.Attachments {
+		if att.ContentURL == "" {
+			continue
+		}
+		attType := teamsAttachmentType(att.ContentType)
+		if attType != "text" {
+			contentType = attType
+		}
+		// Bot Connector attachment URLs require the bot's bearer token, so an
+		// external consumer can't fetch them directly. Re-host to our media store
+		// when configured; fall back to the provider URL otherwise.
+		url := att.ContentURL
+		if rehosted, ok := h.rehostTeamsAttachment(ctx, channel, att); ok {
+			url = rehosted
+		}
+		attachments = append(attachments, nats.AttachmentData{
+			Type:     attType,
+			URL:      url,
+			Filename: att.Name,
+			MimeType: att.ContentType,
+		})
+	}
+
+	// The Bot Framework conversation id is the stable per-conversation address
+	// reused for outbound; it doubles as the contact surrogate key for Teams 1:1.
+	metadata := map[string]string{
+		"sender_id":   activity.Conversation.ID,
+		"sender_name": activity.From.Name,
+		"aad_user_id": activity.From.AadObjectID,
+	}
+	// Only surface a serviceUrl we've validated as a trusted connector host.
+	if trustedServiceURL {
+		metadata["service_url"] = activity.ServiceURL
+	}
+
+	inbound := &nats.InboundMessage{
+		ID:          uuid.New().String(),
+		TenantID:    channel.TenantID,
+		ChannelID:   channel.ID,
+		ChannelType: teams.ChannelType,
+		ExternalID:  activity.ID,
+		ContentType: contentType,
+		Content:     content,
+		Metadata:    metadata,
+		Attachments: attachments,
+		Timestamp:   time.Now(),
+	}
+
+	return h.publishInbound(ctx, inbound)
+}
+
+// rehostTeamsAttachment downloads a Teams attachment (authenticated with the
+// channel's bot AAD token) and stores it in the media store, returning the
+// public URL. Best effort: returns ("", false) when no store is configured or
+// any step fails, so the caller falls back to the original provider URL.
+func (h *WebhookHandler) rehostTeamsAttachment(ctx context.Context, channel *entity.Channel, att teams.Attachment) (string, bool) {
+	if h.mediaStore == nil || att.ContentURL == "" {
+		return "", false
+	}
+
+	dlCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	data, ctype, err := teams.NewClientFromCredentials(channel.Credentials).DownloadAttachment(dlCtx, att.ContentURL)
+	if err != nil {
+		return "", false
+	}
+	if ctype == "" {
+		ctype = att.ContentType
+	}
+
+	url, err := h.mediaStore.Upload(dlCtx, inboundMediaKey(teams.ChannelType, channel.ID, att.Name), data, ctype)
+	if err != nil {
+		return "", false
+	}
+	return url, true
+}
+
+// teamsAttachmentType maps a Bot Framework attachment content type to the
+// canonical inbound content type.
+func teamsAttachmentType(contentType string) string {
+	switch {
+	case strings.HasPrefix(contentType, "image/"):
+		return "image"
+	case strings.HasPrefix(contentType, "video/"):
+		return "video"
+	case strings.HasPrefix(contentType, "audio/"):
+		return "audio"
+	case contentType == "":
+		return "text"
+	default:
+		return "document"
+	}
+}
+
+// SlackWebhook handles Slack Events API webhooks: the url_verification
+// handshake, X-Slack-Signature verification, and normalizing inbound message
+// events (filtering the bot's own echoes).
+func (h *WebhookHandler) SlackWebhook(c *gin.Context) {
+	channelID := c.Param("channelId")
+
+	channel, err := h.channelRepo.FindByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
+		return
+	}
+
+	// Verify the request signature over the raw body.
+	signingSecret := channel.Credentials[slack.CredSigningSecret]
+	if signingSecret != "" {
+		if !slack.VerifySignature(
+			signingSecret,
+			c.GetHeader("X-Slack-Signature"),
+			c.GetHeader("X-Slack-Request-Timestamp"),
+			rawBody,
+			time.Now(),
+		) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+			return
+		}
+	} else if h.requireWebhookSecrets {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "slack signing_secret not configured"})
+		return
+	}
+
+	var env slack.EventEnvelope
+	if err := json.Unmarshal(rawBody, &env); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+
+	// Respond to the one-time URL verification challenge.
+	if env.Type == "url_verification" {
+		c.String(http.StatusOK, env.Challenge)
+		return
+	}
+
+	if env.Type == "event_callback" && env.Event != nil && env.Event.Type == "message" {
+		if !env.Event.IsBotEcho(channel.Credentials[slack.CredBotUserID]) {
+			if err := h.processSlackMessage(c.Request.Context(), channel, env.Event); err != nil {
+				_ = err // log-and-continue; ack so Slack does not retry storm
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *WebhookHandler) processSlackMessage(ctx context.Context, channel *entity.Channel, event *slack.InnerEvent) error {
+	contentType := "text"
+	content := event.Text
+	var attachments []nats.AttachmentData
+	for _, f := range event.Files {
+		if f.URLPrivate == "" {
+			continue
+		}
+		attType := slackFileType(f.Mimetype)
+		if attType != "text" {
+			contentType = attType
+		}
+		// Slack url_private requires the bot token to fetch, so external
+		// consumers can't use it directly. Re-host to our media store when
+		// configured; fall back to the provider URL otherwise.
+		url := f.URLPrivate
+		if rehosted, ok := h.rehostSlackFile(ctx, channel, f); ok {
+			url = rehosted
+		}
+		attachments = append(attachments, nats.AttachmentData{
+			Type:      attType,
+			URL:       url,
+			Filename:  f.Name,
+			MimeType:  f.Mimetype,
+			SizeBytes: f.Size,
+		})
+	}
+
+	// The Slack channel id (a stable IM channel for DMs) is the outbound reply
+	// address and doubles as the contact surrogate key.
+	metadata := map[string]string{
+		"sender_id":       event.Channel,
+		"slack_user_id":   event.User,
+		"slack_channel":   event.Channel,
+		"slack_thread_ts": event.ThreadTS,
+	}
+
+	inbound := &nats.InboundMessage{
+		ID:          uuid.New().String(),
+		TenantID:    channel.TenantID,
+		ChannelID:   channel.ID,
+		ChannelType: slack.ChannelType,
+		ExternalID:  event.TS,
+		ContentType: contentType,
+		Content:     content,
+		Metadata:    metadata,
+		Attachments: attachments,
+		Timestamp:   time.Now(),
+	}
+
+	return h.publishInbound(ctx, inbound)
+}
+
+// rehostSlackFile downloads a Slack file (authenticated with the channel's bot
+// token) and stores it in the media store, returning the public URL. Best
+// effort: returns ("", false) when no store is configured or any step fails, so
+// the caller falls back to the original provider URL.
+func (h *WebhookHandler) rehostSlackFile(ctx context.Context, channel *entity.Channel, f slack.File) (string, bool) {
+	if h.mediaStore == nil {
+		return "", false
+	}
+	botToken := channel.Credentials[slack.CredBotToken]
+	if botToken == "" {
+		return "", false
+	}
+
+	dlCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	data, ctype, err := slack.NewClient(botToken).DownloadFile(dlCtx, f.URLPrivate)
+	if err != nil {
+		return "", false
+	}
+	if ctype == "" {
+		ctype = f.Mimetype
+	}
+
+	url, err := h.mediaStore.Upload(dlCtx, inboundMediaKey(slack.ChannelType, channel.ID, f.Name), data, ctype)
+	if err != nil {
+		return "", false
+	}
+	return url, true
+}
+
+// inboundMediaKey builds a stable, collision-free storage key for re-hosted
+// inbound media.
+func inboundMediaKey(channelType, channelID, filename string) string {
+	name := filename
+	if name == "" {
+		name = "file"
+	}
+	return fmt.Sprintf("inbound/%s/%s/%s-%s", channelType, channelID, uuid.New().String(), name)
+}
+
+func slackFileType(mimetype string) string {
+	switch {
+	case strings.HasPrefix(mimetype, "image/"):
+		return "image"
+	case strings.HasPrefix(mimetype, "video/"):
+		return "video"
+	case strings.HasPrefix(mimetype, "audio/"):
+		return "audio"
+	case mimetype == "":
+		return "text"
+	default:
+		return "document"
+	}
 }
 
 func (h *WebhookHandler) handleFacebookVerification(c *gin.Context, channel *entity.Channel) {
@@ -1681,8 +2141,24 @@ type WhatsAppStatus struct {
 
 // Telegram types
 type TelegramUpdate struct {
-	UpdateID int              `json:"update_id"`
-	Message  *TelegramMessage `json:"message,omitempty"`
+	UpdateID      int                    `json:"update_id"`
+	Message       *TelegramMessage       `json:"message,omitempty"`
+	EditedMessage *TelegramMessage       `json:"edited_message,omitempty"`
+	CallbackQuery *TelegramCallbackQuery `json:"callback_query,omitempty"`
+}
+
+// TelegramCallbackQuery is an inline-keyboard button tap. Data holds the
+// button's callback_data; Message is the message the keyboard was attached to.
+type TelegramCallbackQuery struct {
+	ID   string `json:"id"`
+	From *struct {
+		ID        int64  `json:"id"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		Username  string `json:"username"`
+	} `json:"from,omitempty"`
+	Message *TelegramMessage `json:"message,omitempty"`
+	Data    string           `json:"data,omitempty"`
 }
 
 type TelegramMessage struct {

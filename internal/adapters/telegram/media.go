@@ -63,11 +63,11 @@ func GetMimeTypeFromFilename(filename string) string {
 func ValidateMediaSize(mediaType string, sizeBytes int64) error {
 	// Telegram file size limits (in bytes)
 	const (
-		maxPhotoSize    = 10 * 1024 * 1024  // 10 MB
-		maxVideoSize    = 50 * 1024 * 1024  // 50 MB
-		maxAudioSize    = 50 * 1024 * 1024  // 50 MB
-		maxDocumentSize = 50 * 1024 * 1024  // 50 MB
-		maxStickerSize  = 512 * 1024        // 512 KB
+		maxPhotoSize    = 10 * 1024 * 1024 // 10 MB
+		maxVideoSize    = 50 * 1024 * 1024 // 50 MB
+		maxAudioSize    = 50 * 1024 * 1024 // 50 MB
+		maxDocumentSize = 50 * 1024 * 1024 // 50 MB
+		maxStickerSize  = 512 * 1024       // 512 KB
 	)
 
 	limits := map[string]int64{

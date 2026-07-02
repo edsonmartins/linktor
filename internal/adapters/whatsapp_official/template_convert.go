@@ -298,7 +298,7 @@ func buildButtonSendComponents(comp entity.TemplateComponent, values SendValues)
 			}
 			out = append(out, TemplateComponent{
 				Type: "button", SubType: "quick_reply", Index: &idx,
-				Parameters: []TemplateParameter{{Type: "payload", Text: payload}},
+				Parameters: []TemplateParameter{{Type: "payload", Payload: payload}},
 			})
 
 		case "URL":
@@ -318,7 +318,7 @@ func buildButtonSendComponents(comp entity.TemplateComponent, values SendValues)
 			}
 			out = append(out, TemplateComponent{
 				Type: "button", SubType: "copy_code", Index: &idx,
-				Parameters: []TemplateParameter{{Type: "coupon_code", Text: coupon}},
+				Parameters: []TemplateParameter{{Type: "coupon_code", CouponCode: coupon}},
 			})
 
 		case "OTP":

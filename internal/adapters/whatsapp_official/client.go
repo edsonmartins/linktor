@@ -59,7 +59,7 @@ func (c *Client) SendMessage(ctx context.Context, req *SendMessageRequest) (*Sen
 		req.RecipientType = "individual"
 	}
 
-	endpoint := c.buildURL(fmt.Sprintf("/%s/messages", c.config.PhoneNumberID))
+	endpoint := c.buildURL(fmt.Sprintf("/%s/messages", c.cfg().PhoneNumberID))
 
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -172,7 +172,7 @@ func (c *Client) RemoveReaction(ctx context.Context, to, messageID string) (*Sen
 
 // MarkAsRead marks a message as read
 func (c *Client) MarkAsRead(ctx context.Context, messageID string) error {
-	endpoint := c.buildURL(fmt.Sprintf("/%s/messages", c.config.PhoneNumberID))
+	endpoint := c.buildURL(fmt.Sprintf("/%s/messages", c.cfg().PhoneNumberID))
 
 	body, err := json.Marshal(map[string]interface{}{
 		"messaging_product": "whatsapp",
@@ -211,7 +211,7 @@ func (c *Client) DownloadMedia(ctx context.Context, mediaURL string) ([]byte, st
 		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.config.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.cfg().AccessToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -235,7 +235,7 @@ func (c *Client) DownloadMedia(ctx context.Context, mediaURL string) ([]byte, st
 
 // UploadMedia uploads media to WhatsApp servers
 func (c *Client) UploadMedia(ctx context.Context, filename, mimeType string, data []byte) (*MediaUploadResponse, error) {
-	endpoint := c.buildURL(fmt.Sprintf("/%s/media", c.config.PhoneNumberID))
+	endpoint := c.buildURL(fmt.Sprintf("/%s/media", c.cfg().PhoneNumberID))
 
 	// Create multipart form
 	var buf bytes.Buffer
@@ -290,7 +290,7 @@ func (c *Client) DeleteMedia(ctx context.Context, mediaID string) error {
 
 // GetBusinessProfile retrieves the business profile
 func (c *Client) GetBusinessProfile(ctx context.Context) (*BusinessProfile, error) {
-	endpoint := c.buildURL(fmt.Sprintf("/%s/whatsapp_business_profile", c.config.PhoneNumberID))
+	endpoint := c.buildURL(fmt.Sprintf("/%s/whatsapp_business_profile", c.cfg().PhoneNumberID))
 	endpoint += "?fields=about,address,description,email,profile_picture_url,websites,vertical"
 
 	respBody, err := c.doRequest(ctx, http.MethodGet, endpoint, nil, nil)
@@ -314,7 +314,7 @@ func (c *Client) GetBusinessProfile(ctx context.Context) (*BusinessProfile, erro
 
 // UpdateBusinessProfile updates the business profile
 func (c *Client) UpdateBusinessProfile(ctx context.Context, profile *BusinessProfile) error {
-	endpoint := c.buildURL(fmt.Sprintf("/%s/whatsapp_business_profile", c.config.PhoneNumberID))
+	endpoint := c.buildURL(fmt.Sprintf("/%s/whatsapp_business_profile", c.cfg().PhoneNumberID))
 
 	profile.MessagingProduct = "whatsapp"
 	body, err := json.Marshal(profile)
@@ -328,7 +328,7 @@ func (c *Client) UpdateBusinessProfile(ctx context.Context, profile *BusinessPro
 
 // GetPhoneNumberInfo retrieves phone number information
 func (c *Client) GetPhoneNumberInfo(ctx context.Context) (*PhoneNumberInfo, error) {
-	endpoint := c.buildURL(fmt.Sprintf("/%s", c.config.PhoneNumberID))
+	endpoint := c.buildURL(fmt.Sprintf("/%s", c.cfg().PhoneNumberID))
 	endpoint += "?fields=verified_name,display_phone_number,quality_rating,status,name_status,messaging_limit_tier"
 
 	respBody, err := c.doRequest(ctx, http.MethodGet, endpoint, nil, nil)
@@ -346,7 +346,7 @@ func (c *Client) GetPhoneNumberInfo(ctx context.Context) (*PhoneNumberInfo, erro
 
 // GetHealth retrieves the health status
 func (c *Client) GetHealth(ctx context.Context) (*HealthStatus, error) {
-	endpoint := c.buildURL(fmt.Sprintf("/%s", c.config.BusinessID))
+	endpoint := c.buildURL(fmt.Sprintf("/%s", c.cfg().BusinessID))
 	endpoint += "?fields=health_status"
 
 	respBody, err := c.doRequest(ctx, http.MethodGet, endpoint, nil, nil)
@@ -366,7 +366,7 @@ func (c *Client) GetHealth(ctx context.Context) (*HealthStatus, error) {
 
 // buildURL builds the API URL
 func (c *Client) buildURL(path string) string {
-	return fmt.Sprintf("%s/%s%s", graphapi.BaseURL(), c.config.APIVersion, path)
+	return fmt.Sprintf("%s/%s%s", graphapi.BaseURL(), c.cfg().APIVersion, path)
 }
 
 // doRequest executes an HTTP request with retry logic
@@ -414,7 +414,7 @@ func (c *Client) executeRequest(ctx context.Context, method, url string, body []
 	}
 
 	// Set default headers
-	req.Header.Set("Authorization", "Bearer "+c.config.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.cfg().AccessToken)
 	if body != nil && headers["Content-Type"] == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -460,9 +460,22 @@ func (e *APIRequestError) Error() string {
 		e.APIError.Code, e.APIError.ErrorSubcode, e.APIError.Message)
 }
 
-// IsRateLimitError checks if the error is a rate limit error
+// IsRateLimitError checks if the error is a rate limit error.
+//
+// Besides HTTP 429 and code 80007, Meta returns several throttling errors with
+// an HTTP 400 status that are nonetheless *transient*:
+//   - 130429: Cloud API message throughput limit reached
+//   - 131048: spam rate limit hit
+//   - 131056: pair (business+recipient) rate limit hit
+//
+// These were previously treated as permanent, so messages were dropped to the
+// DLQ during normal traffic spikes instead of being retried with backoff.
 func (e *APIRequestError) IsRateLimitError() bool {
-	return e.StatusCode == 429 || e.APIError.Code == 80007
+	switch e.APIError.Code {
+	case 80007, 130429, 131048, 131056:
+		return true
+	}
+	return e.StatusCode == 429
 }
 
 // IsAuthError checks if the error is an authentication error
@@ -481,6 +494,16 @@ func isRetryableError(err error) bool {
 
 // GetConfig returns the client configuration
 func (c *Client) GetConfig() *Config {
+	return c.cfg()
+}
+
+// cfg returns a snapshot of the current config under a read lock. UpdateConfig
+// (token rotation) swaps the whole *Config under the write lock, so reading the
+// pointer here yields an immutable snapshot that is safe to dereference without
+// further locking. Reading c.config directly races with that swap.
+func (c *Client) cfg() *Config {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.config
 }
 
@@ -498,7 +521,7 @@ func (c *Client) SendRawRequest(ctx context.Context, req map[string]interface{})
 		return nil, fmt.Errorf("rate limiter error: %w", err)
 	}
 
-	endpoint := c.buildURL(fmt.Sprintf("/%s/messages", c.config.PhoneNumberID))
+	endpoint := c.buildURL(fmt.Sprintf("/%s/messages", c.cfg().PhoneNumberID))
 
 	body, err := json.Marshal(req)
 	if err != nil {

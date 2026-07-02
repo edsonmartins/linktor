@@ -40,11 +40,9 @@ func TestClient_UnsubscribeFromWebhook_APIError(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestClient_ExchangeCodeForToken_ErrorSurfacedInPayload(t *testing.T) {
-	// Meta's OAuth endpoint returns the error shape in the response body
-	// rather than an HTTP error, and the client currently reflects that —
-	// it returns (response, nil) with tokenResp.Error populated. Verifying
-	// this shape pins the current behaviour so a future refactor doesn't
-	// silently swallow failed code exchanges.
+	// Meta signals OAuth failures via an `error` body (often with an HTTP error
+	// status). The client must fail closed: return a Go-level error instead of a
+	// (response, nil) carrying an empty access token that would then be persisted.
 	c, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"error":{"message":"invalid code","code":100,"type":"OAuthException"}}`))
@@ -52,17 +50,14 @@ func TestClient_ExchangeCodeForToken_ErrorSurfacedInPayload(t *testing.T) {
 	defer server.Close()
 
 	resp, err := c.ExchangeCodeForToken(context.Background(), "app", "secret", "https://cb", "bad-code")
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	assert.Empty(t, resp.AccessToken, "failed exchange must not return a usable token")
-	require.NotNil(t, resp.Error)
-	assert.Equal(t, "invalid code", resp.Error.Message)
-	assert.Equal(t, 100, resp.Error.Code)
+	require.Error(t, err)
+	assert.Nil(t, resp, "failed exchange must not return a usable (empty-token) response")
+	assert.Contains(t, err.Error(), "invalid code")
 }
 
 func TestClient_GetLongLivedToken_ReturnsEmptyOnError(t *testing.T) {
-	// Mirror of the ExchangeCodeForToken gap: Meta signals errors in the
-	// body; the client returns an empty token rather than a Go-level error.
+	// Mirror of the ExchangeCodeForToken fix: an error response must surface as a
+	// Go-level error rather than an empty token.
 	c, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":{"message":"internal"}}`))
@@ -70,9 +65,8 @@ func TestClient_GetLongLivedToken_ReturnsEmptyOnError(t *testing.T) {
 	defer server.Close()
 
 	resp, err := c.GetLongLivedToken(context.Background(), "app", "secret", "short-lived-token")
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	assert.Empty(t, resp.AccessToken)
+	require.Error(t, err)
+	assert.Nil(t, resp)
 }
 
 // -----------------------------------------------------------------------------

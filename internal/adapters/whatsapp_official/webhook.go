@@ -3,6 +3,7 @@ package whatsapp_official
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -43,7 +44,7 @@ func VerifyChallenge(verifyToken, mode, token, challenge string) (string, bool) 
 		return "", false
 	}
 
-	if token != verifyToken {
+	if subtle.ConstantTimeCompare([]byte(token), []byte(verifyToken)) != 1 {
 		return "", false
 	}
 

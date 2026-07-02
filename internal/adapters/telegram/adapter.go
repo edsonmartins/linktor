@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -77,8 +78,9 @@ func (a *Adapter) Initialize(config map[string]string) error {
 
 	// Parse configuration
 	a.config = &TelegramConfig{
-		BotToken: config["bot_token"],
-		BotName:  config["bot_name"],
+		BotToken:    config["bot_token"],
+		BotName:     config["bot_name"],
+		SecretToken: config["secret_token"],
 	}
 
 	// Validate required fields
@@ -98,6 +100,12 @@ func (a *Adapter) Connect(ctx context.Context) error {
 	client, err := NewClient(a.config.BotToken)
 	if err != nil {
 		return fmt.Errorf("failed to create telegram client: %w", err)
+	}
+
+	// Register the secret token so SetupWebhook can pass it to Telegram and
+	// inbound updates carry the X-Telegram-Bot-Api-Secret-Token header.
+	if a.config.SecretToken != "" {
+		client.SetSecretToken(a.config.SecretToken)
 	}
 
 	a.client = client
@@ -286,28 +294,51 @@ func (a *Adapter) getMediaURL(msg *plugin.OutboundMessage) string {
 	return msg.Metadata["media_url"]
 }
 
-// buildKeyboardFromMetadata builds an inline keyboard from message metadata
+// buildKeyboardFromMetadata builds an inline keyboard from message metadata.
+//
+// The send path stores quick replies as a JSON array of {id,title} objects in
+// metadata["quick_replies"] (see internal/outbound). Each entry becomes an
+// inline keyboard button whose label is the title and whose callback_data is
+// the id (falling back to the title when the id is empty, since Telegram
+// rejects empty callback_data). Returns nil when there is nothing to render.
 func (a *Adapter) buildKeyboardFromMetadata(msg *plugin.OutboundMessage) *InlineKeyboard {
-	// Check for quick replies or buttons in metadata
 	quickReplies, hasQuickReplies := msg.Metadata["quick_replies"]
 	if !hasQuickReplies || quickReplies == "" {
 		return nil
 	}
 
-	// Parse quick replies (format: "text1|data1,text2|data2")
-	// This is a simple format, could be enhanced with JSON parsing
-	var buttons [][]InlineKeyboardButton
-	var row []InlineKeyboardButton
-
-	// For now, return nil - can be enhanced to parse JSON format
-	// Similar to how Chatwoot handles quick replies
-
-	if len(row) > 0 {
-		buttons = append(buttons, row)
+	var generic []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(quickReplies), &generic); err != nil {
+		// Not a recognized (JSON) quick-replies payload; send as plain text.
+		return nil
 	}
 
-	if len(buttons) == 0 {
+	var row []InlineKeyboardButton
+	for _, g := range generic {
+		if g.Title == "" {
+			continue
+		}
+		callbackData := g.ID
+		if callbackData == "" {
+			callbackData = g.Title
+		}
+		row = append(row, InlineKeyboardButton{
+			Text:         g.Title,
+			CallbackData: callbackData,
+		})
+	}
+
+	if len(row) == 0 {
 		return nil
+	}
+
+	// One button per row keeps long labels readable in the Telegram client.
+	buttons := make([][]InlineKeyboardButton, 0, len(row))
+	for _, btn := range row {
+		buttons = append(buttons, []InlineKeyboardButton{btn})
 	}
 
 	return &InlineKeyboard{Buttons: buttons}
@@ -361,7 +392,7 @@ func (a *Adapter) DownloadMedia(ctx context.Context, mediaID string) (*plugin.Me
 		return nil, fmt.Errorf("adapter not connected")
 	}
 
-	data, filePath, err := client.DownloadFile(mediaID)
+	data, filePath, err := client.DownloadFileContext(ctx, mediaID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download media: %w", err)
 	}

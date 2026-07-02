@@ -141,6 +141,18 @@ func (a *Adapter) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+// attachmentRequiredResult returns a failed SendResult for media sends that are
+// missing the required attachment. This prevents a nil-pointer dereference when
+// building the success result from a nil API response.
+func attachmentRequiredResult() *plugin.SendResult {
+	return &plugin.SendResult{
+		Success:   false,
+		Status:    plugin.MessageStatusFailed,
+		Error:     "attachment required",
+		Timestamp: time.Now(),
+	}
+}
+
 // SendMessage sends a message via Instagram DM
 func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) (*plugin.SendResult, error) {
 	a.mu.RLock()
@@ -164,19 +176,22 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 		resp, err = client.SendTextMessage(ctx, msg.RecipientID, msg.Content)
 
 	case plugin.ContentTypeImage:
-		if len(msg.Attachments) > 0 {
-			resp, err = client.SendImage(ctx, msg.RecipientID, msg.Attachments[0].URL)
+		if len(msg.Attachments) == 0 {
+			return attachmentRequiredResult(), nil
 		}
+		resp, err = client.SendImage(ctx, msg.RecipientID, msg.Attachments[0].URL)
 
 	case plugin.ContentTypeVideo:
-		if len(msg.Attachments) > 0 {
-			resp, err = client.SendVideo(ctx, msg.RecipientID, msg.Attachments[0].URL)
+		if len(msg.Attachments) == 0 {
+			return attachmentRequiredResult(), nil
 		}
+		resp, err = client.SendVideo(ctx, msg.RecipientID, msg.Attachments[0].URL)
 
 	case plugin.ContentTypeAudio:
-		if len(msg.Attachments) > 0 {
-			resp, err = client.SendAudio(ctx, msg.RecipientID, msg.Attachments[0].URL)
+		if len(msg.Attachments) == 0 {
+			return attachmentRequiredResult(), nil
 		}
+		resp, err = client.SendAudio(ctx, msg.RecipientID, msg.Attachments[0].URL)
 
 	default:
 		return &plugin.SendResult{
@@ -225,8 +240,10 @@ func (a *Adapter) GetWebhookPath() string {
 
 // ValidateWebhook validates an incoming webhook request
 func (a *Adapter) ValidateWebhook(headers map[string]string, body []byte) bool {
+	// Fail closed: an unconfigured channel (no app secret) must not accept
+	// unsigned webhooks.
 	if a.config.AppSecret == "" {
-		return true
+		return false
 	}
 	signature := headers["X-Hub-Signature-256"]
 	return meta.ValidateWebhookSignature(a.config.AppSecret, body, signature)
@@ -234,7 +251,7 @@ func (a *Adapter) ValidateWebhook(headers map[string]string, body []byte) bool {
 
 // ProcessWebhook processes a webhook payload and returns inbound messages
 func (a *Adapter) ProcessWebhook(payload *WebhookPayload) []*plugin.InboundMessage {
-	if !IsInstagramWebhook(payload) && !IsInstagramViaPageWebhook(payload) {
+	if !IsInstagramWebhook(payload) && !IsInstagramViaPageWebhook(payload, a.config.InstagramID) {
 		return nil
 	}
 
@@ -252,6 +269,11 @@ func (a *Adapter) ProcessWebhook(payload *WebhookPayload) []*plugin.InboundMessa
 			continue
 		}
 
+		eventType := igMsg.EventType
+		if eventType == "" {
+			eventType = EventTypeMessage
+		}
+
 		msg := &plugin.InboundMessage{
 			ID:          uuid.New().String(),
 			ExternalID:  igMsg.ExternalID,
@@ -262,7 +284,22 @@ func (a *Adapter) ProcessWebhook(payload *WebhookPayload) []*plugin.InboundMessa
 			Metadata: map[string]string{
 				"instagram_id": igMsg.InstagramID,
 				"recipient_id": igMsg.RecipientID,
+				"event_type":   eventType,
 			},
+		}
+
+		// Enrich metadata for reaction and story events so consumers get context.
+		if igMsg.ReactionEmoji != "" {
+			msg.Metadata["reaction_emoji"] = igMsg.ReactionEmoji
+		}
+		if igMsg.ReactionAction != "" {
+			msg.Metadata["reaction_action"] = igMsg.ReactionAction
+		}
+		if igMsg.StoryID != "" {
+			msg.Metadata["story_id"] = igMsg.StoryID
+		}
+		if igMsg.StoryURL != "" {
+			msg.Metadata["story_url"] = igMsg.StoryURL
 		}
 
 		// Handle attachments
@@ -278,6 +315,21 @@ func (a *Adapter) ProcessWebhook(payload *WebhookPayload) []*plugin.InboundMessa
 		}
 
 		messages = append(messages, msg)
+	}
+
+	// Surface read receipts (messaging_seen) as metadata-only events.
+	for _, read := range ExtractReadReceipts(payload) {
+		messages = append(messages, &plugin.InboundMessage{
+			ID:          uuid.New().String(),
+			SenderID:    read.SenderID,
+			ContentType: plugin.ContentTypeText,
+			Timestamp:   read.Timestamp,
+			Metadata: map[string]string{
+				"instagram_id": read.InstagramID,
+				"recipient_id": read.RecipientID,
+				"event_type":   EventTypeRead,
+			},
+		})
 	}
 
 	return messages

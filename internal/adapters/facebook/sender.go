@@ -48,12 +48,14 @@ func (s *fbSender) Send(ctx context.Context, msg *outbound.Message) (*outbound.R
 		return nil, outbound.Permanentf("recipient PSID is required")
 	}
 
+	mt, tag := messagingType(msg)
+
 	switch c := msg.Content.(type) {
 	case outbound.Text:
 		if c.Body == "" {
 			return nil, outbound.Permanentf("text body is required")
 		}
-		resp, err := s.client.SendTextMessage(ctx, msg.To, c.Body)
+		resp, err := s.client.SendTextMessageAs(ctx, msg.To, c.Body, mt, tag)
 		if err != nil {
 			return nil, err
 		}
@@ -64,7 +66,7 @@ func (s *fbSender) Send(ctx context.Context, msg *outbound.Message) (*outbound.R
 		if text == "" {
 			return nil, outbound.Permanentf("empty template payload")
 		}
-		resp, err := s.client.SendTextMessage(ctx, msg.To, text)
+		resp, err := s.client.SendTextMessageAs(ctx, msg.To, text, mt, tag)
 		if err != nil {
 			return nil, err
 		}
@@ -74,19 +76,36 @@ func (s *fbSender) Send(ctx context.Context, msg *outbound.Message) (*outbound.R
 		if c.URL == "" {
 			return nil, outbound.Permanentf("media requires a URL")
 		}
-		switch c.Type {
-		case outbound.MediaImage:
-			return receiptOrErr(s.client.SendImage(ctx, msg.To, c.URL))
-		case outbound.MediaVideo:
-			return receiptOrErr(s.client.SendVideo(ctx, msg.To, c.URL))
-		case outbound.MediaAudio:
-			return receiptOrErr(s.client.SendAudio(ctx, msg.To, c.URL))
-		default:
-			return receiptOrErr(s.client.SendFile(ctx, msg.To, c.URL))
-		}
+		return receiptOrErr(s.client.SendAttachmentAs(ctx, msg.To, fbAttachmentType(c.Type), c.URL, mt, tag))
 
 	default:
 		return nil, outbound.Permanentf("unsupported content kind %q", msg.Content.Kind())
+	}
+}
+
+// messagingType resolves the Meta messaging_type and optional message tag from
+// the outbound message metadata, defaulting to RESPONSE (a reply inside the 24h
+// window). Proactive / out-of-window sends set metadata["messaging_type"] to
+// UPDATE or MESSAGE_TAG (with metadata["message_tag"]).
+func messagingType(msg *outbound.Message) (string, string) {
+	mt := msg.Meta("messaging_type")
+	if mt == "" {
+		mt = meta.MessagingTypeResponse
+	}
+	return mt, msg.Meta("message_tag")
+}
+
+// fbAttachmentType maps an outbound media type to the Messenger attachment type.
+func fbAttachmentType(t outbound.MediaType) string {
+	switch t {
+	case outbound.MediaImage:
+		return "image"
+	case outbound.MediaVideo:
+		return "video"
+	case outbound.MediaAudio:
+		return "audio"
+	default:
+		return "file"
 	}
 }
 

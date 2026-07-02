@@ -146,11 +146,46 @@ func TestAdapter_GetWebhookPath(t *testing.T) {
 }
 
 func TestAdapter_ValidateWebhook(t *testing.T) {
-	t.Run("no app secret skips validation", func(t *testing.T) {
+	t.Run("no app secret fails closed", func(t *testing.T) {
 		a := NewAdapter()
 		a.config = &FacebookConfig{}
-		assert.True(t, a.ValidateWebhook(map[string]string{}, nil))
+		assert.False(t, a.ValidateWebhook(map[string]string{}, nil))
 	})
+
+	t.Run("invalid signature rejected", func(t *testing.T) {
+		a := NewAdapter()
+		a.config = &FacebookConfig{AppSecret: "secret"}
+		assert.False(t, a.ValidateWebhook(map[string]string{
+			"X-Hub-Signature-256": "sha256=deadbeef",
+		}, []byte("{}")))
+	})
+}
+
+func TestAdapter_SendMessage_MediaWithoutAttachment(t *testing.T) {
+	// A media send with no attachments must not panic; it must return a failed
+	// SendResult instead of dereferencing a nil API response.
+	a := NewAdapter()
+	a.Initialize(map[string]string{})
+	a.client = &Client{config: &FacebookConfig{PageID: "p1", PageAccessToken: "tok"}}
+
+	for _, ct := range []plugin.ContentType{
+		plugin.ContentTypeImage,
+		plugin.ContentTypeVideo,
+		plugin.ContentTypeAudio,
+		plugin.ContentTypeDocument,
+	} {
+		t.Run(string(ct), func(t *testing.T) {
+			result, err := a.SendMessage(context.Background(), &plugin.OutboundMessage{
+				RecipientID: "user-1",
+				ContentType: ct,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.False(t, result.Success)
+			assert.Equal(t, plugin.MessageStatusFailed, result.Status)
+			assert.Equal(t, "attachment required", result.Error)
+		})
+	}
 }
 
 func TestAdapter_SetHandlers(t *testing.T) {

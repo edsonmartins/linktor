@@ -242,7 +242,7 @@ func TestToInboundMessage_TextMessage(t *testing.T) {
 		MessageID:     100,
 		ChatID:        200,
 		FromUserID:    300,
-		FromUsername:   "jdoe",
+		FromUsername:  "jdoe",
 		FromFirstName: "John",
 		FromLastName:  "Doe",
 		Text:          "test message",
@@ -329,17 +329,17 @@ func TestToInboundMessage_VideoMessage(t *testing.T) {
 func TestToInboundMessage_AudioMessage(t *testing.T) {
 	adapter := NewAdapter()
 	incoming := &IncomingMessage{
-		MessageID:      1,
-		ChatID:         2,
-		FromUserID:     3,
-		FromFirstName:  "U",
-		MessageType:    MessageTypeAudio,
-		MediaFileID:    "aud-id",
-		MediaMimeType:  "audio/mpeg",
-		MediaFileName:  "song.mp3",
-		MediaFileSize:  300000,
-		Caption:        "audio caption",
-		Timestamp:      time.Now(),
+		MessageID:     1,
+		ChatID:        2,
+		FromUserID:    3,
+		FromFirstName: "U",
+		MessageType:   MessageTypeAudio,
+		MediaFileID:   "aud-id",
+		MediaMimeType: "audio/mpeg",
+		MediaFileName: "song.mp3",
+		MediaFileSize: 300000,
+		Caption:       "audio caption",
+		Timestamp:     time.Now(),
 	}
 
 	inbound := adapter.toInboundMessage(incoming)
@@ -375,17 +375,17 @@ func TestToInboundMessage_VoiceMessage(t *testing.T) {
 func TestToInboundMessage_DocumentMessage(t *testing.T) {
 	adapter := NewAdapter()
 	incoming := &IncomingMessage{
-		MessageID:      1,
-		ChatID:         2,
-		FromUserID:     3,
-		FromFirstName:  "U",
-		MessageType:    MessageTypeDocument,
-		MediaFileID:    "doc-id",
-		MediaMimeType:  "application/pdf",
-		MediaFileName:  "report.pdf",
-		MediaFileSize:  100000,
-		Caption:        "doc caption",
-		Timestamp:      time.Now(),
+		MessageID:     1,
+		ChatID:        2,
+		FromUserID:    3,
+		FromFirstName: "U",
+		MessageType:   MessageTypeDocument,
+		MediaFileID:   "doc-id",
+		MediaMimeType: "application/pdf",
+		MediaFileName: "report.pdf",
+		MediaFileSize: 100000,
+		Caption:       "doc caption",
+		Timestamp:     time.Now(),
 	}
 
 	inbound := adapter.toInboundMessage(incoming)
@@ -565,9 +565,10 @@ func TestBuildKeyboardFromMetadata_EmptyQuickReplies(t *testing.T) {
 	assert.Nil(t, kb)
 }
 
-func TestBuildKeyboardFromMetadata_WithQuickReplies(t *testing.T) {
+func TestBuildKeyboardFromMetadata_NonJSON(t *testing.T) {
 	adapter := NewAdapter()
-	// Currently buildKeyboardFromMetadata returns nil even with data (placeholder impl)
+	// A non-JSON legacy payload is not a recognized quick-replies format and
+	// must fall back to plain text (nil keyboard).
 	msg := &plugin.OutboundMessage{
 		Metadata: map[string]string{
 			"quick_replies": "text1|data1,text2|data2",
@@ -575,7 +576,52 @@ func TestBuildKeyboardFromMetadata_WithQuickReplies(t *testing.T) {
 	}
 
 	kb := adapter.buildKeyboardFromMetadata(msg)
-	// Current implementation returns nil (placeholder)
+	assert.Nil(t, kb)
+}
+
+func TestBuildKeyboardFromMetadata_JSONQuickReplies(t *testing.T) {
+	adapter := NewAdapter()
+	msg := &plugin.OutboundMessage{
+		Metadata: map[string]string{
+			"quick_replies": `[{"id":"a","title":"Option A"},{"id":"b","title":"Option B"}]`,
+		},
+	}
+
+	kb := adapter.buildKeyboardFromMetadata(msg)
+	require.NotNil(t, kb)
+	// One button per row.
+	require.Len(t, kb.Buttons, 2)
+	require.Len(t, kb.Buttons[0], 1)
+	assert.Equal(t, "Option A", kb.Buttons[0][0].Text)
+	assert.Equal(t, "a", kb.Buttons[0][0].CallbackData)
+	assert.Equal(t, "Option B", kb.Buttons[1][0].Text)
+	assert.Equal(t, "b", kb.Buttons[1][0].CallbackData)
+}
+
+func TestBuildKeyboardFromMetadata_EmptyIDFallsBackToTitle(t *testing.T) {
+	adapter := NewAdapter()
+	msg := &plugin.OutboundMessage{
+		Metadata: map[string]string{
+			"quick_replies": `[{"id":"","title":"Yes"}]`,
+		},
+	}
+
+	kb := adapter.buildKeyboardFromMetadata(msg)
+	require.NotNil(t, kb)
+	require.Len(t, kb.Buttons, 1)
+	// Telegram rejects empty callback_data, so it falls back to the title.
+	assert.Equal(t, "Yes", kb.Buttons[0][0].CallbackData)
+}
+
+func TestBuildKeyboardFromMetadata_InvalidJSON(t *testing.T) {
+	adapter := NewAdapter()
+	msg := &plugin.OutboundMessage{
+		Metadata: map[string]string{
+			"quick_replies": `{not valid json`,
+		},
+	}
+
+	kb := adapter.buildKeyboardFromMetadata(msg)
 	assert.Nil(t, kb)
 }
 

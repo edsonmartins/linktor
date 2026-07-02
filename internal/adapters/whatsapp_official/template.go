@@ -52,10 +52,15 @@ type TemplateCard struct {
 // parameter_format=NAMED; Meta then uses the name to match the value to
 // the correct placeholder instead of relying on array position.
 type TemplateParameter struct {
-	Type          string                 `json:"type"`
-	ParameterName string                 `json:"parameter_name,omitempty"`
-	Text          string                 `json:"text,omitempty"`
-	Currency      *CurrencyParameter     `json:"currency,omitempty"`
+	Type          string `json:"type"`
+	ParameterName string `json:"parameter_name,omitempty"`
+	Text          string `json:"text,omitempty"`
+	// Payload is required (instead of text) for quick_reply button parameters;
+	// Meta rejects the message when a quick_reply value is sent under `text`.
+	Payload string `json:"payload,omitempty"`
+	// CouponCode is required (instead of text) for copy_code button parameters.
+	CouponCode string                 `json:"coupon_code,omitempty"`
+	Currency   *CurrencyParameter     `json:"currency,omitempty"`
 	DateTime      *DateTimeParameter     `json:"date_time,omitempty"`
 	Image         *MediaObject           `json:"image,omitempty"`
 	Document      *DocumentObject        `json:"document,omitempty"`
@@ -67,7 +72,7 @@ type TemplateParameter struct {
 // CurrencyParameter represents a currency parameter
 type CurrencyParameter struct {
 	FallbackValue string `json:"fallback_value"`
-	Code          string `json:"code"` // USD, EUR, BRL, etc.
+	Code          string `json:"code"`        // USD, EUR, BRL, etc.
 	Amount1000    int64  `json:"amount_1000"` // Amount in 1/1000 units
 }
 
@@ -205,7 +210,7 @@ func (b *TemplateBuilder) AddQuickReplyButton(index int, payload string) *Templa
 		SubType: "quick_reply",
 		Index:   &idx,
 		Parameters: []TemplateParameter{
-			{Type: "payload", Text: payload},
+			{Type: "payload", Payload: payload},
 		},
 	})
 	return b
@@ -248,7 +253,7 @@ func (b *TemplateBuilder) AddCopyCodeButton(index int, coupon string) *TemplateB
 		SubType: "copy_code",
 		Index:   &idx,
 		Parameters: []TemplateParameter{
-			{Type: "coupon_code", Text: coupon},
+			{Type: "coupon_code", CouponCode: coupon},
 		},
 	})
 	return b

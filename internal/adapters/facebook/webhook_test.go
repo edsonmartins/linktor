@@ -3,6 +3,8 @@ package facebook
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +47,23 @@ func TestWebhookHandler_VerifyWebhook(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/webhook", nil)
 		_, err := h.VerifyWebhook(req)
 		assert.Equal(t, ErrInvalidVerifyToken, err)
+	})
+}
+
+func TestWebhookHandler_ParseWebhook_FailClosed(t *testing.T) {
+	t.Run("no app secret rejects payload", func(t *testing.T) {
+		h := NewWebhookHandler("", "verify-tok")
+		req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(`{"object":"page"}`))
+		_, err := h.ParseWebhook(req)
+		assert.Equal(t, ErrInvalidSignature, err)
+	})
+
+	t.Run("invalid signature rejected", func(t *testing.T) {
+		h := NewWebhookHandler("secret", "verify-tok")
+		req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(`{"object":"page"}`))
+		req.Header.Set("X-Hub-Signature-256", "sha256=deadbeef")
+		_, err := h.ParseWebhook(req)
+		assert.Equal(t, ErrInvalidSignature, err)
 	})
 }
 
@@ -657,6 +676,37 @@ func TestProcessWebhook(t *testing.T) {
 		assert.Contains(t, messages[0].Metadata["lat"], "40.71")
 		assert.Contains(t, messages[0].Metadata["long"], "-74.00")
 	})
+
+	t.Run("postback yields an inbound event", func(t *testing.T) {
+		payload := &meta.WebhookPayload{
+			Object: "page",
+			Entry: []meta.WebhookEntry{
+				{
+					ID: "page-1",
+					Messaging: []meta.MessagingEvent{
+						{
+							Sender:    meta.MessagingParty{ID: "user-42"},
+							Recipient: meta.MessagingParty{ID: "page-1"},
+							Timestamp: 1700000000000,
+							Postback: &meta.Postback{
+								Title:   "Get Started",
+								Payload: "GET_STARTED",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		messages := a.ProcessWebhook(payload)
+		require.Len(t, messages, 1)
+		assert.Equal(t, "user-42", messages[0].SenderID)
+		assert.Equal(t, "GET_STARTED", messages[0].Content)
+		assert.Equal(t, "postback", messages[0].Metadata["event_type"])
+		assert.Equal(t, "GET_STARTED", messages[0].Metadata["postback_payload"])
+		assert.Equal(t, "Get Started", messages[0].Metadata["postback_title"])
+		assert.Equal(t, "page-1", messages[0].Metadata["page_id"])
+	})
 }
 
 func TestOAuthHelper(t *testing.T) {
@@ -668,19 +718,38 @@ func TestOAuthHelper(t *testing.T) {
 
 	t.Run("login URL with default scopes", func(t *testing.T) {
 		h := NewOAuthHelper("app-123", "secret")
-		url := h.GetLoginURL("https://example.com/callback", "state123", nil)
-		assert.Contains(t, url, "client_id=app-123")
-		assert.Contains(t, url, "redirect_uri=https://example.com/callback")
-		assert.Contains(t, url, "state=state123")
-		assert.Contains(t, url, "pages_messaging")
-		assert.Contains(t, url, "pages_read_engagement")
-		assert.Contains(t, url, "pages_manage_metadata")
+		rawURL := h.GetLoginURL("https://example.com/callback", "state123", nil)
+		assert.Contains(t, rawURL, "client_id=app-123")
+		// redirect_uri is percent-encoded
+		assert.Contains(t, rawURL, "redirect_uri=https%3A%2F%2Fexample.com%2Fcallback")
+		assert.Contains(t, rawURL, "state=state123")
+		assert.Contains(t, rawURL, "pages_messaging")
+		assert.Contains(t, rawURL, "pages_read_engagement")
+		assert.Contains(t, rawURL, "pages_manage_metadata")
+
+		// The URL must parse back to the original values (no corruption).
+		parsed, err := url.Parse(rawURL)
+		require.NoError(t, err)
+		assert.Equal(t, "https://example.com/callback", parsed.Query().Get("redirect_uri"))
+		assert.Equal(t, "state123", parsed.Query().Get("state"))
 	})
 
 	t.Run("login URL with custom scopes", func(t *testing.T) {
 		h := NewOAuthHelper("app-123", "secret")
-		url := h.GetLoginURL("https://example.com/callback", "state123", []string{"email", "public_profile"})
-		assert.Contains(t, url, "scope=email,public_profile")
-		assert.NotContains(t, url, "pages_messaging")
+		rawURL := h.GetLoginURL("https://example.com/callback", "state123", []string{"email", "public_profile"})
+		parsed, err := url.Parse(rawURL)
+		require.NoError(t, err)
+		assert.Equal(t, "email,public_profile", parsed.Query().Get("scope"))
+		assert.NotContains(t, rawURL, "pages_messaging")
+	})
+
+	t.Run("login URL escapes reserved characters in state", func(t *testing.T) {
+		h := NewOAuthHelper("app-123", "secret")
+		rawURL := h.GetLoginURL("https://example.com/callback?x=1", "a b&c=d", nil)
+		parsed, err := url.Parse(rawURL)
+		require.NoError(t, err)
+		// Reserved characters survive a round-trip intact.
+		assert.Equal(t, "https://example.com/callback?x=1", parsed.Query().Get("redirect_uri"))
+		assert.Equal(t, "a b&c=d", parsed.Query().Get("state"))
 	})
 }

@@ -1,6 +1,7 @@
 package instagram
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -45,9 +46,9 @@ func TestAdapter_Initialize(t *testing.T) {
 	t.Run("with page access token", func(t *testing.T) {
 		a := NewAdapter()
 		err := a.Initialize(map[string]string{
-			"instagram_id":     "ig-123",
+			"instagram_id":      "ig-123",
 			"page_access_token": "page-token",
-			"page_id":          "page-456",
+			"page_id":           "page-456",
 		})
 		assert.NoError(t, err)
 	})
@@ -122,4 +123,46 @@ func TestInstagramConfig_IsExpired(t *testing.T) {
 func TestConfigError(t *testing.T) {
 	err := &ConfigError{Field: "test", Message: "test error"}
 	assert.Equal(t, "test error", err.Error())
+}
+
+func TestAdapter_ValidateWebhook(t *testing.T) {
+	t.Run("no app secret fails closed", func(t *testing.T) {
+		a := NewAdapter()
+		a.config = &InstagramConfig{}
+		assert.False(t, a.ValidateWebhook(map[string]string{}, nil))
+	})
+
+	t.Run("invalid signature rejected", func(t *testing.T) {
+		a := NewAdapter()
+		a.config = &InstagramConfig{AppSecret: "secret"}
+		assert.False(t, a.ValidateWebhook(map[string]string{
+			"X-Hub-Signature-256": "sha256=deadbeef",
+		}, []byte("{}")))
+	})
+}
+
+func TestAdapter_SendMessage_MediaWithoutAttachment(t *testing.T) {
+	// A media send with no attachments must not panic; it must return a failed
+	// SendResult instead of dereferencing a nil API response.
+	a := NewAdapter()
+	a.Initialize(map[string]string{})
+	a.client = &Client{config: &InstagramConfig{InstagramID: "ig-1", AccessToken: "tok"}}
+
+	for _, ct := range []plugin.ContentType{
+		plugin.ContentTypeImage,
+		plugin.ContentTypeVideo,
+		plugin.ContentTypeAudio,
+	} {
+		t.Run(string(ct), func(t *testing.T) {
+			result, err := a.SendMessage(context.Background(), &plugin.OutboundMessage{
+				RecipientID: "user-1",
+				ContentType: ct,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.False(t, result.Success)
+			assert.Equal(t, plugin.MessageStatusFailed, result.Status)
+			assert.Equal(t, "attachment required", result.Error)
+		})
+	}
 }

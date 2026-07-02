@@ -48,7 +48,14 @@ func TestTemplateBuilder_CopyCodeButton(t *testing.T) {
 	btn := buttonComponent(t, tpl, "copy_code")
 	require.Len(t, btn.Parameters, 1)
 	assert.Equal(t, "coupon_code", btn.Parameters[0].Type)
-	assert.Equal(t, "123456", btn.Parameters[0].Text)
+	// Value must be under CouponCode so it serializes to the `coupon_code`
+	// JSON key Meta requires — not `text`.
+	assert.Equal(t, "123456", btn.Parameters[0].CouponCode)
+	assert.Empty(t, btn.Parameters[0].Text)
+
+	raw, err := json.Marshal(tpl)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"coupon_code":"123456"`)
 }
 
 func TestTemplateBuilder_OTPButton(t *testing.T) {

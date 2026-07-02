@@ -1,12 +1,17 @@
 package facebook
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net/http"
 
 	"github.com/msgfy/linktor/internal/adapters/meta"
 )
+
+// maxWebhookBodySize caps the number of bytes read from a webhook request body
+// to protect against unbounded reads (DoS).
+const maxWebhookBodySize = 1 << 20 // 1 MB
 
 // WebhookHandler handles Facebook Messenger webhooks
 type WebhookHandler struct {
@@ -28,7 +33,7 @@ func (h *WebhookHandler) VerifyWebhook(r *http.Request) (string, error) {
 	token := r.URL.Query().Get("hub.verify_token")
 	challenge := r.URL.Query().Get("hub.challenge")
 
-	if mode == "subscribe" && token == h.verifyToken {
+	if mode == "subscribe" && subtle.ConstantTimeCompare([]byte(token), []byte(h.verifyToken)) == 1 {
 		return challenge, nil
 	}
 
@@ -37,18 +42,20 @@ func (h *WebhookHandler) VerifyWebhook(r *http.Request) (string, error) {
 
 // ParseWebhook parses and validates an incoming webhook request (POST)
 func (h *WebhookHandler) ParseWebhook(r *http.Request) (*WebhookPayload, error) {
-	// Read body
-	body, err := io.ReadAll(r.Body)
+	// Read body with a size limit to protect against unbounded reads (DoS)
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBodySize))
 	if err != nil {
 		return nil, ErrReadBodyFailed
 	}
 
-	// Validate signature if app secret is configured
-	if h.appSecret != "" {
-		signature := r.Header.Get("X-Hub-Signature-256")
-		if !meta.ValidateWebhookSignature(h.appSecret, body, signature) {
-			return nil, ErrInvalidSignature
-		}
+	// Validate signature. Fail closed: without a configured app secret we cannot
+	// authenticate the payload, so reject it rather than accept unsigned data.
+	if h.appSecret == "" {
+		return nil, ErrInvalidSignature
+	}
+	signature := r.Header.Get("X-Hub-Signature-256")
+	if !meta.ValidateWebhookSignature(h.appSecret, body, signature) {
+		return nil, ErrInvalidSignature
 	}
 
 	// Parse payload
@@ -120,8 +127,16 @@ func ExtractPostbacks(payload *WebhookPayload) []*Postback {
 	var postbacks []*Postback
 
 	for _, entry := range payload.Entry {
+		pageID := entry.ID
 		for _, event := range entry.Messaging {
 			if pb := ConvertPostback(&event); pb != nil {
+				pb.PageID = pageID
+				postbacks = append(postbacks, pb)
+			}
+		}
+		for _, event := range entry.Standby {
+			if pb := ConvertPostback(&event); pb != nil {
+				pb.PageID = pageID
 				postbacks = append(postbacks, pb)
 			}
 		}

@@ -1495,6 +1495,103 @@ func TestExtractStatuses_InvalidTimestamp(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Regression: a `failed` status carries error_data as an OBJECT. When
+// WebhookError.error_data was typed as string, json.Unmarshal failed and the
+// ENTIRE batch (including the inbound message below) was silently dropped.
+// This drives the real unmarshal path with raw bytes, not an in-memory struct.
+// ---------------------------------------------------------------------------
+
+func TestParseWebhook_FailedStatusWithObjectErrorData_PreservesInbound(t *testing.T) {
+	proc := testProcessor()
+
+	body := []byte(`{
+      "object": "whatsapp_business_account",
+      "entry": [{
+        "id": "ENTRY1",
+        "changes": [{
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {"display_phone_number": "155", "phone_number_id": "123456789"},
+            "contacts": [{"wa_id": "5511999", "profile": {"name": "Ana"}}],
+            "messages": [{
+              "id": "wamid.INBOUND1",
+              "from": "5511999",
+              "timestamp": "1700000000",
+              "type": "text",
+              "text": {"body": "olá"}
+            }],
+            "statuses": [{
+              "id": "wamid.FAILED1",
+              "recipient_id": "5511999",
+              "status": "failed",
+              "timestamp": "1700000001",
+              "errors": [{
+                "code": 131026,
+                "title": "Message undeliverable",
+                "message": "Message failed to send",
+                "error_data": {
+                  "messaging_product": "whatsapp",
+                  "details": "Message could not be delivered"
+                }
+              }]
+            }]
+          }
+        }]
+      }]
+    }`)
+
+	payload, err := proc.ParseWebhook(body)
+	require.NoError(t, err, "object error_data must not break parsing")
+	require.NotNil(t, payload)
+
+	// The inbound message must survive alongside the failed status.
+	msgs := proc.ExtractMessages(payload)
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "wamid.INBOUND1", msgs[0].ExternalID)
+
+	statuses := proc.ExtractStatuses(payload)
+	require.Len(t, statuses, 1)
+	assert.Equal(t, "wamid.FAILED1", statuses[0].MessageID)
+
+	// error_data object was decoded into the typed field.
+	errs := payload.Entry[0].Changes[0].Value.Statuses[0].Errors
+	require.Len(t, errs, 1)
+	require.NotNil(t, errs[0].ErrorData)
+	assert.Equal(t, "Message could not be delivered", errs[0].ErrorData.Details)
+}
+
+// TestParseWebhook_TemplateStatusWithObjectInfo ensures disable_info/other_info
+// objects on a template status update no longer break the batch parse.
+func TestParseWebhook_TemplateStatusWithObjectInfo(t *testing.T) {
+	proc := testProcessor()
+
+	body := []byte(`{
+      "object": "whatsapp_business_account",
+      "entry": [{
+        "id": "ENTRY1",
+        "changes": [{
+          "field": "message_template_status_update",
+          "value": {
+            "event": "DISABLED",
+            "message_template_id": 12345,
+            "message_template_name": "promo",
+            "message_template_language": "pt_BR",
+            "reason": "SCHEDULED",
+            "disable_info": {"disable_date": "2026-07-01"},
+            "other_info": {"title": "SCHEDULED_FOR_DELETION", "description": "will be deleted"}
+          }
+        }]
+      }]
+    }`)
+
+	payload, err := proc.ParseWebhook(body)
+	require.NoError(t, err)
+	require.NotNil(t, payload)
+	assert.Equal(t, "DISABLED", payload.Entry[0].Changes[0].Value.Event)
+}
+
+// ---------------------------------------------------------------------------
 // Suppress unused import warning for fmt (used via helpers)
 // ---------------------------------------------------------------------------
 

@@ -3,6 +3,8 @@ package facebook
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/msgfy/linktor/internal/adapters/meta"
@@ -36,10 +38,29 @@ func (c *Client) GetUserProfile(ctx context.Context, userID string) (*meta.UserP
 	return c.api.GetUserProfile(ctx, userID, nil)
 }
 
-// SendTextMessage sends a text message
+// defaultMessagingType returns mt, or RESPONSE (a reply inside the 24h window)
+// when mt is empty. Callers that send proactively / outside the window pass
+// UPDATE or MESSAGE_TAG (with a tag) instead.
+func defaultMessagingType(mt string) string {
+	if mt == "" {
+		return meta.MessagingTypeResponse
+	}
+	return mt
+}
+
+// SendTextMessage sends a text message as a RESPONSE (reply within the 24h window).
 func (c *Client) SendTextMessage(ctx context.Context, recipientID, text string) (*meta.SendMessageResponse, error) {
+	return c.SendTextMessageAs(ctx, recipientID, text, meta.MessagingTypeResponse, "")
+}
+
+// SendTextMessageAs sends a text message with an explicit messaging_type (and
+// optional message tag) so out-of-window / proactive sends can use UPDATE or
+// MESSAGE_TAG instead of the default RESPONSE.
+func (c *Client) SendTextMessageAs(ctx context.Context, recipientID, text, messagingType, tag string) (*meta.SendMessageResponse, error) {
 	msg := &meta.OutboundMessage{
-		Recipient: meta.MessageRecipient{ID: recipientID},
+		Recipient:     meta.MessageRecipient{ID: recipientID},
+		MessagingType: defaultMessagingType(messagingType),
+		Tag:           tag,
 		Message: meta.MessageContent{
 			Text: text,
 		},
@@ -60,7 +81,8 @@ func (c *Client) SendMessageWithQuickReplies(ctx context.Context, recipientID, t
 	}
 
 	msg := &meta.OutboundMessage{
-		Recipient: meta.MessageRecipient{ID: recipientID},
+		Recipient:     meta.MessageRecipient{ID: recipientID},
+		MessagingType: meta.MessagingTypeResponse,
 		Message: meta.MessageContent{
 			Text:         text,
 			QuickReplies: metaQuickReplies,
@@ -70,10 +92,18 @@ func (c *Client) SendMessageWithQuickReplies(ctx context.Context, recipientID, t
 	return c.api.SendMessage(ctx, c.config.PageID, msg)
 }
 
-// SendAttachment sends a media attachment
+// SendAttachment sends a media attachment as a RESPONSE (reply within 24h window).
 func (c *Client) SendAttachment(ctx context.Context, recipientID, attachmentType, url string) (*meta.SendMessageResponse, error) {
+	return c.SendAttachmentAs(ctx, recipientID, attachmentType, url, meta.MessagingTypeResponse, "")
+}
+
+// SendAttachmentAs sends a media attachment with an explicit messaging_type (and
+// optional message tag) for out-of-window / proactive sends.
+func (c *Client) SendAttachmentAs(ctx context.Context, recipientID, attachmentType, url, messagingType, tag string) (*meta.SendMessageResponse, error) {
 	msg := &meta.OutboundMessage{
-		Recipient: meta.MessageRecipient{ID: recipientID},
+		Recipient:     meta.MessageRecipient{ID: recipientID},
+		MessagingType: defaultMessagingType(messagingType),
+		Tag:           tag,
 		Message: meta.MessageContent{
 			Attachment: &meta.MessageAttachment{
 				Type: attachmentType,
@@ -157,8 +187,10 @@ func (c *Client) UnsubscribeFromWebhooks(ctx context.Context) error {
 
 // ValidateWebhookSignature validates the webhook signature
 func (c *Client) ValidateWebhookSignature(payload []byte, signature string) bool {
+	// Fail closed: reject webhooks when no app secret is configured rather than
+	// accepting unsigned payloads.
 	if c.config.AppSecret == "" {
-		return true // Skip validation if no app secret
+		return false
 	}
 	return meta.ValidateWebhookSignature(c.config.AppSecret, payload, signature)
 }
@@ -238,10 +270,16 @@ func ConvertPostback(event *meta.MessagingEvent) *Postback {
 		return nil
 	}
 
-	return &Postback{
-		Title:   event.Postback.Title,
-		Payload: event.Postback.Payload,
+	pb := &Postback{
+		Title:       event.Postback.Title,
+		Payload:     event.Postback.Payload,
+		SenderID:    event.Sender.ID,
+		RecipientID: event.Recipient.ID,
 	}
+	if event.Timestamp > 0 {
+		pb.Timestamp = msToTime(event.Timestamp)
+	}
+	return pb
 }
 
 // msToTime converts milliseconds timestamp to time.Time
@@ -283,26 +321,25 @@ func NewOAuthHelper(appID, appSecret string) *OAuthHelper {
 	}
 }
 
-// GetLoginURL generates the Facebook Login URL
+// GetLoginURL generates the Facebook Login URL. All parameters are properly
+// percent-encoded so redirect URIs and state values containing reserved
+// characters (?, &, =, spaces) are not corrupted.
 func (h *OAuthHelper) GetLoginURL(redirectURI, state string, scopes []string) string {
 	scopeStr := "pages_messaging,pages_read_engagement,pages_manage_metadata"
 	if len(scopes) > 0 {
-		scopeStr = ""
-		for i, s := range scopes {
-			if i > 0 {
-				scopeStr += ","
-			}
-			scopeStr += s
-		}
+		scopeStr = strings.Join(scopes, ",")
 	}
 
+	params := url.Values{}
+	params.Set("client_id", h.AppID)
+	params.Set("redirect_uri", redirectURI)
+	params.Set("state", state)
+	params.Set("scope", scopeStr)
+
 	return fmt.Sprintf(
-		"https://www.facebook.com/%s/dialog/oauth?client_id=%s&redirect_uri=%s&state=%s&scope=%s",
+		"https://www.facebook.com/%s/dialog/oauth?%s",
 		meta.DefaultAPIVersion,
-		h.AppID,
-		redirectURI,
-		state,
-		scopeStr,
+		params.Encode(),
 	)
 }
 

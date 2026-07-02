@@ -16,11 +16,11 @@ const (
 
 // Config holds common Meta API configuration
 type Config struct {
-	AccessToken   string `json:"access_token"`
-	AppID         string `json:"app_id"`
-	AppSecret     string `json:"app_secret"`
-	VerifyToken   string `json:"verify_token"`
-	APIVersion    string `json:"api_version"`
+	AccessToken string `json:"access_token"`
+	AppID       string `json:"app_id"`
+	AppSecret   string `json:"app_secret"`
+	VerifyToken string `json:"verify_token"`
+	APIVersion  string `json:"api_version"`
 }
 
 // WebhookVerification represents webhook verification request
@@ -53,14 +53,14 @@ type WebhookChange struct {
 
 // MessagingEvent represents a messaging event from webhook
 type MessagingEvent struct {
-	Sender    MessagingParty   `json:"sender"`
-	Recipient MessagingParty   `json:"recipient"`
-	Timestamp int64            `json:"timestamp"`
-	Message   *InboundMessage  `json:"message,omitempty"`
-	Delivery  *DeliveryStatus  `json:"delivery,omitempty"`
-	Read      *ReadStatus      `json:"read,omitempty"`
-	Postback  *Postback        `json:"postback,omitempty"`
-	Reaction  *ReactionEvent   `json:"reaction,omitempty"`
+	Sender    MessagingParty  `json:"sender"`
+	Recipient MessagingParty  `json:"recipient"`
+	Timestamp int64           `json:"timestamp"`
+	Message   *InboundMessage `json:"message,omitempty"`
+	Delivery  *DeliveryStatus `json:"delivery,omitempty"`
+	Read      *ReadStatus     `json:"read,omitempty"`
+	Postback  *Postback       `json:"postback,omitempty"`
+	Reaction  *ReactionEvent  `json:"reaction,omitempty"`
 }
 
 // MessagingParty represents a sender or recipient
@@ -70,13 +70,13 @@ type MessagingParty struct {
 
 // InboundMessage represents an incoming message
 type InboundMessage struct {
-	MID         string            `json:"mid"`
-	Text        string            `json:"text,omitempty"`
-	IsEcho      bool              `json:"is_echo,omitempty"`
-	IsDeleted   bool              `json:"is_deleted,omitempty"`
+	MID         string              `json:"mid"`
+	Text        string              `json:"text,omitempty"`
+	IsEcho      bool                `json:"is_echo,omitempty"`
+	IsDeleted   bool                `json:"is_deleted,omitempty"`
 	Attachments []InboundAttachment `json:"attachments,omitempty"`
-	QuickReply  *QuickReplyPayload `json:"quick_reply,omitempty"`
-	ReplyTo     *ReplyTo          `json:"reply_to,omitempty"`
+	QuickReply  *QuickReplyPayload  `json:"quick_reply,omitempty"`
+	ReplyTo     *ReplyTo            `json:"reply_to,omitempty"`
 }
 
 // InboundAttachment represents an attachment in incoming message
@@ -87,9 +87,9 @@ type InboundAttachment struct {
 
 // AttachmentPayload holds the attachment content
 type AttachmentPayload struct {
-	URL         string  `json:"url,omitempty"`
-	StickerID   int64   `json:"sticker_id,omitempty"`
-	Title       string  `json:"title,omitempty"`
+	URL         string       `json:"url,omitempty"`
+	StickerID   int64        `json:"sticker_id,omitempty"`
+	Title       string       `json:"title,omitempty"`
 	Coordinates *Coordinates `json:"coordinates,omitempty"`
 }
 
@@ -104,9 +104,17 @@ type QuickReplyPayload struct {
 	Payload string `json:"payload"`
 }
 
-// ReplyTo represents the message being replied to
+// ReplyTo represents the message being replied to. For Instagram, a reply to a
+// story carries a Story reference instead of (or in addition to) a message MID.
 type ReplyTo struct {
-	MID string `json:"mid"`
+	MID   string    `json:"mid,omitempty"`
+	Story *StoryRef `json:"story,omitempty"`
+}
+
+// StoryRef references an Instagram story that a message is replying to.
+type StoryRef struct {
+	ID  string `json:"id,omitempty"`
+	URL string `json:"url,omitempty"`
 }
 
 // DeliveryStatus represents message delivery status
@@ -134,12 +142,20 @@ type ReactionEvent struct {
 	Emoji    string `json:"emoji,omitempty"`
 }
 
+// Messaging types for the Send API. RESPONSE is the correct type for replies to
+// a user-initiated conversation within the 24-hour standard messaging window.
+const (
+	MessagingTypeResponse = "RESPONSE"
+	MessagingTypeUpdate   = "UPDATE"
+	MessagingTypeTag      = "MESSAGE_TAG"
+)
+
 // OutboundMessage represents a message to send
 type OutboundMessage struct {
-	Recipient    MessageRecipient     `json:"recipient"`
-	Message      MessageContent       `json:"message"`
-	MessagingType string              `json:"messaging_type,omitempty"`
-	Tag          string               `json:"tag,omitempty"`
+	Recipient     MessageRecipient `json:"recipient"`
+	Message       MessageContent   `json:"message"`
+	MessagingType string           `json:"messaging_type,omitempty"`
+	Tag           string           `json:"tag,omitempty"`
 }
 
 // MessageRecipient specifies the message recipient
@@ -149,9 +165,9 @@ type MessageRecipient struct {
 
 // MessageContent holds the message content
 type MessageContent struct {
-	Text         string            `json:"text,omitempty"`
+	Text         string             `json:"text,omitempty"`
 	Attachment   *MessageAttachment `json:"attachment,omitempty"`
-	QuickReplies []QuickReply      `json:"quick_replies,omitempty"`
+	QuickReplies []QuickReply       `json:"quick_replies,omitempty"`
 }
 
 // MessageAttachment for sending media
@@ -176,8 +192,8 @@ type QuickReply struct {
 
 // SendMessageResponse represents the API response when sending a message
 type SendMessageResponse struct {
-	RecipientID string `json:"recipient_id,omitempty"`
-	MessageID   string `json:"message_id,omitempty"`
+	RecipientID string    `json:"recipient_id,omitempty"`
+	MessageID   string    `json:"message_id,omitempty"`
 	Error       *APIError `json:"error,omitempty"`
 }
 
@@ -197,22 +213,22 @@ func (e *APIError) Error() string {
 
 // UserProfile represents user profile data
 type UserProfile struct {
-	ID        string `json:"id"`
-	Name      string `json:"name,omitempty"`
-	FirstName string `json:"first_name,omitempty"`
-	LastName  string `json:"last_name,omitempty"`
+	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	FirstName  string `json:"first_name,omitempty"`
+	LastName   string `json:"last_name,omitempty"`
 	ProfilePic string `json:"profile_pic,omitempty"`
-	Locale    string `json:"locale,omitempty"`
-	Timezone  int    `json:"timezone,omitempty"`
-	Gender    string `json:"gender,omitempty"`
+	Locale     string `json:"locale,omitempty"`
+	Timezone   int    `json:"timezone,omitempty"`
+	Gender     string `json:"gender,omitempty"`
 }
 
 // PageInfo represents Facebook Page information
 type PageInfo struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	AccessToken string `json:"access_token,omitempty"`
-	Category    string `json:"category,omitempty"`
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	AccessToken string       `json:"access_token,omitempty"`
+	Category    string       `json:"category,omitempty"`
 	Picture     *PagePicture `json:"picture,omitempty"`
 }
 
@@ -240,18 +256,18 @@ type Paging struct {
 
 // InstagramAccount represents an Instagram business account
 type InstagramAccount struct {
-	ID          string `json:"id"`
-	Username    string `json:"username,omitempty"`
-	Name        string `json:"name,omitempty"`
-	ProfilePic  string `json:"profile_picture_url,omitempty"`
-	FollowersCount int `json:"followers_count,omitempty"`
+	ID             string `json:"id"`
+	Username       string `json:"username,omitempty"`
+	Name           string `json:"name,omitempty"`
+	ProfilePic     string `json:"profile_picture_url,omitempty"`
+	FollowersCount int    `json:"followers_count,omitempty"`
 }
 
 // OAuthTokenResponse represents the OAuth token exchange response
 type OAuthTokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	ExpiresIn   int64  `json:"expires_in,omitempty"`
+	AccessToken string      `json:"access_token"`
+	TokenType   string      `json:"token_type"`
+	ExpiresIn   int64       `json:"expires_in,omitempty"`
 	Error       *OAuthError `json:"error,omitempty"`
 }
 
@@ -264,9 +280,10 @@ type OAuthError struct {
 
 // LongLivedTokenResponse represents the response for long-lived token exchange
 type LongLivedTokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	ExpiresIn   int64  `json:"expires_in"`
+	AccessToken string      `json:"access_token"`
+	TokenType   string      `json:"token_type"`
+	ExpiresIn   int64       `json:"expires_in"`
+	Error       *OAuthError `json:"error,omitempty"`
 }
 
 // SubscribedAppsResponse represents the response from subscribing to app webhooks
@@ -283,24 +300,24 @@ type SenderAction struct {
 
 // ParsedInboundMessage represents a normalized incoming message
 type ParsedInboundMessage struct {
-	ID            string
-	ExternalID    string
-	SenderID      string
-	RecipientID   string
-	Text          string
-	Attachments   []ParsedAttachment
-	IsEcho        bool
-	IsDeleted     bool
-	QuickReply    string
-	ReplyToMID    string
-	Timestamp     time.Time
+	ID          string
+	ExternalID  string
+	SenderID    string
+	RecipientID string
+	Text        string
+	Attachments []ParsedAttachment
+	IsEcho      bool
+	IsDeleted   bool
+	QuickReply  string
+	ReplyToMID  string
+	Timestamp   time.Time
 }
 
 // ParsedAttachment represents a normalized attachment
 type ParsedAttachment struct {
-	Type     string
-	URL      string
-	Title    string
-	Lat      float64
-	Long     float64
+	Type  string
+	URL   string
+	Title string
+	Lat   float64
+	Long  float64
 }

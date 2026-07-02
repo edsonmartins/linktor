@@ -53,18 +53,18 @@ type IncomingMessage struct {
 
 // Attachment represents a message attachment
 type Attachment struct {
-	Type     string
-	URL      string
-	Title    string
-	Lat      float64
-	Long     float64
+	Type  string
+	URL   string
+	Title string
+	Lat   float64
+	Long  float64
 }
 
 // OutgoingMessage represents a message to be sent
 type OutgoingMessage struct {
-	RecipientID string
-	Text        string
-	Attachments []OutgoingAttachment
+	RecipientID  string
+	Text         string
+	Attachments  []OutgoingAttachment
 	QuickReplies []QuickReply
 }
 
@@ -93,8 +93,12 @@ type ReadStatus struct {
 
 // Postback represents a button postback
 type Postback struct {
-	Title   string
-	Payload string
+	Title       string
+	Payload     string
+	SenderID    string
+	RecipientID string
+	PageID      string
+	Timestamp   time.Time
 }
 
 // WebhookPayload is an alias for the meta package type

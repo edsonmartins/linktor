@@ -30,7 +30,7 @@ func setupWebhookTest() (*WebhookHandler, *testutil.MockChannelRepository, *test
 	producer := testutil.NewMockProducer()
 	templateRepo := newMockTemplateRepository()
 	templateSvc := service.NewTemplateService(templateRepo, channelRepo)
-	handler := NewWebhookHandler(channelRepo, producer, templateSvc, false)
+	handler := NewWebhookHandler(channelRepo, producer, templateSvc, false, nil)
 
 	channel := &entity.Channel{
 		ID:               "ch-1",
@@ -1119,4 +1119,125 @@ func TestWebhookTelegram_ChannelNotFound(t *testing.T) {
 	handler.TelegramWebhook(c)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// ---------------------------------------------------------------------------
+// 18. Telegram Webhook - Large int64 IDs stay decimal strings (no rune corruption)
+// ---------------------------------------------------------------------------
+
+func TestWebhookTelegram_LargeInt64IDs(t *testing.T) {
+	handler, channelRepo, producer, _ := setupWebhookTest()
+
+	channelRepo.Channels["ch-tg"] = &entity.Channel{
+		ID:               "ch-tg",
+		TenantID:         "tenant-1",
+		Type:             entity.ChannelTypeTelegram,
+		Name:             "Telegram Bot",
+		Enabled:          true,
+		ConnectionStatus: entity.ConnectionStatusConnected,
+		Credentials:      map[string]string{},
+	}
+
+	// IDs well beyond the rune (int32) range: string(rune(x)) would collapse
+	// these into a single replacement character, corrupting correlation.
+	const senderID int64 = 7654321098
+	const chatID int64 = 8123456789
+	const messageID = 456789
+
+	payload := map[string]interface{}{
+		"update_id": 12345,
+		"message": map[string]interface{}{
+			"message_id": messageID,
+			"from": map[string]interface{}{
+				"id":         senderID,
+				"first_name": "Bob",
+				"last_name":  "Smith",
+			},
+			"chat": map[string]interface{}{
+				"id":   chatID,
+				"type": "private",
+			},
+			"text": "Hello",
+		},
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/webhook/telegram/ch-tg", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+	c.Params = []gin.Param{{Key: "channelId", Value: "ch-tg"}}
+
+	handler.TelegramWebhook(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, producer.InboundMessages, 1)
+	msg := producer.InboundMessages[0]
+	assert.Equal(t, "7654321098", msg.Metadata["sender_id"])
+	assert.Equal(t, "8123456789", msg.Metadata["chat_id"])
+	assert.Equal(t, "456789", msg.ExternalID)
+	assert.Equal(t, "Bob Smith", msg.Metadata["sender_name"])
+}
+
+// ---------------------------------------------------------------------------
+// 19. Telegram Webhook - Inline keyboard callback query
+// ---------------------------------------------------------------------------
+
+func TestWebhookTelegram_CallbackQuery(t *testing.T) {
+	handler, channelRepo, producer, _ := setupWebhookTest()
+
+	channelRepo.Channels["ch-tg"] = &entity.Channel{
+		ID:               "ch-tg",
+		TenantID:         "tenant-1",
+		Type:             entity.ChannelTypeTelegram,
+		Name:             "Telegram Bot",
+		Enabled:          true,
+		ConnectionStatus: entity.ConnectionStatusConnected,
+		Credentials:      map[string]string{},
+	}
+
+	payload := map[string]interface{}{
+		"update_id": 12346,
+		"callback_query": map[string]interface{}{
+			"id": "cbq-abc-123",
+			"from": map[string]interface{}{
+				"id":         int64(7654321098),
+				"first_name": "Alice",
+			},
+			"message": map[string]interface{}{
+				"message_id": 99,
+				"chat": map[string]interface{}{
+					"id":   int64(8123456789),
+					"type": "private",
+				},
+			},
+			"data": "menu:option_2",
+		},
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/webhook/telegram/ch-tg", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+	c.Params = []gin.Param{{Key: "channelId", Value: "ch-tg"}}
+
+	handler.TelegramWebhook(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, producer.InboundMessages, 1)
+	msg := producer.InboundMessages[0]
+	assert.Equal(t, "telegram", msg.ChannelType)
+	assert.Equal(t, "interactive", msg.ContentType)
+	assert.Equal(t, "menu:option_2", msg.Content)
+	assert.Equal(t, "menu:option_2", msg.Metadata["callback_data"])
+	assert.Equal(t, "cbq-abc-123", msg.ExternalID)
+	assert.Equal(t, "cbq-abc-123", msg.Metadata["callback_query_id"])
+	assert.Equal(t, "true", msg.Metadata["is_callback"])
+	assert.Equal(t, "7654321098", msg.Metadata["sender_id"])
+	assert.Equal(t, "8123456789", msg.Metadata["chat_id"])
 }

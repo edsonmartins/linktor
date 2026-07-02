@@ -221,12 +221,15 @@ func TestAdapter_ValidateWebhook(t *testing.T) {
 		assert.False(t, a.ValidateWebhook(headers, body))
 	})
 
-	t.Run("no webhook secret configured skips validation", func(t *testing.T) {
+	t.Run("no webhook secret configured fails closed", func(t *testing.T) {
 		a := initializedAdapter(t)
 		a.config.WebhookSecret = ""
 
-		headers := map[string]string{}
-		assert.True(t, a.ValidateWebhook(headers, body))
+		// Even with a header present we must reject: without a secret the
+		// signature cannot be verified, so the request is untrusted.
+		sig := computeHMAC("my-secret", body)
+		headers := map[string]string{"X-Hub-Signature-256": sig}
+		assert.False(t, a.ValidateWebhook(headers, body))
 	})
 
 	t.Run("case insensitive header key", func(t *testing.T) {

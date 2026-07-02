@@ -139,6 +139,72 @@ func TestAdapter_SendMessage_ClientNotFound(t *testing.T) {
 	assert.Equal(t, "client not connected", result.Error)
 }
 
+func TestAdapter_SendMessage_BufferFull_ReportsFailed(t *testing.T) {
+	a := NewAdapter()
+	a.Initialize(map[string]string{})
+	ctx := context.Background()
+
+	require.NoError(t, a.Connect(ctx))
+	defer a.Disconnect(ctx)
+	time.Sleep(10 * time.Millisecond)
+
+	hub := a.GetHub()
+	require.NotNil(t, hub)
+
+	// Register a client with a full 1-slot send buffer.
+	client := &Client{
+		hub:       hub,
+		SessionID: "session-full",
+		send:      make(chan *WebSocketMessage, 1),
+		Metadata:  make(map[string]string),
+	}
+	client.send <- &WebSocketMessage{Type: MessageTypeMessage} // fill buffer
+	hub.register <- client
+	time.Sleep(10 * time.Millisecond)
+
+	result, err := a.SendMessage(ctx, &plugin.OutboundMessage{
+		ID:          "msg-1",
+		RecipientID: "session-full",
+		Content:     "hello",
+		ContentType: plugin.ContentTypeText,
+	})
+	require.NoError(t, err)
+	assert.False(t, result.Success)
+	// Must be Failed, not falsely Delivered.
+	assert.Equal(t, plugin.MessageStatusFailed, result.Status)
+	assert.NotEqual(t, plugin.MessageStatusDelivered, result.Status)
+}
+
+func TestAdapter_SendMessage_AfterDisconnect_NoPanic(t *testing.T) {
+	a := NewAdapter()
+	a.Initialize(map[string]string{})
+	ctx := context.Background()
+
+	require.NoError(t, a.Connect(ctx))
+	time.Sleep(10 * time.Millisecond)
+
+	hub := a.GetHub()
+	require.NotNil(t, hub)
+	client := &Client{
+		hub:       hub,
+		SessionID: "session-1",
+		send:      make(chan *WebSocketMessage, 1),
+		Metadata:  make(map[string]string),
+	}
+	hub.register <- client
+	time.Sleep(10 * time.Millisecond)
+
+	// Disconnect stops the hub (closes client send channels).
+	require.NoError(t, a.Disconnect(ctx))
+	time.Sleep(10 * time.Millisecond)
+
+	// Sending directly to the (now stopped) client must not panic.
+	assert.NotPanics(t, func() {
+		err := client.SendMessage(&WebSocketMessage{Type: MessageTypeMessage})
+		assert.Error(t, err)
+	})
+}
+
 func TestAdapter_SendTypingIndicator_NotConnected(t *testing.T) {
 	a := NewAdapter()
 	a.Initialize(map[string]string{})

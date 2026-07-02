@@ -551,8 +551,9 @@ func (a *Adapter) ValidateWebhook(headers map[string]string, body []byte) bool {
 	}
 
 	if a.config.WebhookSecret == "" {
-		// If no secret configured, skip validation
-		return true
+		// Fail closed: without a configured secret we cannot verify the
+		// signature, so reject the request instead of trusting it.
+		return false
 	}
 
 	return ValidateSignature(a.config.WebhookSecret, body, signature)

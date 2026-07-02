@@ -166,7 +166,7 @@ func (b *LTOTemplateBuilder) BuildRaw() (map[string]interface{}, error) {
 			"type": "limited_time_offer",
 			"parameters": []map[string]interface{}{
 				{
-					"type":                "limited_time_offer",
+					"type": "limited_time_offer",
 					"limited_time_offer": map[string]interface{}{
 						"expiration_time_ms": b.config.ExpirationTime.UnixMilli(),
 					},
@@ -313,15 +313,15 @@ type CouponTemplateBuilder struct {
 
 // CouponConfig represents configuration for a coupon template
 type CouponConfig struct {
-	TemplateName  string
-	LanguageCode  string
-	HeaderImage   string
-	StoreName     string
-	DiscountText  string
-	CouponCode    string
-	ValidUntil    time.Time
-	TermsURL      string
-	RedeemURL     string
+	TemplateName string
+	LanguageCode string
+	HeaderImage  string
+	StoreName    string
+	DiscountText string
+	CouponCode   string
+	ValidUntil   time.Time
+	TermsURL     string
+	RedeemURL    string
 }
 
 // NewCouponTemplateBuilder creates a new coupon template builder
@@ -576,18 +576,18 @@ type SendResult struct {
 
 // ScheduledPromotion represents a scheduled promotional message
 type ScheduledPromotion struct {
-	ID              string
-	TemplateName    string
-	LanguageCode    string
-	Recipients      []string
-	ImageURL        string
-	BodyParams      []string
-	CouponCode      string
-	StartTime       time.Time
-	EndTime         time.Time
-	SendAtStart     bool
-	SendReminders   bool
-	ReminderHours   []int // Hours before end to send reminder
+	ID            string
+	TemplateName  string
+	LanguageCode  string
+	Recipients    []string
+	ImageURL      string
+	BodyParams    []string
+	CouponCode    string
+	StartTime     time.Time
+	EndTime       time.Time
+	SendAtStart   bool
+	SendReminders bool
+	ReminderHours []int // Hours before end to send reminder
 }
 
 // GetTimeUntilExpiration returns the duration until expiration

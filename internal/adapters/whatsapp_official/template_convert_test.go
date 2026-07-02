@@ -1,6 +1,7 @@
 package whatsapp_official
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -224,6 +225,23 @@ func TestBuildSendPayload_Buttons(t *testing.T) {
 	assert.Equal(t, "flow-token-xyz", flowParams[0].Action["flow_token"])
 	screens := flowParams[0].Action["flow_action_data"].(map[string]interface{})
 	assert.Equal(t, "WELCOME", screens["screen"])
+
+	// quick_reply must carry its value under Payload and copy_code under
+	// CouponCode — so they serialize to the JSON keys Meta requires.
+	qr := payload.Components[1].Parameters[0]
+	assert.Equal(t, "CONFIRM", qr.Payload)
+	assert.Empty(t, qr.Text)
+	cc := payload.Components[3].Parameters[0]
+	assert.Equal(t, "PROMO123", cc.CouponCode)
+	assert.Empty(t, cc.Text)
+
+	raw, err := json.Marshal(payload)
+	require.NoError(t, err)
+	s := string(raw)
+	assert.Contains(t, s, `"payload":"CONFIRM"`)
+	assert.Contains(t, s, `"coupon_code":"PROMO123"`)
+	assert.NotContains(t, s, `"text":"CONFIRM"`)
+	assert.NotContains(t, s, `"text":"PROMO123"`)
 }
 
 func TestBuildSendPayload_ButtonWithoutValueSkipped(t *testing.T) {

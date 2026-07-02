@@ -55,6 +55,12 @@ func (c *Client) SetAccessToken(token string) {
 	c.accessToken = token
 }
 
+// SetBaseURL overrides the Graph API base URL (used to target a sandbox or a
+// test server).
+func (c *Client) SetBaseURL(url string) {
+	c.baseURL = url
+}
+
 // buildURL constructs the API URL
 func (c *Client) buildURL(endpoint string) string {
 	return fmt.Sprintf("%s/%s/%s", c.baseURL, c.apiVersion, endpoint)
@@ -251,7 +257,13 @@ func (c *Client) GetUserProfile(ctx context.Context, userID string, fields []str
 	return &profile, nil
 }
 
-// GetMyPages retrieves the pages the user has access to
+// maxPageFollow caps how many pagination hops GetMyPages will follow to avoid
+// an unbounded loop if the API keeps returning a `next` cursor.
+const maxPageFollow = 100
+
+// GetMyPages retrieves the pages the user has access to, following the
+// pagination `next` cursor so users with more than one page of accounts
+// (>25 pages) do not silently lose accounts.
 func (c *Client) GetMyPages(ctx context.Context) (*PagesResponse, error) {
 	params := url.Values{}
 	params.Set("fields", "id,name,access_token,category,picture")
@@ -266,7 +278,63 @@ func (c *Client) GetMyPages(ctx context.Context) (*PagesResponse, error) {
 		return nil, fmt.Errorf("failed to parse pages: %w", err)
 	}
 
+	// Follow the `next` cursor to gather every page of results.
+	next := ""
+	if pages.Paging != nil {
+		next = pages.Paging.Next
+	}
+	for hops := 0; next != "" && hops < maxPageFollow; hops++ {
+		body, err := c.doRawGet(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+
+		var page PagesResponse
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("failed to parse pages: %w", err)
+		}
+
+		pages.Data = append(pages.Data, page.Data...)
+		if page.Paging == nil {
+			break
+		}
+		next = page.Paging.Next
+	}
+
+	pages.Paging = nil
 	return &pages, nil
+}
+
+// doRawGet performs a GET against an absolute URL (used to follow pagination
+// cursors, which already embed the access token and query parameters).
+func (c *Client) doRawGet(ctx context.Context, rawURL string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		var apiErr struct {
+			Error *APIError `json:"error"`
+		}
+		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error != nil {
+			return nil, apiErr.Error
+		}
+		return nil, fmt.Errorf("API error: %s", string(respBody))
+	}
+
+	return respBody, nil
 }
 
 // GetPageInfo retrieves information about a specific page
@@ -384,7 +452,25 @@ func (c *Client) ExchangeCodeForToken(ctx context.Context, appID, appSecret, red
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
+	// Fail closed: do not let an error response (non-2xx status or an `error`
+	// body) slip through as a successful exchange with an empty access token.
+	if resp.StatusCode >= 400 || tokenResp.Error != nil {
+		return nil, oauthError("exchange code for token", resp.StatusCode, tokenResp.Error, body)
+	}
+	if tokenResp.AccessToken == "" {
+		return nil, fmt.Errorf("oauth: exchange code for token returned an empty access token: %s", string(body))
+	}
+
 	return &tokenResp, nil
+}
+
+// oauthError builds a descriptive error for a failed OAuth exchange, preferring
+// the structured `error` payload from Meta when present.
+func oauthError(op string, statusCode int, oauthErr *OAuthError, body []byte) error {
+	if oauthErr != nil {
+		return fmt.Errorf("oauth: %s failed (status %d): %s", op, statusCode, oauthErr.Message)
+	}
+	return fmt.Errorf("oauth: %s failed (status %d): %s", op, statusCode, string(body))
 }
 
 // GetLongLivedToken exchanges a short-lived token for a long-lived one
@@ -416,6 +502,14 @@ func (c *Client) GetLongLivedToken(ctx context.Context, appID, appSecret, shortL
 	var tokenResp LongLivedTokenResponse
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Fail closed: do not persist an empty token from an error response.
+	if resp.StatusCode >= 400 || tokenResp.Error != nil {
+		return nil, oauthError("get long-lived token", resp.StatusCode, tokenResp.Error, body)
+	}
+	if tokenResp.AccessToken == "" {
+		return nil, fmt.Errorf("oauth: get long-lived token returned an empty access token: %s", string(body))
 	}
 
 	return &tokenResp, nil
