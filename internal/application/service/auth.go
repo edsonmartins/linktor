@@ -12,12 +12,24 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Token types distinguish access tokens (used as API credentials) from refresh
+// tokens (only accepted at the refresh endpoint). Without this, the two are
+// interchangeable: a refresh token could be replayed as an API credential and an
+// access token could be replayed at /auth/refresh.
+const (
+	tokenTypeAccess  = "access"
+	tokenTypeRefresh = "refresh"
+)
+
 // TokenClaims represents JWT token claims
 type TokenClaims struct {
 	TenantID string `json:"tenant_id"`
 	UserID   string `json:"user_id"`
 	Email    string `json:"email"`
 	Role     string `json:"role"`
+	// Type distinguishes "access" from "refresh". Validated wherever a token is
+	// consumed so the two cannot be swapped (JWT type confusion).
+	Type string `json:"typ"`
 	jwt.RegisteredClaims
 }
 
@@ -96,8 +108,8 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Login
 
 // RefreshToken refreshes access token using refresh token
 func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*RefreshResult, error) {
-	// Parse refresh token
-	claims, err := s.parseToken(refreshToken)
+	// Parse refresh token — must be a refresh token, never an access token.
+	claims, err := s.parseToken(refreshToken, tokenTypeRefresh)
 	if err != nil {
 		return nil, errors.New(errors.ErrCodeTokenInvalid, "Invalid refresh token")
 	}
@@ -131,9 +143,10 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*R
 	}, nil
 }
 
-// ValidateAccessToken validates an access token and returns claims
+// ValidateAccessToken validates an access token and returns claims. A refresh
+// token presented here is rejected (JWT type confusion).
 func (s *AuthService) ValidateAccessToken(tokenString string) (*TokenClaims, error) {
-	return s.parseToken(tokenString)
+	return s.parseToken(tokenString, tokenTypeAccess)
 }
 
 // ChangePassword changes a user's password
@@ -173,6 +186,7 @@ func (s *AuthService) generateAccessToken(user *entity.User) (string, error) {
 		UserID:   user.ID,
 		Email:    user.Email,
 		Role:     string(user.Role),
+		Type:     tokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -194,6 +208,7 @@ func (s *AuthService) generateRefreshToken(user *entity.User) (string, error) {
 		UserID:   user.ID,
 		Email:    user.Email,
 		Role:     string(user.Role),
+		Type:     tokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -206,8 +221,10 @@ func (s *AuthService) generateRefreshToken(user *entity.User) (string, error) {
 	return token.SignedString([]byte(s.config.Secret))
 }
 
-// parseToken parses and validates a JWT token
-func (s *AuthService) parseToken(tokenString string) (*TokenClaims, error) {
+// parseToken parses and validates a JWT token, asserting HMAC signing (to reject
+// `alg` confusion such as "none" or an RS256 forgery) and that the token's `typ`
+// claim matches expectedType (to reject access/refresh type confusion).
+func (s *AuthService) parseToken(tokenString, expectedType string) (*TokenClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New(errors.ErrCodeTokenInvalid, "Invalid signing method")
@@ -222,6 +239,10 @@ func (s *AuthService) parseToken(tokenString string) (*TokenClaims, error) {
 	claims, ok := token.Claims.(*TokenClaims)
 	if !ok || !token.Valid {
 		return nil, errors.New(errors.ErrCodeTokenInvalid, "Invalid token")
+	}
+
+	if claims.Type != expectedType {
+		return nil, errors.New(errors.ErrCodeTokenInvalid, "Wrong token type")
 	}
 
 	return claims, nil

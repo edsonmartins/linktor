@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -57,7 +58,8 @@ func TestDownloadAndStore_Success(t *testing.T) {
 	defer server.Close()
 
 	store := &mockStorage{}
-	mp := NewMediaProcessor(store)
+	// httptest binds to loopback; allow it past the SSRF guard for this test.
+	mp := NewMediaProcessor(store).WithAllowPrivateHosts(true)
 
 	url, err := mp.DownloadAndStore(context.Background(), server.URL, "test/key/photo.jpg", "image/jpeg")
 
@@ -73,7 +75,7 @@ func TestDownloadAndStore_ServerError(t *testing.T) {
 	defer server.Close()
 
 	store := &mockStorage{}
-	mp := NewMediaProcessor(store)
+	mp := NewMediaProcessor(store).WithAllowPrivateHosts(true)
 
 	url, err := mp.DownloadAndStore(context.Background(), server.URL, "test/key", "")
 
@@ -91,7 +93,7 @@ func TestDownloadAndStore_Timeout(t *testing.T) {
 	defer server.Close()
 
 	store := &mockStorage{}
-	mp := NewMediaProcessor(store).WithDownloadTimeout(100 * time.Millisecond)
+	mp := NewMediaProcessor(store).WithDownloadTimeout(100 * time.Millisecond).WithAllowPrivateHosts(true)
 
 	url, err := mp.DownloadAndStore(context.Background(), server.URL, "test/key", "")
 
@@ -131,7 +133,7 @@ func TestProcessAttachment_Success(t *testing.T) {
 	defer server.Close()
 
 	store := &mockStorage{}
-	mp := NewMediaProcessor(store)
+	mp := NewMediaProcessor(store).WithAllowPrivateHosts(true)
 
 	attachment := &entity.MessageAttachment{
 		ID:        "att-1",
@@ -238,4 +240,67 @@ func TestGenerateKey_WithoutFilename(t *testing.T) {
 func TestGenerateKey_EmptyChannelAndMessage(t *testing.T) {
 	key := GenerateKey("", "", "photo.jpg")
 	assert.Equal(t, "unknown/unknown/photo.jpg", key)
+}
+
+func TestDownloadAndStore_BlocksLoopbackSSRF(t *testing.T) {
+	// A loopback httptest server is reachable, but the SSRF guard must refuse to
+	// dial it when private hosts are not explicitly allowed.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("secret internal data"))
+	}))
+	defer server.Close()
+
+	store := &mockStorage{}
+	mp := NewMediaProcessor(store) // guard enabled (default)
+
+	url, err := mp.DownloadAndStore(context.Background(), server.URL, "test/key", "")
+
+	require.Error(t, err)
+	assert.Empty(t, url)
+	assert.Empty(t, store.uploadedKeys, "must not upload data fetched from a blocked host")
+}
+
+func TestDownloadAndStore_BlocksLinkLocalMetadata(t *testing.T) {
+	// 169.254.169.254 is the cloud metadata endpoint — a classic SSRF target.
+	// The dial must be refused without any network access.
+	store := &mockStorage{}
+	mp := NewMediaProcessor(store).WithDownloadTimeout(2 * time.Second)
+
+	url, err := mp.DownloadAndStore(context.Background(), "http://169.254.169.254/latest/meta-data/", "test/key", "")
+
+	require.Error(t, err)
+	assert.Empty(t, url)
+}
+
+func TestDownloadAndStore_BlocksPrivateIP(t *testing.T) {
+	store := &mockStorage{}
+	mp := NewMediaProcessor(store).WithDownloadTimeout(2 * time.Second)
+
+	url, err := mp.DownloadAndStore(context.Background(), "http://10.0.0.1/internal", "test/key", "")
+
+	require.Error(t, err)
+	assert.Empty(t, url)
+}
+
+func TestDownloadAndStore_RejectsNonHTTPScheme(t *testing.T) {
+	store := &mockStorage{}
+	mp := NewMediaProcessor(store)
+
+	url, err := mp.DownloadAndStore(context.Background(), "file:///etc/passwd", "test/key", "")
+
+	require.Error(t, err)
+	assert.Empty(t, url)
+	assert.Contains(t, err.Error(), "scheme")
+}
+
+func TestIsBlockedIP(t *testing.T) {
+	blocked := []string{"127.0.0.1", "::1", "10.1.2.3", "192.168.1.1", "172.16.0.1", "169.254.169.254", "0.0.0.0"}
+	for _, s := range blocked {
+		assert.True(t, isBlockedIP(net.ParseIP(s)), "%s should be blocked", s)
+	}
+	allowed := []string{"8.8.8.8", "1.1.1.1", "93.184.216.34"}
+	for _, s := range allowed {
+		assert.False(t, isBlockedIP(net.ParseIP(s)), "%s should be allowed", s)
+	}
 }

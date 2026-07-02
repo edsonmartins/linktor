@@ -8,6 +8,20 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 )
 
+// maxCompletionTokens caps how many tokens a single /ai/complete call may
+// request. The endpoint uses the server's global provider API keys, so an
+// unbounded max_tokens is a cost/abuse vector.
+const maxCompletionTokens = 4096
+
+// allowedProviders is the allowlist of AI providers callable via /ai/complete.
+// Anything outside this set is rejected so a caller cannot pivot to an
+// unexpected provider using the server's global credentials.
+var allowedProviders = map[string]bool{
+	string(entity.AIProviderOpenAI):    true,
+	string(entity.AIProviderAnthropic): true,
+	string(entity.AIProviderOllama):    true,
+}
+
 // AIHandler handles AI-related endpoints
 type AIHandler struct {
 	aiFactory          *service.AIProviderFactory
@@ -36,11 +50,11 @@ func NewAIHandler(
 
 // CompletionRequest represents a completion request
 type CompletionRequest struct {
-	Provider    string            `json:"provider" binding:"required"` // openai, anthropic, ollama
-	Model       string            `json:"model" binding:"required"`
-	Messages    []MessageRequest  `json:"messages" binding:"required"`
-	MaxTokens   int               `json:"max_tokens"`
-	Temperature float64           `json:"temperature"`
+	Provider    string           `json:"provider" binding:"required"` // openai, anthropic, ollama
+	Model       string           `json:"model" binding:"required"`
+	Messages    []MessageRequest `json:"messages" binding:"required"`
+	MaxTokens   int              `json:"max_tokens"`
+	Temperature float64          `json:"temperature"`
 }
 
 // MessageRequest represents a message in a completion request
@@ -81,6 +95,23 @@ type EscalateRequest struct {
 	Priority       string `json:"priority"` // low, normal, high, urgent
 }
 
+// modelAllowed reports whether model is one the provider advertises via
+// Models(). If the provider exposes no static model list (e.g. a locally-managed
+// Ollama with dynamic models), the check is skipped so those providers keep
+// working; otherwise the model must be a known one.
+func modelAllowed(provider service.AIProvider, model string) bool {
+	models := provider.Models()
+	if len(models) == 0 {
+		return true
+	}
+	for _, m := range models {
+		if m == model {
+			return true
+		}
+	}
+	return false
+}
+
 // ListProviders returns all available AI providers
 func (h *AIHandler) ListProviders(c *gin.Context) {
 	providers := h.aiFactory.ListProviders()
@@ -95,12 +126,31 @@ func (h *AIHandler) Complete(c *gin.Context) {
 		return
 	}
 
+	// Validate provider against the allowlist before touching the factory. This
+	// endpoint spends the server's global API keys, so callers must not be able
+	// to reach an arbitrary/unexpected provider.
+	if !allowedProviders[req.Provider] {
+		RespondValidationError(c, "Provider not allowed: "+req.Provider, nil)
+		return
+	}
+
 	// Get provider
 	provider, err := h.aiFactory.Get(entity.AIProviderType(req.Provider))
 	if err != nil {
 		RespondValidationError(c, "Provider not available: "+req.Provider, nil)
 		return
 	}
+
+	// Validate the requested model against what the provider actually exposes,
+	// so an arbitrary model string can't be forwarded upstream.
+	if !modelAllowed(provider, req.Model) {
+		RespondValidationError(c, "Model not allowed: "+req.Model, nil)
+		return
+	}
+
+	// TODO: enforce per-tenant rate limiting / quota here (needs tenant context
+	// + a shared limiter store) before this endpoint is exposed to untrusted
+	// tenants.
 
 	// Convert messages
 	messages := make([]service.Message, len(req.Messages))
@@ -111,10 +161,14 @@ func (h *AIHandler) Complete(c *gin.Context) {
 		}
 	}
 
-	// Set defaults
+	// Set defaults and cap max_tokens. An unbounded (or negative) value would let
+	// a caller run up arbitrary cost on the server's global API keys.
 	maxTokens := req.MaxTokens
-	if maxTokens == 0 {
+	if maxTokens <= 0 {
 		maxTokens = 1024
+	}
+	if maxTokens > maxCompletionTokens {
+		maxTokens = maxCompletionTokens
 	}
 	temperature := req.Temperature
 	if temperature == 0 {
