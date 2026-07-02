@@ -510,6 +510,16 @@ func (h *WebhookHandler) FacebookWebhook(c *gin.Context) {
 		}
 	}
 
+	// Button-click postbacks (Get Started, persistent menu, template buttons) are
+	// delivered as their own messaging events, not as messages, so ExtractMessages
+	// does not surface them. Ingest them as inbound events so the flow engine can
+	// react to the click.
+	for _, pb := range facebook.ExtractPostbacks(payload) {
+		if err := h.processFacebookPostback(c.Request.Context(), channel, pb); err != nil {
+			// Log error but continue
+		}
+	}
+
 	// Process delivery statuses
 	deliveryStatuses := facebook.ExtractDeliveryStatuses(payload)
 	for _, status := range deliveryStatuses {
@@ -1615,6 +1625,31 @@ func (h *WebhookHandler) processFacebookMessage(ctx context.Context, channel *en
 		Timestamp:   msg.Timestamp,
 	}
 
+	return h.publishInbound(ctx, inbound)
+}
+
+// processFacebookPostback turns a button-click postback into an inbound message
+// whose content is the postback payload, so bots/flows react to the click. The
+// HTTP-level webhook dedup middleware guards against Meta retries, so no stable
+// external id is needed.
+func (h *WebhookHandler) processFacebookPostback(ctx context.Context, channel *entity.Channel, pb *facebook.Postback) error {
+	inbound := &nats.InboundMessage{
+		ID:          uuid.New().String(),
+		TenantID:    channel.TenantID,
+		ChannelID:   channel.ID,
+		ChannelType: "facebook",
+		ContentType: "text",
+		Content:     pb.Payload,
+		Metadata: map[string]string{
+			"sender_id":        pb.SenderID,
+			"page_id":          pb.PageID,
+			"recipient_id":     pb.RecipientID,
+			"event_type":       "postback",
+			"postback_payload": pb.Payload,
+			"postback_title":   pb.Title,
+		},
+		Timestamp: pb.Timestamp,
+	}
 	return h.publishInbound(ctx, inbound)
 }
 
