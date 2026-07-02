@@ -29,12 +29,17 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal metadata")
 	}
 
+	// ON CONFLICT drops a redelivered inbound message atomically (see the
+	// uq_messages_conversation_external_id partial index). The predicate must
+	// match the index exactly for arbiter inference; outbound rows insert a NULL
+	// external_id and never conflict.
 	query := `
 		INSERT INTO messages (
 			id, conversation_id, sender_type, sender_id, content_type, content,
 			metadata, status, external_id, error_message, sent_at, delivered_at,
 			read_at, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		ON CONFLICT (conversation_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
 	`
 
 	var senderID *string
@@ -42,7 +47,7 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 		senderID = &message.SenderID
 	}
 
-	_, err = r.db.Pool.Exec(ctx, query,
+	tag, err := r.db.Pool.Exec(ctx, query,
 		message.ID,
 		message.ConversationID,
 		string(message.SenderType),
@@ -61,6 +66,13 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to create message")
+	}
+
+	// A zero row count with a provider id means the message was already stored
+	// (duplicate delivery). Surface a conflict so callers skip re-processing; the
+	// inbound consumer treats it as non-retryable and acks without firing the bot.
+	if tag.RowsAffected() == 0 && message.ExternalID != "" {
+		return errors.New(errors.ErrCodeConflict, "duplicate message: external_id already exists for conversation")
 	}
 
 	return nil

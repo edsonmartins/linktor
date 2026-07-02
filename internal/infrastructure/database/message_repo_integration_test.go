@@ -4,11 +4,13 @@ package database
 
 import (
 	"context"
+	stderrors "errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	apperrors "github.com/msgfy/linktor/pkg/errors"
 )
 
 // seedConversation creates the minimal tenant/channel/contact/conversation graph
@@ -184,5 +186,60 @@ func TestFindByTenant_FilteredTotalMatchesFilter(t *testing.T) {
 	}
 	if len(convs) != 2 {
 		t.Fatalf("page should hold 2 open conversations, got %d", len(convs))
+	}
+}
+
+// TestCreate_DedupsByExternalID verifies a redelivered inbound message (same
+// external_id on the same conversation) is dropped atomically with a conflict,
+// while outbound messages (NULL external_id) are never blocked.
+func TestCreate_DedupsByExternalID(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewPostgresDB(testDBConfig(t))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+	if err := db.RunMigrations(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	repo := NewMessageRepository(db)
+	convID := seedConversation(t, ctx, db)
+
+	mk := func(ext string) *entity.Message {
+		return &entity.Message{
+			ID:             uuid.New().String(),
+			ConversationID: convID,
+			SenderType:     entity.SenderTypeContact,
+			ContentType:    entity.ContentTypeText,
+			Content:        "hi",
+			Metadata:       map[string]string{},
+			Status:         entity.MessageStatusDelivered,
+			ExternalID:     ext,
+			CreatedAt:      time.Now(),
+		}
+	}
+
+	// First delivery persists.
+	if err := repo.Create(ctx, mk("wamid.ABC")); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	// Redelivery with the same external_id conflicts (different row id).
+	err = repo.Create(ctx, mk("wamid.ABC"))
+	if err == nil {
+		t.Fatalf("duplicate external_id should conflict")
+	}
+	var appErr *apperrors.AppError
+	if !stderrors.As(err, &appErr) || appErr.Code != apperrors.ErrCodeConflict {
+		t.Fatalf("want conflict, got %v", err)
+	}
+
+	// Outbound messages (empty external_id -> NULL) never conflict.
+	for i := 0; i < 3; i++ {
+		out := mk("")
+		out.SenderType = entity.SenderTypeUser
+		if err := repo.Create(ctx, out); err != nil {
+			t.Fatalf("outbound create %d: %v", i, err)
+		}
 	}
 }
