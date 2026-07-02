@@ -378,6 +378,13 @@ Sem isto o produto não entrega recursos-chave, independentemente do canal.
 > MetaFlowID vazio. WS5I-PAYMENTS-IDOR FEITO — `payments.Client.assertOwns` bloqueia leitura/refund/status de
 > pagamento de outra org (GetByID/GetByReference/UpdateStatus/ProcessRefund); commerce/calling/analytics
 > verificados sem IDOR (order repo já org-scoped; calling/analytics usam estado por-canal em memória + guard).
+> **UPDATE WS4-PUBLISH-ERR:** FEITO — o evento crítico `MessageReceived` deixou de engolir o erro do
+> `PublishEvent`: `receive_message` propaga a falha (consumer faz NAK→redelivery), o caminho de duplicata
+> REPUBLICA o evento idempotentemente (msgID determinístico `evt-message-received-<msgID>` via novo
+> `Event.IdempotencyKey` → dedup no JetStream), tornando a entrega inbound at-least-once em vez de lossy.
+> Residual documentado: janela de crash entre commit e ack é coberta pela redelivery+dedup; um outbox
+> transacional seria o próximo passo se quiser exactly-once. `worker.go:131` (PublishStatusUpdate de recibo)
+> segue best-effort (menor severidade). Testes: falha de publish → erro; redelivery republica.
 > PENDENTES: WS10-GETORCREATE (upsert de contato — não feito),
 > WS10-PERSIST-FIELDS, WS10-TPL-EXTID, WS10-INDEXES (compostos), WS10-TPL-META-ERR, WS10-FLOW-NULLSCAN,
 > WS10-TENANT-USAGE, WS10-MINIO-PRESIGN, WS10-ESC-MODEL, e o tail P3.

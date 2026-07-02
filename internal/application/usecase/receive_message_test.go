@@ -676,3 +676,60 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, "Hello, world!", messageEvent.Payload["content"])
 	})
 }
+
+// TestReceiveMessage_PublishFailureIsNotSwallowed verifies that a failure to
+// publish the critical "message received" event surfaces as an error (so the
+// inbound consumer NAKs and JetStream redelivers) instead of silently dropping
+// the event while the message sits persisted in the DB.
+func TestReceiveMessage_PublishFailureIsNotSwallowed(t *testing.T) {
+	ctx := context.Background()
+	f := newReceiveMessageFixture()
+	channel := makeChannel("ch-1", "tenant-1")
+	f.channelRepo.Channels[channel.ID] = channel
+
+	f.producer.ReturnError = fmt.Errorf("nats unavailable")
+
+	_, err := f.uc.Execute(ctx, makeInbound("ch-1", "tenant-1"))
+	require.Error(t, err, "publish failure must propagate so the consumer NAKs")
+
+	// The message is still persisted, so the redelivery can re-publish it.
+	assert.Len(t, f.messageRepo.Messages, 1)
+}
+
+// TestReceiveMessage_RedeliveryRepublishesEvent verifies the at-least-once path:
+// if the first delivery persists the message but fails to publish, a redelivery
+// (detected as a duplicate) re-publishes the received event and acks, so the
+// event is never lost.
+func TestReceiveMessage_RedeliveryRepublishesEvent(t *testing.T) {
+	ctx := context.Background()
+	f := newReceiveMessageFixture()
+	channel := makeChannel("ch-1", "tenant-1")
+	f.channelRepo.Channels[channel.ID] = channel
+	inbound := makeInbound("ch-1", "tenant-1")
+
+	// First delivery: publish fails after the message is persisted.
+	f.producer.ReturnError = fmt.Errorf("nats unavailable")
+	_, err := f.uc.Execute(ctx, inbound)
+	require.Error(t, err)
+	require.Len(t, f.messageRepo.Messages, 1)
+	require.Len(t, f.producer.Events, 0, "nothing published while NATS was down")
+
+	// Redelivery: NATS is back. The duplicate path must re-publish the event.
+	f.producer.ReturnError = nil
+	_, err = f.uc.Execute(ctx, inbound)
+	require.Error(t, err, "duplicate delivery returns conflict so the consumer acks")
+
+	var storedID string
+	for id := range f.messageRepo.Messages {
+		storedID = id
+	}
+	var found bool
+	for _, e := range f.producer.Events {
+		if e.Type == nats.EventMessageReceived {
+			found = true
+			assert.Equal(t, "evt-message-received-"+storedID, e.IdempotencyKey)
+		}
+	}
+	assert.True(t, found, "received event must be re-published on redelivery")
+	assert.Len(t, f.messageRepo.Messages, 1, "no duplicate message row")
+}

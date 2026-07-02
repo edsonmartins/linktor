@@ -91,7 +91,18 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 		if err == nil && existing != nil {
 			existingConversation, convErr := uc.conversationRepo.FindByID(ctx, existing.ConversationID)
 			if convErr != nil || existingConversation.ChannelID == channel.ID {
-				// Message already processed for this channel.
+				// Message already stored — this is a redelivery. A prior attempt
+				// may have persisted the message but failed to publish the
+				// "received" event (transient NATS outage), so re-publish it
+				// idempotently before acking. JetStream dedups by the message id,
+				// so a genuine duplicate is a server-side no-op. If the re-publish
+				// fails, surface it so the consumer NAKs and retries.
+				if existingConversation != nil {
+					contact := &entity.Contact{ID: existingConversation.ContactID}
+					if perr := uc.publishMessageReceivedEvent(ctx, inbound.TenantID, channel, existing, existingConversation, contact); perr != nil {
+						return nil, perr
+					}
+				}
 				return nil, errors.New(errors.ErrCodeConflict, "message already exists")
 			}
 		}
@@ -147,8 +158,13 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 		uc.conversationRepo.Update(ctx, conversation)
 	}
 
-	// Publish event
-	uc.publishMessageReceivedEvent(ctx, inbound.TenantID, channel, message, conversation, contact)
+	// Publish the "received" event durably. The message is already persisted, so
+	// if the publish fails we return the error: the consumer NAKs and the
+	// redelivery hits the duplicate path above, which re-publishes idempotently.
+	// This makes inbound delivery at-least-once instead of silently lossy.
+	if err := uc.publishMessageReceivedEvent(ctx, inbound.TenantID, channel, message, conversation, contact); err != nil {
+		return nil, err
+	}
 
 	return &ReceiveMessageOutput{
 		Message:      message,
@@ -285,7 +301,7 @@ func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, te
 	return conversation, true, nil
 }
 
-func (uc *ReceiveMessageUseCase) publishMessageReceivedEvent(ctx context.Context, tenantID string, channel *entity.Channel, message *entity.Message, conversation *entity.Conversation, contact *entity.Contact) {
+func (uc *ReceiveMessageUseCase) publishMessageReceivedEvent(ctx context.Context, tenantID string, channel *entity.Channel, message *entity.Message, conversation *entity.Conversation, contact *entity.Contact) error {
 	// Carry everything the outbound-webhook dispatcher needs to build the
 	// `linktor-channel-v1` envelope without extra DB reads: channel identity,
 	// the stable provider sender id/name (from message metadata) and any media.
@@ -310,10 +326,14 @@ func (uc *ReceiveMessageUseCase) publishMessageReceivedEvent(ctx context.Context
 		TenantID:  tenantID,
 		Payload:   payload,
 		Timestamp: time.Now(),
+		// Stable dedup id so a redelivery-driven re-publish collapses to a single
+		// downstream event within the JetStream dedup window.
+		IdempotencyKey: "evt-message-received-" + message.ID,
 	}
-	if uc.producer != nil {
-		uc.producer.PublishEvent(ctx, event)
+	if uc.producer == nil {
+		return nil
 	}
+	return uc.producer.PublishEvent(ctx, event)
 }
 
 // attachmentsPayload flattens message attachments into the plain maps carried

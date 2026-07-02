@@ -97,6 +97,11 @@ type Event struct {
 	TenantID  string                 `json:"tenant_id"`
 	Payload   map[string]interface{} `json:"payload"`
 	Timestamp time.Time              `json:"timestamp"`
+	// IdempotencyKey, when set, is used as the JetStream message dedup id so a
+	// deliberate re-publish (e.g. re-processing a redelivered inbound message)
+	// is collapsed server-side within the stream's dedup window instead of
+	// producing a duplicate downstream event. Not serialized to consumers.
+	IdempotencyKey string `json:"-"`
 }
 
 // WebhookDelivery represents a webhook to be delivered
@@ -192,7 +197,10 @@ func (p *Producer) PublishEvent(ctx context.Context, event *Event) error {
 	}
 
 	subject := SubjectEvent(event.Type)
-	msgID := fmt.Sprintf("%s-%s-%d", event.TenantID, event.Type, event.Timestamp.UnixNano())
+	msgID := event.IdempotencyKey
+	if msgID == "" {
+		msgID = fmt.Sprintf("%s-%s-%d", event.TenantID, event.Type, event.Timestamp.UnixNano())
+	}
 	_, err = p.client.js.Publish(ctx, subject, data,
 		jetstream.WithMsgID(msgID),
 	)
