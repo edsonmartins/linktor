@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
@@ -16,9 +16,17 @@ import { Lock, Mail } from 'lucide-react'
 export default function LoginPage() {
   const t = useTranslations('auth')
   const router = useRouter()
-  const { login, isLoading } = useAuthStore()
+  const { login, isLoading, isAuthenticated } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+
+  // Already-authenticated visitors (e.g. bounced here by middleware before
+  // the auth marker cookie was set) go straight to the dashboard.
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/dashboard')
+    }
+  }, [isAuthenticated, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -73,7 +81,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@demo.com"
+                placeholder="you@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 variant="terminal"
@@ -107,17 +115,19 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          {/* Demo credentials hint */}
-          <div className="mt-6 rounded-md border border-border bg-secondary/50 p-3">
-            <p className="text-xs text-muted-foreground">
-              <span className="font-semibold text-primary">{t('demoCredentials')}</span>
-            </p>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">
-              Email: admin@demo.com
-              <br />
-              Password: admin123
-            </p>
-          </div>
+          {/* Demo credentials hint — only rendered when explicitly enabled */}
+          {process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === 'true' && (
+            <div className="mt-6 rounded-md border border-border bg-secondary/50 p-3">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-semibold text-primary">{t('demoCredentials')}</span>
+              </p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">
+                Email: admin@demo.com
+                <br />
+                Password: admin123
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

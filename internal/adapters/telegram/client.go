@@ -1,17 +1,34 @@
 package telegram
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// defaultMaxDownloadBytes caps how much data DownloadFile will read from a
+// Telegram file to protect against unbounded memory usage. Kept consistent
+// with the Slack/Teams adapters (25 MB).
+const defaultMaxDownloadBytes int64 = 25 * 1024 * 1024
+
 // Client wraps the Telegram Bot API client
 type Client struct {
-	api      *tgbotapi.BotAPI
-	botToken string
+	api         *tgbotapi.BotAPI
+	botToken    string
+	secretToken string
+	httpClient  *http.Client
+	// apiBaseURL is the Bot API base (no trailing slash). Defaults to the
+	// public Telegram endpoint; overridable in tests.
+	apiBaseURL string
+	// maxDownloadBytes caps DownloadFile reads. Zero means the default cap.
+	maxDownloadBytes int64
 }
 
 // NewClient creates a new Telegram client with the provided bot token
@@ -22,9 +39,20 @@ func NewClient(botToken string) (*Client, error) {
 	}
 
 	return &Client{
-		api:      bot,
-		botToken: botToken,
+		api:              bot,
+		botToken:         botToken,
+		httpClient:       &http.Client{Timeout: 30 * time.Second},
+		apiBaseURL:       "https://api.telegram.org",
+		maxDownloadBytes: defaultMaxDownloadBytes,
 	}, nil
+}
+
+// SetSecretToken configures the secret_token registered with Telegram's
+// setWebhook. Telegram echoes it back on every update via the
+// X-Telegram-Bot-Api-Secret-Token header so the inbound handler can validate
+// requests. It MUST be registered here or legitimate updates get rejected.
+func (c *Client) SetSecretToken(token string) {
+	c.secretToken = token
 }
 
 // GetMe returns information about the bot
@@ -32,19 +60,61 @@ func (c *Client) GetMe() (tgbotapi.User, error) {
 	return c.api.GetMe()
 }
 
-// SetWebhook configures the webhook URL for receiving updates
+// SetWebhook configures the webhook URL for receiving updates. When a secret
+// token is configured it is registered as secret_token so Telegram sends the
+// X-Telegram-Bot-Api-Secret-Token header on every update.
+//
+// NOTE: the tgbotapi WebhookConfig (v5.5.1) does not expose a secret_token
+// field, so we call the setWebhook endpoint directly to be able to register it.
 func (c *Client) SetWebhook(webhookURL string) error {
-	wh, err := tgbotapi.NewWebhook(webhookURL)
+	return c.SetWebhookContext(context.Background(), webhookURL)
+}
+
+// SetWebhookContext is SetWebhook with an explicit context.
+func (c *Client) SetWebhookContext(ctx context.Context, webhookURL string) error {
+	req, err := c.buildSetWebhookRequest(ctx, webhookURL)
 	if err != nil {
-		return fmt.Errorf("failed to create webhook config: %w", err)
+		return fmt.Errorf("failed to build setWebhook request: %w", err)
 	}
 
-	_, err = c.api.Request(wh)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to set webhook: %w", err)
 	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	var apiResp struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return fmt.Errorf("failed to set webhook: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if !apiResp.OK {
+		return fmt.Errorf("failed to set webhook: %s", apiResp.Description)
+	}
 
 	return nil
+}
+
+// buildSetWebhookRequest builds the setWebhook POST request, including the
+// secret_token when configured.
+func (c *Client) buildSetWebhookRequest(ctx context.Context, webhookURL string) (*http.Request, error) {
+	form := url.Values{}
+	form.Set("url", webhookURL)
+	if c.secretToken != "" {
+		form.Set("secret_token", c.secretToken)
+	}
+
+	endpoint := fmt.Sprintf("%s/bot%s/setWebhook", c.apiBaseURL, c.botToken)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req, nil
 }
 
 // DeleteWebhook removes the current webhook
@@ -170,6 +240,13 @@ func (c *Client) GetFileURL(filePath string) string {
 
 // DownloadFile downloads a file from Telegram servers
 func (c *Client) DownloadFile(fileID string) ([]byte, string, error) {
+	return c.DownloadFileContext(context.Background(), fileID)
+}
+
+// DownloadFileContext downloads a file from Telegram servers using the given
+// context, a bounded HTTP client (timeout) and a size cap to avoid unbounded
+// memory usage.
+func (c *Client) DownloadFileContext(ctx context.Context, fileID string) ([]byte, string, error) {
 	file, err := c.GetFile(fileID)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get file info: %w", err)
@@ -177,22 +254,46 @@ func (c *Client) DownloadFile(fileID string) ([]byte, string, error) {
 
 	fileURL := c.GetFileURL(file.FilePath)
 
-	resp, err := http.Get(fileURL)
+	data, err := c.downloadURL(ctx, fileURL)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to download file: %w", err)
+		return nil, "", err
+	}
+
+	return data, file.FilePath, nil
+}
+
+// downloadURL performs the bounded HTTP GET used by DownloadFile.
+func (c *Client) downloadURL(ctx context.Context, fileURL string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build download request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download file: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("failed to download file: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to download file: status %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	limit := c.maxDownloadBytes
+	if limit <= 0 {
+		limit = defaultMaxDownloadBytes
+	}
+
+	// Read up to limit+1 so we can detect an over-limit body.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to read file data: %w", err)
+		return nil, fmt.Errorf("failed to read file data: %w", err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("file exceeds maximum download size of %d bytes", limit)
 	}
 
-	return data, file.FilePath, nil
+	return data, nil
 }
 
 // GetUserProfilePhotos retrieves a user's profile photos

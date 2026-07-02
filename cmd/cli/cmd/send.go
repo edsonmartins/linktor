@@ -102,10 +102,8 @@ func runSend(cmd *cobra.Command, args []string) error {
 			msgInput[k] = v
 		}
 
-		// TODO: Implement direct send API or find/create conversation
 		fmt.Printf("Sending to %s...\n", recipient)
 
-		// This is a placeholder - actual implementation would use the API
 		msg, err := sendDirectMessage(c, sendChannel, recipient, input)
 		if err != nil {
 			errorMsg("Failed to send to %s: %v", recipient, err)
@@ -231,6 +229,11 @@ func readRecipientsFile(path string) ([]string, error) {
 	return recipients, scanner.Err()
 }
 
-func sendDirectMessage(c *client.Client, channelID, to string, input map[string]interface{}) (*client.Message, error) {
-	return c.SendDirectMessage(channelID, to, input)
+// sendDirectMessage is not yet wired to a real backend route: the server
+// exposes message sending only within an existing conversation
+// (POST /conversations/:id/messages), not a direct channel+recipient send.
+// Return an explicit error instead of calling a non-existent endpoint so the
+// CLI fails clearly rather than with a confusing 404.
+func sendDirectMessage(_ *client.Client, _, _ string, _ map[string]interface{}) (*client.Message, error) {
+	return nil, fmt.Errorf("direct send is not available yet: the API has no channel+recipient send endpoint. Use the admin UI or POST /api/v1/conversations/{id}/messages")
 }

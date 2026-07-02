@@ -6,21 +6,37 @@ import (
 	"fmt"
 )
 
+// truncateRunes trims s to at most max characters (runes), not bytes. WhatsApp
+// limits are expressed in characters, and slicing a UTF-8 string by byte index
+// (s[:max]) can cut through a multi-byte rune — corrupting pt-BR accents and
+// emoji, which Meta then rejects.
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
+}
+
+// maxListRowsTotal is the total number of rows allowed across ALL sections of
+// an interactive list message (Meta enforces 10 in aggregate, not per-section).
+const maxListRowsTotal = 10
+
 // InteractiveObject represents an interactive message
 type InteractiveObject struct {
-	Type   string              `json:"type"` // button, list, product, product_list
-	Header *InteractiveHeader  `json:"header,omitempty"`
-	Body   *InteractiveBody    `json:"body"`
-	Footer *InteractiveFooter  `json:"footer,omitempty"`
-	Action *InteractiveAction  `json:"action"`
+	Type   string             `json:"type"` // button, list, product, product_list
+	Header *InteractiveHeader `json:"header,omitempty"`
+	Body   *InteractiveBody   `json:"body"`
+	Footer *InteractiveFooter `json:"footer,omitempty"`
+	Action *InteractiveAction `json:"action"`
 }
 
 // InteractiveHeader represents the header of an interactive message
 type InteractiveHeader struct {
-	Type     string       `json:"type"` // text, image, video, document
-	Text     string       `json:"text,omitempty"`
-	Image    *MediaObject `json:"image,omitempty"`
-	Video    *MediaObject `json:"video,omitempty"`
+	Type     string          `json:"type"` // text, image, video, document
+	Text     string          `json:"text,omitempty"`
+	Image    *MediaObject    `json:"image,omitempty"`
+	Video    *MediaObject    `json:"video,omitempty"`
 	Document *DocumentObject `json:"document,omitempty"`
 }
 
@@ -44,15 +60,15 @@ type InteractiveAction struct {
 	Sections []ListSection `json:"sections,omitempty"`
 
 	// For product types
-	CatalogID         string          `json:"catalog_id,omitempty"`
-	ProductRetailerID string          `json:"product_retailer_id,omitempty"`
+	CatalogID         string           `json:"catalog_id,omitempty"`
+	ProductRetailerID string           `json:"product_retailer_id,omitempty"`
 	ProductSections   []ProductSection `json:"product_sections,omitempty"`
 }
 
 // InteractiveButton represents a button in interactive message (max 3)
 type InteractiveButton struct {
-	Type  string          `json:"type"` // reply
-	Reply *ButtonReply    `json:"reply"`
+	Type  string       `json:"type"` // reply
+	Reply *ButtonReply `json:"reply"`
 }
 
 // ButtonReply represents the reply content of a button
@@ -63,20 +79,20 @@ type ButtonReply struct {
 
 // ListSection represents a section in a list message
 type ListSection struct {
-	Title string     `json:"title,omitempty"` // Max 24 chars
-	Rows  []ListRow  `json:"rows"`            // Max 10 rows per section
+	Title string    `json:"title,omitempty"` // Max 24 chars
+	Rows  []ListRow `json:"rows"`            // Max 10 rows per section
 }
 
 // ListRow represents a row in a list section
 type ListRow struct {
-	ID          string `json:"id"`          // Max 200 chars
-	Title       string `json:"title"`       // Max 24 chars
+	ID          string `json:"id"`                    // Max 200 chars
+	Title       string `json:"title"`                 // Max 24 chars
 	Description string `json:"description,omitempty"` // Max 72 chars
 }
 
 // ProductSection represents a section in a product list
 type ProductSection struct {
-	Title    string       `json:"title,omitempty"`
+	Title    string        `json:"title,omitempty"`
 	Products []ProductItem `json:"product_items"`
 }
 
@@ -174,10 +190,8 @@ func (b *InteractiveBuilder) AddButton(id, title string) *InteractiveBuilder {
 		return b // Max 3 buttons allowed
 	}
 
-	// Truncate title if too long
-	if len(title) > 20 {
-		title = title[:20]
-	}
+	// Truncate title if too long (by characters, not bytes)
+	title = truncateRunes(title, 20)
 
 	b.interactive.Action.Buttons = append(b.interactive.Action.Buttons, InteractiveButton{
 		Type: "reply",
@@ -191,14 +205,21 @@ func (b *InteractiveBuilder) AddButton(id, title string) *InteractiveBuilder {
 
 // AddSection adds a section to a list message
 func (b *InteractiveBuilder) AddSection(title string, rows []ListRow) *InteractiveBuilder {
-	// Truncate title if too long
-	if len(title) > 24 {
-		title = title[:24]
-	}
+	// Truncate title if too long (by characters, not bytes)
+	title = truncateRunes(title, 24)
 
-	// Limit to 10 rows per section
-	if len(rows) > 10 {
-		rows = rows[:10]
+	// The 10-row cap is a TOTAL across every section, not per-section. Count
+	// rows already added and only keep what fits in the remaining budget.
+	used := 0
+	for _, s := range b.interactive.Action.Sections {
+		used += len(s.Rows)
+	}
+	remaining := maxListRowsTotal - used
+	if remaining <= 0 {
+		return b
+	}
+	if len(rows) > remaining {
+		rows = rows[:remaining]
 	}
 
 	b.interactive.Action.Sections = append(b.interactive.Action.Sections, ListSection{
@@ -210,16 +231,10 @@ func (b *InteractiveBuilder) AddSection(title string, rows []ListRow) *Interacti
 
 // AddListRow is a convenience method to add a single row to the last section
 func (b *InteractiveBuilder) AddListRow(id, title, description string) *InteractiveBuilder {
-	// Truncate fields if too long
-	if len(title) > 24 {
-		title = title[:24]
-	}
-	if len(description) > 72 {
-		description = description[:72]
-	}
-	if len(id) > 200 {
-		id = id[:200]
-	}
+	// Truncate fields if too long (by characters, not bytes)
+	title = truncateRunes(title, 24)
+	description = truncateRunes(description, 72)
+	id = truncateRunes(id, 200)
 
 	row := ListRow{
 		ID:          id,

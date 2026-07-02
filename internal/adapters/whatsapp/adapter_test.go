@@ -2,12 +2,16 @@ package whatsapp
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/msgfy/linktor/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 )
 
 // AdapterTestSuite tests the WhatsApp adapter
@@ -323,6 +327,111 @@ func (suite *AdapterTestSuite) TestConvertToInboundMessage_StickerAsImage() {
 	assert.Equal(suite.T(), "true", result.Metadata["is_sticker"])
 }
 
+func (suite *AdapterTestSuite) TestConvertToInboundMessage_LocationCoordinates() {
+	msg := suite.fixtures.SampleIncomingMessage("msg-loc", "5511999999999", "São Paulo", false)
+	msg.MessageType = "location"
+	msg.Attachments = []Attachment{
+		{
+			Type:      "location",
+			Latitude:  -23.5505,
+			Longitude: -46.6333,
+			Filename:  "São Paulo",
+			Caption:   "São Paulo, Brazil",
+		},
+	}
+
+	result := convertToInboundMessage(msg)
+
+	assert.NotNil(suite.T(), result)
+	assert.Equal(suite.T(), plugin.ContentTypeLocation, result.ContentType)
+	assert.Equal(suite.T(), "-23.5505", result.Metadata["latitude"])
+	assert.Equal(suite.T(), "-46.6333", result.Metadata["longitude"])
+	assert.Equal(suite.T(), "São Paulo", result.Metadata["name"])
+	assert.Equal(suite.T(), "São Paulo, Brazil", result.Metadata["address"])
+	// Coordinates are also mirrored onto the attachment metadata.
+	assert.Len(suite.T(), result.Attachments, 1)
+	assert.Equal(suite.T(), "-23.5505", result.Attachments[0].Metadata["latitude"])
+	assert.Equal(suite.T(), "-46.6333", result.Attachments[0].Metadata["longitude"])
+}
+
+// fakeMediaDownloader is a test seam for enrichInboundMedia that returns fixed
+// bytes without a live whatsmeow connection.
+type fakeMediaDownloader struct {
+	data   []byte
+	err    error
+	called int
+}
+
+func (f *fakeMediaDownloader) DownloadMedia(_ context.Context, _ any) ([]byte, error) {
+	f.called++
+	return f.data, f.err
+}
+
+// enrichInboundMedia tests
+func (suite *AdapterTestSuite) TestEnrichInboundMedia_DownloadsDecryptedBytes() {
+	// An inbound media message with a downloadable reference.
+	src := &IncomingMessage{
+		MessageType: "image",
+		Attachments: []Attachment{
+			{Type: "image", URL: "https://mmg.whatsapp.net/encrypted-blob", MimeType: "image/jpeg", download: &waE2E.ImageMessage{}},
+		},
+	}
+	inbound := &plugin.InboundMessage{
+		Attachments: []*plugin.Attachment{
+			{Type: "image", URL: "https://mmg.whatsapp.net/encrypted-blob", MimeType: "image/jpeg"},
+		},
+	}
+	dl := &fakeMediaDownloader{data: []byte("decrypted-image-bytes")}
+
+	enrichInboundMedia(context.Background(), src, inbound, dl)
+
+	assert.Equal(suite.T(), 1, dl.called)
+	att := inbound.Attachments[0]
+	// Encrypted URL dropped, decrypted bytes attached as base64.
+	assert.Empty(suite.T(), att.URL)
+	assert.Equal(suite.T(), "base64", att.Metadata["data_encoding"])
+	decoded, err := base64.StdEncoding.DecodeString(att.Metadata["data"])
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), []byte("decrypted-image-bytes"), decoded)
+	assert.Equal(suite.T(), int64(len("decrypted-image-bytes")), att.SizeBytes)
+}
+
+func (suite *AdapterTestSuite) TestEnrichInboundMedia_RecordsDownloadError() {
+	src := &IncomingMessage{
+		Attachments: []Attachment{
+			{Type: "audio", URL: "https://mmg.whatsapp.net/blob", download: &waE2E.AudioMessage{}},
+		},
+	}
+	inbound := &plugin.InboundMessage{
+		Attachments: []*plugin.Attachment{
+			{Type: "audio", URL: "https://mmg.whatsapp.net/blob"},
+		},
+	}
+	dl := &fakeMediaDownloader{err: errors.New("boom")}
+
+	enrichInboundMedia(context.Background(), src, inbound, dl)
+
+	att := inbound.Attachments[0]
+	assert.Equal(suite.T(), "boom", att.Metadata["download_error"])
+	// On failure the reference URL is preserved.
+	assert.Equal(suite.T(), "https://mmg.whatsapp.net/blob", att.URL)
+	assert.Empty(suite.T(), att.Metadata["data"])
+}
+
+func (suite *AdapterTestSuite) TestEnrichInboundMedia_NoDownloaderIsNoOp() {
+	src := &IncomingMessage{
+		Attachments: []Attachment{{Type: "image", download: &waE2E.ImageMessage{}}},
+	}
+	inbound := &plugin.InboundMessage{
+		Attachments: []*plugin.Attachment{{Type: "image", URL: "https://x/y"}},
+	}
+
+	assert.NotPanics(suite.T(), func() {
+		enrichInboundMedia(context.Background(), src, inbound, nil)
+	})
+	assert.Equal(suite.T(), "https://x/y", inbound.Attachments[0].URL)
+}
+
 // convertToStatusCallback tests
 func (suite *AdapterTestSuite) TestConvertToStatusCallback_Delivered() {
 	receipt := suite.fixtures.SampleReceipt([]string{"msg-1"}, ReceiptTypeDelivered)
@@ -391,4 +500,107 @@ func (suite *AdapterTestSuite) TestGetClient_WhenNoClient() {
 	client := adapter.GetClient()
 
 	assert.Nil(suite.T(), client)
+}
+
+// SendMessage media tests — these exercise the previously panicking path where a
+// media attachment could not be resolved (and, before the fix, the shadowed err
+// left resp nil, panicking on resp.MessageID). Now they must return a failed
+// SendResult without panicking.
+func (suite *AdapterTestSuite) TestSendMessage_ImageWithoutAttachment() {
+	adapter := NewAdapter()
+	adapter.Initialize(suite.fixtures.MinimalConfig())
+
+	msg := &plugin.OutboundMessage{
+		RecipientID: "5511999999999",
+		ContentType: plugin.ContentTypeImage,
+		Metadata:    make(map[string]string),
+	}
+
+	result, err := adapter.SendMessage(context.Background(), msg)
+
+	assert.NoError(suite.T(), err)
+	assert.NotNil(suite.T(), result)
+	assert.False(suite.T(), result.Success)
+	assert.Equal(suite.T(), plugin.MessageStatusFailed, result.Status)
+}
+
+func (suite *AdapterTestSuite) TestSendMessage_DocumentWithoutAttachment() {
+	adapter := NewAdapter()
+	adapter.Initialize(suite.fixtures.MinimalConfig())
+
+	msg := &plugin.OutboundMessage{
+		RecipientID: "5511999999999",
+		ContentType: plugin.ContentTypeDocument,
+		Metadata:    make(map[string]string),
+	}
+
+	result, err := adapter.SendMessage(context.Background(), msg)
+
+	assert.NoError(suite.T(), err)
+	assert.NotNil(suite.T(), result)
+	assert.False(suite.T(), result.Success)
+	assert.Equal(suite.T(), plugin.MessageStatusFailed, result.Status)
+}
+
+// getMediaData with an attachment that has neither data nor URL must error, not panic.
+func (suite *AdapterTestSuite) TestGetMediaData_NoDataNoURL() {
+	att := &plugin.Attachment{Type: "image", MimeType: "image/jpeg"}
+
+	data, err := getMediaData(context.Background(), att)
+
+	assert.Error(suite.T(), err)
+	assert.Nil(suite.T(), data)
+}
+
+// Double Disconnect must not panic (previously closed an already-closed stopCh).
+func (suite *AdapterTestSuite) TestDisconnect_TwiceDoesNotPanic() {
+	adapter := NewAdapter()
+	adapter.Initialize(suite.fixtures.MinimalConfig())
+
+	ctx := context.Background()
+
+	assert.NotPanics(suite.T(), func() {
+		_ = adapter.Disconnect(ctx)
+		_ = adapter.Disconnect(ctx)
+	})
+}
+
+// SSRF protection tests for fetchMediaFromURL.
+func (suite *AdapterTestSuite) TestFetchMediaFromURL_BlocksLoopback() {
+	_, err := fetchMediaFromURL(context.Background(), "http://127.0.0.1/secret")
+	assert.Error(suite.T(), err)
+	assert.Contains(suite.T(), err.Error(), "disallowed")
+}
+
+func (suite *AdapterTestSuite) TestFetchMediaFromURL_BlocksLocalhost() {
+	_, err := fetchMediaFromURL(context.Background(), "http://localhost:8080/secret")
+	assert.Error(suite.T(), err)
+}
+
+func (suite *AdapterTestSuite) TestFetchMediaFromURL_BlocksCloudMetadata() {
+	_, err := fetchMediaFromURL(context.Background(), "http://169.254.169.254/latest/meta-data/")
+	assert.Error(suite.T(), err)
+	assert.Contains(suite.T(), err.Error(), "disallowed")
+}
+
+func (suite *AdapterTestSuite) TestFetchMediaFromURL_BlocksPrivateIP() {
+	_, err := fetchMediaFromURL(context.Background(), "http://10.0.0.5/x")
+	assert.Error(suite.T(), err)
+	assert.Contains(suite.T(), err.Error(), "disallowed")
+}
+
+func (suite *AdapterTestSuite) TestFetchMediaFromURL_RejectsNonHTTPScheme() {
+	_, err := fetchMediaFromURL(context.Background(), "file:///etc/passwd")
+	assert.Error(suite.T(), err)
+	assert.Contains(suite.T(), err.Error(), "scheme")
+}
+
+func (suite *AdapterTestSuite) TestIsBlockedIP() {
+	assert.True(suite.T(), isBlockedIP(net.ParseIP("127.0.0.1")))
+	assert.True(suite.T(), isBlockedIP(net.ParseIP("10.0.0.1")))
+	assert.True(suite.T(), isBlockedIP(net.ParseIP("192.168.1.1")))
+	assert.True(suite.T(), isBlockedIP(net.ParseIP("169.254.169.254")))
+	assert.True(suite.T(), isBlockedIP(net.ParseIP("::1")))
+	assert.False(suite.T(), isBlockedIP(net.ParseIP("8.8.8.8")))
+	assert.False(suite.T(), isBlockedIP(net.ParseIP("1.1.1.1")))
 }

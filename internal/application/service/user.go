@@ -92,6 +92,18 @@ func (s *UserService) GetByID(ctx context.Context, id string) (*entity.User, err
 	return user, nil
 }
 
+// GetByTenantAndID returns a user only if it belongs to the tenant.
+func (s *UserService) GetByTenantAndID(ctx context.Context, tenantID, id string) (*entity.User, error) {
+	user, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if user.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeUserNotFound, "User not found")
+	}
+	return user, nil
+}
+
 // List returns users for a tenant
 func (s *UserService) List(ctx context.Context, tenantID string, params *repository.ListParams) ([]*entity.User, int64, error) {
 	if params == nil {
@@ -129,6 +141,15 @@ func (s *UserService) Update(ctx context.Context, id string, input *UpdateUserIn
 	return user, nil
 }
 
+// UpdateForTenant updates a user only if it belongs to the tenant.
+func (s *UserService) UpdateForTenant(ctx context.Context, tenantID, id string, input *UpdateUserInput) (*entity.User, error) {
+	user, err := s.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.Update(ctx, user.ID, input)
+}
+
 // Delete deletes a user
 func (s *UserService) Delete(ctx context.Context, id string) error {
 	_, err := s.userRepo.FindByID(ctx, id)
@@ -141,4 +162,13 @@ func (s *UserService) Delete(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+// DeleteForTenant deletes a user only if it belongs to the tenant.
+func (s *UserService) DeleteForTenant(ctx context.Context, tenantID, id string) error {
+	user, err := s.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return err
+	}
+	return s.Delete(ctx, user.ID)
 }

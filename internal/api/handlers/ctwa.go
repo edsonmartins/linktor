@@ -8,19 +8,25 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/whatsapp/ctwa"
 )
 
 // CTWAHandler handles Click-to-WhatsApp Ads HTTP requests
 type CTWAHandler struct {
-	mu      sync.RWMutex
-	clients map[string]*ctwa.Client // key: channel_id
+	mu          sync.RWMutex
+	clients     map[string]*ctwa.Client // key: channel_id
+	channelRepo repository.ChannelRepository
 }
 
-// NewCTWAHandler creates a new CTWA handler
-func NewCTWAHandler() *CTWAHandler {
+// NewCTWAHandler creates a new CTWA handler.
+//
+// channelRepo enforces tenant isolation: per-channel CTWA operations verify the
+// channel belongs to the caller's tenant before its access_token is used.
+func NewCTWAHandler(channelRepo repository.ChannelRepository) *CTWAHandler {
 	return &CTWAHandler{
-		clients: make(map[string]*ctwa.Client),
+		clients:     make(map[string]*ctwa.Client),
+		channelRepo: channelRepo,
 	}
 }
 
@@ -62,6 +68,10 @@ func (h *CTWAHandler) GetReferral(c *gin.Context) {
 	channelID := c.Param("id")
 	referralID := c.Param("referralId")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or CTWA not configured"})
@@ -92,6 +102,10 @@ func (h *CTWAHandler) GetReferral(c *gin.Context) {
 func (h *CTWAHandler) GetReferralByPhone(c *gin.Context) {
 	channelID := c.Param("id")
 	phone := c.Param("phone")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -124,6 +138,10 @@ func (h *CTWAHandler) GetReferralsByCampaign(c *gin.Context) {
 	channelID := c.Param("id")
 	campaignID := c.Param("campaignId")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or CTWA not configured"})
@@ -150,6 +168,10 @@ func (h *CTWAHandler) GetReferralsByCampaign(c *gin.Context) {
 // @Router       /channels/{channelId}/ctwa/conversions [post]
 func (h *CTWAHandler) TrackConversion(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -198,6 +220,10 @@ func (h *CTWAHandler) GetConversion(c *gin.Context) {
 	channelID := c.Param("id")
 	conversionID := c.Param("conversionId")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or CTWA not configured"})
@@ -229,6 +255,10 @@ func (h *CTWAHandler) GetConversionsByReferral(c *gin.Context) {
 	channelID := c.Param("id")
 	referralID := c.Param("referralId")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or CTWA not configured"})
@@ -254,6 +284,10 @@ func (h *CTWAHandler) GetConversionsByReferral(c *gin.Context) {
 func (h *CTWAHandler) GetFreeWindow(c *gin.Context) {
 	channelID := c.Param("id")
 	phone := c.Param("phone")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -290,6 +324,10 @@ func (h *CTWAHandler) GetFreeWindow(c *gin.Context) {
 // @Router       /channels/{channelId}/ctwa/stats [get]
 func (h *CTWAHandler) GetStats(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -336,6 +374,10 @@ func (h *CTWAHandler) GetStats(c *gin.Context) {
 func (h *CTWAHandler) GetTopAds(c *gin.Context) {
 	channelID := c.Param("id")
 
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
+
 	client, ok := h.getClient(channelID)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Channel not found or CTWA not configured"})
@@ -368,6 +410,10 @@ func (h *CTWAHandler) GetTopAds(c *gin.Context) {
 // @Router       /channels/{channelId}/ctwa/report [get]
 func (h *CTWAHandler) GenerateReport(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {
@@ -410,6 +456,10 @@ func (h *CTWAHandler) GenerateReport(c *gin.Context) {
 // @Router       /channels/{channelId}/ctwa/dashboard [get]
 func (h *CTWAHandler) GetDashboard(c *gin.Context) {
 	channelID := c.Param("id")
+
+	if !channelBelongsToTenant(c, h.channelRepo, channelID) {
+		return
+	}
 
 	client, ok := h.getClient(channelID)
 	if !ok {

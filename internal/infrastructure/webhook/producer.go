@@ -11,8 +11,8 @@ import (
 
 // Default backoff delays for retry attempts
 var defaultBackoffDelays = []time.Duration{
-	0,               // immediate
-	5 * time.Second, // 5s
+	0,                // immediate
+	5 * time.Second,  // 5s
 	30 * time.Second, // 30s
 	2 * time.Minute,  // 2m
 	10 * time.Minute, // 10m
@@ -104,23 +104,21 @@ func (p *WebhookProducer) Deliver(ctx context.Context, endpoint EndpointConfig, 
 	var lastResult *DeliveryResult
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		// Apply backoff delay (skip for first attempt)
-		if attempt > 0 && attempt-1 < len(p.backoffDelays) {
-			delay := p.backoffDelays[attempt]
+		// Apply backoff delay (skip for the first attempt). Clamp the index to the
+		// last configured delay so a maxRetries larger than len(backoffDelays) keeps
+		// using the longest delay instead of panicking on an out-of-range index.
+		if attempt > 0 {
+			idx := attempt
+			if idx >= len(p.backoffDelays) {
+				idx = len(p.backoffDelays) - 1
+			}
+			delay := p.backoffDelays[idx]
 			if delay > 0 {
 				select {
 				case <-ctx.Done():
 					return lastResult, ctx.Err()
 				case <-time.After(delay):
 				}
-			}
-		} else if attempt > 0 && attempt-1 >= len(p.backoffDelays) {
-			// Use the last backoff delay for subsequent attempts
-			delay := p.backoffDelays[len(p.backoffDelays)-1]
-			select {
-			case <-ctx.Done():
-				return lastResult, ctx.Err()
-			case <-time.After(delay):
 			}
 		}
 

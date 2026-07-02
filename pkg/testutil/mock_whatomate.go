@@ -207,9 +207,9 @@ func (m *MockCampaignRepository) RecountStatuses(ctx context.Context, campaignID
 // ============================================================================
 
 type MockRoleRepository struct {
-	Roles       map[string]*entity.Role // by ID
-	ReturnError error                   // returned by all methods
-	FindByNameErr error                 // specific error for FindByName (e.g. transient)
+	Roles         map[string]*entity.Role // by ID
+	ReturnError   error                   // returned by all methods
+	FindByNameErr error                   // specific error for FindByName (e.g. transient)
 }
 
 func NewMockRoleRepository() *MockRoleRepository {

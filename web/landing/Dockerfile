@@ -10,13 +10,17 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM nginx:1.27-alpine AS runner
+# Unprivileged nginx variant: master and workers run as uid 101 (nginx),
+# listens on 8080 (non-root cannot bind <1024).
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS runner
 
+USER root
 RUN rm -rf /usr/share/nginx/html/*
 COPY --from=builder /app/out /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+USER nginx
 
-EXPOSE 80
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD wget -qO- http://localhost/ >/dev/null || exit 1
+  CMD wget -qO- http://localhost:8080/ >/dev/null || exit 1

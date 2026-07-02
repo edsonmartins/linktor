@@ -49,9 +49,9 @@ func NewAdapter() *Adapter {
 			SupportsReactions:       false,
 			SupportsReplies:         false,
 			SupportsForwarding:      false,
-			MaxMessageLength:        1600, // SMS segment limit
+			MaxMessageLength:        1600,            // SMS segment limit
 			MaxMediaSize:            5 * 1024 * 1024, // 5MB for MMS
-			MaxAttachments:          10, // MMS supports up to 10 media items
+			MaxAttachments:          10,              // MMS supports up to 10 media items
 			SupportedMediaTypes: []string{
 				"image/jpeg", "image/png", "image/gif",
 			},
@@ -276,8 +276,10 @@ func (a *Adapter) ValidateWebhook(headers map[string]string, body []byte) bool {
 
 	webhookURL := config.StatusCallbackURL
 	if webhookURL == "" {
-		// Cannot validate without knowing the URL
-		return true
+		// Fail closed: Twilio signs the exact public callback URL, so without it
+		// we cannot verify the signature. Accepting unverified requests here would
+		// let a forged POST through, so reject instead.
+		return false
 	}
 
 	// Parse form-encoded body and build validation string

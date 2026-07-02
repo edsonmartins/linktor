@@ -32,8 +32,8 @@ func (r *FlowRepository) Create(ctx context.Context, flow *entity.Flow) error {
 	query := `
 		INSERT INTO flows (
 			id, tenant_id, bot_id, name, description, trigger, trigger_value,
-			start_node_id, nodes, is_active, priority, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			start_node_id, nodes, is_active, priority, created_at, updated_at, meta_flow_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 
 	_, err = r.db.Pool.Exec(ctx, query,
@@ -50,6 +50,7 @@ func (r *FlowRepository) Create(ctx context.Context, flow *entity.Flow) error {
 		flow.Priority,
 		flow.CreatedAt,
 		flow.UpdatedAt,
+		flow.MetaFlowID,
 	)
 
 	if err != nil {
@@ -63,7 +64,7 @@ func (r *FlowRepository) Create(ctx context.Context, flow *entity.Flow) error {
 func (r *FlowRepository) FindByID(ctx context.Context, id string) (*entity.Flow, error) {
 	query := `
 		SELECT id, tenant_id, bot_id, name, description, trigger, trigger_value,
-		       start_node_id, nodes, is_active, priority, created_at, updated_at
+		       start_node_id, nodes, is_active, priority, created_at, updated_at, meta_flow_id
 		FROM flows
 		WHERE id = $1
 	`
@@ -114,7 +115,7 @@ func (r *FlowRepository) FindByTenant(ctx context.Context, tenantID string, filt
 	// Get flows
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, bot_id, name, description, trigger, trigger_value,
-		       start_node_id, nodes, is_active, priority, created_at, updated_at
+		       start_node_id, nodes, is_active, priority, created_at, updated_at, meta_flow_id
 		FROM flows
 		WHERE %s
 		ORDER BY %s %s
@@ -145,7 +146,7 @@ func (r *FlowRepository) FindByTenant(ctx context.Context, tenantID string, filt
 func (r *FlowRepository) FindByBot(ctx context.Context, botID string) ([]*entity.Flow, error) {
 	query := `
 		SELECT id, tenant_id, bot_id, name, description, trigger, trigger_value,
-		       start_node_id, nodes, is_active, priority, created_at, updated_at
+		       start_node_id, nodes, is_active, priority, created_at, updated_at, meta_flow_id
 		FROM flows
 		WHERE bot_id = $1
 		ORDER BY priority DESC, created_at DESC
@@ -173,7 +174,7 @@ func (r *FlowRepository) FindByBot(ctx context.Context, botID string) ([]*entity
 func (r *FlowRepository) FindActiveByTenant(ctx context.Context, tenantID string) ([]*entity.Flow, error) {
 	query := `
 		SELECT id, tenant_id, bot_id, name, description, trigger, trigger_value,
-		       start_node_id, nodes, is_active, priority, created_at, updated_at
+		       start_node_id, nodes, is_active, priority, created_at, updated_at, meta_flow_id
 		FROM flows
 		WHERE tenant_id = $1 AND is_active = true
 		ORDER BY priority DESC, created_at DESC
@@ -201,7 +202,7 @@ func (r *FlowRepository) FindActiveByTenant(ctx context.Context, tenantID string
 func (r *FlowRepository) FindByTrigger(ctx context.Context, tenantID string, trigger entity.FlowTriggerType, triggerValue string) ([]*entity.Flow, error) {
 	query := `
 		SELECT id, tenant_id, bot_id, name, description, trigger, trigger_value,
-		       start_node_id, nodes, is_active, priority, created_at, updated_at
+		       start_node_id, nodes, is_active, priority, created_at, updated_at, meta_flow_id
 		FROM flows
 		WHERE tenant_id = $1 AND is_active = true AND trigger = $2
 		      AND (trigger_value = $3 OR trigger_value = '' OR trigger_value IS NULL)
@@ -246,8 +247,9 @@ func (r *FlowRepository) Update(ctx context.Context, flow *entity.Flow) error {
 			is_active = $7,
 			priority = $8,
 			bot_id = $9,
-			updated_at = $10
-		WHERE id = $11
+			updated_at = $10,
+			meta_flow_id = $11
+		WHERE id = $12
 	`
 
 	result, err := r.db.Pool.Exec(ctx, query,
@@ -261,6 +263,7 @@ func (r *FlowRepository) Update(ctx context.Context, flow *entity.Flow) error {
 		flow.Priority,
 		flow.BotID,
 		flow.UpdatedAt,
+		flow.MetaFlowID,
 		flow.ID,
 	)
 
@@ -342,10 +345,11 @@ func (r *FlowRepository) scanFlow(row pgx.Row) (*entity.Flow, error) {
 	var botID *string
 	var trigger string
 	var nodes []byte
+	var metaFlowID *string
 
 	err := row.Scan(
 		&f.ID, &f.TenantID, &botID, &f.Name, &f.Description, &trigger, &f.TriggerValue,
-		&f.StartNodeID, &nodes, &f.IsActive, &f.Priority, &f.CreatedAt, &f.UpdatedAt,
+		&f.StartNodeID, &nodes, &f.IsActive, &f.Priority, &f.CreatedAt, &f.UpdatedAt, &metaFlowID,
 	)
 	if err != nil {
 		return nil, err
@@ -353,6 +357,9 @@ func (r *FlowRepository) scanFlow(row pgx.Row) (*entity.Flow, error) {
 
 	f.BotID = botID
 	f.Trigger = entity.FlowTriggerType(trigger)
+	if metaFlowID != nil {
+		f.MetaFlowID = *metaFlowID
+	}
 
 	if err := json.Unmarshal(nodes, &f.Nodes); err != nil {
 		f.Nodes = []entity.FlowNode{}
@@ -366,10 +373,11 @@ func (r *FlowRepository) scanFlowFromRows(rows pgx.Rows) (*entity.Flow, error) {
 	var botID *string
 	var trigger string
 	var nodes []byte
+	var metaFlowID *string
 
 	err := rows.Scan(
 		&f.ID, &f.TenantID, &botID, &f.Name, &f.Description, &trigger, &f.TriggerValue,
-		&f.StartNodeID, &nodes, &f.IsActive, &f.Priority, &f.CreatedAt, &f.UpdatedAt,
+		&f.StartNodeID, &nodes, &f.IsActive, &f.Priority, &f.CreatedAt, &f.UpdatedAt, &metaFlowID,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan flow")
@@ -377,6 +385,9 @@ func (r *FlowRepository) scanFlowFromRows(rows pgx.Rows) (*entity.Flow, error) {
 
 	f.BotID = botID
 	f.Trigger = entity.FlowTriggerType(trigger)
+	if metaFlowID != nil {
+		f.MetaFlowID = *metaFlowID
+	}
 
 	if err := json.Unmarshal(nodes, &f.Nodes); err != nil {
 		f.Nodes = []entity.FlowNode{}
@@ -387,12 +398,12 @@ func (r *FlowRepository) scanFlowFromRows(rows pgx.Rows) (*entity.Flow, error) {
 
 func sanitizeFlowColumn(col string) string {
 	allowed := map[string]bool{
-		"created_at":  true,
-		"updated_at":  true,
-		"name":        true,
-		"trigger":     true,
-		"is_active":   true,
-		"priority":    true,
+		"created_at": true,
+		"updated_at": true,
+		"name":       true,
+		"trigger":    true,
+		"is_active":  true,
+		"priority":   true,
 	}
 	if allowed[col] {
 		return col

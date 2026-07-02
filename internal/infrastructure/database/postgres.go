@@ -12,6 +12,7 @@ import (
 // PostgresDB wraps a PostgreSQL connection pool
 type PostgresDB struct {
 	Pool *pgxpool.Pool
+	dsn  string
 }
 
 // NewPostgresDB creates a new PostgreSQL database connection
@@ -46,7 +47,7 @@ func NewPostgresDB(cfg *config.DatabaseConfig) (*PostgresDB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	return &PostgresDB{Pool: pool}, nil
+	return &PostgresDB{Pool: pool, dsn: dsn}, nil
 }
 
 // Close closes the database connection pool
@@ -61,9 +62,13 @@ func (db *PostgresDB) Ping(ctx context.Context) error {
 	return db.Pool.Ping(ctx)
 }
 
-// RunMigrations runs database migrations
-func (db *PostgresDB) RunMigrations(ctx context.Context) error {
-	migrations := []string{
+// baselineStatements is the ordered, idempotent DDL that defines the schema as
+// of the first versioned migration. Every statement uses IF NOT EXISTS / guarded
+// DO blocks, so applying it to an already-provisioned database is a no-op. New
+// schema changes must be added as numbered .sql files under migrations/ rather
+// than appended here.
+func baselineStatements() []string {
+	return []string{
 		createExtensions,
 		createUpdatedAtFunction,
 		createTenantsTable,
@@ -83,7 +88,6 @@ func (db *PostgresDB) RunMigrations(ctx context.Context) error {
 		createKnowledgeItemsTable,
 		alignConversationAnalyticsSchema,
 		alignKnowledgeItemsSchema,
-		alignChannelCoexistenceStatusSchema,
 		createAIResponsesTable,
 		createIndexes,
 		createNewIndexes,
@@ -92,6 +96,9 @@ func (db *PostgresDB) RunMigrations(ctx context.Context) error {
 		refactorChannelStatus,
 		addMessageCoexistenceColumns,
 		addChannelCoexistenceColumns,
+		// Backfill must run AFTER addChannelCoexistenceColumns creates the
+		// coexistence_status column (a fresh DB lacks it otherwise).
+		alignChannelCoexistenceStatusSchema,
 		createTemplatesTable,
 		createMessageLogsTable,
 		createSystemMetricsTable,
@@ -109,14 +116,13 @@ func (db *PostgresDB) RunMigrations(ctx context.Context) error {
 		addConversationSLAColumns,
 		createCampaignsTables,
 	}
+}
 
-	for _, migration := range migrations {
-		if _, err := db.Pool.Exec(ctx, migration); err != nil {
-			return fmt.Errorf("migration failed: %w", err)
-		}
-	}
-
-	return nil
+// RunMigrations applies all pending versioned migrations via goose. The first
+// version (the baseline) provisions the legacy idempotent schema; subsequent
+// changes live as numbered .sql files under migrations/.
+func (db *PostgresDB) RunMigrations(ctx context.Context) error {
+	return runGooseMigrations(ctx, db.dsn)
 }
 
 const createExtensions = `

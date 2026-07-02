@@ -14,9 +14,14 @@ import (
 
 // MockContactRepository is a mock implementation of repository.ContactRepository
 type MockContactRepository struct {
-	Contacts    map[string]*entity.Contact
-	Identities  map[string][]*entity.ContactIdentity
-	ReturnError error
+	Contacts   map[string]*entity.Contact
+	Identities map[string][]*entity.ContactIdentity
+	// CreateIdentityHook, when set, runs at the start of CreateIdentityIfAbsent
+	// before the uniqueness check. Tests use it to deterministically simulate a
+	// concurrent request winning the identity race.
+	CreateIdentityHook func()
+	OutboxEvents       []*entity.OutboxEvent
+	ReturnError        error
 }
 
 // NewMockContactRepository creates a new MockContactRepository
@@ -134,7 +139,62 @@ func (m *MockContactRepository) AddIdentity(ctx context.Context, identity *entit
 		return m.ReturnError
 	}
 	m.Identities[identity.ContactID] = append(m.Identities[identity.ContactID], identity)
+	if c, ok := m.Contacts[identity.ContactID]; ok {
+		c.Identities = append(c.Identities, identity)
+	}
 	return nil
+}
+
+// CreateIdentityIfAbsent models the tenant-scoped partial UNIQUE index on
+// (tenant_id, channel_type, identifier): if any contact in the same tenant
+// already owns a matching identity, the insert is a no-op and reports
+// inserted=false, mirroring the ON CONFLICT DO NOTHING behavior of Postgres.
+func (m *MockContactRepository) CreateIdentityIfAbsent(ctx context.Context, identity *entity.ContactIdentity) (bool, error) {
+	if m.ReturnError != nil {
+		return false, m.ReturnError
+	}
+	if m.CreateIdentityHook != nil {
+		m.CreateIdentityHook()
+	}
+
+	// Determine the tenant scope. Fall back to the owning contact's tenant when
+	// the identity does not carry one explicitly.
+	tenantID := identity.TenantID
+	if tenantID == "" {
+		if c, ok := m.Contacts[identity.ContactID]; ok {
+			tenantID = c.TenantID
+		}
+	}
+
+	// Enforce (tenant_id, channel_type, identifier) uniqueness across contacts.
+	for _, c := range m.Contacts {
+		if c.TenantID != tenantID {
+			continue
+		}
+		for _, existing := range c.Identities {
+			if existing.ChannelType == identity.ChannelType && existing.Identifier == identity.Identifier {
+				return false, nil
+			}
+		}
+	}
+
+	identity.TenantID = tenantID
+	m.Identities[identity.ContactID] = append(m.Identities[identity.ContactID], identity)
+	if c, ok := m.Contacts[identity.ContactID]; ok {
+		c.Identities = append(c.Identities, identity)
+	}
+	return true, nil
+}
+
+func (m *MockContactRepository) CreateIdentityIfAbsentWithOutboxEvent(ctx context.Context, identity *entity.ContactIdentity, event *entity.OutboxEvent) (bool, error) {
+	inserted, err := m.CreateIdentityIfAbsent(ctx, identity)
+	if err != nil {
+		return false, err
+	}
+	if inserted && event != nil {
+		m.OutboxEvents = append(m.OutboxEvents, event)
+	}
+	return inserted, nil
 }
 
 func (m *MockContactRepository) RemoveIdentity(ctx context.Context, contactID, identityID string) error {
@@ -169,6 +229,7 @@ func (m *MockContactRepository) FindIdentitiesByContact(ctx context.Context, con
 // MockConversationRepository is a mock implementation of repository.ConversationRepository
 type MockConversationRepository struct {
 	Conversations map[string]*entity.Conversation
+	OutboxEvents  []*entity.OutboxEvent
 	ReturnError   error
 }
 
@@ -184,6 +245,16 @@ func (m *MockConversationRepository) Create(ctx context.Context, conversation *e
 		return m.ReturnError
 	}
 	m.Conversations[conversation.ID] = conversation
+	return nil
+}
+
+func (m *MockConversationRepository) CreateWithOutboxEvent(ctx context.Context, conversation *entity.Conversation, event *entity.OutboxEvent) error {
+	if err := m.Create(ctx, conversation); err != nil {
+		return err
+	}
+	if event != nil {
+		m.OutboxEvents = append(m.OutboxEvents, event)
+	}
 	return nil
 }
 
@@ -384,9 +455,10 @@ func (m *MockConversationRepository) CountWaiting(ctx context.Context, tenantID 
 
 // MockMessageRepository is a mock implementation of repository.MessageRepository
 type MockMessageRepository struct {
-	Messages    map[string]*entity.Message
-	Attachments map[string][]*entity.MessageAttachment
-	ReturnError error
+	Messages     map[string]*entity.Message
+	Attachments  map[string][]*entity.MessageAttachment
+	OutboxEvents []*entity.OutboxEvent
+	ReturnError  error
 }
 
 // NewMockMessageRepository creates a new MockMessageRepository
@@ -403,6 +475,27 @@ func (m *MockMessageRepository) Create(ctx context.Context, message *entity.Mess
 	}
 	m.Messages[message.ID] = message
 	return nil
+}
+
+// CreateWithOutboxEvent mirrors the transactional-outbox repo: it dedupes by
+// (conversation_id, external_id) and, on a genuine insert, captures the outbox
+// event. A duplicate returns inserted=false and enqueues nothing.
+func (m *MockMessageRepository) CreateWithOutboxEvent(ctx context.Context, message *entity.Message, event *entity.OutboxEvent) (bool, error) {
+	if m.ReturnError != nil {
+		return false, m.ReturnError
+	}
+	if message.ExternalID != "" {
+		for _, existing := range m.Messages {
+			if existing.ExternalID == message.ExternalID && existing.ConversationID == message.ConversationID {
+				return false, nil // duplicate delivery
+			}
+		}
+	}
+	m.Messages[message.ID] = message
+	if event != nil {
+		m.OutboxEvents = append(m.OutboxEvents, event)
+	}
+	return true, nil
 }
 
 func (m *MockMessageRepository) FindByID(ctx context.Context, id string) (*entity.Message, error) {
@@ -578,6 +671,19 @@ func (m *MockChannelRepository) FindByType(ctx context.Context, tenantID string,
 	var result []*entity.Channel
 	for _, ch := range m.Channels {
 		if ch.TenantID == tenantID && ch.Type == channelType {
+			result = append(result, ch)
+		}
+	}
+	return result, nil
+}
+
+func (m *MockChannelRepository) FindAllByType(ctx context.Context, channelType entity.ChannelType) ([]*entity.Channel, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
+	var result []*entity.Channel
+	for _, ch := range m.Channels {
+		if ch.Type == channelType {
 			result = append(result, ch)
 		}
 	}

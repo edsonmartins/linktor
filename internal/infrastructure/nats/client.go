@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/msgfy/linktor/internal/infrastructure/config"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/msgfy/linktor/internal/infrastructure/config"
 )
 
 // Client wraps a NATS connection with JetStream support
 type Client struct {
-	conn      *nats.Conn
-	js        jetstream.JetStream
-	clientID  string
-	clusterID string
+	conn           *nats.Conn
+	js             jetstream.JetStream
+	clientID       string
+	clusterID      string
+	streamReplicas int
 }
 
 // NewClient creates a new NATS client with JetStream
@@ -42,11 +43,17 @@ func NewClient(cfg *config.NATSConfig) (*Client, error) {
 		return nil, fmt.Errorf("failed to create JetStream context: %w", err)
 	}
 
+	replicas := cfg.StreamReplicas
+	if replicas < 1 {
+		replicas = 1
+	}
+
 	client := &Client{
-		conn:      conn,
-		js:        js,
-		clientID:  cfg.ClientID,
-		clusterID: cfg.ClusterID,
+		conn:           conn,
+		js:             js,
+		clientID:       cfg.ClientID,
+		clusterID:      cfg.ClusterID,
+		streamReplicas: replicas,
 	}
 
 	// Initialize streams
@@ -95,12 +102,12 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Retention:    jetstream.WorkQueuePolicy,
 			MaxConsumers: -1,
 			MaxMsgs:      -1,
-			MaxBytes:     500 * 1024 * 1024, // 500MB
+			MaxBytes:     500 * 1024 * 1024,  // 500MB
 			MaxAge:       7 * 24 * time.Hour, // 7 days
 			MaxMsgSize:   4 * 1024 * 1024,    // 4MB per message
 			Discard:      jetstream.DiscardOld,
 			Storage:      jetstream.FileStorage,
-			Replicas:     1,
+			Replicas:     c.streamReplicas,
 			Duplicates:   5 * time.Minute,
 		},
 		{
@@ -117,7 +124,7 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			MaxMsgSize:   1024 * 1024,       // 1MB per message
 			Discard:      jetstream.DiscardOld,
 			Storage:      jetstream.FileStorage,
-			Replicas:     1,
+			Replicas:     c.streamReplicas,
 		},
 		{
 			Name:        StreamWebhooks,
@@ -128,12 +135,12 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Retention:    jetstream.WorkQueuePolicy,
 			MaxConsumers: -1,
 			MaxMsgs:      -1,
-			MaxBytes:     128 * 1024 * 1024, // 128MB
+			MaxBytes:     128 * 1024 * 1024,  // 128MB
 			MaxAge:       3 * 24 * time.Hour, // 3 days
 			MaxMsgSize:   1024 * 1024,        // 1MB per message
 			Discard:      jetstream.DiscardOld,
 			Storage:      jetstream.FileStorage,
-			Replicas:     1,
+			Replicas:     c.streamReplicas,
 		},
 		{
 			Name:        StreamDLQ,
@@ -144,12 +151,12 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Retention:    jetstream.LimitsPolicy, // retain for inspection/replay
 			MaxConsumers: -1,
 			MaxMsgs:      -1,
-			MaxBytes:     128 * 1024 * 1024,  // 128MB
+			MaxBytes:     128 * 1024 * 1024,   // 128MB
 			MaxAge:       14 * 24 * time.Hour, // 14 days
 			MaxMsgSize:   4 * 1024 * 1024,     // 4MB per message
 			Discard:      jetstream.DiscardOld,
 			Storage:      jetstream.FileStorage,
-			Replicas:     1,
+			Replicas:     c.streamReplicas,
 		},
 	}
 

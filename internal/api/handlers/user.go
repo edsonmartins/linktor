@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -97,7 +98,16 @@ func (h *UserHandler) List(c *gin.Context) {
 	}
 
 	params := repository.NewListParams()
-	// TODO: Parse query params for pagination
+	if s := c.Query("page"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			params.Page = n
+		}
+	}
+	if s := c.Query("page_size"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 250 {
+			params.PageSize = n
+		}
+	}
 
 	users, total, err := h.userService.List(c.Request.Context(), tenantID, params)
 	if err != nil {
@@ -216,6 +226,11 @@ func (h *UserHandler) Update(c *gin.Context) {
 		return
 	}
 
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondValidationError(c, "Invalid request body", nil)
@@ -237,7 +252,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 		input.Status = &status
 	}
 
-	user, err := h.userService.Update(c.Request.Context(), id, input)
+	user, err := h.userService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -267,6 +282,11 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	// Prevent self-deletion
 	currentUserID := middleware.GetUserID(c)
 	if id == currentUserID {
@@ -274,7 +294,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.userService.Delete(c.Request.Context(), id); err != nil {
+	if err := h.userService.DeleteForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}

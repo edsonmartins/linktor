@@ -2,6 +2,7 @@ package webchat
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -165,6 +166,25 @@ func (h *Hub) Stop() {
 	close(h.done)
 }
 
+// Register enqueues a client registration without blocking after the hub has
+// stopped. Once Run has returned, nothing drains h.register, so a bare send
+// would block forever; the h.done guard avoids that.
+func (h *Hub) Register(client *Client) {
+	select {
+	case h.register <- client:
+	case <-h.done:
+	}
+}
+
+// Unregister enqueues a client removal without blocking after the hub has
+// stopped (Run no longer drains h.unregister once h.done is closed).
+func (h *Hub) Unregister(client *Client) {
+	select {
+	case h.unregister <- client:
+	case <-h.done:
+	}
+}
+
 // GetClient returns a client by session ID
 func (h *Hub) GetClient(sessionID string) *Client {
 	h.mu.RLock()
@@ -192,11 +212,8 @@ func (h *Hub) BroadcastToConversation(conversationID string, msg *WebSocketMessa
 	h.mu.RUnlock()
 
 	for _, client := range clients {
-		select {
-		case client.send <- msg:
-		default:
-			// Client buffer full
-		}
+		// SendMessage is panic-safe against stopped hubs / closed channels.
+		_ = client.SendMessage(msg)
 	}
 }
 
@@ -264,20 +281,46 @@ func (c *Client) SetDisconnectHandler(handler func()) {
 	c.onDisconnect = handler
 }
 
-// SendMessage sends a message to the client
-func (c *Client) SendMessage(msg *WebSocketMessage) error {
+// SendMessage sends a message to the client.
+//
+// It returns an error (rather than silently dropping) when the message could
+// not be enqueued: the hub has been stopped, the client has been unregistered,
+// or the client's send buffer is full. Callers can then surface a proper
+// Failed status instead of falsely reporting delivery.
+func (c *Client) SendMessage(msg *WebSocketMessage) (err error) {
+	// If the hub has been stopped, its Run loop has already closed every
+	// client's send channel. Sending on a closed channel panics, so bail out
+	// early. The Run loop guarantees h.done is closed strictly before the
+	// send channels are closed, so this check is race-safe for the shutdown
+	// path.
+	select {
+	case <-c.hub.done:
+		return fmt.Errorf("webchat: hub stopped, client disconnected")
+	default:
+	}
+
+	// Guard against a concurrent unregister closing c.send between the check
+	// above and the send below (normal, non-shutdown disconnect path).
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("webchat: client disconnected")
+		}
+	}()
+
 	select {
 	case c.send <- msg:
 		return nil
 	default:
-		return nil // Buffer full, message dropped
+		return fmt.Errorf("webchat: client send buffer full")
 	}
 }
 
 // ReadPump pumps messages from the WebSocket connection to the hub
 func (c *Client) ReadPump() {
 	defer func() {
-		c.hub.unregister <- c
+		// Use the non-blocking helper: after the hub stops, nothing drains
+		// h.unregister and a bare send would leak this goroutine forever.
+		c.hub.Unregister(c)
 		c.conn.Close()
 		if c.onDisconnect != nil {
 			c.onDisconnect()

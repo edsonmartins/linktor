@@ -61,6 +61,9 @@ const identityChannelOptions = [
   'rcs',
   'email',
   'voice',
+  'teams',
+  'slack',
+  'mattermost',
 ] as const
 
 /**

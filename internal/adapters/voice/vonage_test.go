@@ -295,9 +295,9 @@ func TestVonageProvider_GenerateIVRResponse_DialNumber(t *testing.T) {
 	p := NewVonageProvider()
 	resp, err := p.GenerateIVRResponse([]IVRAction{
 		IVRDial{
-			Number:   "+5511999999999",
-			Timeout:  30,
-			CallerID: "+5511888888888",
+			Number:    "+5511999999999",
+			Timeout:   30,
+			CallerID:  "+5511888888888",
 			ActionURL: "https://example.com/dial",
 		},
 	})

@@ -38,10 +38,10 @@ WARNING: These tests will send real messages to the specified phone number.
 // E2ETestSuite tests WhatsApp adapter with real connection
 type E2ETestSuite struct {
 	suite.Suite
-	adapter      *Adapter
-	testPhone    string
-	dbPath       string
-	skipInteractive bool
+	adapter          *Adapter
+	testPhone        string
+	dbPath           string
+	skipInteractive  bool
 	receivedMessages []*plugin.InboundMessage
 	receivedStatuses []*plugin.StatusCallback
 }

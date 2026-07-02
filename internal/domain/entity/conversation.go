@@ -24,6 +24,28 @@ const (
 	ConversationPriorityUrgent ConversationPriority = "urgent"
 )
 
+// IsValid reports whether the status is one of the recognized values.
+func (s ConversationStatus) IsValid() bool {
+	switch s {
+	case ConversationStatusOpen, ConversationStatusPending,
+		ConversationStatusResolved, ConversationStatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsValid reports whether the priority is one of the recognized values.
+func (p ConversationPriority) IsValid() bool {
+	switch p {
+	case ConversationPriorityLow, ConversationPriorityNormal,
+		ConversationPriorityHigh, ConversationPriorityUrgent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Conversation represents a conversation thread
 type Conversation struct {
 	ID             string               `json:"id"`

@@ -119,6 +119,8 @@ func (s *ConversationService) Create(ctx context.Context, input *CreateConversat
 	priority := entity.ConversationPriority(input.Priority)
 	if priority == "" {
 		priority = entity.ConversationPriorityNormal
+	} else if !priority.IsValid() {
+		return nil, errors.Validation("invalid conversation priority: " + input.Priority)
 	}
 
 	now := time.Now()
@@ -175,10 +177,18 @@ func (s *ConversationService) Update(ctx context.Context, id string, input *Upda
 		conversation.Subject = *input.Subject
 	}
 	if input.Priority != nil {
-		conversation.Priority = entity.ConversationPriority(*input.Priority)
+		priority := entity.ConversationPriority(*input.Priority)
+		if !priority.IsValid() {
+			return nil, errors.Validation("invalid conversation priority: " + *input.Priority)
+		}
+		conversation.Priority = priority
 	}
 	if input.Status != nil {
-		conversation.Status = entity.ConversationStatus(*input.Status)
+		status := entity.ConversationStatus(*input.Status)
+		if !status.IsValid() {
+			return nil, errors.Validation("invalid conversation status: " + *input.Status)
+		}
+		conversation.Status = status
 	}
 	if input.Tags != nil {
 		conversation.Tags = input.Tags
@@ -204,6 +214,10 @@ func (s *ConversationService) UpdateForTenant(ctx context.Context, tenantID, id 
 
 // Assign assigns a conversation to a user
 func (s *ConversationService) Assign(ctx context.Context, id, userID string) (*entity.Conversation, error) {
+	if userID == "" {
+		return nil, errors.Validation("user_id is required")
+	}
+
 	conversation, err := s.conversationRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, errors.New(errors.ErrCodeConversationNotFound, "conversation not found")

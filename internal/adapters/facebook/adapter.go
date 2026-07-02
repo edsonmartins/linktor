@@ -132,6 +132,18 @@ func (a *Adapter) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+// attachmentRequiredResult returns a failed SendResult for media sends that are
+// missing the required attachment. This prevents a nil-pointer dereference when
+// building the success result from a nil API response.
+func attachmentRequiredResult() *plugin.SendResult {
+	return &plugin.SendResult{
+		Success:   false,
+		Status:    plugin.MessageStatusFailed,
+		Error:     "attachment required",
+		Timestamp: time.Now(),
+	}
+}
+
 // SendMessage sends a message via Facebook Messenger
 func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) (*plugin.SendResult, error) {
 	a.mu.RLock()
@@ -155,24 +167,28 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 		resp, err = client.SendTextMessage(ctx, msg.RecipientID, msg.Content)
 
 	case plugin.ContentTypeImage:
-		if len(msg.Attachments) > 0 {
-			resp, err = client.SendImage(ctx, msg.RecipientID, msg.Attachments[0].URL)
+		if len(msg.Attachments) == 0 {
+			return attachmentRequiredResult(), nil
 		}
+		resp, err = client.SendImage(ctx, msg.RecipientID, msg.Attachments[0].URL)
 
 	case plugin.ContentTypeVideo:
-		if len(msg.Attachments) > 0 {
-			resp, err = client.SendVideo(ctx, msg.RecipientID, msg.Attachments[0].URL)
+		if len(msg.Attachments) == 0 {
+			return attachmentRequiredResult(), nil
 		}
+		resp, err = client.SendVideo(ctx, msg.RecipientID, msg.Attachments[0].URL)
 
 	case plugin.ContentTypeAudio:
-		if len(msg.Attachments) > 0 {
-			resp, err = client.SendAudio(ctx, msg.RecipientID, msg.Attachments[0].URL)
+		if len(msg.Attachments) == 0 {
+			return attachmentRequiredResult(), nil
 		}
+		resp, err = client.SendAudio(ctx, msg.RecipientID, msg.Attachments[0].URL)
 
 	case plugin.ContentTypeDocument:
-		if len(msg.Attachments) > 0 {
-			resp, err = client.SendFile(ctx, msg.RecipientID, msg.Attachments[0].URL)
+		if len(msg.Attachments) == 0 {
+			return attachmentRequiredResult(), nil
 		}
+		resp, err = client.SendFile(ctx, msg.RecipientID, msg.Attachments[0].URL)
 
 	default:
 		return &plugin.SendResult{
@@ -250,8 +266,10 @@ func (a *Adapter) GetWebhookPath() string {
 
 // ValidateWebhook validates an incoming webhook request
 func (a *Adapter) ValidateWebhook(headers map[string]string, body []byte) bool {
+	// Fail closed: an unconfigured channel (no app secret) must not accept
+	// unsigned webhooks.
 	if a.config.AppSecret == "" {
-		return true
+		return false
 	}
 	signature := headers["X-Hub-Signature-256"]
 	return meta.ValidateWebhookSignature(a.config.AppSecret, body, signature)
@@ -308,6 +326,27 @@ func (a *Adapter) ProcessWebhook(payload *WebhookPayload) []*plugin.InboundMessa
 			}
 		}
 
+		messages = append(messages, msg)
+	}
+
+	// Button-click postbacks (Get Started, persistent menu, template buttons)
+	// are delivered as their own messaging events, not as messages. Surface them
+	// as inbound events so the flow engine can react to the click.
+	for _, pb := range ExtractPostbacks(payload) {
+		msg := &plugin.InboundMessage{
+			ID:          uuid.New().String(),
+			SenderID:    pb.SenderID,
+			ContentType: plugin.ContentTypeText,
+			Content:     pb.Payload,
+			Timestamp:   pb.Timestamp,
+			Metadata: map[string]string{
+				"page_id":          pb.PageID,
+				"recipient_id":     pb.RecipientID,
+				"event_type":       "postback",
+				"postback_payload": pb.Payload,
+				"postback_title":   pb.Title,
+			},
+		}
 		messages = append(messages, msg)
 	}
 

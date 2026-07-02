@@ -84,13 +84,13 @@ type ChatMessage struct {
 
 // Options represents model options
 type Options struct {
-	Temperature   float64 `json:"temperature,omitempty"`
-	TopP          float64 `json:"top_p,omitempty"`
-	TopK          int     `json:"top_k,omitempty"`
-	NumPredict    int     `json:"num_predict,omitempty"` // max tokens
+	Temperature   float64  `json:"temperature,omitempty"`
+	TopP          float64  `json:"top_p,omitempty"`
+	TopK          int      `json:"top_k,omitempty"`
+	NumPredict    int      `json:"num_predict,omitempty"` // max tokens
 	Stop          []string `json:"stop,omitempty"`
-	Seed          int     `json:"seed,omitempty"`
-	RepeatPenalty float64 `json:"repeat_penalty,omitempty"`
+	Seed          int      `json:"seed,omitempty"`
+	RepeatPenalty float64  `json:"repeat_penalty,omitempty"`
 }
 
 // ChatResponse represents an Ollama chat response

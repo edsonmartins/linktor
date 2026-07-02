@@ -64,3 +64,33 @@ func TestConversation_Unassign(t *testing.T) {
 	conv.Unassign()
 	assert.Nil(t, conv.AssignedUserID)
 }
+
+func TestConversationStatus_IsValid(t *testing.T) {
+	valid := []ConversationStatus{
+		ConversationStatusOpen, ConversationStatusPending,
+		ConversationStatusResolved, ConversationStatusClosed,
+	}
+	for _, s := range valid {
+		assert.True(t, s.IsValid(), "expected %q to be valid", s)
+	}
+
+	invalid := []ConversationStatus{"banana", "", "OPEN", "done"}
+	for _, s := range invalid {
+		assert.False(t, s.IsValid(), "expected %q to be invalid", s)
+	}
+}
+
+func TestConversationPriority_IsValid(t *testing.T) {
+	valid := []ConversationPriority{
+		ConversationPriorityLow, ConversationPriorityNormal,
+		ConversationPriorityHigh, ConversationPriorityUrgent,
+	}
+	for _, p := range valid {
+		assert.True(t, p.IsValid(), "expected %q to be valid", p)
+	}
+
+	invalid := []ConversationPriority{"banana", "", "URGENT", "critical"}
+	for _, p := range invalid {
+		assert.False(t, p.IsValid(), "expected %q to be invalid", p)
+	}
+}

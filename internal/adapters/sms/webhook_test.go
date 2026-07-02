@@ -54,17 +54,30 @@ func TestParseWebhook(t *testing.T) {
 		require.NoError(t, err) // url.ParseQuery handles empty string
 		assert.Empty(t, payload.MessageSID)
 	})
+
+	// Regression: a real Twilio inbound SMS carries SmsStatus=received. It must be
+	// classified as an incoming message, not a delivery status callback — otherwise
+	// the message is dropped and never becomes a conversation.
+	t.Run("incoming message with SmsStatus=received", func(t *testing.T) {
+		body := []byte("MessageSid=SM999&AccountSid=AC456&From=%2B15551234567&To=%2B15559876543&Body=hi&SmsStatus=received&NumMedia=0")
+
+		payload, wtype, err := ParseWebhook(body)
+		require.NoError(t, err)
+		assert.Equal(t, WebhookTypeIncoming, wtype)
+		assert.Equal(t, "received", payload.SmsStatus)
+		assert.Equal(t, "hi", payload.Body)
+	})
 }
 
 func TestValidateSignature(t *testing.T) {
 	authToken := "12345"
 	webhookURL := "https://mycompany.com/myapp.php?foo=1&bar=2"
 	params := map[string]string{
-		"CallSid":    "CA1234567890ABCDE",
-		"Caller":     "+14158675310",
-		"Digits":     "1234",
-		"From":       "+14158675310",
-		"To":         "+18005551212",
+		"CallSid": "CA1234567890ABCDE",
+		"Caller":  "+14158675310",
+		"Digits":  "1234",
+		"From":    "+14158675310",
+		"To":      "+18005551212",
 	}
 
 	// Compute expected signature

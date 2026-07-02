@@ -40,15 +40,17 @@ func (SenderFactory) New(creds map[string]string) (outbound.Sender, error) {
 
 	client := NewClient(cfg)
 	return &cloudSender{
-		client:   client,
-		template: NewTemplateSender(client),
+		client:      client,
+		template:    NewTemplateSender(client),
+		interactive: NewInteractiveSender(client),
 	}, nil
 }
 
 // cloudSender implements outbound.Sender for WhatsApp Cloud API.
 type cloudSender struct {
-	client   *Client
-	template *TemplateSender
+	client      *Client
+	template    *TemplateSender
+	interactive *InteractiveSender
 }
 
 // Send translates a typed outbound.Message into the appropriate Cloud API call.
@@ -99,9 +101,46 @@ func (s *cloudSender) dispatch(ctx context.Context, msg *outbound.Message) (*Sen
 	case outbound.Media:
 		return s.sendMedia(ctx, msg.To, c)
 
+	case outbound.Interactive:
+		return s.sendInteractive(ctx, msg.To, c)
+
 	default:
 		return nil, outbound.Permanentf("unsupported content kind %q", msg.Content.Kind())
 	}
+}
+
+// sendInteractive renders quick-reply buttons as a WhatsApp interactive message:
+// reply buttons for up to 3 options, otherwise a single-section list (Meta caps
+// reply buttons at 3). Titles/IDs are truncated to Meta's limits.
+func (s *cloudSender) sendInteractive(ctx context.Context, to string, in outbound.Interactive) (*SendMessageResponse, error) {
+	if len(in.Buttons) == 0 {
+		if in.Body == "" {
+			return nil, outbound.Permanentf("interactive message requires body or buttons")
+		}
+		return s.client.SendTextMessage(ctx, to, in.Body, false)
+	}
+	if len(in.Buttons) <= 3 {
+		buttons := make([]ButtonReply, 0, len(in.Buttons))
+		for _, b := range in.Buttons {
+			buttons = append(buttons, ButtonReply{ID: truncate(b.ID, 256), Title: truncate(b.Title, 20)})
+		}
+		return s.interactive.SendButtonMessage(ctx, to, in.Body, buttons)
+	}
+	rows := make([]ListRow, 0, len(in.Buttons))
+	for _, b := range in.Buttons {
+		rows = append(rows, ListRow{ID: truncate(b.ID, 200), Title: truncate(b.Title, 24)})
+	}
+	return s.interactive.SendListMessage(ctx, to, in.Body, "Options", []ListSection{{Rows: rows}})
+}
+
+// truncate shortens s to at most n runes (Meta enforces character, not byte,
+// limits), preserving valid UTF-8.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
 }
 
 func (s *cloudSender) sendTemplate(ctx context.Context, to string, t outbound.Template) (*SendMessageResponse, error) {

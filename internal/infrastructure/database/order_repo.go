@@ -31,7 +31,19 @@ func (r *OrderRepository) Create(ctx context.Context, order *entity.Order) error
 	}
 	order.UpdatedAt = time.Now()
 
-	query := `
+	// The order row and its items must persist atomically. Previously the order
+	// INSERT and the per-item INSERT loop ran on separate (auto-commit) calls,
+	// so a failure partway through the items left a persisted order whose stored
+	// total no longer matched its (missing) items. Wrap both in one transaction
+	// so a mid-loop failure rolls the whole order back. Mirrors the tx pattern in
+	// CampaignRepository.AddRecipients (Begin + deferred Rollback + Commit).
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin order tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	orderQuery := `
 		INSERT INTO orders (
 			id, organization_id, channel_id, conversation_id, catalog_id,
 			customer_phone, customer_name, status, subtotal, tax, shipping,
@@ -43,26 +55,39 @@ func (r *OrderRepository) Create(ctx context.Context, order *entity.Order) error
 			$13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
 		)
 	`
-	_, err := r.db.Pool.Exec(ctx, query,
+	if _, err := tx.Exec(ctx, orderQuery,
 		order.ID, order.OrganizationID, order.ChannelID, order.ConversationID,
 		order.CatalogID, order.CustomerPhone, order.CustomerName, string(order.Status),
 		order.Subtotal, order.Tax, order.Shipping, order.Discount, order.Total,
 		order.Currency, order.Notes, order.MessageID, order.TrackingNumber,
 		order.TrackingURL, order.CreatedAt, order.UpdatedAt,
 		order.ConfirmedAt, order.ShippedAt, order.DeliveredAt, order.CancelledAt,
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("failed to create order: %w", err)
 	}
 
+	itemQuery := `
+		INSERT INTO order_items (
+			id, order_id, product_id, product_name, product_sku,
+			quantity, unit_price, total_price, currency, image_url
+		) VALUES ($1, $2, $3, $4, NULLIF($5,''), $6, $7, $8, $9, NULLIF($10,''))
+	`
 	for i := range order.Items {
 		if order.Items[i].ID == "" {
 			order.Items[i].ID = uuid.New().String()
 		}
 		order.Items[i].OrderID = order.ID
-		if err := r.AddOrderItem(ctx, &order.Items[i]); err != nil {
-			return err
+		it := &order.Items[i]
+		if _, err := tx.Exec(ctx, itemQuery,
+			it.ID, it.OrderID, it.ProductID, it.ProductName, it.ProductSKU,
+			it.Quantity, it.UnitPrice, it.TotalPrice, it.Currency, it.ImageURL,
+		); err != nil {
+			return fmt.Errorf("failed to add order item: %w", err)
 		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit order: %w", err)
 	}
 	return nil
 }
@@ -240,6 +265,9 @@ func (r *OrderRepository) List(ctx context.Context, orgID string, filters reposi
 		}
 		result = append(result, o)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate orders: %w", err)
+	}
 	return result, total, nil
 }
 
@@ -280,6 +308,9 @@ func (r *OrderRepository) GetOrderItems(ctx context.Context, orderID string) ([]
 			it.ImageURL = *img
 		}
 		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate order items: %w", err)
 	}
 	return items, nil
 }
@@ -363,6 +394,9 @@ func (r *OrderRepository) GetStatusHistory(ctx context.Context, orderID string) 
 		}
 		history = append(history, h)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate status history: %w", err)
+	}
 	return history, nil
 }
 
@@ -441,6 +475,9 @@ func (r *OrderRepository) GetStats(ctx context.Context, orgID string, filters re
 				stats.ByStatus[entity.OrderStatus(s)] = c
 			}
 		}
+		if err := statusRows.Err(); err != nil {
+			return nil, fmt.Errorf("failed to iterate order status stats: %w", err)
+		}
 	}
 
 	channelRows, err := r.db.Pool.Query(ctx,
@@ -453,6 +490,9 @@ func (r *OrderRepository) GetStats(ctx context.Context, orgID string, filters re
 			if err := channelRows.Scan(&ch, &c); err == nil {
 				stats.ByChannel[ch] = c
 			}
+		}
+		if err := channelRows.Err(); err != nil {
+			return nil, fmt.Errorf("failed to iterate order channel stats: %w", err)
 		}
 	}
 

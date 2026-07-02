@@ -11,11 +11,11 @@ import (
 
 // BrowserPool manages a pool of Chrome browser contexts for reuse
 type BrowserPool struct {
-	allocCtx   context.Context
-	browsers   chan *browserInstance
-	maxSize    int
-	mu         sync.Mutex
-	closed     bool
+	allocCtx    context.Context
+	browsers    chan *browserInstance
+	maxSize     int
+	mu          sync.Mutex
+	closed      bool
 	activeCount int
 }
 
@@ -32,10 +32,10 @@ func NewBrowserPool(allocCtx context.Context, size int) (*BrowserPool, error) {
 	}
 
 	pool := &BrowserPool{
-		allocCtx:   allocCtx,
-		browsers:   make(chan *browserInstance, size),
-		maxSize:    size,
-		closed:     false,
+		allocCtx: allocCtx,
+		browsers: make(chan *browserInstance, size),
+		maxSize:  size,
+		closed:   false,
 	}
 
 	// Warm up the pool with initial instances
@@ -180,9 +180,9 @@ func (p *BrowserPool) Close() {
 
 // Stats returns pool statistics
 type PoolStats struct {
-	Available   int `json:"available"`
-	Active      int `json:"active"`
-	MaxSize     int `json:"max_size"`
+	Available int `json:"available"`
+	Active    int `json:"active"`
+	MaxSize   int `json:"max_size"`
 }
 
 // Stats returns current pool statistics
@@ -190,8 +190,8 @@ func (p *BrowserPool) Stats() PoolStats {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return PoolStats{
-		Available:   len(p.browsers),
-		Active:      p.activeCount,
-		MaxSize:     p.maxSize,
+		Available: len(p.browsers),
+		Active:    p.activeCount,
+		MaxSize:   p.maxSize,
 	}
 }

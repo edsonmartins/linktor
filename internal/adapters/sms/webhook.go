@@ -50,9 +50,18 @@ func ParseWebhook(body []byte) (*WebhookPayload, WebhookType, error) {
 		APIVersion:          values.Get("ApiVersion"),
 	}
 
-	// Determine webhook type
+	// Determine webhook type. Twilio delivers an INBOUND message with
+	// SmsStatus=received (older API) or no status field, whereas a delivery
+	// STATUS callback carries a lifecycle status (queued/sending/sent/delivered/
+	// undelivered/failed/read) in MessageStatus/SmsStatus. Classifying purely on
+	// "status present" mislabels real inbound SMS (SmsStatus=received) as a status
+	// callback, so it never becomes a conversation.
+	status := payload.MessageStatus
+	if status == "" {
+		status = payload.SmsStatus
+	}
 	webhookType := WebhookTypeIncoming
-	if payload.MessageStatus != "" || payload.SmsStatus != "" {
+	if status != "" && !strings.EqualFold(status, "received") {
 		webhookType = WebhookTypeStatus
 	}
 

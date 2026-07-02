@@ -752,4 +752,130 @@ test.describe('Channels Page', () => {
     await dialog.getByRole('button', { name: /^Disconnect$/i }).click()
     await expect(dialog.getByRole('button', { name: /Connect with QR Code/i })).toBeVisible()
   })
+
+  test('creates a Microsoft Teams channel with required credentials', async ({ page }) => {
+    let createPayload: Record<string, unknown> | null = null
+
+    await page.route('**/api/v1/channels', async (route) => {
+      if (route.request().method() === 'POST') {
+        createPayload = route.request().postDataJSON() as Record<string, unknown>
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: {
+              id: 'teams-1',
+              type: 'teams',
+              name: 'My Teams',
+              enabled: true,
+              connection_status: 'connected',
+            },
+          }),
+        })
+        return
+      }
+      await route.fallback()
+    })
+
+    await page.goto('/channels')
+
+    const dialog = await openAddChannelDialog(page, 'Microsoft Teams')
+    await dialog.locator('input[name="name"]').fill('My Teams')
+    await dialog.locator('input[name="app_id"]').fill('teams-app-id')
+    await dialog.locator('input[name="app_password"]').fill('teams-app-pass')
+    await dialog.getByRole('button', { name: /Create Channel/i }).click()
+
+    await expect.poll(() => createPayload).not.toBeNull()
+    expect(createPayload).toMatchObject({ type: 'teams' })
+    const teamsCreds = (createPayload!.credentials) as Record<string, unknown>
+    expect(teamsCreds.app_id).toBe('teams-app-id')
+    expect(teamsCreds.app_password).toBe('teams-app-pass')
+  })
+
+  test('creates a Slack channel with required credentials', async ({ page }) => {
+    let createPayload: Record<string, unknown> | null = null
+
+    await page.route('**/api/v1/channels', async (route) => {
+      if (route.request().method() === 'POST') {
+        createPayload = route.request().postDataJSON() as Record<string, unknown>
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: {
+              id: 'slack-1',
+              type: 'slack',
+              name: 'My Slack',
+              enabled: true,
+              connection_status: 'connected',
+            },
+          }),
+        })
+        return
+      }
+      await route.fallback()
+    })
+
+    await page.goto('/channels')
+
+    const dialog = await openAddChannelDialog(page, 'Slack')
+    await dialog.locator('input[name="name"]').fill('My Slack')
+    await dialog.locator('input[name="bot_token"]').fill('xoxb-test-token')
+    await dialog.locator('input[name="signing_secret"]').fill('signing-secret-value')
+    await dialog.locator('input[name="webhook_url"]').fill('https://desklenz.example.com/webhooks/linktor')
+    await dialog.locator('input[name="webhook_secret"]').fill('outbound-hmac-key')
+    await dialog.getByRole('button', { name: /Create Channel/i }).click()
+
+    await expect.poll(() => createPayload).not.toBeNull()
+    expect(createPayload).toMatchObject({
+      type: 'slack',
+      webhook_url: 'https://desklenz.example.com/webhooks/linktor',
+    })
+    const slackCreds = (createPayload!.credentials) as Record<string, unknown>
+    expect(slackCreds.bot_token).toBe('xoxb-test-token')
+    expect(slackCreds.signing_secret).toBe('signing-secret-value')
+    expect(slackCreds.webhook_secret).toBe('outbound-hmac-key')
+  })
+
+  test('creates a Mattermost channel with required credentials', async ({ page }) => {
+    let createPayload: Record<string, unknown> | null = null
+
+    await page.route('**/api/v1/channels', async (route) => {
+      if (route.request().method() === 'POST') {
+        createPayload = route.request().postDataJSON() as Record<string, unknown>
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: {
+              id: 'mattermost-1',
+              type: 'mattermost',
+              name: 'My Mattermost',
+              enabled: true,
+              connection_status: 'connected',
+            },
+          }),
+        })
+        return
+      }
+      await route.fallback()
+    })
+
+    await page.goto('/channels')
+
+    const dialog = await openAddChannelDialog(page, 'Mattermost')
+    await dialog.locator('input[name="name"]').fill('My Mattermost')
+    await dialog.locator('input[name="base_url"]').fill('https://mattermost.example.com')
+    await dialog.locator('input[name="bot_token"]').fill('mm-bot-token')
+    await dialog.getByRole('button', { name: /Create Channel/i }).click()
+
+    await expect.poll(() => createPayload).not.toBeNull()
+    expect(createPayload).toMatchObject({ type: 'mattermost' })
+    const mmCreds = (createPayload!.credentials) as Record<string, unknown>
+    expect(mmCreds.base_url).toBe('https://mattermost.example.com')
+    expect(mmCreds.bot_token).toBe('mm-bot-token')
+  })
 })

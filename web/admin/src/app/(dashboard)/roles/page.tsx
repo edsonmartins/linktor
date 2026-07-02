@@ -65,7 +65,7 @@ export default function RolesPage() {
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: queryKeys.roles.lists() })
   const onErr = (e: Error) =>
-    toast({ title: 'Error', description: e.message, variant: 'destructive' })
+    toast({ title: 'Error', description: e.message, variant: 'error' })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/roles/${id}`),
@@ -230,7 +230,7 @@ function RoleDialog({
         ? api.put<Role>(`/roles/${role.id}`, body)
         : api.post<Role>('/roles', body),
     onSuccess: onSaved,
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'error' }),
   })
 
   return (

@@ -2,6 +2,9 @@ package database
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,6 +12,27 @@ import (
 	"github.com/msgfy/linktor/pkg/logger"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// seedResetDestructiveEnabled reports whether the operator has explicitly opted
+// into wiping existing data before seeding. It defaults to false so an empty
+// `users` table never triggers a destructive DELETE of a populated database.
+func seedResetDestructiveEnabled() bool {
+	return os.Getenv("SEED_RESET_DESTRUCTIVE") == "true"
+}
+
+// generateSeedPassword returns the admin/agent seed password. It prefers the
+// SEED_ADMIN_PASSWORD env var; otherwise it generates a random one. The password
+// is never a fixed compiled-in constant.
+func generateSeedPassword() (string, error) {
+	if envPass := os.Getenv("SEED_ADMIN_PASSWORD"); envPass != "" {
+		return envPass, nil
+	}
+	buf := make([]byte, 18)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
 
 // Seed populates the database with initial data if empty
 func (db *PostgresDB) Seed(ctx context.Context) error {
@@ -24,14 +48,22 @@ func (db *PostgresDB) Seed(ctx context.Context) error {
 		return nil
 	}
 
-	// Clean up any partial seed (tenant without users)
-	db.Pool.Exec(ctx, "DELETE FROM messages")
-	db.Pool.Exec(ctx, "DELETE FROM conversations")
-	db.Pool.Exec(ctx, "DELETE FROM contact_identities")
-	db.Pool.Exec(ctx, "DELETE FROM contacts")
-	db.Pool.Exec(ctx, "DELETE FROM channels")
-	db.Pool.Exec(ctx, "DELETE FROM users")
-	db.Pool.Exec(ctx, "DELETE FROM tenants")
+	// NOTE: We intentionally do NOT wipe messages/conversations/contacts/channels/
+	// tenants here. An empty `users` table does not imply an empty database — a
+	// partially provisioned staging/prod instance could still hold real data, and
+	// an unconditional DELETE would destroy it. Only the explicit, off-by-default
+	// SEED_RESET_DESTRUCTIVE=true flag re-enables the destructive cleanup for the
+	// local "reset my demo DB" workflow.
+	if seedResetDestructiveEnabled() {
+		logger.Warn("SEED_RESET_DESTRUCTIVE=true: wiping messages/conversations/contacts/channels/tenants before seeding")
+		db.Pool.Exec(ctx, "DELETE FROM messages")
+		db.Pool.Exec(ctx, "DELETE FROM conversations")
+		db.Pool.Exec(ctx, "DELETE FROM contact_identities")
+		db.Pool.Exec(ctx, "DELETE FROM contacts")
+		db.Pool.Exec(ctx, "DELETE FROM channels")
+		db.Pool.Exec(ctx, "DELETE FROM users")
+		db.Pool.Exec(ctx, "DELETE FROM tenants")
+	}
 
 	logger.Info("Seeding database with initial data...")
 
@@ -46,8 +78,12 @@ func (db *PostgresDB) Seed(ctx context.Context) error {
 	}
 	logger.Info("Created tenant: Demo Company")
 
-	// Create admin user
-	password := "admin123"
+	// Create admin user. The password is read from SEED_ADMIN_PASSWORD or randomly
+	// generated (never a hardcoded constant) and printed once below.
+	password, err := generateSeedPassword()
+	if err != nil {
+		return err
+	}
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -194,6 +230,8 @@ func (db *PostgresDB) Seed(ctx context.Context) error {
 	logger.Info("Demo login users created")
 	logger.Info("  Admin: admin@demo.com")
 	logger.Info("  Agent: agent@demo.com")
+	logger.Info("  Password (shown once): " + password)
+	logger.Info("  (set SEED_ADMIN_PASSWORD to control this value)")
 	logger.Info("=========================================")
 
 	return nil

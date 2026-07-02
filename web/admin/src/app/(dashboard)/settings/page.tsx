@@ -82,6 +82,12 @@ function ProfileSettings({ t }: { t: ReturnType<typeof useTranslations<'settings
     updateProfileMutation.mutate({ name })
   }
 
+  const handleChangeAvatar = () => {
+    const url = window.prompt(t('avatarUrlPrompt'), user?.avatar_url || '')
+    if (url === null) return
+    updateProfileMutation.mutate({ avatar_url: url.trim() })
+  }
+
   const handleLocaleChange = (newLocale: Locale) => {
     document.cookie = `locale=${newLocale};path=/;max-age=31536000`
     router.refresh()
@@ -99,7 +105,14 @@ function ProfileSettings({ t }: { t: ReturnType<typeof useTranslations<'settings
       <div className="flex items-center gap-4">
         <Avatar src={user?.avatar_url} fallback={user?.name || 'U'} size="xl" />
         <div>
-          <Button variant="outline" size="sm">{t('changeAvatar')}</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleChangeAvatar}
+            disabled={updateProfileMutation.isPending}
+          >
+            {t('changeAvatar')}
+          </Button>
           <p className="mt-1 text-xs text-muted-foreground">{t('avatarHint')}</p>
         </div>
       </div>

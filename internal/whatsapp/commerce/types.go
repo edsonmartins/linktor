@@ -120,39 +120,39 @@ type CartUpdate struct {
 
 // SingleProductMessage represents a single product message
 type SingleProductMessage struct {
-	To          string `json:"to"`
-	CatalogID   string `json:"catalog_id"`
-	ProductID   string `json:"product_retailer_id"`
-	BodyText    string `json:"body_text,omitempty"`
-	FooterText  string `json:"footer_text,omitempty"`
+	To         string `json:"to"`
+	CatalogID  string `json:"catalog_id"`
+	ProductID  string `json:"product_retailer_id"`
+	BodyText   string `json:"body_text,omitempty"`
+	FooterText string `json:"footer_text,omitempty"`
 }
 
 // MultiProductMessage represents a multi-product message (up to 30 products)
 type MultiProductMessage struct {
-	To          string           `json:"to"`
-	CatalogID   string           `json:"catalog_id"`
-	HeaderText  string           `json:"header_text"`
-	BodyText    string           `json:"body_text"`
-	FooterText  string           `json:"footer_text,omitempty"`
-	Sections    []ProductSection `json:"sections"`
+	To         string           `json:"to"`
+	CatalogID  string           `json:"catalog_id"`
+	HeaderText string           `json:"header_text"`
+	BodyText   string           `json:"body_text"`
+	FooterText string           `json:"footer_text,omitempty"`
+	Sections   []ProductSection `json:"sections"`
 }
 
 // CatalogMessage represents a catalog message
 type CatalogMessage struct {
-	To          string `json:"to"`
-	BodyText    string `json:"body_text"`
-	FooterText  string `json:"footer_text,omitempty"`
+	To                 string `json:"to"`
+	BodyText           string `json:"body_text"`
+	FooterText         string `json:"footer_text,omitempty"`
 	ThumbnailProductID string `json:"thumbnail_product_retailer_id,omitempty"`
 }
 
 // OrderDetailsMessage represents an order details/status message
 type OrderDetailsMessage struct {
-	To              string `json:"to"`
-	ReferenceID     string `json:"reference_id"` // Order ID
-	Status          string `json:"status"`
-	PaymentStatus   string `json:"payment_status,omitempty"`
-	OrderType       string `json:"order_type,omitempty"` // food_order, physical_goods, digital_goods
-	Description     string `json:"description,omitempty"`
+	To            string `json:"to"`
+	ReferenceID   string `json:"reference_id"` // Order ID
+	Status        string `json:"status"`
+	PaymentStatus string `json:"payment_status,omitempty"`
+	OrderType     string `json:"order_type,omitempty"` // food_order, physical_goods, digital_goods
+	Description   string `json:"description,omitempty"`
 }
 
 // =============================================================================
@@ -161,9 +161,9 @@ type OrderDetailsMessage struct {
 
 // OrderWebhookPayload represents an order received via webhook
 type OrderWebhookPayload struct {
-	CatalogID string      `json:"catalog_id"`
-	Text      string      `json:"text,omitempty"`
-	Order     OrderData   `json:"order"`
+	CatalogID string    `json:"catalog_id"`
+	Text      string    `json:"text,omitempty"`
+	Order     OrderData `json:"order"`
 }
 
 // OrderData represents order data from webhook

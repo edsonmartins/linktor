@@ -73,6 +73,10 @@ type NATSConfig struct {
 	URL       string `mapstructure:"url"`
 	ClusterID string `mapstructure:"cluster_id"`
 	ClientID  string `mapstructure:"client_id"`
+	// StreamReplicas is the JetStream replica count for all streams. Keep 1
+	// for a single-node server; set 3 (or 5) only on a NATS cluster of at
+	// least that many nodes.
+	StreamReplicas int `mapstructure:"stream_replicas"`
 }
 
 // JWTConfig holds JWT authentication configuration
@@ -81,6 +85,14 @@ type JWTConfig struct {
 	AccessTokenTTL  int    `mapstructure:"access_token_ttl"`  // in minutes
 	RefreshTokenTTL int    `mapstructure:"refresh_token_ttl"` // in hours
 	Issuer          string `mapstructure:"issuer"`
+
+	// Auth cookie settings. Tokens are delivered to browsers as HttpOnly
+	// cookies (the JSON body still carries them for API/CLI clients). In
+	// production the admin app and the API are subdomains of the same site,
+	// so SameSite=Lax + Secure work without a shared cookie domain.
+	CookieSecure   bool   `mapstructure:"cookie_secure"`    // require HTTPS (disable for local http)
+	CookieDomain   string `mapstructure:"cookie_domain"`    // optional, e.g. ".example.com"
+	CookieSameSite string `mapstructure:"cookie_same_site"` // lax | strict | none
 }
 
 // LogConfig holds logging configuration
@@ -169,8 +181,11 @@ func setDefaults() {
 	viper.SetDefault("database.password", "linktor")
 	viper.SetDefault("database.database", "linktor")
 	viper.SetDefault("database.ssl_mode", "disable")
-	viper.SetDefault("database.max_open_conns", 25)
-	viper.SetDefault("database.max_idle_conns", 5)
+	// Sized for the concurrent background workload (NATS consumers, SLA/
+	// coexistence/campaign monitors, HTTP handlers). Override via
+	// LINKTOR_DATABASE_MAX_OPEN_CONNS / _MAX_IDLE_CONNS when scaling.
+	viper.SetDefault("database.max_open_conns", 50)
+	viper.SetDefault("database.max_idle_conns", 10)
 	viper.SetDefault("database.max_lifetime", 5)
 
 	// Redis defaults
@@ -183,12 +198,16 @@ func setDefaults() {
 	viper.SetDefault("nats.url", "nats://localhost:4222")
 	viper.SetDefault("nats.cluster_id", "linktor-cluster")
 	viper.SetDefault("nats.client_id", "linktor-server")
+	viper.SetDefault("nats.stream_replicas", 1) // raise to 3 only on a NATS cluster
 
 	// JWT defaults
 	viper.SetDefault("jwt.secret", "change-me-in-production")
 	viper.SetDefault("jwt.access_token_ttl", 15)
 	viper.SetDefault("jwt.refresh_token_ttl", 168) // 7 days
 	viper.SetDefault("jwt.issuer", "linktor")
+	viper.SetDefault("jwt.cookie_secure", true) // override to false for local http dev
+	viper.SetDefault("jwt.cookie_domain", "")
+	viper.SetDefault("jwt.cookie_same_site", "lax")
 
 	// Log defaults
 	viper.SetDefault("log.level", "info")

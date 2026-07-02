@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,17 @@ type OAuthHandler struct {
 	channelRepo repository.ChannelRepository
 	baseURL     string // Base URL for callbacks (e.g., https://api.linktor.com)
 	stateSecret []byte
+
+	// pending holds app credentials between login and callback, keyed by the
+	// signed state, so the browser never has to retain the app secret.
+	pendingMu sync.Mutex
+	pending   map[string]pendingOAuth
+}
+
+type pendingOAuth struct {
+	appID     string
+	appSecret string
+	expiresAt time.Time
 }
 
 // NewOAuthHandler creates a new OAuth handler
@@ -39,7 +51,39 @@ func NewOAuthHandler(channelRepo repository.ChannelRepository, baseURL string) *
 		channelRepo: channelRepo,
 		baseURL:     strings.TrimSuffix(baseURL, "/"),
 		stateSecret: secret,
+		pending:     make(map[string]pendingOAuth),
 	}
+}
+
+// storePendingOAuth remembers the app credentials for a state token until the
+// callback consumes them. Expired entries are pruned on each insert.
+func (h *OAuthHandler) storePendingOAuth(state, appID, appSecret string) {
+	h.pendingMu.Lock()
+	defer h.pendingMu.Unlock()
+	now := time.Now()
+	for key, entry := range h.pending {
+		if now.After(entry.expiresAt) {
+			delete(h.pending, key)
+		}
+	}
+	h.pending[state] = pendingOAuth{
+		appID:     appID,
+		appSecret: appSecret,
+		expiresAt: now.Add(10 * time.Minute),
+	}
+}
+
+// takePendingOAuth consumes the app credentials stored for a state token.
+func (h *OAuthHandler) takePendingOAuth(state string) (appID, appSecret string, ok bool) {
+	h.pendingMu.Lock()
+	defer h.pendingMu.Unlock()
+	entry, found := h.pending[state]
+	if !found || time.Now().After(entry.expiresAt) {
+		delete(h.pending, state)
+		return "", "", false
+	}
+	delete(h.pending, state)
+	return entry.appID, entry.appSecret, true
 }
 
 // OAuthState stores OAuth state information
@@ -116,12 +160,14 @@ type FacebookLoginRequest struct {
 	Scopes      []string `json:"scopes"`
 }
 
-// FacebookCallbackRequest represents the OAuth callback data
+// FacebookCallbackRequest represents the OAuth callback data. App credentials
+// are optional: when omitted, the ones stored at login time (keyed by state)
+// are used, so the browser does not need to retain the app secret.
 type FacebookCallbackRequest struct {
 	Code      string `json:"code" binding:"required"`
 	State     string `json:"state" binding:"required"`
-	AppID     string `json:"app_id" binding:"required"`
-	AppSecret string `json:"app_secret" binding:"required"`
+	AppID     string `json:"app_id"`
+	AppSecret string `json:"app_secret"`
 }
 
 // FacebookPagesResponse represents the response containing user's pages
@@ -186,6 +232,9 @@ func (h *OAuthHandler) FacebookLogin(c *gin.Context) {
 		}
 	}
 
+	// Keep the app credentials server-side for the callback.
+	h.storePendingOAuth(stateStr, req.AppID, req.AppSecret)
+
 	// Generate login URL
 	helper := facebook.NewOAuthHelper(req.AppID, req.AppSecret)
 	redirectURI := h.baseURL + "/api/v1/oauth/facebook/callback"
@@ -220,6 +269,16 @@ func (h *OAuthHandler) FacebookCallback(c *gin.Context) {
 	}
 	if state.ChannelType != "facebook" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state"})
+		return
+	}
+
+	// Prefer the credentials stored at login time over client-supplied ones.
+	if appID, appSecret, ok := h.takePendingOAuth(req.State); ok {
+		req.AppID = appID
+		req.AppSecret = appSecret
+	}
+	if req.AppID == "" || req.AppSecret == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "oauth session expired, restart the flow"})
 		return
 	}
 
@@ -353,6 +412,9 @@ func (h *OAuthHandler) InstagramLogin(c *gin.Context) {
 		}
 	}
 
+	// Keep the app credentials server-side for the callback.
+	h.storePendingOAuth(stateStr, req.AppID, req.AppSecret)
+
 	// Generate login URL (Instagram uses Facebook Login)
 	helper := instagram.NewOAuthHelper(req.AppID, req.AppSecret)
 	redirectURI := h.baseURL + "/api/v1/oauth/instagram/callback"
@@ -364,12 +426,14 @@ func (h *OAuthHandler) InstagramLogin(c *gin.Context) {
 	})
 }
 
-// InstagramCallbackRequest represents the OAuth callback data for Instagram
+// InstagramCallbackRequest represents the OAuth callback data for Instagram.
+// App credentials are optional: when omitted, the ones stored at login time
+// (keyed by state) are used.
 type InstagramCallbackRequest struct {
 	Code      string `json:"code" binding:"required"`
 	State     string `json:"state" binding:"required"`
-	AppID     string `json:"app_id" binding:"required"`
-	AppSecret string `json:"app_secret" binding:"required"`
+	AppID     string `json:"app_id"`
+	AppSecret string `json:"app_secret"`
 }
 
 // InstagramCallback handles the OAuth callback from Instagram
@@ -395,6 +459,16 @@ func (h *OAuthHandler) InstagramCallback(c *gin.Context) {
 	}
 	if state.ChannelType != "instagram" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state"})
+		return
+	}
+
+	// Prefer the credentials stored at login time over client-supplied ones.
+	if appID, appSecret, ok := h.takePendingOAuth(req.State); ok {
+		req.AppID = appID
+		req.AppSecret = appSecret
+	}
+	if req.AppID == "" || req.AppSecret == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "oauth session expired, restart the flow"})
 		return
 	}
 
@@ -533,11 +607,13 @@ func (h *OAuthHandler) CreateChannel(c *gin.Context) {
 	})
 }
 
-// RefreshTokenRequest represents a request to refresh an access token
+// RefreshTokenRequest represents a request to refresh an access token. App
+// credentials are optional: when omitted, the ones stored on the channel are
+// used.
 type RefreshTokenRequest struct {
 	ChannelID string `json:"channel_id" binding:"required"`
-	AppID     string `json:"app_id" binding:"required"`
-	AppSecret string `json:"app_secret" binding:"required"`
+	AppID     string `json:"app_id"`
+	AppSecret string `json:"app_secret"`
 }
 
 // RefreshToken refreshes the access token for a channel
@@ -559,6 +635,18 @@ func (h *OAuthHandler) RefreshToken(c *gin.Context) {
 	currentToken := channel.Credentials["access_token"]
 	if currentToken == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no access token found"})
+		return
+	}
+
+	// Fall back to the app credentials stored on the channel.
+	if req.AppID == "" {
+		req.AppID = channel.Credentials["app_id"]
+	}
+	if req.AppSecret == "" {
+		req.AppSecret = channel.Credentials["app_secret"]
+	}
+	if req.AppID == "" || req.AppSecret == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "app credentials not found for channel"})
 		return
 	}
 

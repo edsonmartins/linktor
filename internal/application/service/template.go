@@ -94,14 +94,21 @@ func (s *TemplateService) Create(ctx context.Context, input *CreateTemplateInput
 		UpdatedAt:             time.Now(),
 	}
 
-	// Try to create template on Meta if credentials are available.
+	// Create the template on Meta when credentials are available. If Meta
+	// rejects it (invalid format, duplicate name, policy violation) we must NOT
+	// persist a local phantom template: it would have no ExternalID, appear
+	// "created" to the user, and fail at send time. Fail closed instead. Local-
+	// only templates remain allowed when no credentials are configured (drafts).
 	creds := s.getChannelCredentials(ctx, input.ChannelID)
 	if creds != nil {
 		if err := s.writeLimiter.Allow(creds.wabaID); err != nil {
 			return nil, err
 		}
 		externalID, err := s.createTemplateOnMeta(ctx, creds, template)
-		if err == nil && externalID != "" {
+		if err != nil {
+			return nil, fmt.Errorf("Meta rejected the template: %w", err)
+		}
+		if externalID != "" {
 			template.ExternalID = externalID
 		}
 	}
@@ -116,6 +123,22 @@ func (s *TemplateService) Create(ctx context.Context, input *CreateTemplateInput
 // GetByID returns a template by ID
 func (s *TemplateService) GetByID(ctx context.Context, id string) (*entity.Template, error) {
 	return s.templateRepo.FindByID(ctx, id)
+}
+
+// GetByTenantAndID returns a template only if it belongs to the tenant.
+// On mismatch it returns the same not-found error a missing row would
+// produce, so one tenant can't distinguish "does not exist" from "belongs
+// to another tenant" and can't read another tenant's template via UUID
+// guessing. Mirrors the Edit/Refresh tenant checks in this file.
+func (s *TemplateService) GetByTenantAndID(ctx context.Context, tenantID, id string) (*entity.Template, error) {
+	template, err := s.templateRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if tenantID != "" && template.TenantID != tenantID {
+		return nil, fmt.Errorf("template not found: %s", id)
+	}
+	return template, nil
 }
 
 // EditTemplateInput carries the fields Meta will accept on a template edit.
@@ -281,6 +304,17 @@ func (s *TemplateService) DeleteBulk(ctx context.Context, tenantID string, ids [
 		}
 	}
 	return nil
+}
+
+// DeleteForTenant deletes a template only if it belongs to the tenant.
+// Guards against one tenant deleting another's template via UUID guessing;
+// returns the not-found error on mismatch. Mirrors the Edit/Refresh tenant
+// checks in this file.
+func (s *TemplateService) DeleteForTenant(ctx context.Context, tenantID, id string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return err
+	}
+	return s.Delete(ctx, id)
 }
 
 func (s *TemplateService) Delete(ctx context.Context, id string) error {
@@ -681,13 +715,13 @@ func (s *TemplateService) ListTemplateLibrary(ctx context.Context, channelID str
 // Meta's library. library_template_name is required; body/button inputs
 // customise the optional placeholders the library exposes.
 type CreateFromLibraryInput struct {
-	TenantID                  string
-	ChannelID                 string
-	Name                      string
-	Language                  string
-	Category                  entity.TemplateCategory
-	LibraryTemplateName       string
-	LibraryTemplateBodyInputs map[string]interface{}
+	TenantID                    string
+	ChannelID                   string
+	Name                        string
+	Language                    string
+	Category                    entity.TemplateCategory
+	LibraryTemplateName         string
+	LibraryTemplateBodyInputs   map[string]interface{}
 	LibraryTemplateButtonInputs []map[string]interface{}
 }
 

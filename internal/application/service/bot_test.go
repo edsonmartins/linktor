@@ -7,6 +7,7 @@ import (
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	apperrors "github.com/msgfy/linktor/pkg/errors"
 	"github.com/msgfy/linktor/pkg/testutil"
 )
 
@@ -266,9 +267,9 @@ type mockAIProvider struct {
 	available bool
 }
 
-func (m *mockAIProvider) Name() entity.AIProviderType                                              { return m.name }
-func (m *mockAIProvider) Models() []string                                                         { return []string{"test-model"} }
-func (m *mockAIProvider) DefaultModel() string                                                     { return "test-model" }
+func (m *mockAIProvider) Name() entity.AIProviderType { return m.name }
+func (m *mockAIProvider) Models() []string            { return []string{"test-model"} }
+func (m *mockAIProvider) DefaultModel() string        { return "test-model" }
 func (m *mockAIProvider) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
 	return &CompletionResponse{Content: "test response"}, nil
 }
@@ -794,5 +795,79 @@ func TestBotShouldBotHandle_ConversationAssignedToHuman(t *testing.T) {
 	}
 	if should {
 		t.Error("expected false, conversation is assigned to a human")
+	}
+}
+
+// ============================================================================
+// Tests: Tenant isolation (IDOR)
+// ============================================================================
+
+func TestBotGetByTenantAndID_CrossTenantIsNotFound(t *testing.T) {
+	botRepo := NewMockBotRepository()
+	bot := entity.NewBot("tenant-b", "Secret Bot", entity.BotTypeAI, entity.AIProviderOpenAI, "gpt-4")
+	bot.ID = "bot-b"
+	botRepo.Bots["bot-b"] = bot
+
+	svc := newTestBotService(botRepo, nil, nil)
+
+	// Tenant A must not be able to read tenant B's bot.
+	_, err := svc.GetByTenantAndID(context.Background(), "tenant-a", "bot-b")
+	if err == nil {
+		t.Fatal("expected not-found error for cross-tenant access, got nil")
+	}
+	if !apperrors.IsNotFound(err) {
+		t.Fatalf("expected not-found error, got %v", err)
+	}
+}
+
+func TestBotForTenantWrappers_DenyCrossTenantAccess(t *testing.T) {
+	botRepo := NewMockBotRepository()
+	bot := entity.NewBot("tenant-b", "Secret Bot", entity.BotTypeAI, entity.AIProviderOpenAI, "gpt-4")
+	bot.ID = "bot-b"
+	botRepo.Bots["bot-b"] = bot
+
+	svc := newTestBotService(botRepo, nil, nil)
+	ctx := context.Background()
+
+	// Update
+	if _, err := svc.UpdateForTenant(ctx, "tenant-a", "bot-b", &UpdateBotInput{}); !apperrors.IsNotFound(err) {
+		t.Errorf("UpdateForTenant: expected not-found, got %v", err)
+	}
+	// Delete
+	if err := svc.DeleteForTenant(ctx, "tenant-a", "bot-b"); !apperrors.IsNotFound(err) {
+		t.Errorf("DeleteForTenant: expected not-found, got %v", err)
+	}
+	// Activate
+	if err := svc.ActivateForTenant(ctx, "tenant-a", "bot-b"); !apperrors.IsNotFound(err) {
+		t.Errorf("ActivateForTenant: expected not-found, got %v", err)
+	}
+	// Deactivate
+	if err := svc.DeactivateForTenant(ctx, "tenant-a", "bot-b"); !apperrors.IsNotFound(err) {
+		t.Errorf("DeactivateForTenant: expected not-found, got %v", err)
+	}
+	// AssignChannel
+	if err := svc.AssignChannelForTenant(ctx, "tenant-a", "bot-b", "ch-1"); !apperrors.IsNotFound(err) {
+		t.Errorf("AssignChannelForTenant: expected not-found, got %v", err)
+	}
+	// UnassignChannel
+	if err := svc.UnassignChannelForTenant(ctx, "tenant-a", "bot-b", "ch-1"); !apperrors.IsNotFound(err) {
+		t.Errorf("UnassignChannelForTenant: expected not-found, got %v", err)
+	}
+	// UpdateConfig
+	if err := svc.UpdateConfigForTenant(ctx, "tenant-a", "bot-b", entity.BotConfig{}); !apperrors.IsNotFound(err) {
+		t.Errorf("UpdateConfigForTenant: expected not-found, got %v", err)
+	}
+	// AddEscalationRule
+	if err := svc.AddEscalationRuleForTenant(ctx, "tenant-a", "bot-b", entity.EscalationRule{}); !apperrors.IsNotFound(err) {
+		t.Errorf("AddEscalationRuleForTenant: expected not-found, got %v", err)
+	}
+	// TestBot
+	if _, err := svc.TestBotForTenant(ctx, "tenant-a", "bot-b", "hi"); !apperrors.IsNotFound(err) {
+		t.Errorf("TestBotForTenant: expected not-found, got %v", err)
+	}
+
+	// Sanity: the owning tenant is still allowed (Update succeeds).
+	if _, err := svc.UpdateForTenant(ctx, "tenant-b", "bot-b", &UpdateBotInput{}); err != nil {
+		t.Errorf("owning tenant should be allowed, got %v", err)
 	}
 }

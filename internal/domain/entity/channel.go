@@ -1,25 +1,69 @@
 package entity
 
 import (
+	"encoding/json"
 	"strconv"
 	"time"
 )
+
+// RedactedSecret is the placeholder emitted in a serialized Channel.Config for
+// sensitive keys. It is intentionally not a plausible real value. Clients must
+// not echo it back on update: ChannelService.Update treats an incoming
+// RedactedSecret (or empty) sensitive value as "keep the stored secret".
+const RedactedSecret = "__redacted__"
+
+// SensitiveConfigKeys lists Channel.Config keys whose values are secrets. They
+// are encrypted at rest (see database.encryptChannelSecrets) and redacted from
+// API responses (see Channel.MarshalJSON). Non-listed keys (phone_number_id,
+// waba_id, proxy host/port, widget display config, ...) stay plaintext so they
+// remain queryable and readable. Credentials is encrypted/hidden in full.
+var SensitiveConfigKeys = map[string]bool{
+	"access_token":          true,
+	"user_access_token":     true,
+	"page_access_token":     true,
+	"auth_token":            true,
+	"bot_token":             true,
+	"app_secret":            true,
+	"api_secret":            true,
+	"api_key":               true,
+	"api_key_secret":        true,
+	"api_key_sid":           true,
+	"account_sid":           true,
+	"messaging_service_sid": true,
+	"webhook_secret":        true,
+	"verify_token":          true,
+	"widget_secret":         true,
+	"smtp_password":         true,
+	"imap_password":         true,
+	"mailgun_api_key":       true,
+	"sendgrid_api_key":      true,
+	"postmark_server_token": true,
+	"ses_access_key_id":     true,
+	"ses_secret_key":        true,
+	"private_key":           true,
+	"secret":                true,
+	"token":                 true,
+	"password":              true,
+}
 
 // ChannelType represents the type of a channel
 type ChannelType string
 
 const (
-	ChannelTypeWebChat             ChannelType = "webchat"
-	ChannelTypeWhatsApp            ChannelType = "whatsapp"
-	ChannelTypeWhatsAppOfficial    ChannelType = "whatsapp_official"
-	ChannelTypeWhatsAppUnofficial  ChannelType = "whatsapp_unofficial"
-	ChannelTypeTelegram            ChannelType = "telegram"
-	ChannelTypeSMS                 ChannelType = "sms"
-	ChannelTypeRCS                 ChannelType = "rcs"
-	ChannelTypeInstagram           ChannelType = "instagram"
-	ChannelTypeFacebook            ChannelType = "facebook"
-	ChannelTypeEmail               ChannelType = "email"
-	ChannelTypeVoice               ChannelType = "voice"
+	ChannelTypeWebChat            ChannelType = "webchat"
+	ChannelTypeWhatsApp           ChannelType = "whatsapp"
+	ChannelTypeWhatsAppOfficial   ChannelType = "whatsapp_official"
+	ChannelTypeWhatsAppUnofficial ChannelType = "whatsapp_unofficial"
+	ChannelTypeTelegram           ChannelType = "telegram"
+	ChannelTypeSMS                ChannelType = "sms"
+	ChannelTypeRCS                ChannelType = "rcs"
+	ChannelTypeInstagram          ChannelType = "instagram"
+	ChannelTypeFacebook           ChannelType = "facebook"
+	ChannelTypeEmail              ChannelType = "email"
+	ChannelTypeVoice              ChannelType = "voice"
+	ChannelTypeTeams              ChannelType = "teams"
+	ChannelTypeSlack              ChannelType = "slack"
+	ChannelTypeMattermost         ChannelType = "mattermost"
 )
 
 // ConnectionStatus represents the connection status of a channel
@@ -63,10 +107,10 @@ type Channel struct {
 	Type             ChannelType       `json:"type"`
 	Name             string            `json:"name"`
 	Identifier       string            `json:"identifier,omitempty"`
-	Enabled          bool              `json:"enabled"`                      // Whether channel is enabled in system
-	ConnectionStatus ConnectionStatus  `json:"connection_status"`            // Connection state (connected/disconnected/etc)
+	Enabled          bool              `json:"enabled"`           // Whether channel is enabled in system
+	ConnectionStatus ConnectionStatus  `json:"connection_status"` // Connection state (connected/disconnected/etc)
 	Config           map[string]string `json:"config,omitempty"`
-	Credentials      map[string]string `json:"-"`                            // Never expose credentials
+	Credentials      map[string]string `json:"-"` // Never expose credentials
 	WebhookURL       string            `json:"webhook_url,omitempty"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
@@ -85,6 +129,29 @@ type Channel struct {
 	MessageTemplateNamespace string `json:"message_template_namespace,omitempty"`
 }
 
+// MarshalJSON redacts sensitive Config values (access tokens, app secrets,
+// widget secrets, ...) from any serialized Channel so they never leak through
+// API responses or events. It operates on a copy: the in-memory struct keeps
+// the real values, so Go-level access (channel.Config["access_token"]) and DB
+// persistence (which marshals the Config map field, not the whole entity) are
+// unaffected. Credentials is already hidden via `json:"-"`.
+func (c *Channel) MarshalJSON() ([]byte, error) {
+	type channelAlias Channel
+	clone := *c
+	if len(c.Config) > 0 {
+		redacted := make(map[string]string, len(c.Config))
+		for k, v := range c.Config {
+			if v != "" && SensitiveConfigKeys[k] {
+				redacted[k] = RedactedSecret
+			} else {
+				redacted[k] = v
+			}
+		}
+		clone.Config = redacted
+	}
+	return json.Marshal((*channelAlias)(&clone))
+}
+
 // NewChannel creates a new channel
 func NewChannel(tenantID string, channelType ChannelType, name, identifier string) *Channel {
 	now := time.Now()
@@ -93,8 +160,8 @@ func NewChannel(tenantID string, channelType ChannelType, name, identifier strin
 		Type:             channelType,
 		Name:             name,
 		Identifier:       identifier,
-		Enabled:          true,                          // Enabled by default
-		ConnectionStatus: ConnectionStatusDisconnected,  // Start disconnected
+		Enabled:          true,                         // Enabled by default
+		ConnectionStatus: ConnectionStatusDisconnected, // Start disconnected
 		Config:           make(map[string]string),
 		Credentials:      make(map[string]string),
 		CreatedAt:        now,

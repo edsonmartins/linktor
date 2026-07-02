@@ -1,23 +1,23 @@
 package handlers
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/adapters/facebook"
 	"github.com/msgfy/linktor/internal/adapters/instagram"
+	"github.com/msgfy/linktor/internal/adapters/mattermost"
 	"github.com/msgfy/linktor/internal/adapters/rcs"
+	"github.com/msgfy/linktor/internal/adapters/slack"
 	"github.com/msgfy/linktor/internal/adapters/sms"
+	"github.com/msgfy/linktor/internal/adapters/teams"
 	"github.com/msgfy/linktor/internal/adapters/telegram"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
+	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 )
 
@@ -42,6 +42,9 @@ type CreateChannelRequest struct {
 	Identifier  string            `json:"identifier"`
 	Config      map[string]string `json:"config"`
 	Credentials map[string]string `json:"credentials"`
+	// WebhookURL is the external consumer endpoint (e.g. DeskLenz) Linktor
+	// delivers signed inbound/status events to for this channel.
+	WebhookURL string `json:"webhook_url"`
 }
 
 type TestChannelRequest struct {
@@ -72,7 +75,11 @@ func (h *ChannelHandler) List(c *gin.Context) {
 		return
 	}
 
-	RespondSuccess(c, channels)
+	display := make([]*entity.Channel, len(channels))
+	for i, ch := range channels {
+		display[i] = withDisplayConfig(ch)
+	}
+	RespondSuccess(c, display)
 }
 
 // Create godoc
@@ -106,6 +113,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		Identifier:  req.Identifier,
 		Config:      req.Config,
 		Credentials: req.Credentials,
+		WebhookURL:  req.WebhookURL,
 	}
 
 	channel, err := h.channelService.Create(c.Request.Context(), input)
@@ -142,6 +150,18 @@ func (h *ChannelHandler) TestInstagramConnection(c *gin.Context) {
 	h.testConnection(c, "instagram")
 }
 
+func (h *ChannelHandler) TestTeamsConnection(c *gin.Context) {
+	h.testConnection(c, "teams")
+}
+
+func (h *ChannelHandler) TestSlackConnection(c *gin.Context) {
+	h.testConnection(c, "slack")
+}
+
+func (h *ChannelHandler) TestMattermostConnection(c *gin.Context) {
+	h.testConnection(c, "mattermost")
+}
+
 func (h *ChannelHandler) testConnection(c *gin.Context, forcedType string) {
 	var raw map[string]interface{}
 	if err := c.ShouldBindJSON(&raw); err != nil {
@@ -165,12 +185,54 @@ func (h *ChannelHandler) testConnection(c *gin.Context, forcedType string) {
 		return
 	}
 
+	// Live provider check for connectors that support one (Teams/Slack/Mattermost):
+	// actually reach the provider with the supplied credentials.
+	message := "configuration accepted"
+	if detail, ok, err := liveChannelCheck(c.Request.Context(), channelType, config); ok {
+		if err != nil {
+			RespondValidationError(c, "connection test failed: "+err.Error(), nil)
+			return
+		}
+		message = detail
+	}
+
 	RespondSuccess(c, gin.H{
 		"status":  "ok",
 		"type":    channelType,
 		"valid":   true,
-		"message": "configuration accepted",
+		"message": message,
 	})
+}
+
+// liveChannelCheck performs a real provider round-trip for connectors that
+// support one. The second return value reports whether a live check exists for
+// the type (false → caller keeps the static result). The check is time-bounded.
+func liveChannelCheck(ctx context.Context, channelType string, config map[string]string) (detail string, supported bool, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	switch channelType {
+	case "teams":
+		return "credentials valid (AAD token acquired)", true,
+			teams.NewClientFromCredentials(config).Ping(ctx)
+	case "slack":
+		team, user, e := slack.NewClient(config[slack.CredBotToken]).AuthTest(ctx)
+		if e != nil {
+			return "", true, e
+		}
+		return fmt.Sprintf("connected to Slack (team %q, bot %q)", team, user), true, nil
+	case "mattermost":
+		_, username, e := mattermost.NewClient(mattermost.Config{
+			BaseURL:  config[mattermost.CredBaseURL],
+			BotToken: config[mattermost.CredBotToken],
+		}).Me(ctx)
+		if e != nil {
+			return "", true, e
+		}
+		return fmt.Sprintf("connected to Mattermost (bot %q)", username), true, nil
+	default:
+		return "", false, nil
+	}
 }
 
 // Get godoc
@@ -192,13 +254,55 @@ func (h *ChannelHandler) Get(c *gin.Context) {
 		return
 	}
 
-	channel, err := h.channelService.GetByID(c.Request.Context(), id)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	channel, err := h.channelService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 
-	RespondSuccess(c, channel)
+	RespondSuccess(c, withDisplayConfig(channel))
+}
+
+// nonSecretCredentialKeys lists, per channel type, credential keys safe to surface
+// back to the admin UI for edit-form prefill. Secrets (tokens, passwords, signing
+// secrets) are deliberately excluded and never returned.
+var nonSecretCredentialKeys = map[string][]string{
+	teams.ChannelType:      {teams.CredAppID, teams.CredTenantID, teams.CredServiceURL},
+	slack.ChannelType:      {slack.CredAppID, slack.CredBotUserID},
+	mattermost.ChannelType: {mattermost.CredBaseURL, mattermost.CredBotUserID},
+}
+
+// withDisplayConfig returns a shallow copy of the channel with non-secret
+// credential fields merged into Config for UI prefill. The original entity is
+// never mutated and Credentials (json:"-") stay hidden. Existing Config keys win.
+func withDisplayConfig(channel *entity.Channel) *entity.Channel {
+	if channel == nil {
+		return channel
+	}
+	keys := nonSecretCredentialKeys[string(channel.Type)]
+	if len(keys) == 0 {
+		return channel
+	}
+
+	clone := *channel
+	clone.Config = map[string]string{}
+	for k, v := range channel.Config {
+		clone.Config[k] = v
+	}
+	for _, k := range keys {
+		if _, exists := clone.Config[k]; exists {
+			continue
+		}
+		if v := channel.Credentials[k]; v != "" {
+			clone.Config[k] = v
+		}
+	}
+	return &clone
 }
 
 // Update godoc
@@ -228,14 +332,20 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		return
 	}
 
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	input := &service.UpdateChannelInput{
 		Name:        &req.Name,
 		Identifier:  &req.Identifier,
 		Config:      req.Config,
 		Credentials: req.Credentials,
+		WebhookURL:  &req.WebhookURL,
 	}
 
-	channel, err := h.channelService.Update(c.Request.Context(), id, input)
+	channel, err := h.channelService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -263,7 +373,12 @@ func (h *ChannelHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.channelService.Delete(c.Request.Context(), id); err != nil {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	if err := h.channelService.DeleteForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -306,7 +421,12 @@ func (h *ChannelHandler) Connect(c *gin.Context) {
 		return
 	}
 
-	result, err := h.channelService.Connect(c.Request.Context(), id)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	result, err := h.channelService.ConnectForTenant(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -335,7 +455,12 @@ func (h *ChannelHandler) Disconnect(c *gin.Context) {
 		return
 	}
 
-	if err := h.channelService.Disconnect(c.Request.Context(), id); err != nil {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	if err := h.channelService.DisconnectForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -375,7 +500,12 @@ func (h *ChannelHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	channel, err := h.channelService.UpdateStatus(c.Request.Context(), id, req.Status)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	channel, err := h.channelService.UpdateStatusForTenant(c.Request.Context(), tenantID, id, req.Status)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -411,7 +541,12 @@ func (h *ChannelHandler) UpdateEnabled(c *gin.Context) {
 		return
 	}
 
-	channel, err := h.channelService.UpdateEnabled(c.Request.Context(), id, req.Enabled)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	channel, err := h.channelService.UpdateEnabledForTenant(c.Request.Context(), tenantID, id, req.Enabled)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -457,7 +592,12 @@ func (h *ChannelHandler) RequestPairCode(c *gin.Context) {
 		return
 	}
 
-	result, err := h.channelService.RequestPairCode(c.Request.Context(), id, req.PhoneNumber)
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	result, err := h.channelService.RequestPairCodeForTenant(c.Request.Context(), tenantID, id, req.PhoneNumber)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -589,306 +729,28 @@ func validateChannelTestConfig(channelType string, config map[string]string) err
 			cfg.Provider = rcs.ProviderZenvia
 		}
 		return cfg.Validate()
+	case "teams":
+		if strings.TrimSpace(config[teams.CredAppID]) == "" {
+			return fmt.Errorf("app_id is required")
+		}
+		if strings.TrimSpace(config[teams.CredAppPassword]) == "" {
+			return fmt.Errorf("app_password is required")
+		}
+		return nil
+	case "slack":
+		if strings.TrimSpace(config[slack.CredBotToken]) == "" {
+			return fmt.Errorf("bot_token is required")
+		}
+		return nil
+	case "mattermost":
+		if strings.TrimSpace(config[mattermost.CredBaseURL]) == "" {
+			return fmt.Errorf("base_url is required")
+		}
+		if strings.TrimSpace(config[mattermost.CredBotToken]) == "" {
+			return fmt.Errorf("bot_token is required")
+		}
+		return nil
 	default:
 		return fmt.Errorf("unsupported channel type: %s", channelType)
-	}
-}
-
-// WhatsAppWebhook handles WhatsApp webhooks
-func (h *ChannelHandler) WhatsAppWebhook(c *gin.Context) {
-	channelID := c.Param("channelId")
-	// TODO: Implement WhatsApp webhook handling
-	RespondSuccess(c, gin.H{"channel_id": channelID, "status": "received"})
-}
-
-// WhatsAppVerify handles WhatsApp webhook verification
-func (h *ChannelHandler) WhatsAppVerify(c *gin.Context) {
-	// TODO: Implement WhatsApp webhook verification
-	challenge := c.Query("hub.challenge")
-	c.String(200, challenge)
-}
-
-// TelegramWebhook handles Telegram webhooks
-func (h *ChannelHandler) TelegramWebhook(c *gin.Context) {
-	channelID := c.Param("channelId")
-
-	// Get channel
-	channel, err := h.channelService.GetByID(c.Request.Context(), channelID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
-		return
-	}
-
-	// Read body
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
-		return
-	}
-
-	// Parse webhook
-	update, err := telegram.ParseWebhook(body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
-		return
-	}
-
-	// Extract message
-	incoming := telegram.ExtractIncomingMessage(update)
-	if incoming == nil {
-		// Not a message we handle (e.g., channel post, group message)
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-		return
-	}
-
-	// Build metadata
-	metadata := map[string]string{
-		"from_user_id": fmt.Sprintf("%d", incoming.FromUserID),
-		"username":     incoming.FromUsername,
-		"first_name":   incoming.FromFirstName,
-		"last_name":    incoming.FromLastName,
-		"chat_id":      fmt.Sprintf("%d", incoming.ChatID),
-	}
-
-	// Determine content type
-	contentType := "text"
-	content := incoming.Text
-	var attachments []nats.AttachmentData
-
-	switch incoming.MessageType {
-	case telegram.MessageTypePhoto:
-		contentType = "image"
-		content = incoming.Caption
-		if incoming.MediaFileID != "" {
-			attachments = append(attachments, nats.AttachmentData{
-				Type: "image",
-				URL:  incoming.MediaFileID,
-				Metadata: map[string]string{
-					"file_id": incoming.MediaFileID,
-				},
-			})
-		}
-	case telegram.MessageTypeVideo:
-		contentType = "video"
-		content = incoming.Caption
-		if incoming.MediaFileID != "" {
-			attachments = append(attachments, nats.AttachmentData{
-				Type:     "video",
-				URL:      incoming.MediaFileID,
-				MimeType: incoming.MediaMimeType,
-				Metadata: map[string]string{
-					"file_id": incoming.MediaFileID,
-				},
-			})
-		}
-	case telegram.MessageTypeAudio, telegram.MessageTypeVoice:
-		contentType = "audio"
-		if incoming.MediaFileID != "" {
-			attachments = append(attachments, nats.AttachmentData{
-				Type:     "audio",
-				URL:      incoming.MediaFileID,
-				MimeType: incoming.MediaMimeType,
-				Metadata: map[string]string{
-					"file_id": incoming.MediaFileID,
-				},
-			})
-		}
-	case telegram.MessageTypeDocument:
-		contentType = "document"
-		content = incoming.Caption
-		if incoming.MediaFileID != "" {
-			attachments = append(attachments, nats.AttachmentData{
-				Type:     "document",
-				URL:      incoming.MediaFileID,
-				Filename: incoming.MediaFileName,
-				MimeType: incoming.MediaMimeType,
-				Metadata: map[string]string{
-					"file_id": incoming.MediaFileID,
-				},
-			})
-		}
-	case telegram.MessageTypeLocation:
-		contentType = "location"
-		if incoming.Location != nil {
-			content = fmt.Sprintf("%f,%f", incoming.Location.Latitude, incoming.Location.Longitude)
-			metadata["latitude"] = fmt.Sprintf("%f", incoming.Location.Latitude)
-			metadata["longitude"] = fmt.Sprintf("%f", incoming.Location.Longitude)
-		}
-	case telegram.MessageTypeContact:
-		contentType = "contact"
-		if incoming.Contact != nil {
-			contactData, _ := json.Marshal(incoming.Contact)
-			content = string(contactData)
-		}
-	}
-
-	// Handle reply
-	if incoming.ReplyToMsgID != nil {
-		metadata["reply_to_id"] = fmt.Sprintf("%d", *incoming.ReplyToMsgID)
-	}
-
-	// Create sender name
-	senderName := incoming.FromFirstName
-	if incoming.FromLastName != "" {
-		senderName += " " + incoming.FromLastName
-	}
-
-	// Publish to NATS
-	inbound := &nats.InboundMessage{
-		ID:          uuid.New().String(),
-		TenantID:    channel.TenantID,
-		ChannelID:   channel.ID,
-		ChannelType: "telegram",
-		ExternalID:  fmt.Sprintf("%d", incoming.MessageID),
-		ContentType: contentType,
-		Content:     content,
-		Metadata:    metadata,
-		Attachments: attachments,
-		Timestamp:   time.Now(),
-	}
-	inbound.Metadata["sender_id"] = fmt.Sprintf("%d", incoming.ChatID)
-	inbound.Metadata["sender_name"] = senderName
-
-	if h.producer != nil {
-		if err := h.producer.PublishInbound(c.Request.Context(), inbound); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process message"})
-			return
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-}
-
-// TwilioWebhook handles Twilio SMS/MMS webhooks
-func (h *ChannelHandler) TwilioWebhook(c *gin.Context) {
-	channelID := c.Param("channelId")
-
-	// Get channel
-	channel, err := h.channelService.GetByID(c.Request.Context(), channelID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
-		return
-	}
-
-	// Read body (form-encoded)
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read body"})
-		return
-	}
-
-	// Parse webhook
-	payload, webhookType, err := sms.ParseWebhook(body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
-		return
-	}
-
-	switch webhookType {
-	case sms.WebhookTypeIncoming:
-		// Handle incoming SMS/MMS
-		contentType := "text"
-		content := payload.Body
-		var attachments []nats.AttachmentData
-
-		// Check for MMS media
-		numMedia := 0
-		if payload.NumMedia != "" {
-			fmt.Sscanf(payload.NumMedia, "%d", &numMedia)
-		}
-
-		if numMedia > 0 {
-			contentType = "image"
-			// Extract media URLs from form data
-			values, _ := url.ParseQuery(string(body))
-			for i := 0; i < numMedia; i++ {
-				mediaURL := values.Get(fmt.Sprintf("MediaUrl%d", i))
-				mediaType := values.Get(fmt.Sprintf("MediaContentType%d", i))
-				if mediaURL != "" {
-					attachments = append(attachments, nats.AttachmentData{
-						Type:     "image",
-						URL:      mediaURL,
-						MimeType: mediaType,
-					})
-				}
-			}
-		}
-
-		// Build metadata
-		metadata := map[string]string{
-			"sender_id":    payload.From,
-			"from":         payload.From,
-			"to":           payload.To,
-			"account_sid":  payload.AccountSID,
-			"from_city":    payload.FromCity,
-			"from_state":   payload.FromState,
-			"from_zip":     payload.FromZip,
-			"from_country": payload.FromCountry,
-		}
-
-		// Publish to NATS
-		inbound := &nats.InboundMessage{
-			ID:          uuid.New().String(),
-			TenantID:    channel.TenantID,
-			ChannelID:   channel.ID,
-			ChannelType: "sms",
-			ExternalID:  payload.MessageSID,
-			ContentType: contentType,
-			Content:     content,
-			Metadata:    metadata,
-			Attachments: attachments,
-			Timestamp:   time.Now(),
-		}
-
-		if h.producer != nil {
-			if err := h.producer.PublishInbound(c.Request.Context(), inbound); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process message"})
-				return
-			}
-		}
-
-		// Return TwiML response (empty response)
-		c.Header("Content-Type", "text/xml")
-		c.String(http.StatusOK, sms.EmptyTwiMLResponse())
-
-	case sms.WebhookTypeStatus:
-		// Handle status callback
-		twilioStatus := payload.MessageStatus
-		if twilioStatus == "" {
-			twilioStatus = payload.SmsStatus
-		}
-
-		// Map Twilio status
-		var status string
-		switch sms.ParseMessageStatus(twilioStatus) {
-		case sms.StatusDelivered:
-			status = "delivered"
-		case sms.StatusRead:
-			status = "read"
-		case sms.StatusFailed, sms.StatusUndelivered:
-			status = "failed"
-		case sms.StatusSent:
-			status = "sent"
-		default:
-			status = "pending"
-		}
-
-		// Publish status update
-		if h.producer != nil {
-			statusUpdate := &nats.StatusUpdate{
-				ExternalID:   payload.MessageSID,
-				ChannelType:  "sms",
-				Status:       status,
-				ErrorMessage: payload.ErrorMessage,
-				Timestamp:    time.Now(),
-			}
-			h.producer.PublishStatusUpdate(c.Request.Context(), statusUpdate)
-		}
-
-		c.Header("Content-Type", "text/xml")
-		c.String(http.StatusOK, sms.EmptyTwiMLResponse())
-
-	default:
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	}
 }

@@ -24,6 +24,9 @@ const CHANNEL_ICONS: Record<string, React.ReactNode> = {
   sms: <Phone className="h-4 w-4 text-gray-600" />,
   instagram: <Instagram className="h-4 w-4 text-pink-600" />,
   facebook: <Facebook className="h-4 w-4 text-blue-600" />,
+  teams: <MessageSquare className="h-4 w-4 text-blue-700" />,
+  slack: <MessageSquare className="h-4 w-4 text-violet-500" />,
+  mattermost: <MessageSquare className="h-4 w-4 text-sky-600" />,
 }
 
 export function ChannelBreakdownTable({ data }: ChannelBreakdownTableProps) {

@@ -498,6 +498,107 @@ func TestKnowledgeService_Search_KeywordFallback(t *testing.T) {
 	}
 }
 
+func TestKnowledgeService_TenantIsolation(t *testing.T) {
+	kbRepo := newMockKnowledgeBaseRepo()
+	itemRepo := newMockKnowledgeItemRepo()
+	svc := NewKnowledgeService(kbRepo, itemRepo, nil, nil)
+	ctx := context.Background()
+
+	// Tenant B owns a knowledge base with an item.
+	kbB, err := svc.CreateKnowledgeBase(ctx, &CreateKnowledgeBaseInput{
+		TenantID: "tenant-b",
+		Name:     "Tenant B KB",
+		Type:     entity.KnowledgeTypeFAQ,
+	})
+	require.NoError(t, err)
+
+	itemB, err := svc.AddItem(ctx, &AddItemInput{
+		KnowledgeBaseID: kbB.ID,
+		Question:        "secret question",
+		Answer:          "secret answer",
+	})
+	require.NoError(t, err)
+
+	const attacker = "tenant-a"
+
+	t.Run("GetByTenantAndID cannot read another tenant KB", func(t *testing.T) {
+		_, err := svc.GetByTenantAndID(ctx, attacker, kbB.ID)
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err))
+	})
+
+	t.Run("UpdateKnowledgeBaseForTenant cannot modify another tenant KB", func(t *testing.T) {
+		newName := "hacked"
+		_, err := svc.UpdateKnowledgeBaseForTenant(ctx, attacker, kbB.ID, &UpdateKnowledgeBaseInput{Name: &newName})
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err))
+		// KB name must remain unchanged.
+		assert.Equal(t, "Tenant B KB", kbRepo.bases[kbB.ID].Name)
+	})
+
+	t.Run("DeleteKnowledgeBaseForTenant cannot delete another tenant KB", func(t *testing.T) {
+		err := svc.DeleteKnowledgeBaseForTenant(ctx, attacker, kbB.ID)
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err))
+		_, ok := kbRepo.bases[kbB.ID]
+		assert.True(t, ok, "KB must still exist")
+	})
+
+	t.Run("ListItemsForTenant cannot list another tenant KB items", func(t *testing.T) {
+		_, _, err := svc.ListItemsForTenant(ctx, attacker, kbB.ID, DefaultListParams())
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err))
+	})
+
+	t.Run("SearchForTenant cannot search another tenant KB", func(t *testing.T) {
+		_, err := svc.SearchForTenant(ctx, attacker, kbB.ID, "secret", 10)
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err))
+	})
+
+	t.Run("GetItemForTenant cannot read another tenant item", func(t *testing.T) {
+		_, err := svc.GetItemForTenant(ctx, attacker, itemB.ID)
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err))
+	})
+
+	t.Run("UpdateItemForTenant cannot modify another tenant item", func(t *testing.T) {
+		newAnswer := "tampered"
+		_, err := svc.UpdateItemForTenant(ctx, attacker, itemB.ID, &UpdateItemInput{Answer: &newAnswer})
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err))
+		assert.Equal(t, "secret answer", itemRepo.items[itemB.ID].Answer)
+	})
+
+	t.Run("DeleteItemForTenant cannot delete another tenant item", func(t *testing.T) {
+		err := svc.DeleteItemForTenant(ctx, attacker, itemB.ID)
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err))
+		_, ok := itemRepo.items[itemB.ID]
+		assert.True(t, ok, "item must still exist")
+	})
+
+	t.Run("AddItemForTenant cannot add to another tenant KB", func(t *testing.T) {
+		_, err := svc.AddItemForTenant(ctx, attacker, &AddItemInput{
+			KnowledgeBaseID: kbB.ID,
+			Question:        "injected",
+			Answer:          "injected",
+		})
+		require.Error(t, err)
+		assert.True(t, errors.IsNotFound(err))
+	})
+
+	t.Run("owner still has access", func(t *testing.T) {
+		got, err := svc.GetByTenantAndID(ctx, "tenant-b", kbB.ID)
+		require.NoError(t, err)
+		assert.Equal(t, kbB.ID, got.ID)
+
+		item, err := svc.GetItemForTenant(ctx, "tenant-b", itemB.ID)
+		require.NoError(t, err)
+		assert.Equal(t, itemB.ID, item.ID)
+	})
+}
+
 func TestSplitKeywords(t *testing.T) {
 	tests := []struct {
 		name     string

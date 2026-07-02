@@ -29,12 +29,17 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal metadata")
 	}
 
+	// ON CONFLICT drops a redelivered inbound message atomically (see the
+	// uq_messages_conversation_external_id partial index). The predicate must
+	// match the index exactly for arbiter inference; outbound rows insert a NULL
+	// external_id and never conflict.
 	query := `
 		INSERT INTO messages (
 			id, conversation_id, sender_type, sender_id, content_type, content,
 			metadata, status, external_id, error_message, sent_at, delivered_at,
 			read_at, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		ON CONFLICT (conversation_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
 	`
 
 	var senderID *string
@@ -42,7 +47,7 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 		senderID = &message.SenderID
 	}
 
-	_, err = r.db.Pool.Exec(ctx, query,
+	tag, err := r.db.Pool.Exec(ctx, query,
 		message.ID,
 		message.ConversationID,
 		string(message.SenderType),
@@ -63,7 +68,72 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to create message")
 	}
 
+	// A zero row count with a provider id means the message was already stored
+	// (duplicate delivery). Surface a conflict so callers skip re-processing; the
+	// inbound consumer treats it as non-retryable and acks without firing the bot.
+	if tag.RowsAffected() == 0 && message.ExternalID != "" {
+		return errors.New(errors.ErrCodeConflict, "duplicate message: external_id already exists for conversation")
+	}
+
 	return nil
+}
+
+const insertMessageQuery = `
+	INSERT INTO messages (
+		id, conversation_id, sender_type, sender_id, content_type, content,
+		metadata, status, external_id, error_message, sent_at, delivered_at,
+		read_at, created_at
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+	ON CONFLICT (conversation_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
+`
+
+// CreateWithOutboxEvent persists the message and enqueues an outbox event in a
+// single transaction — the event exists iff the message committed (transactional
+// outbox; a relay publishes it durably). Returns inserted=false for a duplicate
+// delivery (the ON CONFLICT no-op), in which case no outbox row is written since
+// the original delivery already enqueued one. The event may be nil to persist the
+// message without an outbox entry.
+func (r *MessageRepository) CreateWithOutboxEvent(ctx context.Context, message *entity.Message, event *entity.OutboxEvent) (bool, error) {
+	metadata, err := json.Marshal(message.Metadata)
+	if err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal metadata")
+	}
+
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to begin transaction")
+	}
+	defer tx.Rollback(ctx)
+
+	var senderID *string
+	if message.SenderID != "" {
+		senderID = &message.SenderID
+	}
+
+	tag, err := tx.Exec(ctx, insertMessageQuery,
+		message.ID, message.ConversationID, string(message.SenderType), senderID,
+		string(message.ContentType), message.Content, metadata, string(message.Status),
+		nullString(message.ExternalID), nullString(message.ErrorMessage),
+		message.SentAt, message.DeliveredAt, message.ReadAt, message.CreatedAt,
+	)
+	if err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to create message")
+	}
+
+	// Duplicate delivery: the message already exists, so its outbox event was
+	// enqueued by the original delivery — nothing more to do.
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+
+	if err := insertOutboxEventTx(ctx, tx, event); err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to commit message transaction")
+	}
+	return true, nil
 }
 
 // FindByID finds a message by ID
@@ -150,6 +220,10 @@ func (r *MessageRepository) FindByConversation(ctx context.Context, conversation
 		messages = append(messages, message)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate messages")
+	}
+
 	return messages, total, nil
 }
 
@@ -198,38 +272,79 @@ func (r *MessageRepository) Update(ctx context.Context, message *entity.Message)
 	return nil
 }
 
-// UpdateStatus updates only the message status
-func (r *MessageRepository) UpdateStatus(ctx context.Context, id string, status entity.MessageStatus, errorMessage string) error {
-	var query string
-	var args []interface{}
+// messageStatusRank returns the monotonic delivery rank of a status. A status
+// may only advance to a rank equal to or higher than the one already stored, so
+// an out-of-order (redelivered) event cannot regress a message's status. "failed"
+// is treated as recoverable (same rank as "sent") so a later successful delivery
+// receipt can still advance the message.
+func messageStatusRank(status entity.MessageStatus) int {
+	switch status {
+	case entity.MessageStatusRead:
+		return 4
+	case entity.MessageStatusDelivered:
+		return 3
+	case entity.MessageStatusSent, entity.MessageStatusFailed:
+		return 2
+	case entity.MessageStatusPending:
+		return 1
+	default:
+		return 0
+	}
+}
 
+// sqlMessageStatusRank is the SQL CASE expression equivalent of messageStatusRank,
+// used to compute the rank of the currently stored status inside the guard clause.
+const sqlMessageStatusRank = `CASE status
+	WHEN 'read' THEN 4
+	WHEN 'delivered' THEN 3
+	WHEN 'sent' THEN 2
+	WHEN 'failed' THEN 2
+	WHEN 'pending' THEN 1
+	ELSE 0 END`
+
+// UpdateStatus updates only the message status, advancing it monotonically.
+func (r *MessageRepository) UpdateStatus(ctx context.Context, id string, status entity.MessageStatus, errorMessage string) error {
 	now := time.Now()
 
+	// "failed" is always writable so a delivery failure is never lost.
+	if status == entity.MessageStatusFailed {
+		result, err := r.db.Pool.Exec(ctx,
+			`UPDATE messages SET status = $1, error_message = $2 WHERE id = $3`,
+			string(status), errorMessage, id)
+		if err != nil {
+			return errors.Wrap(err, errors.ErrCodeInternal, "failed to update message status")
+		}
+		if result.RowsAffected() == 0 {
+			return errors.New(errors.ErrCodeMessageNotFound, "message not found")
+		}
+		return nil
+	}
+
+	// Only advance forward: block writes whose target rank is lower than the
+	// rank already persisted (e.g. a redelivered "sent" after "delivered"/"read").
+	newRank := messageStatusRank(status)
+
+	var query string
+	var args []interface{}
 	switch status {
 	case entity.MessageStatusSent:
-		query = `UPDATE messages SET status = $1, sent_at = $2 WHERE id = $3`
-		args = []interface{}{string(status), now, id}
+		query = fmt.Sprintf(`UPDATE messages SET status = $1, sent_at = $2 WHERE id = $3 AND (%s) <= $4`, sqlMessageStatusRank)
+		args = []interface{}{string(status), now, id, newRank}
 	case entity.MessageStatusDelivered:
-		query = `UPDATE messages SET status = $1, delivered_at = $2 WHERE id = $3`
-		args = []interface{}{string(status), now, id}
+		query = fmt.Sprintf(`UPDATE messages SET status = $1, delivered_at = $2 WHERE id = $3 AND (%s) <= $4`, sqlMessageStatusRank)
+		args = []interface{}{string(status), now, id, newRank}
 	case entity.MessageStatusRead:
-		query = `UPDATE messages SET status = $1, read_at = $2 WHERE id = $3`
-		args = []interface{}{string(status), now, id}
-	case entity.MessageStatusFailed:
-		query = `UPDATE messages SET status = $1, error_message = $2 WHERE id = $3`
-		args = []interface{}{string(status), errorMessage, id}
+		query = fmt.Sprintf(`UPDATE messages SET status = $1, read_at = $2 WHERE id = $3 AND (%s) <= $4`, sqlMessageStatusRank)
+		args = []interface{}{string(status), now, id, newRank}
 	default:
-		query = `UPDATE messages SET status = $1 WHERE id = $2`
-		args = []interface{}{string(status), id}
+		query = fmt.Sprintf(`UPDATE messages SET status = $1 WHERE id = $2 AND (%s) <= $3`, sqlMessageStatusRank)
+		args = []interface{}{string(status), id, newRank}
 	}
 
-	result, err := r.db.Pool.Exec(ctx, query, args...)
-	if err != nil {
+	// A zero RowsAffected here is expected when the monotonic guard blocks a stale
+	// out-of-order event; that is a benign no-op, not a "not found" error.
+	if _, err := r.db.Pool.Exec(ctx, query, args...); err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to update message status")
-	}
-
-	if result.RowsAffected() == 0 {
-		return errors.New(errors.ErrCodeMessageNotFound, "message not found")
 	}
 
 	return nil
@@ -287,6 +402,7 @@ func (r *MessageRepository) MarkAsRead(ctx context.Context, conversationID strin
 		SET status = 'read', read_at = $1
 		WHERE conversation_id = $2
 		  AND status != 'read'
+		  AND sender_type = 'contact'
 		  AND created_at <= (SELECT created_at FROM messages WHERE id = $3)
 	`
 
@@ -377,6 +493,10 @@ func (r *MessageRepository) FindAttachmentsByMessage(ctx context.Context, messag
 		}
 
 		attachments = append(attachments, &a)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate attachments")
 	}
 
 	return attachments, nil

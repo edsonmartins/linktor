@@ -22,5 +22,9 @@ export default defineConfig({
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: {
+      // The login page only renders the demo-credentials hint when enabled.
+      NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS: 'true',
+    },
   },
 })

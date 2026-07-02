@@ -26,7 +26,7 @@ func NewBotHandler(botService *service.BotServiceImpl) *BotHandler {
 // CreateBotRequest represents a create bot request
 type CreateBotRequest struct {
 	Name         string  `json:"name" binding:"required"`
-	Type         string  `json:"type" binding:"required"` // customer_service, sales, faq
+	Type         string  `json:"type" binding:"required"`     // customer_service, sales, faq
 	Provider     string  `json:"provider" binding:"required"` // openai, anthropic, ollama
 	Model        string  `json:"model" binding:"required"`
 	SystemPrompt string  `json:"system_prompt"`
@@ -47,16 +47,16 @@ type UpdateBotRequest struct {
 
 // UpdateBotConfigRequest represents an update bot config request
 type UpdateBotConfigRequest struct {
-	SystemPrompt        *string                    `json:"system_prompt"`
-	Temperature         *float64                   `json:"temperature"`
-	MaxTokens           *int                       `json:"max_tokens"`
-	ContextWindowSize   *int                       `json:"context_window_size"`
-	WelcomeMessage      *string                    `json:"welcome_message"`
-	FallbackMessage     *string                    `json:"fallback_message"`
-	ConfidenceThreshold *float64                   `json:"confidence_threshold"`
-	EscalationRules     []entity.EscalationRule    `json:"escalation_rules"`
-	WorkingHours        *entity.WorkingHours       `json:"working_hours"`
-	KnowledgeBaseID     *string                    `json:"knowledge_base_id"`
+	SystemPrompt        *string                 `json:"system_prompt"`
+	Temperature         *float64                `json:"temperature"`
+	MaxTokens           *int                    `json:"max_tokens"`
+	ContextWindowSize   *int                    `json:"context_window_size"`
+	WelcomeMessage      *string                 `json:"welcome_message"`
+	FallbackMessage     *string                 `json:"fallback_message"`
+	ConfidenceThreshold *float64                `json:"confidence_threshold"`
+	EscalationRules     []entity.EscalationRule `json:"escalation_rules"`
+	WorkingHours        *entity.WorkingHours    `json:"working_hours"`
+	KnowledgeBaseID     *string                 `json:"knowledge_base_id"`
 }
 
 // AssignChannelRequest represents a channel assignment request
@@ -173,13 +173,18 @@ func (h *BotHandler) Create(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id} [get]
 func (h *BotHandler) Get(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Bot ID is required", nil)
 		return
 	}
 
-	bot, err := h.botService.GetByID(c.Request.Context(), id)
+	bot, err := h.botService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -203,6 +208,11 @@ func (h *BotHandler) Get(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id} [put]
 func (h *BotHandler) Update(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Bot ID is required", nil)
@@ -225,7 +235,7 @@ func (h *BotHandler) Update(c *gin.Context) {
 		FallbackMessage: req.FallbackMessage,
 	}
 
-	bot, err := h.botService.Update(c.Request.Context(), id, input)
+	bot, err := h.botService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -247,13 +257,18 @@ func (h *BotHandler) Update(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id} [delete]
 func (h *BotHandler) Delete(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Bot ID is required", nil)
 		return
 	}
 
-	if err := h.botService.Delete(c.Request.Context(), id); err != nil {
+	if err := h.botService.DeleteForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -275,13 +290,18 @@ func (h *BotHandler) Delete(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id}/activate [post]
 func (h *BotHandler) Activate(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Bot ID is required", nil)
 		return
 	}
 
-	if err := h.botService.Activate(c.Request.Context(), id); err != nil {
+	if err := h.botService.ActivateForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -303,13 +323,18 @@ func (h *BotHandler) Activate(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id}/deactivate [post]
 func (h *BotHandler) Deactivate(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Bot ID is required", nil)
 		return
 	}
 
-	if err := h.botService.Deactivate(c.Request.Context(), id); err != nil {
+	if err := h.botService.DeactivateForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -332,6 +357,11 @@ func (h *BotHandler) Deactivate(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id}/channels [post]
 func (h *BotHandler) AssignChannel(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Bot ID is required", nil)
@@ -344,7 +374,7 @@ func (h *BotHandler) AssignChannel(c *gin.Context) {
 		return
 	}
 
-	if err := h.botService.AssignChannel(c.Request.Context(), id, req.ChannelID); err != nil {
+	if err := h.botService.AssignChannelForTenant(c.Request.Context(), tenantID, id, req.ChannelID); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -367,6 +397,11 @@ func (h *BotHandler) AssignChannel(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id}/channels/{channelId} [delete]
 func (h *BotHandler) UnassignChannel(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	botID := c.Param("id")
 	channelID := c.Param("channelId")
 
@@ -379,7 +414,7 @@ func (h *BotHandler) UnassignChannel(c *gin.Context) {
 		return
 	}
 
-	if err := h.botService.UnassignChannel(c.Request.Context(), botID, channelID); err != nil {
+	if err := h.botService.UnassignChannelForTenant(c.Request.Context(), tenantID, botID, channelID); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -402,6 +437,11 @@ func (h *BotHandler) UnassignChannel(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id}/config [put]
 func (h *BotHandler) UpdateConfig(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Bot ID is required", nil)
@@ -415,7 +455,7 @@ func (h *BotHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	// Get existing bot to merge config
-	bot, err := h.botService.GetByID(c.Request.Context(), id)
+	bot, err := h.botService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -454,13 +494,13 @@ func (h *BotHandler) UpdateConfig(c *gin.Context) {
 		config.KnowledgeBaseID = req.KnowledgeBaseID
 	}
 
-	if err := h.botService.UpdateConfig(c.Request.Context(), id, config); err != nil {
+	if err := h.botService.UpdateConfigForTenant(c.Request.Context(), tenantID, id, config); err != nil {
 		RespondError(c, err)
 		return
 	}
 
 	// Return updated bot
-	updatedBot, err := h.botService.GetByID(c.Request.Context(), id)
+	updatedBot, err := h.botService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -484,6 +524,11 @@ func (h *BotHandler) UpdateConfig(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id}/escalation-rules [post]
 func (h *BotHandler) AddEscalationRule(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Bot ID is required", nil)
@@ -502,7 +547,7 @@ func (h *BotHandler) AddEscalationRule(c *gin.Context) {
 		Priority:  req.Priority,
 	}
 
-	if err := h.botService.AddEscalationRule(c.Request.Context(), id, rule); err != nil {
+	if err := h.botService.AddEscalationRuleForTenant(c.Request.Context(), tenantID, id, rule); err != nil {
 		RespondError(c, err)
 		return
 	}
@@ -525,6 +570,11 @@ func (h *BotHandler) AddEscalationRule(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /bots/{id}/test [post]
 func (h *BotHandler) Test(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Bot ID is required", nil)
@@ -537,7 +587,7 @@ func (h *BotHandler) Test(c *gin.Context) {
 		return
 	}
 
-	response, err := h.botService.TestBot(c.Request.Context(), id, req.Message)
+	response, err := h.botService.TestBotForTenant(c.Request.Context(), tenantID, id, req.Message)
 	if err != nil {
 		RespondError(c, err)
 		return

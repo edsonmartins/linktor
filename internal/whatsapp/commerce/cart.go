@@ -489,10 +489,10 @@ func (cm *CartManager) ConvertToOrder(customerPhone string) (*Order, error) {
 
 // CartStats represents cart statistics
 type CartStats struct {
-	ActiveCarts    int   `json:"active_carts"`
-	AbandonedCarts int   `json:"abandoned_carts"`
-	TotalItems     int   `json:"total_items"`
-	TotalValue     int64 `json:"total_value"`
+	ActiveCarts    int    `json:"active_carts"`
+	AbandonedCarts int    `json:"abandoned_carts"`
+	TotalItems     int    `json:"total_items"`
+	TotalValue     int64  `json:"total_value"`
 	Currency       string `json:"currency"`
 }
 

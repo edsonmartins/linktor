@@ -8,22 +8,22 @@ import (
 type TemplateStatus string
 
 const (
-	TemplateStatusPending          TemplateStatus = "PENDING"
-	TemplateStatusApproved         TemplateStatus = "APPROVED"
-	TemplateStatusRejected         TemplateStatus = "REJECTED"
-	TemplateStatusPaused           TemplateStatus = "PAUSED"
-	TemplateStatusDisabled         TemplateStatus = "DISABLED"
-	TemplateStatusInAppeal         TemplateStatus = "IN_APPEAL"
-	TemplateStatusPendingDeletion  TemplateStatus = "PENDING_DELETION"
-	TemplateStatusDeleted          TemplateStatus = "DELETED"
-	TemplateStatusReinstated       TemplateStatus = "REINSTATED"
+	TemplateStatusPending         TemplateStatus = "PENDING"
+	TemplateStatusApproved        TemplateStatus = "APPROVED"
+	TemplateStatusRejected        TemplateStatus = "REJECTED"
+	TemplateStatusPaused          TemplateStatus = "PAUSED"
+	TemplateStatusDisabled        TemplateStatus = "DISABLED"
+	TemplateStatusInAppeal        TemplateStatus = "IN_APPEAL"
+	TemplateStatusPendingDeletion TemplateStatus = "PENDING_DELETION"
+	TemplateStatusDeleted         TemplateStatus = "DELETED"
+	TemplateStatusReinstated      TemplateStatus = "REINSTATED"
 	// Meta returns LIMIT_EXCEEDED for templates a WABA can no longer send
 	// because it hit its category-specific send limit, and ARCHIVED for
 	// templates Meta has retired from the library but that still exist on
 	// the WABA for reference. Missing these meant the mapper silently fell
 	// through and we'd persist the zero value instead of the real status.
-	TemplateStatusLimitExceeded    TemplateStatus = "LIMIT_EXCEEDED"
-	TemplateStatusArchived         TemplateStatus = "ARCHIVED"
+	TemplateStatusLimitExceeded TemplateStatus = "LIMIT_EXCEEDED"
+	TemplateStatusArchived      TemplateStatus = "ARCHIVED"
 )
 
 // TemplateCategory represents the category of a template
@@ -57,34 +57,34 @@ const (
 
 // Template represents a WhatsApp message template
 type Template struct {
-	ID                string           `json:"id"`
-	TenantID          string           `json:"tenant_id"`
-	ChannelID         string           `json:"channel_id"`
-	ExternalID        string           `json:"external_id"`         // Meta's template ID (aka hsm_id)
-	Name              string           `json:"name"`
-	Language          string           `json:"language"`
-	Category          TemplateCategory `json:"category"`
+	ID         string           `json:"id"`
+	TenantID   string           `json:"tenant_id"`
+	ChannelID  string           `json:"channel_id"`
+	ExternalID string           `json:"external_id"` // Meta's template ID (aka hsm_id)
+	Name       string           `json:"name"`
+	Language   string           `json:"language"`
+	Category   TemplateCategory `json:"category"`
 	// SubCategory refines some categories (e.g. UTILITY → ORDER_DETAILS,
 	// ORDER_STATUS, RICH_ORDER_STATUS). Optional; Meta treats absence as
 	// the generic category.
-	SubCategory       string           `json:"sub_category,omitempty"`
+	SubCategory string `json:"sub_category,omitempty"`
 	// ParameterFormat controls whether placeholders are positional ({{1}})
 	// or named ({{first_name}}). Empty means positional per Meta's default.
-	ParameterFormat   TemplateParameterFormat `json:"parameter_format,omitempty"`
+	ParameterFormat TemplateParameterFormat `json:"parameter_format,omitempty"`
 	// MessageSendTTLSeconds bounds how long Meta will retry delivery of a
 	// message that uses this template. Zero means Meta's default.
 	MessageSendTTLSeconds int `json:"message_send_ttl_seconds,omitempty"`
 	// AllowCategoryChange lets Meta auto-move a template to a different
 	// creation category based on content during review. Useful for
 	// marketing vs utility ambiguity.
-	AllowCategoryChange bool             `json:"allow_category_change,omitempty"`
-	Status            TemplateStatus   `json:"status"`
-	QualityScore      TemplateQuality  `json:"quality_score"`
-	Components        []TemplateComponent `json:"components"`
-	RejectionReason   string           `json:"rejection_reason,omitempty"`
-	LastSyncedAt      *time.Time       `json:"last_synced_at,omitempty"`
-	CreatedAt         time.Time        `json:"created_at"`
-	UpdatedAt         time.Time        `json:"updated_at"`
+	AllowCategoryChange bool                `json:"allow_category_change,omitempty"`
+	Status              TemplateStatus      `json:"status"`
+	QualityScore        TemplateQuality     `json:"quality_score"`
+	Components          []TemplateComponent `json:"components"`
+	RejectionReason     string              `json:"rejection_reason,omitempty"`
+	LastSyncedAt        *time.Time          `json:"last_synced_at,omitempty"`
+	CreatedAt           time.Time           `json:"created_at"`
+	UpdatedAt           time.Time           `json:"updated_at"`
 }
 
 // TemplateComponent represents a component of a template at creation time.
@@ -94,12 +94,12 @@ type Template struct {
 //   - CAROUSEL — card-based carousel (fill Cards)
 //   - LIMITED_TIME_OFFER — time-bound promo banner (fill LimitedTimeOffer)
 type TemplateComponent struct {
-	Type       string                 `json:"type"`
-	Format     string                 `json:"format,omitempty"` // TEXT, IMAGE, VIDEO, DOCUMENT, LOCATION
-	Text       string                 `json:"text,omitempty"`
-	Example    *TemplateExample       `json:"example,omitempty"`
-	Buttons    []TemplateButton       `json:"buttons,omitempty"`
-	Parameters []TemplateParameter    `json:"parameters,omitempty"`
+	Type       string              `json:"type"`
+	Format     string              `json:"format,omitempty"` // TEXT, IMAGE, VIDEO, DOCUMENT, LOCATION
+	Text       string              `json:"text,omitempty"`
+	Example    *TemplateExample    `json:"example,omitempty"`
+	Buttons    []TemplateButton    `json:"buttons,omitempty"`
+	Parameters []TemplateParameter `json:"parameters,omitempty"`
 	// Cards applies to CAROUSEL components. Each card carries its own
 	// header/body/buttons sub-components. Meta caps carousel at 10 cards.
 	Cards []TemplateCarouselCard `json:"cards,omitempty"`
@@ -145,12 +145,12 @@ type TemplateButton struct {
 	//   - COPY_CODE → user manually taps "copy" (fallback for all apps)
 	//   - ONE_TAP   → same as copy but Meta can autofill if supported_apps matches
 	//   - ZERO_TAP  → fully automatic autofill; requires zero_tap_terms_accepted
-	OTPType              string            `json:"otp_type,omitempty"`
-	AutofillText         string            `json:"autofill_text,omitempty"`
-	PackageName          string            `json:"package_name,omitempty"`
-	SignatureHash        string            `json:"signature_hash,omitempty"`
-	SupportedApps        []TemplateOTPApp  `json:"supported_apps,omitempty"`
-	ZeroTapTermsAccepted bool              `json:"zero_tap_terms_accepted,omitempty"`
+	OTPType              string           `json:"otp_type,omitempty"`
+	AutofillText         string           `json:"autofill_text,omitempty"`
+	PackageName          string           `json:"package_name,omitempty"`
+	SignatureHash        string           `json:"signature_hash,omitempty"`
+	SupportedApps        []TemplateOTPApp `json:"supported_apps,omitempty"`
+	ZeroTapTermsAccepted bool             `json:"zero_tap_terms_accepted,omitempty"`
 }
 
 // TemplateOTPApp identifies an Android app that can autofill an OTP code
@@ -162,13 +162,13 @@ type TemplateOTPApp struct {
 
 // TemplateParameter represents a parameter in a template message
 type TemplateParameter struct {
-	Type     string                   `json:"type"` // text, currency, date_time, image, video, document
-	Text     string                   `json:"text,omitempty"`
-	Currency *TemplateCurrencyParam   `json:"currency,omitempty"`
-	DateTime *TemplateDateTimeParam   `json:"date_time,omitempty"`
-	Image    *TemplateMediaParam      `json:"image,omitempty"`
-	Video    *TemplateMediaParam      `json:"video,omitempty"`
-	Document *TemplateDocumentParam   `json:"document,omitempty"`
+	Type     string                 `json:"type"` // text, currency, date_time, image, video, document
+	Text     string                 `json:"text,omitempty"`
+	Currency *TemplateCurrencyParam `json:"currency,omitempty"`
+	DateTime *TemplateDateTimeParam `json:"date_time,omitempty"`
+	Image    *TemplateMediaParam    `json:"image,omitempty"`
+	Video    *TemplateMediaParam    `json:"video,omitempty"`
+	Document *TemplateDocumentParam `json:"document,omitempty"`
 }
 
 // TemplateCurrencyParam represents a currency parameter
@@ -198,9 +198,9 @@ type TemplateDocumentParam struct {
 
 // TemplateSendRequest represents a request to send a template message
 type TemplateSendRequest struct {
-	TemplateName string                      `json:"template_name"`
-	Language     string                      `json:"language"`
-	Components   []TemplateComponentParams   `json:"components,omitempty"`
+	TemplateName string                    `json:"template_name"`
+	Language     string                    `json:"language"`
+	Components   []TemplateComponentParams `json:"components,omitempty"`
 }
 
 // TemplateComponentParams represents parameters for a template component when sending

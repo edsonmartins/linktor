@@ -58,7 +58,7 @@ export default function OperationsPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.tenantSettings.all })
       toast({ title: t('saved') })
     },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'error' }),
   })
 
   function num(v: string): number {

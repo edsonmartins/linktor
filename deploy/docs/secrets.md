@@ -14,6 +14,7 @@ Two places hold secrets:
 | `POSTGRES_PASSWORD`       | `openssl rand -base64 48`                | rotate via runbook                 |
 | `REDIS_PASSWORD`          | `openssl rand -base64 48`                | required (auth is enforced)        |
 | `JWT_SECRET`              | `openssl rand -base64 64`                | rotating invalidates all sessions  |
+| `CRYPTO_ENCRYPTION_KEY`   | `openssl rand -base64 48`                | encrypts channel credentials at rest; min 32 chars, must differ from `JWT_SECRET`; rotate via `crypto.previous_keys` |
 | `MINIO_ROOT_USER`         | n/a                                      | e.g. `linktor`                     |
 | `MINIO_ROOT_PASSWORD`     | `openssl rand -base64 48`                | min 8 chars                        |
 | `BACKUP_S3_*` (optional)  | from offsite provider                    | only if pushing backups offsite    |

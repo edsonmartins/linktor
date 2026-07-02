@@ -420,9 +420,12 @@ func TestChannelDelete_NotFound(t *testing.T) {
 
 	handler.Delete(c)
 
-	// Mock repo Delete is a no-op on missing key, so handler returns 204.
-	if c.Writer.Status() != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", c.Writer.Status())
+	// Delete now validates tenant ownership before deleting, so it must load the
+	// channel first. A missing channel fails the lookup: the mock returns a plain
+	// error, which maps to 500 (same as TestChannelGet_NotFound). The previous
+	// idempotent 204 was exactly what allowed cross-tenant deletion.
+	if c.Writer.Status() != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", c.Writer.Status())
 	}
 }
 
@@ -705,47 +708,5 @@ func TestChannelDisconnect_EmptyID(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// WhatsAppVerify
-// ---------------------------------------------------------------------------
-
-func TestChannelWhatsAppVerify(t *testing.T) {
-	handler, _, _ := setupChannelHandler()
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp?hub.challenge=test-challenge-123", nil)
-
-	handler.WhatsAppVerify(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	if w.Body.String() != "test-challenge-123" {
-		t.Fatalf("expected body=test-challenge-123, got %s", w.Body.String())
-	}
-}
-
-// ---------------------------------------------------------------------------
-// WhatsAppWebhook
-// ---------------------------------------------------------------------------
-
-func TestChannelWhatsAppWebhook(t *testing.T) {
-	handler, _, _ := setupChannelHandler()
-
-	c, w := newChannelAuthContext(http.MethodPost, "/webhooks/whatsapp/ch-1", nil)
-	c.Params = gin.Params{{Key: "channelId", Value: "ch-1"}}
-
-	handler.WhatsAppWebhook(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	resp := parseChannelResponse(t, w)
-	if !resp.Success {
-		t.Fatal("expected success=true")
 	}
 }

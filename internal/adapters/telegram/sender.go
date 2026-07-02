@@ -102,9 +102,37 @@ func (s *telegramSender) dispatch(chatID int64, content outbound.Content) (strin
 	case outbound.Media:
 		return s.sendMedia(chatID, c)
 
+	case outbound.Interactive:
+		return s.sendInteractive(chatID, c)
+
 	default:
 		return "", outbound.Permanentf("unsupported content kind %q", content.Kind())
 	}
+}
+
+// sendInteractive renders quick-reply buttons as a Telegram inline keyboard (one
+// button per row, callback_data carrying the option ID). With no buttons it
+// degrades to a plain-text message so nothing is dropped.
+func (s *telegramSender) sendInteractive(chatID int64, in outbound.Interactive) (string, error) {
+	if len(in.Buttons) == 0 {
+		if in.Body == "" {
+			return "", outbound.Permanentf("interactive message requires body or buttons")
+		}
+		m, err := s.client.SendMessage(chatID, in.Body, "", 0)
+		if err != nil {
+			return "", err
+		}
+		return strconv.Itoa(m.MessageID), nil
+	}
+	rows := make([][]InlineKeyboardButton, 0, len(in.Buttons))
+	for _, b := range in.Buttons {
+		rows = append(rows, []InlineKeyboardButton{{Text: b.Title, CallbackData: b.ID}})
+	}
+	m, err := s.client.SendMessageWithKeyboard(chatID, in.Body, "", &InlineKeyboard{Buttons: rows}, 0)
+	if err != nil {
+		return "", err
+	}
+	return strconv.Itoa(m.MessageID), nil
 }
 
 func (s *telegramSender) sendMedia(chatID int64, m outbound.Media) (string, error) {

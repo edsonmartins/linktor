@@ -56,7 +56,17 @@ func (c *InstagramConfig) IsExpired() bool {
 	return time.Now().After(c.ExpiresAt)
 }
 
-// IncomingMessage represents a parsed incoming Instagram message
+// Instagram inbound event types carried by IncomingMessage.EventType.
+const (
+	EventTypeMessage      = "message"
+	EventTypeReaction     = "reaction"
+	EventTypeStoryReply   = "story_reply"
+	EventTypeStoryMention = "story_mention"
+	EventTypeRead         = "read"
+)
+
+// IncomingMessage represents a parsed incoming Instagram event (a DM, a reaction,
+// a story reply/mention or a read receipt).
 type IncomingMessage struct {
 	ID          string
 	ExternalID  string
@@ -68,6 +78,18 @@ type IncomingMessage struct {
 	IsEcho      bool
 	IsDeleted   bool
 	Timestamp   time.Time
+
+	// EventType distinguishes DMs from reactions/story events. Empty is treated
+	// as EventTypeMessage for backwards compatibility.
+	EventType string
+
+	// Reaction fields (EventTypeReaction).
+	ReactionEmoji  string
+	ReactionAction string // "react" or "unreact"
+
+	// Story fields (EventTypeStoryReply / EventTypeStoryMention).
+	StoryID  string
+	StoryURL string
 }
 
 // Attachment represents a message attachment
@@ -97,9 +119,9 @@ type MessagingEvent = meta.MessagingEvent
 
 // Errors
 var (
-	ErrMissingInstagramID  = &ConfigError{Field: "instagram_id", Message: "instagram_id is required"}
-	ErrMissingAccessToken  = &ConfigError{Field: "access_token", Message: "access_token or page_access_token is required"}
-	ErrTokenExpired        = &ConfigError{Field: "access_token", Message: "access token has expired"}
+	ErrMissingInstagramID = &ConfigError{Field: "instagram_id", Message: "instagram_id is required"}
+	ErrMissingAccessToken = &ConfigError{Field: "access_token", Message: "access_token or page_access_token is required"}
+	ErrTokenExpired       = &ConfigError{Field: "access_token", Message: "access token has expired"}
 )
 
 // ConfigError represents a configuration error

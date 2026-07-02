@@ -5,7 +5,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -103,8 +106,13 @@ func (a *Adapter) Connect(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.client != nil && a.client.IsConnected() {
-		return nil
+	if a.client != nil {
+		if a.client.IsConnected() {
+			return nil
+		}
+		// Clean up the previous (stale) client before creating a new one to
+		// avoid leaking its goroutine, event loop and SQLite handle.
+		a.teardownLocked()
 	}
 
 	// Create client
@@ -134,21 +142,30 @@ func (a *Adapter) Disconnect(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	return a.teardownLocked()
+}
+
+// teardownLocked stops the event loop and closes the underlying client.
+// It must be called with a.mu held. It is safe to call multiple times: the
+// stop channel is niled after being closed (avoiding a double-close panic) and
+// the client is zeroed even when Close() returns an error.
+func (a *Adapter) teardownLocked() error {
 	if a.stopCh != nil {
 		close(a.stopCh)
 		<-a.eventLoopDone
+		a.stopCh = nil
+		a.eventLoopDone = nil
 	}
 
+	var err error
 	if a.client != nil {
 		a.client.Disconnect()
-		if err := a.client.Close(); err != nil {
-			return err
-		}
+		err = a.client.Close()
 	}
 
 	a.client = nil
 	a.SetConnected(false)
-	return nil
+	return err
 }
 
 // Login initiates QR code login and returns a channel for QR events
@@ -241,8 +258,11 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 	case plugin.ContentTypeImage:
 		if len(msg.Attachments) > 0 {
 			att := msg.Attachments[0]
-			// Media data should be provided via metadata["media_data"] or fetched from URL
-			mediaData, err := getMediaData(att)
+			// Media data should be provided via metadata["media_data"] or fetched from URL.
+			// Declare mediaData separately so the send error propagates to the outer err
+			// (using := here would shadow err and leave resp nil -> panic below).
+			var mediaData []byte
+			mediaData, err = getMediaData(ctx, att)
 			if err != nil {
 				return &plugin.SendResult{
 					Success: false,
@@ -262,7 +282,8 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 	case plugin.ContentTypeVideo:
 		if len(msg.Attachments) > 0 {
 			att := msg.Attachments[0]
-			mediaData, err := getMediaData(att)
+			var mediaData []byte
+			mediaData, err = getMediaData(ctx, att)
 			if err != nil {
 				return &plugin.SendResult{
 					Success: false,
@@ -282,7 +303,8 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 	case plugin.ContentTypeAudio:
 		if len(msg.Attachments) > 0 {
 			att := msg.Attachments[0]
-			mediaData, err := getMediaData(att)
+			var mediaData []byte
+			mediaData, err = getMediaData(ctx, att)
 			if err != nil {
 				return &plugin.SendResult{
 					Success: false,
@@ -303,7 +325,8 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 	case plugin.ContentTypeDocument:
 		if len(msg.Attachments) > 0 {
 			att := msg.Attachments[0]
-			mediaData, err := getMediaData(att)
+			var mediaData []byte
+			mediaData, err = getMediaData(ctx, att)
 			if err != nil {
 				return &plugin.SendResult{
 					Success: false,
@@ -341,6 +364,17 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 			Success:   false,
 			Status:    plugin.MessageStatusFailed,
 			Error:     err.Error(),
+			Timestamp: time.Now(),
+		}, nil
+	}
+
+	// Defensive guard: never dereference a nil response even if a send path
+	// somehow returned (nil, nil).
+	if resp == nil {
+		return &plugin.SendResult{
+			Success:   false,
+			Status:    plugin.MessageStatusFailed,
+			Error:     "send returned no response",
 			Timestamp: time.Now(),
 		}, nil
 	}
@@ -482,6 +516,15 @@ func (a *Adapter) eventLoop() {
 		return
 	}
 
+	// Lifecycle ctx for handlers: cancelled when the adapter stops so
+	// in-flight processing does not outlive the event loop.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		<-stopCh
+		cancel()
+	}()
+
 	eventCh := client.GetEventChannel()
 
 	for {
@@ -504,7 +547,10 @@ func (a *Adapter) eventLoop() {
 			case *IncomingMessage:
 				if msgHandler != nil && !v.IsFromMe {
 					inbound := convertToInboundMessage(v)
-					if err := msgHandler(context.Background(), inbound); err != nil {
+					// Eagerly download+decrypt inbound media so the encrypted
+					// CDN blob becomes usable bytes for the application.
+					enrichInboundMedia(ctx, v, inbound, client)
+					if err := msgHandler(ctx, inbound); err != nil {
 						// Log error but continue
 					}
 				}
@@ -512,7 +558,7 @@ func (a *Adapter) eventLoop() {
 			case *Receipt:
 				if statusHandler != nil {
 					status := convertToStatusCallback(v)
-					if err := statusHandler(context.Background(), status); err != nil {
+					if err := statusHandler(ctx, status); err != nil {
 						// Log error but continue
 					}
 				}
@@ -525,7 +571,7 @@ func (a *Adapter) eventLoop() {
 
 				// Notify connection handler
 				if connHandler != nil {
-					if err := connHandler(context.Background(), connected, string(v.State)); err != nil {
+					if err := connHandler(ctx, connected, string(v.State)); err != nil {
 						// Log error but continue
 					}
 				}
@@ -537,7 +583,7 @@ func (a *Adapter) eventLoop() {
 
 				// Notify connection handler about logout
 				if connHandler != nil {
-					if err := connHandler(context.Background(), false, v.Reason); err != nil {
+					if err := connHandler(ctx, false, v.Reason); err != nil {
 						// Log error but continue
 					}
 				}
@@ -585,13 +631,35 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 
 	// Convert attachments
 	for _, att := range msg.Attachments {
-		inbound.Attachments = append(inbound.Attachments, &plugin.Attachment{
+		pa := &plugin.Attachment{
 			Type:      att.Type,
 			URL:       att.URL,
 			MimeType:  att.MimeType,
 			SizeBytes: int64(att.FileSize),
 			Filename:  att.Filename,
-		})
+		}
+
+		// Location messages carry no downloadable media; surface their
+		// coordinates (and name/address) via metadata so downstream
+		// normalizers can reconstruct the location payload.
+		if att.Type == "location" {
+			lat := strconv.FormatFloat(att.Latitude, 'f', -1, 64)
+			lon := strconv.FormatFloat(att.Longitude, 'f', -1, 64)
+			inbound.Metadata["latitude"] = lat
+			inbound.Metadata["longitude"] = lon
+			if att.Filename != "" {
+				inbound.Metadata["name"] = att.Filename
+			}
+			if att.Caption != "" {
+				inbound.Metadata["address"] = att.Caption
+			}
+			pa.Metadata = map[string]string{
+				"latitude":  lat,
+				"longitude": lon,
+			}
+		}
+
+		inbound.Attachments = append(inbound.Attachments, pa)
 	}
 
 	// Handle reply info
@@ -607,6 +675,56 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 	}
 
 	return inbound
+}
+
+// mediaDownloader downloads and decrypts an inbound WhatsApp media message.
+// *Client satisfies it via its DownloadMedia method; tests fake it to exercise
+// the enrichment/mapping logic without a live whatsmeow connection.
+type mediaDownloader interface {
+	DownloadMedia(ctx context.Context, msg any) ([]byte, error)
+}
+
+// enrichInboundMedia eagerly downloads+decrypts each inbound media attachment
+// and attaches the resulting bytes to the corresponding plugin attachment.
+//
+// whatsmeow media messages reference an encrypted blob on WhatsApp's CDN; the
+// plain URL is ciphertext that no downstream HTTP consumer can decrypt. We
+// therefore download+decrypt here and carry the plaintext as base64 in the
+// attachment metadata (symmetric with how outbound media reads
+// metadata["data"]), dropping the useless encrypted URL. src and inbound share
+// a 1:1 attachment ordering because both are built from msg.Attachments.
+func enrichInboundMedia(ctx context.Context, src *IncomingMessage, inbound *plugin.InboundMessage, downloader mediaDownloader) {
+	if src == nil || inbound == nil || downloader == nil {
+		return
+	}
+
+	for i := range src.Attachments {
+		ref := src.Attachments[i].download
+		if ref == nil {
+			continue
+		}
+		if i >= len(inbound.Attachments) {
+			break
+		}
+
+		pa := inbound.Attachments[i]
+		if pa.Metadata == nil {
+			pa.Metadata = make(map[string]string)
+		}
+
+		data, err := downloader.DownloadMedia(ctx, ref)
+		if err != nil {
+			pa.Metadata["download_error"] = err.Error()
+			continue
+		}
+
+		pa.Metadata["data"] = base64.StdEncoding.EncodeToString(data)
+		pa.Metadata["data_encoding"] = "base64"
+		pa.SizeBytes = int64(len(data))
+		// The encrypted CDN URL is unusable once we hold the plaintext; clear it
+		// so no downstream consumer stores the ciphertext blob.
+		pa.URL = ""
+	}
 }
 
 // convertToStatusCallback converts a Receipt to plugin.StatusCallback
@@ -638,7 +756,7 @@ func convertToStatusCallback(receipt *Receipt) *plugin.StatusCallback {
 
 // getMediaData extracts media data from an attachment
 // It checks for base64 data in metadata or fetches from URL
-func getMediaData(att *plugin.Attachment) ([]byte, error) {
+func getMediaData(ctx context.Context, att *plugin.Attachment) ([]byte, error) {
 	// Check if data is provided in metadata as base64
 	if att.Metadata != nil {
 		if b64Data, ok := att.Metadata["data"]; ok && b64Data != "" {
@@ -648,7 +766,7 @@ func getMediaData(att *plugin.Attachment) ([]byte, error) {
 
 	// Fetch from URL if provided
 	if att.URL != "" {
-		return fetchMediaFromURL(att.URL)
+		return fetchMediaFromURL(ctx, att.URL)
 	}
 
 	return nil, fmt.Errorf("no media data provided: attach via URL or metadata[data] as base64")
@@ -687,19 +805,77 @@ func indexOf(s, substr string) int {
 	return -1
 }
 
-// fetchMediaFromURL fetches media content from a URL
-func fetchMediaFromURL(url string) ([]byte, error) {
-	resp, err := httpClient.Get(url)
+// maxMediaFetchBytes caps how much data fetchMediaFromURL will read from a
+// remote URL to protect against memory-exhaustion via oversized responses.
+const maxMediaFetchBytes = 25 * 1024 * 1024 // 25 MB
+
+// fetchMediaFromURL fetches media content from a URL with SSRF protections:
+// it only allows http/https, rejects hosts that resolve to private,
+// loopback, link-local or otherwise non-public addresses, honours ctx, and
+// bounds the amount of data read.
+func fetchMediaFromURL(ctx context.Context, rawURL string) ([]byte, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid media URL: %w", err)
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("unsupported media URL scheme %q: only http/https allowed", parsed.Scheme)
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return nil, fmt.Errorf("media URL is missing a host")
+	}
+
+	// Resolve the host and reject any address that is not publicly routable.
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve media host %q: %w", host, err)
+	}
+	for _, ip := range ips {
+		if isBlockedIP(ip) {
+			return nil, fmt.Errorf("media host %q resolves to a disallowed address %s", host, ip)
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create media request: %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch media: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch media: status %d", resp.StatusCode)
 	}
 
-	return io.ReadAll(resp.Body)
+	// Read at most maxMediaFetchBytes (+1 to detect overflow).
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMediaFetchBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read media: %w", err)
+	}
+	if len(data) > maxMediaFetchBytes {
+		return nil, fmt.Errorf("media exceeds maximum allowed size of %d bytes", maxMediaFetchBytes)
+	}
+
+	return data, nil
+}
+
+// isBlockedIP reports whether an IP must not be fetched from, to prevent SSRF
+// against internal services and cloud metadata endpoints (e.g. 169.254.169.254).
+func isBlockedIP(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsInterfaceLocalMulticast() ||
+		ip.IsMulticast() ||
+		ip.IsUnspecified()
 }
 
 // httpClient is a shared HTTP client for fetching media

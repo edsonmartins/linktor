@@ -10,19 +10,19 @@ import (
 
 // ConversationAnalytics represents conversation analytics data
 type ConversationAnalytics struct {
-	ID                 string                    `json:"id"`
-	OrganizationID     string                    `json:"organization_id"`
-	PhoneNumberID      string                    `json:"phone_number_id"`
-	Period             AnalyticsPeriod           `json:"period"`
-	TotalConversations int                       `json:"total_conversations"`
-	TotalCost          float64                   `json:"total_cost"`
-	Currency           string                    `json:"currency"`
-	ByType             map[ConversationType]int  `json:"by_type"`
-	ByDirection        map[Direction]int         `json:"by_direction"`
-	ByCountry          map[string]int            `json:"by_country"`
+	ID                 string                                            `json:"id"`
+	OrganizationID     string                                            `json:"organization_id"`
+	PhoneNumberID      string                                            `json:"phone_number_id"`
+	Period             AnalyticsPeriod                                   `json:"period"`
+	TotalConversations int                                               `json:"total_conversations"`
+	TotalCost          float64                                           `json:"total_cost"`
+	Currency           string                                            `json:"currency"`
+	ByType             map[ConversationType]int                          `json:"by_type"`
+	ByDirection        map[Direction]int                                 `json:"by_direction"`
+	ByCountry          map[string]int                                    `json:"by_country"`
 	ByCategory         map[ConversationCategory]ConversationCategoryCost `json:"by_category"`
-	Timeline           []DailyAnalytics          `json:"timeline"`
-	FetchedAt          time.Time                 `json:"fetched_at"`
+	Timeline           []DailyAnalytics                                  `json:"timeline"`
+	FetchedAt          time.Time                                         `json:"fetched_at"`
 }
 
 // AnalyticsPeriod represents a time period for analytics
@@ -52,10 +52,10 @@ const (
 type ConversationCategory string
 
 const (
-	CategoryAuthentication ConversationCategory = "AUTHENTICATION"
-	CategoryMarketing      ConversationCategory = "MARKETING"
-	CategoryUtility        ConversationCategory = "UTILITY"
-	CategoryService        ConversationCategory = "SERVICE"
+	CategoryAuthentication     ConversationCategory = "AUTHENTICATION"
+	CategoryMarketing          ConversationCategory = "MARKETING"
+	CategoryUtility            ConversationCategory = "UTILITY"
+	CategoryService            ConversationCategory = "SERVICE"
 	CategoryReferralConversion ConversationCategory = "REFERRAL_CONVERSION"
 )
 
@@ -67,9 +67,9 @@ type ConversationCategoryCost struct {
 
 // DailyAnalytics represents daily conversation data
 type DailyAnalytics struct {
-	Date          string  `json:"date"` // YYYY-MM-DD format
-	Conversations int     `json:"conversations"`
-	Cost          float64 `json:"cost"`
+	Date          string                       `json:"date"` // YYYY-MM-DD format
+	Conversations int                          `json:"conversations"`
+	Cost          float64                      `json:"cost"`
 	ByCategory    map[ConversationCategory]int `json:"by_category,omitempty"`
 }
 
@@ -79,22 +79,22 @@ type DailyAnalytics struct {
 
 // MessageAnalytics represents message-level analytics
 type MessageAnalytics struct {
-	TotalSent      int                      `json:"total_sent"`
-	TotalDelivered int                      `json:"total_delivered"`
-	TotalRead      int                      `json:"total_read"`
-	TotalFailed    int                      `json:"total_failed"`
-	DeliveryRate   float64                  `json:"delivery_rate"`
-	ReadRate       float64                  `json:"read_rate"`
-	ByType         map[string]MessageStats  `json:"by_type"`
-	Timeline       []DailyMessageStats      `json:"timeline"`
+	TotalSent      int                     `json:"total_sent"`
+	TotalDelivered int                     `json:"total_delivered"`
+	TotalRead      int                     `json:"total_read"`
+	TotalFailed    int                     `json:"total_failed"`
+	DeliveryRate   float64                 `json:"delivery_rate"`
+	ReadRate       float64                 `json:"read_rate"`
+	ByType         map[string]MessageStats `json:"by_type"`
+	Timeline       []DailyMessageStats     `json:"timeline"`
 }
 
 // MessageStats represents message statistics
 type MessageStats struct {
-	Sent      int     `json:"sent"`
-	Delivered int     `json:"delivered"`
-	Read      int     `json:"read"`
-	Failed    int     `json:"failed"`
+	Sent      int `json:"sent"`
+	Delivered int `json:"delivered"`
+	Read      int `json:"read"`
+	Failed    int `json:"failed"`
 }
 
 // DailyMessageStats represents daily message statistics
@@ -112,26 +112,26 @@ type DailyMessageStats struct {
 
 // TemplateAnalytics represents template performance analytics
 type TemplateAnalytics struct {
-	TemplateID   string                 `json:"template_id"`
-	TemplateName string                 `json:"template_name"`
-	Category     string                 `json:"category"`
-	Language     string                 `json:"language"`
-	Stats        TemplateStats          `json:"stats"`
-	DailyStats   []DailyTemplateStats   `json:"daily_stats"`
-	QualityScore *TemplateQualityScore  `json:"quality_score,omitempty"`
+	TemplateID   string                `json:"template_id"`
+	TemplateName string                `json:"template_name"`
+	Category     string                `json:"category"`
+	Language     string                `json:"language"`
+	Stats        TemplateStats         `json:"stats"`
+	DailyStats   []DailyTemplateStats  `json:"daily_stats"`
+	QualityScore *TemplateQualityScore `json:"quality_score,omitempty"`
 }
 
 // TemplateStats represents overall template statistics
 type TemplateStats struct {
-	Sent           int     `json:"sent"`
-	Delivered      int     `json:"delivered"`
-	Read           int     `json:"read"`
-	Clicked        int     `json:"clicked"`
-	Replied        int     `json:"replied"`
-	DeliveryRate   float64 `json:"delivery_rate"`
-	ReadRate       float64 `json:"read_rate"`
-	ClickRate      float64 `json:"click_rate"`
-	ResponseRate   float64 `json:"response_rate"`
+	Sent         int     `json:"sent"`
+	Delivered    int     `json:"delivered"`
+	Read         int     `json:"read"`
+	Clicked      int     `json:"clicked"`
+	Replied      int     `json:"replied"`
+	DeliveryRate float64 `json:"delivery_rate"`
+	ReadRate     float64 `json:"read_rate"`
+	ClickRate    float64 `json:"click_rate"`
+	ResponseRate float64 `json:"response_rate"`
 }
 
 // DailyTemplateStats represents daily template statistics
@@ -145,7 +145,7 @@ type DailyTemplateStats struct {
 
 // TemplateQualityScore represents template quality information
 type TemplateQualityScore struct {
-	Score   string `json:"score"` // GREEN, YELLOW, RED, UNKNOWN
+	Score   string   `json:"score"` // GREEN, YELLOW, RED, UNKNOWN
 	Reasons []string `json:"reasons,omitempty"`
 }
 
@@ -155,14 +155,14 @@ type TemplateQualityScore struct {
 
 // PhoneNumberAnalytics represents phone number quality analytics
 type PhoneNumberAnalytics struct {
-	PhoneNumberID    string              `json:"phone_number_id"`
-	DisplayNumber    string              `json:"display_phone_number"`
-	QualityRating    string              `json:"quality_rating"` // GREEN, YELLOW, RED
-	MessagingLimit   string              `json:"messaging_limit"` // TIER_1K, TIER_10K, TIER_100K, TIER_UNLIMITED
-	CurrentThroughput int                `json:"current_throughput"`
-	Status           string              `json:"status"`
-	NameStatus       string              `json:"name_status"`
-	NewNameStatus    string              `json:"new_name_status,omitempty"`
+	PhoneNumberID     string `json:"phone_number_id"`
+	DisplayNumber     string `json:"display_phone_number"`
+	QualityRating     string `json:"quality_rating"`  // GREEN, YELLOW, RED
+	MessagingLimit    string `json:"messaging_limit"` // TIER_1K, TIER_10K, TIER_100K, TIER_UNLIMITED
+	CurrentThroughput int    `json:"current_throughput"`
+	Status            string `json:"status"`
+	NameStatus        string `json:"name_status"`
+	NewNameStatus     string `json:"new_name_status,omitempty"`
 }
 
 // =============================================================================
@@ -185,16 +185,16 @@ type ConversationAnalyticsResponse struct {
 
 // ConversationDataPoint represents a single data point
 type ConversationDataPoint struct {
-	DataPointID     string `json:"data_point_id"`
-	Start           int64  `json:"start"` // Unix timestamp
-	End             int64  `json:"end"`   // Unix timestamp
-	Sent            int    `json:"sent"`
-	Delivered       int    `json:"delivered"`
-	ConversationType string `json:"conversation_type"`
-	ConversationDirection string `json:"conversation_direction"`
-	ConversationCategory string `json:"conversation_category,omitempty"`
-	Cost            float64 `json:"cost"`
-	Country         string  `json:"country,omitempty"`
+	DataPointID           string  `json:"data_point_id"`
+	Start                 int64   `json:"start"` // Unix timestamp
+	End                   int64   `json:"end"`   // Unix timestamp
+	Sent                  int     `json:"sent"`
+	Delivered             int     `json:"delivered"`
+	ConversationType      string  `json:"conversation_type"`
+	ConversationDirection string  `json:"conversation_direction"`
+	ConversationCategory  string  `json:"conversation_category,omitempty"`
+	Cost                  float64 `json:"cost"`
+	Country               string  `json:"country,omitempty"`
 }
 
 // Paging represents pagination info
@@ -222,10 +222,10 @@ const (
 
 // ExportRequest represents an export request
 type ExportRequest struct {
-	Format      ExportFormat  `json:"format"`
-	StartDate   time.Time     `json:"start_date"`
-	EndDate     time.Time     `json:"end_date"`
-	IncludeRaw  bool          `json:"include_raw"`
+	Format     ExportFormat `json:"format"`
+	StartDate  time.Time    `json:"start_date"`
+	EndDate    time.Time    `json:"end_date"`
+	IncludeRaw bool         `json:"include_raw"`
 }
 
 // =============================================================================

@@ -42,11 +42,11 @@ func NewConsumer(client *Client) *Consumer {
 
 // ConsumerConfig holds configuration for a consumer
 type ConsumerConfig struct {
-	Stream       string
-	Name         string
+	Stream        string
+	Name          string
 	FilterSubject string
-	MaxDeliver   int
-	AckWait      time.Duration
+	MaxDeliver    int
+	AckWait       time.Duration
 	MaxAckPending int
 }
 
@@ -213,10 +213,10 @@ func (c *Consumer) subscribe(ctx context.Context, cfg ConsumerConfig, handler fu
 
 				for msg := range msgs.Messages() {
 					if err := handler(msg); err != nil {
-						if c.deliveryExhausted(msg, cfg.MaxDeliver) {
+						if deliveryExhausted(msg, cfg.MaxDeliver) {
 							// Final attempt failed: dead-letter instead of looping
 							// or silently dropping on the work-queue stream.
-							c.deadLetter(ctx, cfg.Name, msg, err)
+							deadLetter(ctx, c.client, cfg.Name, msg, err)
 						} else {
 							msg.NakWithDelay(5 * time.Second)
 						}
@@ -232,7 +232,7 @@ func (c *Consumer) subscribe(ctx context.Context, cfg ConsumerConfig, handler fu
 }
 
 // deliveryExhausted reports whether this is the last allowed delivery attempt.
-func (c *Consumer) deliveryExhausted(msg jetstream.Msg, maxDeliver int) bool {
+func deliveryExhausted(msg jetstream.Msg, maxDeliver int) bool {
 	if maxDeliver <= 0 {
 		return false
 	}
@@ -245,8 +245,8 @@ func (c *Consumer) deliveryExhausted(msg jetstream.Msg, maxDeliver int) bool {
 
 // deadLetter publishes the raw message to the consumer's DLQ subject and acks
 // it. If the DLQ publish fails, the message is NAK'd so it is not lost.
-func (c *Consumer) deadLetter(ctx context.Context, consumerName string, msg jetstream.Msg, cause error) {
-	if _, err := c.client.JetStream().Publish(ctx, SubjectDLQ(consumerName), msg.Data()); err != nil {
+func deadLetter(ctx context.Context, client *Client, consumerName string, msg jetstream.Msg, cause error) {
+	if _, err := client.JetStream().Publish(ctx, SubjectDLQ(consumerName), msg.Data()); err != nil {
 		logger.Error("failed to dead-letter message, will retry delivery: " + err.Error())
 		msg.NakWithDelay(30 * time.Second)
 		return

@@ -29,14 +29,14 @@ type KnowledgeConfig struct {
 	MaxFileSize      int64    `json:"max_file_size,omitempty"`
 
 	// For website type
-	CrawlURLs        []string `json:"crawl_urls,omitempty"`
-	CrawlDepth       int      `json:"crawl_depth,omitempty"`
-	CrawlFrequency   string   `json:"crawl_frequency,omitempty"` // daily, weekly, monthly
+	CrawlURLs      []string `json:"crawl_urls,omitempty"`
+	CrawlDepth     int      `json:"crawl_depth,omitempty"`
+	CrawlFrequency string   `json:"crawl_frequency,omitempty"` // daily, weekly, monthly
 
 	// Common
-	EmbeddingModel   string `json:"embedding_model,omitempty"`
-	ChunkSize        int    `json:"chunk_size,omitempty"`
-	ChunkOverlap     int    `json:"chunk_overlap,omitempty"`
+	EmbeddingModel string `json:"embedding_model,omitempty"`
+	ChunkSize      int    `json:"chunk_size,omitempty"`
+	ChunkOverlap   int    `json:"chunk_overlap,omitempty"`
 }
 
 // KnowledgeBase represents a knowledge base for RAG
@@ -45,7 +45,7 @@ type KnowledgeBase struct {
 	TenantID    string          `json:"tenant_id"`
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
-	Type        KnowledgeType   `json:"type"`   // faq, documents, website
+	Type        KnowledgeType   `json:"type"` // faq, documents, website
 	Config      KnowledgeConfig `json:"config"`
 	Status      KnowledgeStatus `json:"status"`
 	ItemCount   int             `json:"item_count"`
@@ -110,16 +110,16 @@ func (kb *KnowledgeBase) SetItemCount(count int) {
 
 // KnowledgeItem represents an item in the knowledge base
 type KnowledgeItem struct {
-	ID              string    `json:"id"`
-	KnowledgeBaseID string    `json:"knowledge_base_id"`
-	Question        string    `json:"question"`
-	Answer          string    `json:"answer"`
-	Keywords        []string  `json:"keywords,omitempty"`
-	Embedding       []float64 `json:"embedding,omitempty"` // Vector for RAG
-	Source          string    `json:"source,omitempty"`    // Original source URL or file
+	ID              string            `json:"id"`
+	KnowledgeBaseID string            `json:"knowledge_base_id"`
+	Question        string            `json:"question"`
+	Answer          string            `json:"answer"`
+	Keywords        []string          `json:"keywords,omitempty"`
+	Embedding       []float64         `json:"embedding,omitempty"` // Vector for RAG
+	Source          string            `json:"source,omitempty"`    // Original source URL or file
 	Metadata        map[string]string `json:"metadata,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
 }
 
 // NewKnowledgeItem creates a new knowledge item
@@ -183,11 +183,11 @@ type SearchResult struct {
 
 // KnowledgeSearchRequest represents a search request
 type KnowledgeSearchRequest struct {
-	Query           string   `json:"query"`
-	KnowledgeBaseID string   `json:"knowledge_base_id"`
-	TopK            int      `json:"top_k,omitempty"`
-	MinScore        float64  `json:"min_score,omitempty"`
-	IncludeKeywords bool     `json:"include_keywords,omitempty"`
+	Query           string  `json:"query"`
+	KnowledgeBaseID string  `json:"knowledge_base_id"`
+	TopK            int     `json:"top_k,omitempty"`
+	MinScore        float64 `json:"min_score,omitempty"`
+	IncludeKeywords bool    `json:"include_keywords,omitempty"`
 }
 
 // KnowledgeSearchResponse represents a search response

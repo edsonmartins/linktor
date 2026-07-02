@@ -67,21 +67,21 @@ func NewClient(config *ClientConfig) *Client {
 
 // MessageRequest represents a messages API request
 type MessageRequest struct {
-	Model       string        `json:"model"`
-	Messages    []Message     `json:"messages"`
-	MaxTokens   int           `json:"max_tokens"`
-	Temperature float64       `json:"temperature,omitempty"`
-	TopP        float64       `json:"top_p,omitempty"`
-	TopK        int           `json:"top_k,omitempty"`
-	System      string        `json:"system,omitempty"`
-	StopSeq     []string      `json:"stop_sequences,omitempty"`
-	Stream      bool          `json:"stream,omitempty"`
-	Metadata    *Metadata     `json:"metadata,omitempty"`
+	Model       string    `json:"model"`
+	Messages    []Message `json:"messages"`
+	MaxTokens   int       `json:"max_tokens"`
+	Temperature float64   `json:"temperature,omitempty"`
+	TopP        float64   `json:"top_p,omitempty"`
+	TopK        int       `json:"top_k,omitempty"`
+	System      string    `json:"system,omitempty"`
+	StopSeq     []string  `json:"stop_sequences,omitempty"`
+	Stream      bool      `json:"stream,omitempty"`
+	Metadata    *Metadata `json:"metadata,omitempty"`
 }
 
 // Message represents a message in the conversation
 type Message struct {
-	Role    string        `json:"role"` // user, assistant
+	Role    string         `json:"role"` // user, assistant
 	Content []ContentBlock `json:"content"`
 }
 
@@ -117,8 +117,8 @@ type Usage struct {
 
 // APIError represents an Anthropic API error
 type APIError struct {
-	Type    string `json:"type"`
-	Error   ErrorDetail `json:"error"`
+	Type  string      `json:"type"`
+	Error ErrorDetail `json:"error"`
 }
 
 // ErrorDetail contains error details

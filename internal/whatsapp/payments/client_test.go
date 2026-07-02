@@ -486,3 +486,51 @@ func TestMockGateway_ValidateWebhook(t *testing.T) {
 
 	assert.True(t, valid)
 }
+
+// TestClient_CrossOrgPayment_Denied verifies a client scoped to one organization
+// cannot read, status-update or refund a payment belonging to another org even
+// when it knows the payment id / reference id (IDOR guard).
+func TestClient_CrossOrgPayment_Denied(t *testing.T) {
+	store := newMockPaymentStore()
+	// A payment owned by org-2.
+	store.payments["pay-2"] = &Payment{
+		ID:             "pay-2",
+		OrganizationID: "org-2",
+		ChannelID:      "chan-2",
+		ReferenceID:    "ref-2",
+		Amount:         5000,
+		Status:         PaymentStatusSuccess,
+	}
+
+	// A client scoped to org-1.
+	client := NewClient(&ClientConfig{
+		AccessToken:    "t",
+		PhoneNumberID:  "p",
+		Store:          store,
+		OrganizationID: "org-1",
+		ChannelID:      "chan-1",
+		GatewayConfig:  &GatewayConfig{Type: GatewayMock},
+	})
+
+	if _, err := client.GetPayment(context.Background(), "pay-2"); err == nil {
+		t.Fatal("GetPayment must not return another org's payment")
+	}
+	if _, err := client.GetPaymentByReference(context.Background(), "ref-2"); err == nil {
+		t.Fatal("GetPaymentByReference must not return another org's payment")
+	}
+	if err := client.UpdatePaymentStatus(context.Background(), "pay-2", PaymentStatusFailed); err == nil {
+		t.Fatal("UpdatePaymentStatus must not touch another org's payment")
+	}
+	if _, err := client.ProcessRefund(context.Background(), &RefundRequest{PaymentID: "pay-2"}); err == nil {
+		t.Fatal("ProcessRefund must not refund another org's payment")
+	}
+
+	// Same-org access still works.
+	store.payments["pay-1"] = &Payment{
+		ID: "pay-1", OrganizationID: "org-1", ChannelID: "chan-1",
+		ReferenceID: "ref-1", Amount: 1000, Status: PaymentStatusSuccess,
+	}
+	if _, err := client.GetPayment(context.Background(), "pay-1"); err != nil {
+		t.Fatalf("same-org GetPayment should succeed: %v", err)
+	}
+}

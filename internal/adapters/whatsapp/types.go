@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )
 
@@ -111,22 +112,22 @@ type PairCodeResponse struct {
 
 // IncomingMessage represents an incoming WhatsApp message
 type IncomingMessage struct {
-	ExternalID   string       `json:"external_id"`
-	SenderJID    types.JID    `json:"sender_jid"`
-	ChatJID      types.JID    `json:"chat_jid"`
-	SenderName   string       `json:"sender_name"`
-	Text         string       `json:"text"`
-	Timestamp    time.Time    `json:"timestamp"`
-	IsFromMe     bool         `json:"is_from_me"`
-	IsGroup      bool         `json:"is_group"`
-	IsForwarded  bool         `json:"is_forwarded"`
-	QuotedID     string       `json:"quoted_id,omitempty"`
-	Attachments  []Attachment `json:"attachments,omitempty"`
-	Mentions     []string     `json:"mentions,omitempty"`
-	ReplyTo      *ReplyInfo   `json:"reply_to,omitempty"`
-	Reaction     *Reaction    `json:"reaction,omitempty"`
-	MessageType  string       `json:"message_type"`
-	RawMessage   any          `json:"raw_message,omitempty"`
+	ExternalID  string       `json:"external_id"`
+	SenderJID   types.JID    `json:"sender_jid"`
+	ChatJID     types.JID    `json:"chat_jid"`
+	SenderName  string       `json:"sender_name"`
+	Text        string       `json:"text"`
+	Timestamp   time.Time    `json:"timestamp"`
+	IsFromMe    bool         `json:"is_from_me"`
+	IsGroup     bool         `json:"is_group"`
+	IsForwarded bool         `json:"is_forwarded"`
+	QuotedID    string       `json:"quoted_id,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+	Mentions    []string     `json:"mentions,omitempty"`
+	ReplyTo     *ReplyInfo   `json:"reply_to,omitempty"`
+	Reaction    *Reaction    `json:"reaction,omitempty"`
+	MessageType string       `json:"message_type"`
+	RawMessage  any          `json:"raw_message,omitempty"`
 }
 
 // Attachment represents a media attachment
@@ -145,6 +146,16 @@ type Attachment struct {
 	Duration  uint32 `json:"duration,omitempty"`
 	Thumbnail []byte `json:"thumbnail,omitempty"`
 	LocalPath string `json:"local_path,omitempty"`
+
+	// Latitude/Longitude hold the coordinates of an inbound location message.
+	Latitude  float64 `json:"latitude,omitempty"`
+	Longitude float64 `json:"longitude,omitempty"`
+
+	// download carries the whatsmeow downloadable reference for an inbound media
+	// message so the adapter can eagerly download+decrypt the encrypted CDN blob
+	// (the plain URL points at ciphertext no downstream consumer can decrypt).
+	// Unexported so it is never serialized onto the wire.
+	download whatsmeow.DownloadableMessage
 }
 
 // ReplyInfo contains information about a replied message
@@ -206,13 +217,13 @@ const (
 
 // SendMessageRequest represents a request to send a message
 type SendMessageRequest struct {
-	To          string       `json:"to"`
-	Text        string       `json:"text,omitempty"`
-	ReplyToID   string       `json:"reply_to_id,omitempty"`
-	Mentions    []string     `json:"mentions,omitempty"`
-	Attachments []Attachment `json:"attachments,omitempty"`
-	IsForwarded bool         `json:"is_forwarded,omitempty"`
-	Disappearing uint32      `json:"disappearing,omitempty"`
+	To           string       `json:"to"`
+	Text         string       `json:"text,omitempty"`
+	ReplyToID    string       `json:"reply_to_id,omitempty"`
+	Mentions     []string     `json:"mentions,omitempty"`
+	Attachments  []Attachment `json:"attachments,omitempty"`
+	IsForwarded  bool         `json:"is_forwarded,omitempty"`
+	Disappearing uint32       `json:"disappearing,omitempty"`
 }
 
 // SendMessageResponse represents the response from sending a message
@@ -223,19 +234,19 @@ type SendMessageResponse struct {
 
 // GroupInfo represents information about a WhatsApp group
 type GroupInfo struct {
-	JID         types.JID        `json:"jid"`
-	Name        string           `json:"name"`
-	Topic       string           `json:"topic,omitempty"`
+	JID          types.JID          `json:"jid"`
+	Name         string             `json:"name"`
+	Topic        string             `json:"topic,omitempty"`
 	Participants []GroupParticipant `json:"participants"`
-	CreatedAt   time.Time        `json:"created_at"`
-	CreatedBy   types.JID        `json:"created_by"`
+	CreatedAt    time.Time          `json:"created_at"`
+	CreatedBy    types.JID          `json:"created_by"`
 }
 
 // GroupParticipant represents a participant in a group
 type GroupParticipant struct {
-	JID     types.JID `json:"jid"`
-	IsAdmin bool      `json:"is_admin"`
-	IsSuperAdmin bool `json:"is_super_admin"`
+	JID          types.JID `json:"jid"`
+	IsAdmin      bool      `json:"is_admin"`
+	IsSuperAdmin bool      `json:"is_super_admin"`
 }
 
 // ContactInfo represents a contact
@@ -279,9 +290,9 @@ func AttachmentTypeFromMIME(mimeType string) string {
 
 // ConnectionEvent represents a connection state change
 type ConnectionEvent struct {
-	State   DeviceState `json:"state"`
-	Reason  string      `json:"reason,omitempty"`
-	Time    time.Time   `json:"time"`
+	State  DeviceState `json:"state"`
+	Reason string      `json:"reason,omitempty"`
+	Time   time.Time   `json:"time"`
 }
 
 // HistorySyncEvent represents a history sync notification

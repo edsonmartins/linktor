@@ -2,9 +2,11 @@ package whatsapp_official
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -151,7 +153,15 @@ func TestTemplateBuilder_AddQuickReplyButton(t *testing.T) {
 	assert.Equal(t, 0, *comp.Index)
 	require.Len(t, comp.Parameters, 1)
 	assert.Equal(t, "payload", comp.Parameters[0].Type)
-	assert.Equal(t, "confirm_yes", comp.Parameters[0].Text)
+	// The value must live in Payload (not Text) so it serializes under the
+	// `payload` JSON key that Meta requires for quick_reply buttons.
+	assert.Equal(t, "confirm_yes", comp.Parameters[0].Payload)
+	assert.Empty(t, comp.Parameters[0].Text)
+
+	raw, err := json.Marshal(tmpl)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"payload":"confirm_yes"`)
+	assert.NotContains(t, string(raw), `"text":"confirm_yes"`)
 }
 
 func TestTemplateBuilder_AddURLButton(t *testing.T) {
@@ -375,9 +385,9 @@ func TestInteractiveBuilder_AddSection_TruncatesTitle(t *testing.T) {
 }
 
 func TestInteractiveBuilder_AddListRow(t *testing.T) {
-	longTitle := strings.Repeat("T", 30)       // >24
-	longDesc := strings.Repeat("D", 80)        // >72
-	longID := strings.Repeat("I", 210)         // >200
+	longTitle := strings.Repeat("T", 30) // >24
+	longDesc := strings.Repeat("D", 80)  // >72
+	longID := strings.Repeat("I", 210)   // >200
 
 	obj := NewListMessageBuilder("body", "Menu").
 		AddListRow(longID, longTitle, longDesc).
@@ -390,6 +400,50 @@ func TestInteractiveBuilder_AddListRow(t *testing.T) {
 	assert.Len(t, row.Title, 24)
 	assert.Len(t, row.Description, 72)
 	assert.Len(t, row.ID, 200)
+}
+
+// TestInteractiveBuilder_AddButton_TruncatesByRunes ensures multi-byte titles
+// (pt-BR accents / emoji) are truncated by character, never mid-rune. A byte
+// slice would corrupt the string and Meta would reject it.
+func TestInteractiveBuilder_AddButton_TruncatesByRunes(t *testing.T) {
+	// 21 accented chars — over the 20-char limit, 2 bytes each.
+	longTitle := strings.Repeat("ç", 21)
+	obj := NewButtonMessageBuilder("body").
+		AddButton("id1", longTitle).
+		Build()
+
+	require.Len(t, obj.Action.Buttons, 1)
+	got := obj.Action.Buttons[0].Reply.Title
+	assert.Equal(t, 20, len([]rune(got)), "must keep 20 characters")
+	assert.True(t, utf8.ValidString(got), "must remain valid UTF-8")
+	assert.Equal(t, strings.Repeat("ç", 20), got)
+}
+
+// TestInteractiveBuilder_AddSection_TotalRowCap ensures the 10-row limit is a
+// total across ALL sections, not per-section.
+func TestInteractiveBuilder_AddSection_TotalRowCap(t *testing.T) {
+	rowsOf := func(n int) []ListRow {
+		out := make([]ListRow, n)
+		for i := range out {
+			out[i] = ListRow{ID: fmt.Sprintf("r%d", i), Title: "row"}
+		}
+		return out
+	}
+
+	obj := NewListMessageBuilder("body", "Menu").
+		AddSection("A", rowsOf(7)).
+		AddSection("B", rowsOf(7)). // only 3 of these fit (7+3=10)
+		AddSection("C", rowsOf(4)). // budget exhausted → section dropped
+		Build()
+
+	total := 0
+	for _, s := range obj.Action.Sections {
+		total += len(s.Rows)
+	}
+	assert.Equal(t, 10, total, "aggregate rows must be capped at 10")
+	require.Len(t, obj.Action.Sections, 2)
+	assert.Len(t, obj.Action.Sections[0].Rows, 7)
+	assert.Len(t, obj.Action.Sections[1].Rows, 3)
 }
 
 func TestInteractiveBuilder_Build(t *testing.T) {
@@ -566,6 +620,30 @@ func TestCarouselBuilder_BuildRaw_Structure(t *testing.T) {
 	assert.Len(t, cards, 2)
 }
 
+// TestCarouselBuilder_BuildRaw_QuickReplySerializesPayload guards that a
+// dynamic quick_reply button in a carousel card serializes its value under
+// `payload` (not `text`), and url buttons keep using `text`.
+func TestCarouselBuilder_BuildRaw_QuickReplySerializesPayload(t *testing.T) {
+	b := NewCarouselBuilder("promo", "pt_BR", CarouselHeaderImage)
+	buttons := []CarouselButtonInput{
+		{Type: "quick_reply", Payload: "ADD_TO_CART"},
+		{Type: "url", Payload: "prod/123"},
+	}
+	b.AddImageCard("https://example.com/1.jpg", []string{"Card1"}, buttons)
+	b.AddImageCard("https://example.com/2.jpg", []string{"Card2"}, buttons)
+
+	raw, err := b.BuildRaw()
+	require.NoError(t, err)
+
+	blob, err := json.Marshal(raw)
+	require.NoError(t, err)
+	s := string(blob)
+	assert.Contains(t, s, `"payload":"ADD_TO_CART"`)
+	assert.NotContains(t, s, `"text":"ADD_TO_CART"`)
+	// url button suffix still under text
+	assert.Contains(t, s, `"text":"prod/123"`)
+}
+
 func TestCreateProductCarousel(t *testing.T) {
 	t.Run("valid 2-10 products", func(t *testing.T) {
 		products := []ProductCarouselItem{
@@ -633,10 +711,11 @@ func TestAuthTemplateBuilder_Build(t *testing.T) {
 	assert.Equal(t, "text", body.Parameters[0].Type)
 	assert.Equal(t, "654321", body.Parameters[0].Text)
 
-	// Button component
+	// Button component — the authentication OTP button is sent with sub_type
+	// "url" on /messages regardless of the create-time auth type.
 	btn := tmpl.Components[1]
 	assert.Equal(t, "button", btn.Type)
-	assert.Equal(t, "copy_code", btn.SubType)
+	assert.Equal(t, "url", btn.SubType)
 	require.NotNil(t, btn.Index)
 	assert.Equal(t, 0, *btn.Index)
 	require.Len(t, btn.Parameters, 1)
@@ -677,7 +756,27 @@ func TestAuthTemplateBuilder_BuildRaw(t *testing.T) {
 	require.Len(t, components, 2)
 	assert.Equal(t, "body", components[0]["type"])
 	assert.Equal(t, "button", components[1]["type"])
-	assert.Equal(t, "copy_code", components[1]["sub_type"])
+	assert.Equal(t, "url", components[1]["sub_type"])
+}
+
+// TestAuthTemplateBuilder_BuildRaw_OneTap_NoAppFieldsInSend guards the fix that
+// package_name/signature_hash are template-definition fields and must NOT leak
+// into the /messages send payload (Meta rejects the request when they do).
+func TestAuthTemplateBuilder_BuildRaw_OneTap_NoAppFieldsInSend(t *testing.T) {
+	raw, err := NewAuthTemplateBuilder("auth_otp", "en").
+		SetOTP("111222").
+		SetAuthType(AuthTypeOneTap).
+		SetAndroidApp("com.example.app", "abc123hash").
+		BuildRaw()
+
+	require.NoError(t, err)
+	assert.NotContains(t, raw, "package_name")
+	assert.NotContains(t, raw, "signature_hash")
+
+	components, ok := raw["components"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, components, 2)
+	assert.Equal(t, "url", components[1]["sub_type"])
 }
 
 func TestOTPSession_IsExpired(t *testing.T) {
@@ -940,10 +1039,10 @@ func TestLTOTemplateBuilder_BuildRaw_HeaderVideo(t *testing.T) {
 
 func TestScheduledPromotion_IsActive(t *testing.T) {
 	tests := []struct {
-		name      string
-		start     time.Time
-		end       time.Time
-		expected  bool
+		name     string
+		start    time.Time
+		end      time.Time
+		expected bool
 	}{
 		{
 			name:     "active - within range",

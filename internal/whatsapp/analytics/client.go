@@ -300,10 +300,10 @@ func (c *Client) GetTemplateAnalytics(ctx context.Context, templateID string, st
 	}
 
 	var result struct {
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		Category string `json:"category"`
-		Language string `json:"language"`
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		Category   string `json:"category"`
+		Language   string `json:"language"`
 		DailyStats []struct {
 			Date      string `json:"date"`
 			Sent      int    `json:"sent"`

@@ -9,9 +9,9 @@ import (
 
 // Client wraps the Twilio REST API client
 type Client struct {
-	api                 *twilio.RestClient
-	config              *TwilioConfig
-	statusCallbackURL   string
+	api               *twilio.RestClient
+	config            *TwilioConfig
+	statusCallbackURL string
 }
 
 // NewClient creates a new Twilio SMS client

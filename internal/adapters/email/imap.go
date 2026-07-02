@@ -15,12 +15,12 @@ import (
 
 // IMAPClient handles receiving emails via IMAP
 type IMAPClient struct {
-	config      *Config
-	mu          sync.Mutex
-	conn        net.Conn
-	lastUID     uint32
-	stopCh      chan struct{}
-	running     bool
+	config  *Config
+	mu      sync.Mutex
+	conn    net.Conn
+	lastUID uint32
+	stopCh  chan struct{}
+	running bool
 }
 
 // NewIMAPClient creates a new IMAP client

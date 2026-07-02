@@ -18,6 +18,11 @@ import (
 // dispatchBatchSize bounds how many recipients are loaded per dispatch loop.
 const dispatchBatchSize = 200
 
+// cancelCheckInterval bounds how many recipients are enqueued between re-reads
+// of the campaign status inside a single batch, so a Cancel lands promptly and
+// stops further (billed) sends even for large batches.
+const cancelCheckInterval = 50
+
 // RecipientInput is one target supplied at campaign creation.
 type RecipientInput struct {
 	Phone     string
@@ -232,11 +237,20 @@ func (s *CampaignService) SweepStale(ctx context.Context, staleAfter time.Durati
 	return len(campaignIDs), nil
 }
 
-// Cancel stops a campaign (pending recipients are left untouched).
+// Cancel stops a campaign (pending recipients are left untouched). A running
+// enqueue loop re-reads the campaign status and stops publishing once it sees
+// the cancelled state (see enqueue/dispatchStopped), so remaining recipients
+// are not dispatched — this prevents Meta double-billing already-sent messages.
+//
+// Cancelling a terminal campaign (already completed or cancelled) is rejected:
+// its work is done and flipping the status would be misleading.
 func (s *CampaignService) Cancel(ctx context.Context, tenantID, campaignID string) error {
 	campaign, err := s.Get(ctx, tenantID, campaignID)
 	if err != nil {
 		return err
+	}
+	if campaign.Status == entity.CampaignStatusCompleted || campaign.Status == entity.CampaignStatusCancelled {
+		return errors.New(errors.ErrCodeConflict, "campaign is already "+string(campaign.Status))
 	}
 	campaign.Status = entity.CampaignStatusCancelled
 	return s.repo.Update(ctx, campaign)
@@ -244,9 +258,22 @@ func (s *CampaignService) Cancel(ctx context.Context, tenantID, campaignID strin
 
 // enqueue publishes one outbound template job per pending recipient onto NATS
 // and marks each 'queued'. Actual delivery, retry and per-recipient status are
-// owned by the outbound delivery worker — this service no longer sends inline,
-// so there is no resend loop, cancellation race, or duplicate-dispatch to guard
-// against here. Completion is derived from recipient status (see Get).
+// owned by the outbound delivery worker. Completion is derived from recipient
+// status (see Get).
+//
+// Cancellation: the loop re-reads the campaign status between batches and
+// periodically within a batch (see dispatchStopped); once the campaign is no
+// longer processing (e.g. Cancel flipped it to cancelled) it stops enqueuing so
+// the remaining recipients are never published — Meta bills each template send,
+// so a stale in-flight loop would otherwise double-charge cancelled campaigns.
+//
+// MULTI-REPLICA CAVEAT: concurrency is guarded only by the in-process lock in
+// tryAcquire, which is local to this process. With more than one replica two
+// instances could each acquire their own in-process lock and dispatch the same
+// campaign concurrently, double-publishing (and Meta double-billing) recipients
+// in the window before one sees the cancelled/queued state. FOLLOW-UP: replace
+// the in-process lock with a cross-replica distributed lock (e.g. Redis SETNX
+// keyed by campaign ID with a lease/TTL) to make this safe under >1 replica.
 func (s *CampaignService) enqueue(campaign *entity.Campaign) {
 	defer s.release(campaign.ID)
 	ctx := context.Background()
@@ -258,6 +285,12 @@ func (s *CampaignService) enqueue(campaign *entity.Campaign) {
 	}
 
 	for {
+		// Re-read status before each batch: a Cancel between batches must stop
+		// further enqueuing so remaining recipients are never published.
+		if s.dispatchStopped(ctx, campaign.ID) {
+			return
+		}
+
 		recipients, err := s.repo.FindPendingRecipients(ctx, campaign.ID, dispatchBatchSize)
 		if err != nil {
 			logger.Error("campaign enqueue: pending query failed: " + err.Error())
@@ -267,7 +300,12 @@ func (s *CampaignService) enqueue(campaign *entity.Campaign) {
 			return
 		}
 
-		for _, rec := range recipients {
+		for i, rec := range recipients {
+			// Re-read status periodically within a batch so a Cancel lands fast
+			// even for large batches, halting further billed sends.
+			if i > 0 && i%cancelCheckInterval == 0 && s.dispatchStopped(ctx, campaign.ID) {
+				return
+			}
 			msg := &nats.OutboundMessage{
 				ID:          uuid.New().String(),
 				TenantID:    campaign.TenantID,
@@ -288,6 +326,26 @@ func (s *CampaignService) enqueue(campaign *entity.Campaign) {
 			// the recipient to sent/failed once it actually delivers.
 			_ = s.repo.MarkRecipientQueued(ctx, rec.ID)
 		}
+	}
+}
+
+// dispatchStopped reports whether the enqueue loop must stop for this campaign.
+// It re-reads the persisted status and returns true once the campaign reaches a
+// terminal state — cancelled (the Cancel path), or completed/failed — so a
+// Cancel issued while dispatch is in flight halts further, already-billed sends.
+// If the status cannot be read it errs on the side of stopping, preferring
+// under-delivery over duplicate (billed) sends.
+func (s *CampaignService) dispatchStopped(ctx context.Context, campaignID string) bool {
+	fresh, err := s.repo.FindByID(ctx, campaignID)
+	if err != nil {
+		logger.Error("campaign enqueue: status re-read failed, stopping dispatch: " + err.Error())
+		return true
+	}
+	switch fresh.Status {
+	case entity.CampaignStatusCancelled, entity.CampaignStatusCompleted, entity.CampaignStatusFailed:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -355,4 +413,3 @@ func buildBodyComponents(params []string) string {
 	}
 	return string(raw)
 }
-

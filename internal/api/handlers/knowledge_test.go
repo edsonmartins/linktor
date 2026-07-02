@@ -297,6 +297,7 @@ func TestKnowledgeHandler_GetKnowledgeBase(t *testing.T) {
 		kbRepo.KBs[kb.ID] = kb
 
 		w, c := newTestContext(http.MethodGet, "/knowledge-bases/kb-1", nil)
+		c.Set("tenant_id", "tenant-1")
 		c.Params = gin.Params{{Key: "id", Value: "kb-1"}}
 
 		handler.GetKnowledgeBase(c)
@@ -313,6 +314,7 @@ func TestKnowledgeHandler_GetKnowledgeBase(t *testing.T) {
 		handler, _, _ := setupKnowledgeTest(t)
 
 		w, c := newTestContext(http.MethodGet, "/knowledge-bases/nonexistent", nil)
+		c.Set("tenant_id", "tenant-1")
 		c.Params = gin.Params{{Key: "id", Value: "nonexistent"}}
 
 		handler.GetKnowledgeBase(c)
@@ -333,6 +335,7 @@ func TestKnowledgeHandler_UpdateKnowledgeBase(t *testing.T) {
 		Name: &newName,
 	}
 	w, c := newTestContext(http.MethodPut, "/knowledge-bases/kb-1", body)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{{Key: "id", Value: "kb-1"}}
 
 	handler.UpdateKnowledgeBase(c)
@@ -353,6 +356,7 @@ func TestKnowledgeHandler_DeleteKnowledgeBase(t *testing.T) {
 	kbRepo.KBs[kb.ID] = kb
 
 	w, c := newTestContext(http.MethodDelete, "/knowledge-bases/kb-1", nil)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{{Key: "id", Value: "kb-1"}}
 
 	handler.DeleteKnowledgeBase(c)
@@ -377,6 +381,7 @@ func TestKnowledgeHandler_AddItem(t *testing.T) {
 		Keywords: []string{"linktor", "platform"},
 	}
 	w, c := newTestContext(http.MethodPost, "/knowledge-bases/kb-1/items", body)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{{Key: "id", Value: "kb-1"}}
 
 	handler.AddItem(c)
@@ -395,6 +400,7 @@ func TestKnowledgeHandler_AddItem_InvalidBody(t *testing.T) {
 	// Missing required fields
 	body := map[string]string{"source": "test"}
 	w, c := newTestContext(http.MethodPost, "/knowledge-bases/kb-1/items", body)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{{Key: "id", Value: "kb-1"}}
 
 	handler.AddItem(c)
@@ -409,13 +415,18 @@ func TestKnowledgeHandler_AddItem_InvalidBody(t *testing.T) {
 }
 
 func TestKnowledgeHandler_GetItem(t *testing.T) {
-	handler, _, itemRepo := setupKnowledgeTest(t)
+	handler, kbRepo, itemRepo := setupKnowledgeTest(t)
+
+	kb := entity.NewKnowledgeBase("tenant-1", "Test KB", entity.KnowledgeTypeFAQ)
+	kb.ID = "kb-1"
+	kbRepo.KBs[kb.ID] = kb
 
 	item := entity.NewKnowledgeItem("kb-1", "Question?", "Answer.")
 	item.ID = "item-1"
 	itemRepo.Items[item.ID] = item
 
 	w, c := newTestContext(http.MethodGet, "/knowledge-bases/kb-1/items/item-1", nil)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{
 		{Key: "id", Value: "kb-1"},
 		{Key: "itemId", Value: "item-1"},
@@ -443,6 +454,7 @@ func TestKnowledgeHandler_DeleteItem(t *testing.T) {
 	itemRepo.Items[item.ID] = item
 
 	w, c := newTestContext(http.MethodDelete, "/knowledge-bases/kb-1/items/item-1", nil)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{
 		{Key: "id", Value: "kb-1"},
 		{Key: "itemId", Value: "item-1"},
@@ -474,6 +486,7 @@ func TestKnowledgeHandler_Search(t *testing.T) {
 		Limit: 5,
 	}
 	w, c := newTestContext(http.MethodPost, "/knowledge-bases/kb-1/search", body)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{{Key: "id", Value: "kb-1"}}
 
 	handler.Search(c)
@@ -493,6 +506,7 @@ func TestKnowledgeHandler_Search_InvalidBody(t *testing.T) {
 	// Missing required "query" field
 	body := map[string]int{"limit": 5}
 	w, c := newTestContext(http.MethodPost, "/knowledge-bases/kb-1/search", body)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{{Key: "id", Value: "kb-1"}}
 
 	handler.Search(c)
@@ -520,6 +534,7 @@ func TestKnowledgeHandler_BulkAddItems(t *testing.T) {
 		},
 	}
 	w, c := newTestContext(http.MethodPost, "/knowledge-bases/kb-1/items/bulk", body)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{{Key: "id", Value: "kb-1"}}
 
 	handler.BulkAddItems(c)
@@ -547,6 +562,7 @@ func TestKnowledgeHandler_BulkAddItems_TooMany(t *testing.T) {
 		"items": items,
 	}
 	w, c := newTestContext(http.MethodPost, "/knowledge-bases/kb-1/items/bulk", body)
+	c.Set("tenant_id", "tenant-1")
 	c.Params = gin.Params{{Key: "id", Value: "kb-1"}}
 
 	handler.BulkAddItems(c)

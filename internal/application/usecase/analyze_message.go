@@ -22,12 +22,12 @@ type AnalyzeMessageInput struct {
 
 // AnalyzeMessageOutput represents the result of message analysis
 type AnalyzeMessageOutput struct {
-	Intent         *entity.Intent         `json:"intent,omitempty"`
-	Sentiment      entity.Sentiment       `json:"sentiment"`
-	ShouldEscalate bool                   `json:"should_escalate"`
-	EscalateReason string                 `json:"escalate_reason,omitempty"`
-	Bot            *entity.Bot            `json:"bot,omitempty"`
-	Keywords       []string               `json:"keywords,omitempty"`
+	Intent         *entity.Intent   `json:"intent,omitempty"`
+	Sentiment      entity.Sentiment `json:"sentiment"`
+	ShouldEscalate bool             `json:"should_escalate"`
+	EscalateReason string           `json:"escalate_reason,omitempty"`
+	Bot            *entity.Bot      `json:"bot,omitempty"`
+	Keywords       []string         `json:"keywords,omitempty"`
 }
 
 // AnalyzeMessageUseCase handles message analysis for AI processing

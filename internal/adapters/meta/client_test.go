@@ -231,6 +231,100 @@ func TestClient_GetLongLivedToken(t *testing.T) {
 	assert.Equal(t, int64(5184000), resp.ExpiresIn)
 }
 
+func TestClient_ExchangeCodeForToken_Errors(t *testing.T) {
+	t.Run("http 400 with error body returns error, not empty token", func(t *testing.T) {
+		c, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "Invalid verification code format.",
+					"type":    "OAuthException",
+					"code":    100,
+				},
+			})
+		})
+		defer server.Close()
+
+		resp, err := c.ExchangeCodeForToken(context.Background(), "app-id", "app-secret", "https://x/cb", "bad-code")
+		require.Error(t, err)
+		assert.Nil(t, resp)
+		assert.Contains(t, err.Error(), "Invalid verification code format")
+	})
+
+	t.Run("200 with empty token returns error", func(t *testing.T) {
+		c, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(map[string]interface{}{"token_type": "bearer"})
+		})
+		defer server.Close()
+
+		resp, err := c.ExchangeCodeForToken(context.Background(), "app-id", "app-secret", "https://x/cb", "code")
+		require.Error(t, err)
+		assert.Nil(t, resp)
+		assert.Contains(t, err.Error(), "empty access token")
+	})
+}
+
+func TestClient_GetLongLivedToken_Errors(t *testing.T) {
+	t.Run("http 400 returns error, not empty token", func(t *testing.T) {
+		c, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "This authorization code has expired.",
+					"type":    "OAuthException",
+					"code":    100,
+				},
+			})
+		})
+		defer server.Close()
+
+		resp, err := c.GetLongLivedToken(context.Background(), "app-id", "app-secret", "short")
+		require.Error(t, err)
+		assert.Nil(t, resp)
+		assert.Contains(t, err.Error(), "expired")
+	})
+
+	t.Run("200 with empty token returns error", func(t *testing.T) {
+		c, server := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(map[string]interface{}{"token_type": "bearer"})
+		})
+		defer server.Close()
+
+		resp, err := c.GetLongLivedToken(context.Background(), "app-id", "app-secret", "short")
+		require.Error(t, err)
+		assert.Nil(t, resp)
+		assert.Contains(t, err.Error(), "empty access token")
+	})
+}
+
+func TestClient_GetMyPages_Pagination(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// First page points `next` at the same server with cursor=2.
+		if r.URL.Query().Get("cursor") == "2" {
+			json.NewEncoder(w).Encode(PagesResponse{
+				Data: []PageInfo{{ID: "page-2", Name: "Second"}},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(PagesResponse{
+			Data:   []PageInfo{{ID: "page-1", Name: "First"}},
+			Paging: &Paging{Next: server.URL + "/next?cursor=2"},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient("test-access-token", "test-app-secret")
+	c.baseURL = server.URL
+	c.apiVersion = "v22.0"
+
+	pages, err := c.GetMyPages(context.Background())
+	require.NoError(t, err)
+	require.Len(t, pages.Data, 2)
+	assert.Equal(t, "page-1", pages.Data[0].ID)
+	assert.Equal(t, "page-2", pages.Data[1].ID)
+}
+
 func TestValidateWebhookSignature(t *testing.T) {
 	secret := "my-app-secret"
 	payload := []byte(`{"object":"page","entry":[]}`)

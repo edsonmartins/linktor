@@ -98,11 +98,11 @@ func TestFlowHandler_Create(t *testing.T) {
 	handler, _ := setupFlowTest(t)
 
 	body := CreateFlowRequest{
-		Name:        "New Flow",
-		Description: "A test flow",
-		Trigger:     "keyword",
+		Name:         "New Flow",
+		Description:  "A test flow",
+		Trigger:      "keyword",
 		TriggerValue: "help",
-		StartNodeID: "node-1",
+		StartNodeID:  "node-1",
 		Nodes: []entity.FlowNode{
 			{
 				ID:      "node-1",

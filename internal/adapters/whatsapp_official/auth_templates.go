@@ -108,8 +108,13 @@ func (b *AuthTemplateBuilder) Build() (*TemplateObject, error) {
 			},
 		},
 		{
+			// Authentication-template OTP buttons are always sent with
+			// sub_type "url" on /messages — regardless of whether the template
+			// was created as copy_code / one_tap / zero_tap. Sending the
+			// create-time button type (e.g. "copy_code") is an invalid
+			// sub_type and Meta rejects the send.
 			Type:    "button",
-			SubType: string(b.config.AuthType),
+			SubType: "url",
 			Index:   intPtr(0),
 			Parameters: []TemplateParameter{
 				{Type: "text", Text: b.config.OTP},
@@ -154,9 +159,13 @@ func (b *AuthTemplateBuilder) BuildRaw() (map[string]interface{}, error) {
 		{"type": "text", "text": b.config.OTP},
 	}
 
+	// The OTP button is always sub_type "url" on /messages, independent of the
+	// create-time auth type (copy_code / one_tap / zero_tap). package_name and
+	// signature_hash belong to the template *definition*, not the send payload —
+	// including them here makes Meta reject the request.
 	buttonComponent := map[string]interface{}{
 		"type":       "button",
-		"sub_type":   string(b.config.AuthType),
+		"sub_type":   "url",
 		"index":      0,
 		"parameters": buttonParams,
 	}
@@ -170,12 +179,6 @@ func (b *AuthTemplateBuilder) BuildRaw() (map[string]interface{}, error) {
 			"code":   b.config.LanguageCode,
 		},
 		"components": components,
-	}
-
-	// Add package_name and signature_hash for one-tap and zero-tap
-	if b.config.AuthType == AuthTypeOneTap || b.config.AuthType == AuthTypeZeroTap {
-		result["package_name"] = b.config.PackageName
-		result["signature_hash"] = b.config.SignatureHash
 	}
 
 	return result, nil
@@ -425,8 +428,8 @@ const (
 type AuthTemplateMessage struct {
 	To       string `json:"to"`
 	Template struct {
-		Name       string `json:"name"`
-		Language   struct {
+		Name     string `json:"name"`
+		Language struct {
 			Code string `json:"code"`
 		} `json:"language"`
 		Components []struct {

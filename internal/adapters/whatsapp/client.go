@@ -21,16 +21,16 @@ import (
 
 // Client wraps the whatsmeow client
 type Client struct {
-	mu       sync.RWMutex
-	client   *whatsmeow.Client
-	store    *sqlstore.Container
-	device   *store.Device
-	config   *Config
-	state    DeviceState
-	logger   waLog.Logger
-	eventCh  chan any
-	qrCh     chan QRCodeEvent
-	stopCh   chan struct{}
+	mu      sync.RWMutex
+	client  *whatsmeow.Client
+	store   *sqlstore.Container
+	device  *store.Device
+	config  *Config
+	state   DeviceState
+	logger  waLog.Logger
+	eventCh chan any
+	qrCh    chan QRCodeEvent
+	stopCh  chan struct{}
 }
 
 // NewClient creates a new WhatsApp client
@@ -61,7 +61,7 @@ func NewClient(config *Config) (*Client, error) {
 		config:  config,
 		state:   DeviceStateDisconnected,
 		logger:  logger,
-		eventCh: make(chan any, 100),
+		eventCh: make(chan any, 1024),
 		qrCh:    make(chan QRCodeEvent, 10),
 		stopCh:  make(chan struct{}),
 	}, nil
@@ -127,6 +127,12 @@ func (c *Client) Login(ctx context.Context) (<-chan QRCodeEvent, error) {
 	if c.client.IsConnected() {
 		c.client.Disconnect()
 	}
+
+	// Recreate the QR channel for each login attempt. The forwarding goroutine
+	// below closes c.qrCh when it finishes; reusing the same channel across a
+	// re-login (e.g. after a QR expiry) would close an already-closed channel
+	// and panic.
+	c.qrCh = make(chan QRCodeEvent, 10)
 
 	// Get QR channel from whatsmeow
 	qrChan, err := c.client.GetQRChannel(ctx)

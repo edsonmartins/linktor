@@ -63,6 +63,9 @@ import { InstagramConfig } from './instagram-config'
 import { EmailConfig } from './email-config'
 import { RCSConfig } from './rcs-config'
 import { VoiceConfig } from './voice-config'
+import { TeamsConfig } from './teams-config'
+import { SlackConfig } from './slack-config'
+import { MattermostConfig } from './mattermost-config'
 import { CoexistenceStatusBadge } from '@/components/coexistence-status-widget'
 
 /**
@@ -79,6 +82,9 @@ const channelIcons: Record<ChannelType, { color: string; bgColor: string }> = {
   rcs: { color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
   email: { color: 'text-amber-500', bgColor: 'bg-amber-500/10' },
   voice: { color: 'text-cyan-500', bgColor: 'bg-cyan-500/10' },
+  teams: { color: 'text-blue-700', bgColor: 'bg-blue-700/10' },
+  slack: { color: 'text-violet-500', bgColor: 'bg-violet-500/10' },
+  mattermost: { color: 'text-sky-600', bgColor: 'bg-sky-600/10' },
 }
 
 /**
@@ -343,6 +349,12 @@ function ChannelConfigSheet({
         )
       case 'voice':
         return <VoiceConfig channel={channel} onSuccess={handleSuccess} onCancel={handleCancel} />
+      case 'teams':
+        return <TeamsConfig {...commonProps} />
+      case 'slack':
+        return <SlackConfig {...commonProps} />
+      case 'mattermost':
+        return <MattermostConfig {...commonProps} />
       default:
         return <p>{t('configNotAvailable')}</p>
     }
@@ -545,6 +557,9 @@ export default function ChannelsPage() {
             <AvailableChannelCard type="whatsapp" t={t} onClick={() => handleAddChannel('whatsapp')} />
             <AvailableChannelCard type="rcs" t={t} onClick={() => handleAddChannel('rcs')} />
             <AvailableChannelCard type="voice" t={t} onClick={() => handleAddChannel('voice')} />
+            <AvailableChannelCard type="teams" t={t} onClick={() => handleAddChannel('teams')} />
+            <AvailableChannelCard type="slack" t={t} onClick={() => handleAddChannel('slack')} />
+            <AvailableChannelCard type="mattermost" t={t} onClick={() => handleAddChannel('mattermost')} />
           </div>
         </section>
       </div>

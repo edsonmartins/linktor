@@ -396,8 +396,9 @@ func (a *Adapter) buildContactsObject(msg *plugin.OutboundMessage) ([]ContactCon
 	return contacts, nil
 }
 
-// buildTemplateFromMetadata builds a template object from metadata
-// This is a stub - full implementation in template.go
+// buildTemplateFromMetadata builds a template object from the outbound message
+// metadata (template_name, template_language, template_components JSON).
+// Reusable builders for constructing those components live in template.go.
 func (a *Adapter) buildTemplateFromMetadata(msg *plugin.OutboundMessage) (*TemplateObject, error) {
 	templateName := msg.Metadata["template_name"]
 	if templateName == "" {
@@ -428,8 +429,9 @@ func (a *Adapter) buildTemplateFromMetadata(msg *plugin.OutboundMessage) (*Templ
 	return template, nil
 }
 
-// buildInteractiveFromMetadata builds an interactive object from metadata
-// This is a stub - full implementation in interactive.go
+// buildInteractiveFromMetadata builds an interactive object from the outbound
+// message metadata (interactive_type and the interactive payload JSON).
+// Reusable builders for those payloads live in interactive.go.
 func (a *Adapter) buildInteractiveFromMetadata(msg *plugin.OutboundMessage) (*InteractiveObject, error) {
 	interactiveType := msg.Metadata["interactive_type"]
 	if interactiveType == "" {
@@ -549,8 +551,9 @@ func (a *Adapter) ValidateWebhook(headers map[string]string, body []byte) bool {
 	}
 
 	if a.config.WebhookSecret == "" {
-		// If no secret configured, skip validation
-		return true
+		// Fail closed: without a configured secret we cannot verify the
+		// signature, so reject the request instead of trusting it.
+		return false
 	}
 
 	return ValidateSignature(a.config.WebhookSecret, body, signature)

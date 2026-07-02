@@ -169,6 +169,37 @@ func (r *ChannelRepository) FindByType(ctx context.Context, tenantID string, cha
 	return channels, nil
 }
 
+// FindAllByType finds channels of a specific type across all tenants. Credentials
+// are decrypted (via scanChannelFromRows) so callers can match by app id / tenant
+// id. Intended for shared inbound endpoints; keep result sets bounded per type.
+func (r *ChannelRepository) FindAllByType(ctx context.Context, channelType entity.ChannelType) ([]*entity.Channel, error) {
+	query := `
+		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
+		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       created_at, updated_at
+		FROM channels
+		WHERE type = $1
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Pool.Query(ctx, query, string(channelType))
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to query channels")
+	}
+	defer rows.Close()
+
+	var channels []*entity.Channel
+	for rows.Next() {
+		channel, err := r.scanChannelFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		channels = append(channels, channel)
+	}
+
+	return channels, nil
+}
+
 // FindEnabledByTenant finds enabled channels for a tenant
 func (r *ChannelRepository) FindEnabledByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
 	query := `

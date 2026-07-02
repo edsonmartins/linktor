@@ -48,12 +48,12 @@ type Tenant struct {
 func NewTenant(name, slug string, plan Plan) *Tenant {
 	now := time.Now()
 	return &Tenant{
-		Name:     name,
-		Slug:     slug,
-		Plan:     plan,
-		Status:   TenantStatusActive,
-		Settings: make(map[string]string),
-		Limits:   GetPlanLimits(plan),
+		Name:      name,
+		Slug:      slug,
+		Plan:      plan,
+		Status:    TenantStatusActive,
+		Settings:  make(map[string]string),
+		Limits:    GetPlanLimits(plan),
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

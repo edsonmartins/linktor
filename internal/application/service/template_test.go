@@ -836,3 +836,42 @@ type roundTripFunc func(req *http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
+
+// TestTemplateService_Create_MetaRejection_NotPersisted verifies that when Meta
+// rejects the template, no phantom local template (with no ExternalID) is saved.
+func TestTemplateService_Create_MetaRejection_NotPersisted(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID:       "ch-1",
+		TenantID: "tenant-1",
+		Type:     entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{
+			"access_token": "test-token",
+			"waba_id":      "waba-123",
+		},
+	}
+
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body: io.NopCloser(strings.NewReader(
+				`{"error":{"message":"Template name already exists","code":100}}`,
+			)),
+		}, nil
+	})
+
+	_, err := svc.Create(context.Background(), &CreateTemplateInput{
+		TenantID:  "tenant-1",
+		ChannelID: "ch-1",
+		Name:      "welcome",
+		Language:  "en",
+		Category:  entity.TemplateCategoryUtility,
+		Components: []entity.TemplateComponent{
+			{Type: "BODY", Text: "Hello"},
+		},
+	})
+	require.Error(t, err, "Meta rejection must fail the create")
+	assert.Empty(t, templateRepo.Templates, "no phantom template should be persisted")
+}

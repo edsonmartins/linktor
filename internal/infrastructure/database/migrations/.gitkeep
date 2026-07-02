@@ -1,0 +1,6 @@
+# Versioned .sql migrations applied after the Go baseline (version 1).
+# Name files NNNNN_description.sql with goose annotations, e.g.:
+#   -- +goose Up
+#   ALTER TABLE ...;
+#   -- +goose Down
+#   ALTER TABLE ...;

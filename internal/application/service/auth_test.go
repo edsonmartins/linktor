@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/infrastructure/config"
 	"github.com/msgfy/linktor/pkg/errors"
 	"github.com/msgfy/linktor/pkg/testutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -214,6 +215,71 @@ func TestAuthService_ValidateAccessToken(t *testing.T) {
 		assert.Nil(t, claims)
 		require.Error(t, err)
 	})
+}
+
+// TestAuthService_TokenTypeConfusion asserts access and refresh tokens are not
+// interchangeable: a refresh token must be rejected as an API credential and an
+// access token must be rejected at the refresh endpoint.
+func TestAuthService_TokenTypeConfusion(t *testing.T) {
+	t.Run("refresh token rejected as access token", func(t *testing.T) {
+		svc, userRepo := newTestAuthService()
+		user := createTestUser(t, "tenant-1", "admin@test.com", "password123")
+		userRepo.Users[user.ID] = user
+
+		loginResult, err := svc.Login(context.Background(), "admin@test.com", "password123")
+		require.NoError(t, err)
+
+		claims, err := svc.ValidateAccessToken(loginResult.RefreshToken)
+		assert.Nil(t, claims)
+		require.Error(t, err)
+	})
+
+	t.Run("access token rejected at refresh", func(t *testing.T) {
+		svc, userRepo := newTestAuthService()
+		user := createTestUser(t, "tenant-1", "admin@test.com", "password123")
+		userRepo.Users[user.ID] = user
+
+		loginResult, err := svc.Login(context.Background(), "admin@test.com", "password123")
+		require.NoError(t, err)
+
+		result, err := svc.RefreshToken(context.Background(), loginResult.AccessToken)
+		assert.Nil(t, result)
+		require.Error(t, err)
+	})
+
+	t.Run("access token carries typ=access", func(t *testing.T) {
+		svc, userRepo := newTestAuthService()
+		user := createTestUser(t, "tenant-1", "admin@test.com", "password123")
+		userRepo.Users[user.ID] = user
+
+		loginResult, err := svc.Login(context.Background(), "admin@test.com", "password123")
+		require.NoError(t, err)
+
+		claims, err := svc.ValidateAccessToken(loginResult.AccessToken)
+		require.NoError(t, err)
+		assert.Equal(t, tokenTypeAccess, claims.Type)
+	})
+}
+
+// TestAuthService_RejectsNonHMACAlg ensures a token forged with the "none"
+// algorithm (alg confusion) is rejected on parse.
+func TestAuthService_RejectsNonHMACAlg(t *testing.T) {
+	svc, _ := newTestAuthService()
+
+	claims := &TokenClaims{
+		UserID: "user-1",
+		Type:   tokenTypeAccess,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	unsigned := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
+	tokenStr, err := unsigned.SignedString(jwt.UnsafeAllowNoneSignatureType)
+	require.NoError(t, err)
+
+	got, err := svc.ValidateAccessToken(tokenStr)
+	assert.Nil(t, got)
+	require.Error(t, err)
 }
 
 func TestAuthService_ChangePassword(t *testing.T) {

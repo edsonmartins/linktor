@@ -80,14 +80,14 @@ type StatsFilters struct {
 
 // OrderStats represents order statistics
 type OrderStats struct {
-	TotalOrders     int                         `json:"total_orders"`
-	TotalRevenue    int64                       `json:"total_revenue"`
-	AverageOrderValue int64                     `json:"average_order_value"`
-	Currency        string                      `json:"currency"`
-	ByStatus        map[entity.OrderStatus]int  `json:"by_status"`
-	ByChannel       map[string]int              `json:"by_channel"`
-	TopProducts     []ProductStat               `json:"top_products"`
-	DailyOrders     []DailyStat                 `json:"daily_orders"`
+	TotalOrders       int                        `json:"total_orders"`
+	TotalRevenue      int64                      `json:"total_revenue"`
+	AverageOrderValue int64                      `json:"average_order_value"`
+	Currency          string                     `json:"currency"`
+	ByStatus          map[entity.OrderStatus]int `json:"by_status"`
+	ByChannel         map[string]int             `json:"by_channel"`
+	TopProducts       []ProductStat              `json:"top_products"`
+	DailyOrders       []DailyStat                `json:"daily_orders"`
 }
 
 // ProductStat represents statistics for a product
@@ -100,9 +100,9 @@ type ProductStat struct {
 
 // DailyStat represents daily statistics
 type DailyStat struct {
-	Date     string `json:"date"`
-	Orders   int    `json:"orders"`
-	Revenue  int64  `json:"revenue"`
+	Date    string `json:"date"`
+	Orders  int    `json:"orders"`
+	Revenue int64  `json:"revenue"`
 }
 
 // Pagination represents pagination parameters

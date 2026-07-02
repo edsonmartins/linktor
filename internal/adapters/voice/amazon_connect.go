@@ -154,9 +154,9 @@ func (p *AmazonConnectProvider) MakeCall(ctx context.Context, input MakeCallInpu
 	endpoint := fmt.Sprintf("%s/contact/outbound-voice", p.baseURL)
 
 	payload := map[string]interface{}{
-		"InstanceId":           p.instanceID,
+		"InstanceId":             p.instanceID,
 		"DestinationPhoneNumber": input.To,
-		"SourcePhoneNumber":    input.From,
+		"SourcePhoneNumber":      input.From,
 	}
 
 	if p.contactFlowID != "" {
@@ -231,12 +231,12 @@ func (p *AmazonConnectProvider) GetCall(ctx context.Context, callID string) (*Ca
 
 	var contactResp struct {
 		Contact struct {
-			Id                    string `json:"Id"`
-			InitiationMethod     string `json:"InitiationMethod"`
-			Channel              string `json:"Channel"`
-			InitiationTimestamp  string `json:"InitiationTimestamp"`
-			DisconnectTimestamp  string `json:"DisconnectTimestamp"`
-			LastUpdateTimestamp  string `json:"LastUpdateTimestamp"`
+			Id                  string `json:"Id"`
+			InitiationMethod    string `json:"InitiationMethod"`
+			Channel             string `json:"Channel"`
+			InitiationTimestamp string `json:"InitiationTimestamp"`
+			DisconnectTimestamp string `json:"DisconnectTimestamp"`
+			LastUpdateTimestamp string `json:"LastUpdateTimestamp"`
 		} `json:"Contact"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&contactResp); err != nil {
@@ -391,7 +391,7 @@ func (p *AmazonConnectProvider) GenerateIVRResponse(actions []IVRAction) (interf
 			response = append(response, map[string]interface{}{
 				"Type": "PlayPrompt",
 				"Parameters": map[string]interface{}{
-					"SourceType": "S3",
+					"SourceType":  "S3",
 					"SourceValue": a.URL,
 				},
 			})
@@ -526,15 +526,15 @@ func (p *AmazonConnectProvider) ValidateWebhook(ctx context.Context, headers map
 // mapStatus maps Amazon Connect status to CallStatus
 func (p *AmazonConnectProvider) mapStatus(status string) CallStatus {
 	statusMap := map[string]CallStatus{
-		"INCOMING":    CallStatusRinging,
-		"PENDING":     CallStatusInitiated,
-		"CONNECTING":  CallStatusInitiated,
-		"CONNECTED":   CallStatusInProgress,
+		"INCOMING":         CallStatusRinging,
+		"PENDING":          CallStatusInitiated,
+		"CONNECTING":       CallStatusInitiated,
+		"CONNECTED":        CallStatusInProgress,
 		"CONNECTED_ONHOLD": CallStatusInProgress,
-		"MISSED":      CallStatusNoAnswer,
-		"ERROR":       CallStatusFailed,
-		"ENDED":       CallStatusCompleted,
-		"REJECTED":    CallStatusFailed,
+		"MISSED":           CallStatusNoAnswer,
+		"ERROR":            CallStatusFailed,
+		"ENDED":            CallStatusCompleted,
+		"REJECTED":         CallStatusFailed,
 	}
 
 	if mapped, ok := statusMap[strings.ToUpper(status)]; ok {

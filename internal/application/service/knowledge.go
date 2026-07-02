@@ -87,6 +87,102 @@ func (s *KnowledgeService) GetKnowledgeBase(ctx context.Context, id string) (*en
 	return s.kbRepo.FindByID(ctx, id)
 }
 
+// GetByTenantAndID returns a knowledge base only if it belongs to the tenant.
+// Returns a not-found error (never the other tenant's data) on mismatch so
+// callers cannot distinguish "does not exist" from "belongs to someone else".
+func (s *KnowledgeService) GetByTenantAndID(ctx context.Context, tenantID, id string) (*entity.KnowledgeBase, error) {
+	kb, err := s.kbRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if kb.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "knowledge base not found")
+	}
+	return kb, nil
+}
+
+// getItemForTenant loads a knowledge item and validates that the knowledge base
+// it belongs to is owned by the tenant. Returns a not-found error on mismatch.
+func (s *KnowledgeService) getItemForTenant(ctx context.Context, tenantID, itemID string) (*entity.KnowledgeItem, error) {
+	item, err := s.itemRepo.FindByID(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.GetByTenantAndID(ctx, tenantID, item.KnowledgeBaseID); err != nil {
+		return nil, errors.New(errors.ErrCodeNotFound, "knowledge item not found")
+	}
+	return item, nil
+}
+
+// UpdateKnowledgeBaseForTenant updates a knowledge base only if it belongs to the tenant.
+func (s *KnowledgeService) UpdateKnowledgeBaseForTenant(ctx context.Context, tenantID, id string, input *UpdateKnowledgeBaseInput) (*entity.KnowledgeBase, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return s.UpdateKnowledgeBase(ctx, id, input)
+}
+
+// DeleteKnowledgeBaseForTenant deletes a knowledge base only if it belongs to the tenant.
+func (s *KnowledgeService) DeleteKnowledgeBaseForTenant(ctx context.Context, tenantID, id string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
+		return err
+	}
+	return s.DeleteKnowledgeBase(ctx, id)
+}
+
+// ListItemsForTenant lists items in a knowledge base only if it belongs to the tenant.
+func (s *KnowledgeService) ListItemsForTenant(ctx context.Context, tenantID, knowledgeBaseID string, params *repository.ListParams) ([]*entity.KnowledgeItem, int64, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, knowledgeBaseID); err != nil {
+		return nil, 0, err
+	}
+	return s.ListItems(ctx, knowledgeBaseID, params)
+}
+
+// AddItemForTenant adds an item to a knowledge base only if it belongs to the tenant.
+func (s *KnowledgeService) AddItemForTenant(ctx context.Context, tenantID string, input *AddItemInput) (*entity.KnowledgeItem, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, input.KnowledgeBaseID); err != nil {
+		return nil, err
+	}
+	return s.AddItem(ctx, input)
+}
+
+// GetItemForTenant gets a knowledge item only if its knowledge base belongs to the tenant.
+func (s *KnowledgeService) GetItemForTenant(ctx context.Context, tenantID, id string) (*entity.KnowledgeItem, error) {
+	return s.getItemForTenant(ctx, tenantID, id)
+}
+
+// UpdateItemForTenant updates a knowledge item only if its knowledge base belongs to the tenant.
+func (s *KnowledgeService) UpdateItemForTenant(ctx context.Context, tenantID, id string, input *UpdateItemInput) (*entity.KnowledgeItem, error) {
+	if _, err := s.getItemForTenant(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	return s.UpdateItem(ctx, id, input)
+}
+
+// DeleteItemForTenant deletes a knowledge item only if its knowledge base belongs to the tenant.
+func (s *KnowledgeService) DeleteItemForTenant(ctx context.Context, tenantID, id string) error {
+	if _, err := s.getItemForTenant(ctx, tenantID, id); err != nil {
+		return err
+	}
+	return s.DeleteItem(ctx, id)
+}
+
+// SearchForTenant performs semantic search only if the knowledge base belongs to the tenant.
+func (s *KnowledgeService) SearchForTenant(ctx context.Context, tenantID, knowledgeBaseID, query string, limit int) ([]entity.SearchResult, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, knowledgeBaseID); err != nil {
+		return nil, err
+	}
+	return s.Search(ctx, knowledgeBaseID, query, limit)
+}
+
+// RegenerateEmbeddingsForTenant regenerates embeddings only if the knowledge base belongs to the tenant.
+func (s *KnowledgeService) RegenerateEmbeddingsForTenant(ctx context.Context, tenantID, knowledgeBaseID string) error {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, knowledgeBaseID); err != nil {
+		return err
+	}
+	return s.RegenerateEmbeddings(ctx, knowledgeBaseID)
+}
+
 // ListKnowledgeBases lists knowledge bases for a tenant
 func (s *KnowledgeService) ListKnowledgeBases(ctx context.Context, tenantID string, params *repository.ListParams) ([]*entity.KnowledgeBase, int64, error) {
 	return s.kbRepo.FindByTenant(ctx, tenantID, params)

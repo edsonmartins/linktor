@@ -118,7 +118,7 @@ export default function CampaignDetailPage({
   }
 
   const onErr = (e: Error) =>
-    toast({ title: 'Error', description: e.message, variant: 'destructive' })
+    toast({ title: 'Error', description: e.message, variant: 'error' })
 
   const startMutation = useMutation({
     mutationFn: () => api.post(`/campaigns/${id}/start`),

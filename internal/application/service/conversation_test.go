@@ -80,3 +80,78 @@ func TestConversationService_Reopen(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, entity.ConversationStatusOpen, reopened.Status)
 }
+
+func TestConversationService_Update_RejectsInvalidStatus(t *testing.T) {
+	svc, convRepo := setupConversationTest()
+
+	conv, _ := svc.Create(context.Background(), &CreateConversationInput{
+		TenantID:  "tenant1",
+		ContactID: "contact1",
+		ChannelID: "channel1",
+	})
+
+	bad := "banana"
+	_, err := svc.Update(context.Background(), conv.ID, &UpdateConversationInput{Status: &bad})
+	assert.Error(t, err)
+
+	// The invalid status must not have been persisted.
+	stored := convRepo.Conversations[conv.ID]
+	assert.Equal(t, entity.ConversationStatusOpen, stored.Status)
+}
+
+func TestConversationService_Update_RejectsInvalidPriority(t *testing.T) {
+	svc, convRepo := setupConversationTest()
+
+	conv, _ := svc.Create(context.Background(), &CreateConversationInput{
+		TenantID:  "tenant1",
+		ContactID: "contact1",
+		ChannelID: "channel1",
+	})
+
+	bad := "banana"
+	_, err := svc.Update(context.Background(), conv.ID, &UpdateConversationInput{Priority: &bad})
+	assert.Error(t, err)
+
+	stored := convRepo.Conversations[conv.ID]
+	assert.Equal(t, entity.ConversationPriorityNormal, stored.Priority)
+}
+
+func TestConversationService_Update_AcceptsValidStatus(t *testing.T) {
+	svc, _ := setupConversationTest()
+
+	conv, _ := svc.Create(context.Background(), &CreateConversationInput{
+		TenantID:  "tenant1",
+		ContactID: "contact1",
+		ChannelID: "channel1",
+	})
+
+	good := string(entity.ConversationStatusPending)
+	updated, err := svc.Update(context.Background(), conv.ID, &UpdateConversationInput{Status: &good})
+	assert.NoError(t, err)
+	assert.Equal(t, entity.ConversationStatusPending, updated.Status)
+}
+
+func TestConversationService_Create_RejectsInvalidPriority(t *testing.T) {
+	svc, _ := setupConversationTest()
+
+	_, err := svc.Create(context.Background(), &CreateConversationInput{
+		TenantID:  "tenant1",
+		ContactID: "contact1",
+		ChannelID: "channel1",
+		Priority:  "banana",
+	})
+	assert.Error(t, err)
+}
+
+func TestConversationService_Assign_RejectsEmptyUser(t *testing.T) {
+	svc, _ := setupConversationTest()
+
+	conv, _ := svc.Create(context.Background(), &CreateConversationInput{
+		TenantID:  "tenant1",
+		ContactID: "contact1",
+		ChannelID: "channel1",
+	})
+
+	_, err := svc.Assign(context.Background(), conv.ID, "")
+	assert.Error(t, err)
+}

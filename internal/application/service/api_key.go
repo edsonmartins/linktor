@@ -91,6 +91,32 @@ func (s *APIKeyService) Create(ctx context.Context, input *CreateAPIKeyInput) (*
 	return &CreateAPIKeyResult{APIKey: apiKey, Key: rawKey}, nil
 }
 
+// Authenticate verifies a presented raw API key and returns its metadata. It
+// looks up candidates by the public prefix, then confirms the secret with a
+// constant-time bcrypt comparison. Expired keys are excluded by the repository.
+// On success it records last-used (best effort) and returns the key.
+func (s *APIKeyService) Authenticate(ctx context.Context, rawKey string) (*entity.APIKey, error) {
+	rawKey = strings.TrimSpace(rawKey)
+	if len(rawKey) < apiKeyPrefixLength {
+		return nil, errors.New(errors.ErrCodeUnauthorized, "invalid API key")
+	}
+
+	candidates, err := s.apiKeyRepo.FindActiveByPrefix(ctx, rawKey[:apiKeyPrefixLength])
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to look up API key")
+	}
+
+	for _, candidate := range candidates {
+		if bcrypt.CompareHashAndPassword([]byte(candidate.KeyHash), []byte(rawKey)) == nil {
+			// Best effort: never block auth on a stats write.
+			_ = s.apiKeyRepo.TouchLastUsed(ctx, candidate.ID, time.Now())
+			candidate.KeyHash = ""
+			return candidate, nil
+		}
+	}
+	return nil, errors.New(errors.ErrCodeUnauthorized, "invalid API key")
+}
+
 // List returns API key metadata for a tenant without exposing key hashes.
 func (s *APIKeyService) List(ctx context.Context, tenantID string) ([]*entity.APIKey, error) {
 	if tenantID == "" {

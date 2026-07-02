@@ -180,13 +180,17 @@ func (h *TemplateHandler) Create(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /templates/{id} [get]
 func (h *TemplateHandler) Get(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Template ID is required", nil)
 		return
 	}
 
-	template, err := h.templateService.GetByID(c.Request.Context(), id)
+	template, err := h.templateService.GetByTenantAndID(c.Request.Context(), tenantID, id)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -208,13 +212,17 @@ func (h *TemplateHandler) Get(c *gin.Context) {
 // @Failure      404 {object} Response
 // @Router       /templates/{id} [delete]
 func (h *TemplateHandler) Delete(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
 	id := c.Param("id")
 	if id == "" {
 		RespondValidationError(c, "Template ID is required", nil)
 		return
 	}
 
-	if err := h.templateService.Delete(c.Request.Context(), id); err != nil {
+	if err := h.templateService.DeleteForTenant(c.Request.Context(), tenantID, id); err != nil {
 		RespondError(c, err)
 		return
 	}

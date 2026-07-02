@@ -64,10 +64,10 @@ type FlowAction struct {
 
 // VRENodeConfig represents configuration for a VRE node
 type VRENodeConfig struct {
-	TemplateID    string            `json:"template_id"`              // Template to render (menu_opcoes, card_produto, etc.)
-	DataMapping   map[string]string `json:"data_mapping,omitempty"`   // Maps flow variables to template data
-	Caption       string            `json:"caption,omitempty"`        // Optional custom caption
-	FollowUpText  string            `json:"follow_up_text,omitempty"` // Optional text to send after image
+	TemplateID   string            `json:"template_id"`              // Template to render (menu_opcoes, card_produto, etc.)
+	DataMapping  map[string]string `json:"data_mapping,omitempty"`   // Maps flow variables to template data
+	Caption      string            `json:"caption,omitempty"`        // Optional custom caption
+	FollowUpText string            `json:"follow_up_text,omitempty"` // Optional text to send after image
 }
 
 // FlowTransition represents a transition between nodes
@@ -98,6 +98,7 @@ type Flow struct {
 	BotID        *string         `json:"bot_id,omitempty"` // Optional - can be global
 	Name         string          `json:"name"`
 	Description  string          `json:"description,omitempty"`
+	MetaFlowID   string          `json:"meta_flow_id,omitempty"` // Meta-side Flow ID; used for all Cloud API lifecycle calls
 	Trigger      FlowTriggerType `json:"trigger"`
 	TriggerValue string          `json:"trigger_value,omitempty"` // Intent name, keyword, etc.
 	StartNodeID  string          `json:"start_node_id"`           // Entry point

@@ -47,8 +47,8 @@ func NewAdapter() *Adapter {
 			SupportsReactions:       false,
 			SupportsReplies:         true, // Email threading
 			SupportsForwarding:      false,
-			MaxMessageLength:        0,                   // No practical limit
-			MaxMediaSize:            25 * 1024 * 1024,    // 25MB typical limit
+			MaxMessageLength:        0,                // No practical limit
+			MaxMediaSize:            25 * 1024 * 1024, // 25MB typical limit
 			MaxAttachments:          10,
 			SupportedMediaTypes: []string{
 				"application/pdf",
@@ -480,7 +480,8 @@ func (a *Adapter) startIMAPPolling() {
 
 		if handler != nil {
 			inbound := a.convertToInboundMessage(email)
-			handler(context.Background(), inbound)
+			// Use the polling ctx so in-flight handling stops with the adapter.
+			handler(ctx, inbound)
 		}
 	})
 

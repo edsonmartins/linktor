@@ -127,10 +127,10 @@ func TestLocalClient_Upload_MultipleFiles(t *testing.T) {
 	client := NewLocalClient(tmpDir, "http://cdn.example.com")
 
 	files := map[string]string{
-		"a.txt":          "content-a",
-		"b.txt":          "content-b",
-		"dir/c.txt":      "content-c",
-		"dir/sub/d.txt":  "content-d",
+		"a.txt":         "content-a",
+		"b.txt":         "content-b",
+		"dir/c.txt":     "content-c",
+		"dir/sub/d.txt": "content-d",
 	}
 
 	for key, content := range files {

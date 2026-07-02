@@ -3,6 +3,7 @@ package webchat
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +26,7 @@ type Handler struct {
 	contactRepo      repository.ContactRepository
 	producer         nats.Publisher
 	upgrader         websocket.Upgrader
+	rateLimiter      *ipRateLimiter
 }
 
 // NewHandler creates a new WebChat handler
@@ -41,6 +43,8 @@ func NewHandler(
 		conversationRepo: conversationRepo,
 		contactRepo:      contactRepo,
 		producer:         producer,
+		// Allow bursts of 10 connection attempts per IP, refilling ~1/sec.
+		rateLimiter: newIPRateLimiter(1, 10),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -70,6 +74,30 @@ func (h *Handler) WebSocketHandler(c *gin.Context) {
 	if !channel.IsActive() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "channel not active"})
 		return
+	}
+
+	// Lightweight per-IP connection rate limiting to blunt abuse/DoS.
+	if h.rateLimiter != nil && !h.rateLimiter.Allow(c.ClientIP(), time.Now()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many connection attempts"})
+		return
+	}
+
+	// Opt-in per-channel widget authentication. When a widget_secret is
+	// configured on the channel, a valid signed token is REQUIRED before the
+	// upgrade. When absent, we preserve the current (dev/back-compat) behavior
+	// but warn that the endpoint is unauthenticated.
+	if secret := widgetSecret(channel); secret != "" {
+		token := c.Query("token")
+		if token == "" {
+			token = c.GetHeader("X-Widget-Token")
+		}
+		if err := VerifyWidgetToken(token, channel.ID, secret, time.Now()); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing widget token"})
+			return
+		}
+	} else {
+		log.Printf("[webchat] WARNING: channel %s has no widget_secret configured; "+
+			"WebSocket endpoint /ws/%s is UNAUTHENTICATED", channel.ID, channel.ID)
 	}
 
 	// Upgrade connection
@@ -111,13 +139,16 @@ func (h *Handler) WebSocketHandler(c *gin.Context) {
 		return h.handleClientMessage(c.Request.Context(), client, channel, msg)
 	})
 
-	// Set disconnect handler
+	// Set disconnect handler. The request ctx is already cancelled when the
+	// connection drops, so use a fresh bounded ctx for the cleanup work.
 	client.SetDisconnectHandler(func() {
-		h.adapter.HandleClientDisconnect(context.Background(), sessionID)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		h.adapter.HandleClientDisconnect(ctx, sessionID)
 	})
 
-	// Register client
-	hub.register <- client
+	// Register client (non-blocking against a stopped hub)
+	hub.Register(client)
 
 	// Send connection confirmation
 	client.SendMessage(&WebSocketMessage{
@@ -134,7 +165,7 @@ func (h *Handler) WebSocketHandler(c *gin.Context) {
 	})
 
 	// Handle connect event
-	h.adapter.HandleClientConnect(context.Background(), sessionID, client.Metadata)
+	h.adapter.HandleClientConnect(c.Request.Context(), sessionID, client.Metadata)
 
 	// Start pumps
 	go client.WritePump()
@@ -196,20 +227,41 @@ func (h *Handler) handleClientMessage(ctx context.Context, client *Client, chann
 
 func isOriginAllowed(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
+
+	// An empty Origin (non-browser / native clients or same-origin without the
+	// header) is NOT trusted by default. Opt in explicitly for dev/native use.
 	if origin == "" {
-		return true
+		return boolEnv("LINKTOR_WS_ALLOW_EMPTY_ORIGIN")
 	}
 
+	// Explicit allowlist (existing config) always wins.
 	for _, allowed := range strings.Split(os.Getenv("LINKTOR_WS_ALLOWED_ORIGINS"), ",") {
-		if strings.TrimSpace(allowed) == origin {
+		if a := strings.TrimSpace(allowed); a != "" && a == origin {
 			return true
 		}
 	}
 
+	// In enforced mode only the allowlist is accepted; unknown origins (incl.
+	// localhost) are rejected. This is the intended homologation posture.
+	if boolEnv("LINKTOR_WS_ENFORCE_ORIGIN") {
+		return false
+	}
+
+	// Dev back-compat: permit loopback origins when not enforcing.
 	return strings.HasPrefix(origin, "http://localhost:") ||
 		strings.HasPrefix(origin, "http://127.0.0.1:") ||
 		strings.HasPrefix(origin, "https://localhost:") ||
 		strings.HasPrefix(origin, "https://127.0.0.1:")
+}
+
+// boolEnv reports whether an env var is set to a truthy value.
+func boolEnv(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // getOrCreateContact finds or creates a contact

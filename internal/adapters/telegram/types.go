@@ -10,6 +10,9 @@ import (
 type TelegramConfig struct {
 	BotToken string `json:"bot_token"`
 	BotName  string `json:"bot_name,omitempty"`
+	// SecretToken is registered with Telegram's setWebhook and echoed back on
+	// every update via the X-Telegram-Bot-Api-Secret-Token header.
+	SecretToken string `json:"secret_token,omitempty"`
 }
 
 // WebhookPayload represents the incoming webhook update from Telegram
@@ -20,38 +23,38 @@ type WebhookPayload = tgbotapi.Update
 type MessageType string
 
 const (
-	MessageTypeText     MessageType = "text"
-	MessageTypePhoto    MessageType = "photo"
-	MessageTypeVideo    MessageType = "video"
-	MessageTypeAudio    MessageType = "audio"
-	MessageTypeVoice    MessageType = "voice"
-	MessageTypeDocument MessageType = "document"
-	MessageTypeSticker  MessageType = "sticker"
-	MessageTypeLocation MessageType = "location"
-	MessageTypeContact  MessageType = "contact"
+	MessageTypeText      MessageType = "text"
+	MessageTypePhoto     MessageType = "photo"
+	MessageTypeVideo     MessageType = "video"
+	MessageTypeAudio     MessageType = "audio"
+	MessageTypeVoice     MessageType = "voice"
+	MessageTypeDocument  MessageType = "document"
+	MessageTypeSticker   MessageType = "sticker"
+	MessageTypeLocation  MessageType = "location"
+	MessageTypeContact   MessageType = "contact"
 	MessageTypeVideoNote MessageType = "video_note"
 )
 
 // IncomingMessage represents a normalized incoming message from Telegram
 type IncomingMessage struct {
-	MessageID      int64
-	ChatID         int64
-	FromUserID     int64
-	FromUsername   string
-	FromFirstName  string
-	FromLastName   string
-	Text           string
-	MessageType    MessageType
-	Timestamp      time.Time
-	ReplyToMsgID   *int64
-	MediaFileID    string
-	MediaMimeType  string
-	MediaFileName  string
-	MediaFileSize  int64
-	Location       *Location
-	Contact        *Contact
-	Caption        string
-	IsEdited       bool
+	MessageID     int64
+	ChatID        int64
+	FromUserID    int64
+	FromUsername  string
+	FromFirstName string
+	FromLastName  string
+	Text          string
+	MessageType   MessageType
+	Timestamp     time.Time
+	ReplyToMsgID  *int64
+	MediaFileID   string
+	MediaMimeType string
+	MediaFileName string
+	MediaFileSize int64
+	Location      *Location
+	Contact       *Contact
+	Caption       string
+	IsEdited      bool
 }
 
 // Location represents geographic coordinates
@@ -70,14 +73,14 @@ type Contact struct {
 
 // OutgoingMessage represents a message to be sent to Telegram
 type OutgoingMessage struct {
-	ChatID         int64
-	Text           string
-	ParseMode      string // "HTML" or "Markdown" or ""
-	ReplyToMsgID   int64
-	ReplyMarkup    interface{} // For inline keyboards
-	MediaURL       string
-	MediaType      MessageType
-	MediaCaption   string
+	ChatID       int64
+	Text         string
+	ParseMode    string // "HTML" or "Markdown" or ""
+	ReplyToMsgID int64
+	ReplyMarkup  interface{} // For inline keyboards
+	MediaURL     string
+	MediaType    MessageType
+	MediaCaption string
 }
 
 // InlineKeyboardButton represents a button in an inline keyboard

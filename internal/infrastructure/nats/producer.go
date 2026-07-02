@@ -3,7 +3,9 @@ package nats
 import (
 	"context"
 	"encoding/json"
+
 	"fmt"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -97,19 +99,29 @@ type Event struct {
 	TenantID  string                 `json:"tenant_id"`
 	Payload   map[string]interface{} `json:"payload"`
 	Timestamp time.Time              `json:"timestamp"`
+	// IdempotencyKey, when set, is used as the JetStream message dedup id so a
+	// deliberate re-publish (e.g. re-processing a redelivered inbound message)
+	// is collapsed server-side within the stream's dedup window instead of
+	// producing a duplicate downstream event. Not serialized to consumers.
+	IdempotencyKey string `json:"-"`
 }
 
 // WebhookDelivery represents a webhook to be delivered
 type WebhookDelivery struct {
-	ID         string                 `json:"id"`
-	TenantID   string                 `json:"tenant_id"`
-	URL        string                 `json:"url"`
-	EventType  string                 `json:"event_type"`
-	Payload    map[string]interface{} `json:"payload"`
-	Headers    map[string]string      `json:"headers,omitempty"`
-	RetryCount int                    `json:"retry_count"`
-	MaxRetries int                    `json:"max_retries"`
-	Timestamp  time.Time              `json:"timestamp"`
+	ID        string                 `json:"id"`
+	TenantID  string                 `json:"tenant_id"`
+	ChannelID string                 `json:"channel_id,omitempty"`
+	URL       string                 `json:"url"`
+	EventType string                 `json:"event_type"`
+	Payload   map[string]interface{} `json:"payload,omitempty"`
+	// Body carries the exact pre-serialized payload bytes to deliver. When set it
+	// is sent verbatim (sign-what-you-send) instead of re-marshaling Payload, so
+	// HMAC signatures stay valid across durable redelivery.
+	Body       []byte            `json:"body,omitempty"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	RetryCount int               `json:"retry_count"`
+	MaxRetries int               `json:"max_retries"`
+	Timestamp  time.Time         `json:"timestamp"`
 }
 
 // PublishInbound publishes an inbound message to the stream
@@ -127,6 +139,7 @@ func (p *Producer) PublishInbound(ctx context.Context, msg *InboundMessage) erro
 		jetstream.WithMsgID(msg.ID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("inbound")
 		return fmt.Errorf("failed to publish inbound message: %w", err)
 	}
 
@@ -148,6 +161,7 @@ func (p *Producer) PublishOutbound(ctx context.Context, msg *OutboundMessage) er
 		jetstream.WithMsgID(msg.ID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("outbound")
 		return fmt.Errorf("failed to publish outbound message: %w", err)
 	}
 
@@ -170,6 +184,7 @@ func (p *Producer) PublishStatusUpdate(ctx context.Context, status *StatusUpdate
 		jetstream.WithMsgID(msgID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("status")
 		return fmt.Errorf("failed to publish status update: %w", err)
 	}
 
@@ -187,11 +202,15 @@ func (p *Producer) PublishEvent(ctx context.Context, event *Event) error {
 	}
 
 	subject := SubjectEvent(event.Type)
-	msgID := fmt.Sprintf("%s-%s-%d", event.TenantID, event.Type, event.Timestamp.UnixNano())
+	msgID := event.IdempotencyKey
+	if msgID == "" {
+		msgID = fmt.Sprintf("%s-%s-%d", event.TenantID, event.Type, event.Timestamp.UnixNano())
+	}
 	_, err = p.client.js.Publish(ctx, subject, data,
 		jetstream.WithMsgID(msgID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("event")
 		return fmt.Errorf("failed to publish event: %w", err)
 	}
 
@@ -213,6 +232,7 @@ func (p *Producer) PublishWebhookDelivery(ctx context.Context, webhook *WebhookD
 		jetstream.WithMsgID(webhook.ID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("webhook")
 		return fmt.Errorf("failed to publish webhook delivery: %w", err)
 	}
 

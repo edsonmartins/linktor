@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -115,4 +116,30 @@ func TestChannel_SetAdvancedSettings_AllFields(t *testing.T) {
 	assert.Equal(t, "9050", ch.Config["proxy_port"])
 	assert.Equal(t, "admin", ch.Config["proxy_user"])
 	assert.Equal(t, "secret", ch.Config["proxy_pass"])
+}
+
+func TestChannel_MarshalJSON_RedactsSecrets(t *testing.T) {
+	ch := NewChannel("tenant1", ChannelTypeWhatsAppOfficial, "WA", "+55")
+	ch.Config["access_token"] = "EAAG-super-secret"
+	ch.Config["app_secret"] = "app-secret-value"
+	ch.Config["widget_secret"] = "widget-secret-value"
+	ch.Config["phone_number_id"] = "123456"   // non-secret, must stay
+	ch.Config["empty_secret_token"] = ""       // empty sensitive-ish key stays as-is
+	ch.Credentials["api_key"] = "must-not-leak"
+
+	raw, err := json.Marshal(ch)
+	assert.NoError(t, err)
+	s := string(raw)
+
+	// Secrets are masked, real values never appear.
+	assert.NotContains(t, s, "EAAG-super-secret")
+	assert.NotContains(t, s, "app-secret-value")
+	assert.NotContains(t, s, "widget-secret-value")
+	assert.Contains(t, s, RedactedSecret)
+	// Non-secret config is preserved and credentials never serialize.
+	assert.Contains(t, s, "123456")
+	assert.NotContains(t, s, "must-not-leak")
+
+	// The in-memory struct is untouched (redaction happens on a copy).
+	assert.Equal(t, "EAAG-super-secret", ch.Config["access_token"])
 }

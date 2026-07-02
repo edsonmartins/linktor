@@ -8,6 +8,7 @@ import (
 type ContactIdentity struct {
 	ID          string            `json:"id"`
 	ContactID   string            `json:"contact_id"`
+	TenantID    string            `json:"tenant_id,omitempty"`
 	ChannelType string            `json:"channel_type"`
 	Identifier  string            `json:"identifier"`
 	Metadata    map[string]string `json:"metadata,omitempty"`

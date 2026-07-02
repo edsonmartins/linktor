@@ -237,10 +237,9 @@ export function FacebookConfig({
         app_secret: oauthAppSecret,
       })
 
-      // Store state for callback
+      // Store state for callback. The app credentials stay server-side,
+      // keyed by this state — never in browser storage.
       sessionStorage.setItem('fb_oauth_state', response.state)
-      sessionStorage.setItem('fb_oauth_app_id', oauthAppId)
-      sessionStorage.setItem('fb_oauth_app_secret', oauthAppSecret)
 
       // Open Facebook login in popup
       const popup = window.open(
@@ -285,17 +284,12 @@ export function FacebookConfig({
   const handleOAuthCallback = async (code: string, state: string) => {
     setOauthLoading(true)
     try {
-      const appId = sessionStorage.getItem('fb_oauth_app_id') || oauthAppId
-      const appSecret = sessionStorage.getItem('fb_oauth_app_secret') || oauthAppSecret
-
       const response = await api.post<{
         user_access_token: string
         pages: OAuthPage[]
       }>('/oauth/facebook/callback', {
         code,
         state,
-        app_id: appId,
-        app_secret: appSecret,
       })
 
       setOauthPages(response.pages)
@@ -310,8 +304,6 @@ export function FacebookConfig({
 
       // Clean up session storage
       sessionStorage.removeItem('fb_oauth_state')
-      sessionStorage.removeItem('fb_oauth_app_id')
-      sessionStorage.removeItem('fb_oauth_app_secret')
     } catch (error) {
       toast({
         title: t('oauthError'),

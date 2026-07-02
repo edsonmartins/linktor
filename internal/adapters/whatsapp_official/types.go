@@ -1,6 +1,7 @@
 package whatsapp_official
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -54,8 +55,12 @@ type WebhookChangeValue struct {
 	MessageTemplateName     string `json:"message_template_name,omitempty"`
 	MessageTemplateLanguage string `json:"message_template_language,omitempty"`
 	Reason                  string `json:"reason,omitempty"`
-	DisableInfo             string `json:"disable_info,omitempty"`
-	OtherInfo               string `json:"other_info,omitempty"`
+	// Meta sends disable_info/other_info as JSON objects (not strings). Typing
+	// them as string made json.Unmarshal fail on any template status update,
+	// which discarded the ENTIRE webhook batch. json.RawMessage accepts any
+	// shape without error and defers interpretation to consumers that need it.
+	DisableInfo json.RawMessage `json:"disable_info,omitempty"`
+	OtherInfo   json.RawMessage `json:"other_info,omitempty"`
 
 	// message_template_quality_update field
 	PreviousQualityScore string `json:"previous_quality_score,omitempty"`
@@ -112,7 +117,11 @@ type WebhookError struct {
 	Code    int    `json:"code"`
 	Title   string `json:"title"`
 	Message string `json:"message"`
-	Details string `json:"error_data,omitempty"`
+	// Meta sends error_data as an object ({"messaging_product":..,"details":..}),
+	// not a string. Typing it as string made json.Unmarshal fail on any webhook
+	// carrying a `failed` status, silently dropping the whole batch (including
+	// inbound messages). *ErrorData matches the real shape.
+	ErrorData *ErrorData `json:"error_data,omitempty"`
 }
 
 // ContactInfo represents contact information in webhooks
@@ -589,8 +598,9 @@ type TemplateStatusUpdateValue struct {
 	MessageTemplateName     string `json:"message_template_name"`
 	MessageTemplateLanguage string `json:"message_template_language"`
 	Reason                  string `json:"reason,omitempty"`
-	DisableInfo             string `json:"disable_info,omitempty"`
-	OtherInfo               string `json:"other_info,omitempty"`
+	// Objects on the wire — see WebhookChangeValue for the rationale.
+	DisableInfo json.RawMessage `json:"disable_info,omitempty"`
+	OtherInfo   json.RawMessage `json:"other_info,omitempty"`
 }
 
 // TemplateQualityUpdateValue represents a template quality score update

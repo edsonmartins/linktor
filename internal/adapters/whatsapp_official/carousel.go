@@ -7,25 +7,25 @@ import (
 
 // CarouselComponent represents a component in a carousel template
 type CarouselComponent struct {
-	Type       string             `json:"type"`                 // header, body, button, carousel
+	Type       string              `json:"type"` // header, body, button, carousel
 	Parameters []TemplateParameter `json:"parameters,omitempty"`
-	Cards      []CarouselCard     `json:"cards,omitempty"`      // For carousel type
-	SubType    string             `json:"sub_type,omitempty"`   // For buttons
-	Index      *int               `json:"index,omitempty"`      // For buttons
+	Cards      []CarouselCard      `json:"cards,omitempty"`    // For carousel type
+	SubType    string              `json:"sub_type,omitempty"` // For buttons
+	Index      *int                `json:"index,omitempty"`    // For buttons
 }
 
 // CarouselCard represents a single card in a carousel (2-10 cards allowed)
 type CarouselCard struct {
-	CardIndex  int                    `json:"card_index"`
+	CardIndex  int                     `json:"card_index"`
 	Components []CarouselCardComponent `json:"components"`
 }
 
 // CarouselCardComponent represents a component within a carousel card
 type CarouselCardComponent struct {
-	Type       string              `json:"type"`                 // header, body, button
+	Type       string              `json:"type"` // header, body, button
 	Parameters []TemplateParameter `json:"parameters,omitempty"`
-	SubType    string              `json:"sub_type,omitempty"`   // For buttons: quick_reply, url
-	Index      *int                `json:"index,omitempty"`      // For button index
+	SubType    string              `json:"sub_type,omitempty"` // For buttons: quick_reply, url
+	Index      *int                `json:"index,omitempty"`    // For button index
 }
 
 // CarouselHeaderType defines the allowed header types for carousel cards
@@ -57,11 +57,11 @@ type CarouselButtonInput struct {
 
 // CarouselBuilder helps build carousel template messages
 type CarouselBuilder struct {
-	name         string
-	language     string
-	headerType   CarouselHeaderType
-	bodyParams   []string // Template body parameters (before carousel)
-	cards        []CarouselCard
+	name       string
+	language   string
+	headerType CarouselHeaderType
+	bodyParams []string // Template body parameters (before carousel)
+	cards      []CarouselCard
 }
 
 // NewCarouselBuilder creates a new carousel template builder
@@ -142,8 +142,11 @@ func (b *CarouselBuilder) AddCard(input CarouselCardInput) *CarouselBuilder {
 	// Add button components
 	for i, btn := range input.Buttons {
 		idx := i
+		// quick_reply buttons carry their value under `payload`; url buttons
+		// carry the URL suffix under `text`. Meta rejects the message if a
+		// quick_reply value is sent as `text`.
 		buttonParams := []TemplateParameter{
-			{Type: "payload", Text: btn.Payload},
+			{Type: "payload", Payload: btn.Payload},
 		}
 		if btn.Type == "url" {
 			buttonParams = []TemplateParameter{
@@ -219,6 +222,12 @@ func (b *CarouselBuilder) BuildRaw() (map[string]interface{}, error) {
 					paramMap := map[string]interface{}{"type": p.Type}
 					if p.Text != "" {
 						paramMap["text"] = p.Text
+					}
+					if p.Payload != "" {
+						paramMap["payload"] = p.Payload
+					}
+					if p.CouponCode != "" {
+						paramMap["coupon_code"] = p.CouponCode
 					}
 					if p.Image != nil {
 						if p.Image.ID != "" {
@@ -301,7 +310,6 @@ func (s *CarouselSender) SendCarouselRaw(ctx context.Context, to string, templat
 
 	return s.client.SendRawRequest(ctx, req)
 }
-
 
 // CreateProductCarousel creates a carousel for showcasing products
 func CreateProductCarousel(templateName, languageCode string, products []ProductCarouselItem) (*CarouselBuilder, error) {

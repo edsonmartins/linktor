@@ -123,6 +123,9 @@ const channelTypeConfig: Record<string, { color: string; bgColor: string }> = {
   email: { color: 'text-amber-500', bgColor: 'bg-amber-500/10' },
   rcs: { color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
   voice: { color: 'text-cyan-500', bgColor: 'bg-cyan-500/10' },
+  teams: { color: 'text-blue-700', bgColor: 'bg-blue-700/10' },
+  slack: { color: 'text-violet-500', bgColor: 'bg-violet-500/10' },
+  mattermost: { color: 'text-sky-600', bgColor: 'bg-sky-600/10' },
 }
 
 function ConversationItem({ conversation }: { conversation: Conversation }) {

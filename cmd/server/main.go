@@ -64,10 +64,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -85,8 +88,11 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/email"
 	"github.com/msgfy/linktor/internal/adapters/facebook"
 	"github.com/msgfy/linktor/internal/adapters/instagram"
+	"github.com/msgfy/linktor/internal/adapters/mattermost"
 	"github.com/msgfy/linktor/internal/adapters/rcs"
+	"github.com/msgfy/linktor/internal/adapters/slack"
 	"github.com/msgfy/linktor/internal/adapters/sms"
+	"github.com/msgfy/linktor/internal/adapters/teams"
 	"github.com/msgfy/linktor/internal/adapters/telegram"
 	"github.com/msgfy/linktor/internal/adapters/webchat"
 	"github.com/msgfy/linktor/internal/adapters/whatsapp"
@@ -98,14 +104,18 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/infrastructure/config"
 	"github.com/msgfy/linktor/internal/infrastructure/database"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
+	"github.com/msgfy/linktor/internal/infrastructure/outbox"
 	storageLib "github.com/msgfy/linktor/internal/infrastructure/storage"
+	infrawebhook "github.com/msgfy/linktor/internal/infrastructure/webhook"
 	"github.com/msgfy/linktor/internal/outbound"
 	"github.com/msgfy/linktor/internal/whatsapp/analytics"
 	"github.com/msgfy/linktor/internal/whatsapp/calling"
 	"github.com/msgfy/linktor/internal/whatsapp/ctwa"
 	"github.com/msgfy/linktor/internal/whatsapp/payments"
 	"github.com/msgfy/linktor/pkg/crypto"
+	apperrors "github.com/msgfy/linktor/pkg/errors"
 	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 
@@ -185,6 +195,7 @@ func main() {
 	messageRepo := database.NewMessageRepository(db)
 	conversationRepo := database.NewConversationRepository(db)
 	contactRepo := database.NewContactRepository(db)
+	outboxRepo := database.NewOutboxRepository(db)
 	channelRepo := database.NewChannelRepository(db, encryptor)
 	botRepo := database.NewBotRepository(db)
 	contextRepo := database.NewConversationContextRepository(db)
@@ -388,6 +399,9 @@ func main() {
 	outboundResolver.Register(instagram.NewSenderFactory())
 	outboundResolver.Register(rcs.NewSenderFactory())
 	outboundResolver.Register(email.NewSenderFactory())
+	outboundResolver.Register(teams.NewSenderFactory())
+	outboundResolver.Register(slack.NewSenderFactory())
+	outboundResolver.Register(mattermost.NewSenderFactory())
 	// Stateful channels deliver through their live plugin adapter (whatsmeow
 	// session / webchat WebSocket hub) but ride the same unified worker.
 	outboundResolver.Register(outbound.NewPluginSenderFactory("webchat", plugin.GetGlobalRegistry()))
@@ -518,9 +532,14 @@ func main() {
 		producer,
 	)
 
+	// Media store re-hosts inbound attachments that sit behind authenticated
+	// provider URLs (Slack url_private, Mattermost file API) so external
+	// consumers can fetch them. Optional: nil falls back to the provider URL.
+	mediaStore := buildMediaStore()
+
 	// Create webhook handler
 	requireWebhookSecrets := cfg.Server.Mode == "release" || os.Getenv("LINKTOR_REQUIRE_WEBHOOK_SECRETS") == "true"
-	webhookHandler := handlers.NewWebhookHandler(channelRepo, producer, templateService, requireWebhookSecrets)
+	webhookHandler := handlers.NewWebhookHandler(channelRepo, producer, templateService, requireWebhookSecrets, mediaStore)
 
 	// Create bot handler
 	botHandler := handlers.NewBotHandler(botService)
@@ -555,6 +574,19 @@ func main() {
 
 	// Create channel service and handler
 	channelService := service.NewChannelService(channelRepo, plugin.GetGlobalRegistry(), producer)
+	// Optional allowlist of channel types this deployment may create/connect.
+	// LINKTOR_ENABLED_CHANNEL_TYPES="whatsapp_official,telegram,..." restricts to
+	// the channels that passed homologation; unset means all types are allowed.
+	if raw := strings.TrimSpace(os.Getenv("LINKTOR_ENABLED_CHANNEL_TYPES")); raw != "" {
+		var enabled []entity.ChannelType
+		for _, t := range strings.Split(raw, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				enabled = append(enabled, entity.ChannelType(t))
+			}
+		}
+		channelService.SetEnabledChannelTypes(enabled)
+		logger.Info(fmt.Sprintf("channel type allowlist enabled: %v", enabled))
+	}
 	channelHandler := handlers.NewChannelHandler(channelService, producer)
 
 	// Create tenant service and handler
@@ -565,16 +597,16 @@ func main() {
 	analyticsHandler := handlers.NewAnalyticsHandler(analyticsService)
 
 	// Create WhatsApp Analytics handler
-	whatsappAnalyticsHandler := handlers.NewWhatsAppAnalyticsHandler()
+	whatsappAnalyticsHandler := handlers.NewWhatsAppAnalyticsHandler(channelRepo)
 
 	// Create Payments handler
-	paymentsHandler := handlers.NewPaymentsHandler()
+	paymentsHandler := handlers.NewPaymentsHandler(channelRepo)
 
 	// Create Calling handler
-	callingHandler := handlers.NewCallingHandler()
+	callingHandler := handlers.NewCallingHandler(channelRepo)
 
 	// Create CTWA handler
-	ctwaHandler := handlers.NewCTWAHandler()
+	ctwaHandler := handlers.NewCTWAHandler(channelRepo)
 
 	// whatomate-inspired handlers
 	auditHandler := handlers.NewAuditHandler(auditService)
@@ -590,23 +622,42 @@ func main() {
 	whatsappFlowsHandler := handlers.NewWhatsAppFlowsHandler(whatsappFlowsService)
 	_ = commerceService
 
+	// Mattermost inbound manager: owns one reconnecting WebSocket listener per
+	// connected Mattermost channel, started at boot and updated on connect/
+	// disconnect so newly connected channels stream immediately.
+	mattermostManager := mattermost.NewManager(channelRepo, producer, mediaStore)
+
 	channelService.SetLifecycleHooks(service.ChannelLifecycleHooks{
 		OnConnected: func(ctx context.Context, channel *entity.Channel) {
 			registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
+			if channel.Type == entity.ChannelTypeMattermost {
+				mattermostManager.StartChannel(channel)
+			}
 		},
 		OnUpdated: func(ctx context.Context, channel *entity.Channel) {
 			// Credentials may have changed: drop the cached outbound sender.
 			outboundResolver.Invalidate(channel.ID)
 			if channel.IsConnected() {
 				registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
+				if channel.Type == entity.ChannelTypeMattermost {
+					mattermostManager.StartChannel(channel) // restarts with fresh creds
+				}
+			} else if channel.Type == entity.ChannelTypeMattermost {
+				mattermostManager.StopChannel(channel.ID)
 			}
 		},
 		OnDisconnected: func(ctx context.Context, channel *entity.Channel) {
 			outboundResolver.Invalidate(channel.ID)
 			unregisterWhatsAppAdvancedClient(channel.ID, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
+			if channel.Type == entity.ChannelTypeMattermost {
+				mattermostManager.StopChannel(channel.ID)
+			}
 		},
 		OnDeleted: func(ctx context.Context, channel *entity.Channel) {
 			outboundResolver.Invalidate(channel.ID)
+			if channel.Type == entity.ChannelTypeMattermost {
+				mattermostManager.StopChannel(channel.ID)
+			}
 		},
 	})
 
@@ -648,10 +699,17 @@ func main() {
 	templateHandler := handlers.NewTemplateHandler(templateService)
 
 	// Create auth middleware
-	authMiddleware := middleware.NewAuthMiddleware(authService)
+	authMiddleware := middleware.NewAuthMiddleware(authService, apiKeyService)
 
-	// Create auth handler
-	authHandler := handlers.NewAuthHandler(authService, userService)
+	// Create auth handler. Tokens are delivered to browsers as HttpOnly
+	// cookies; TTLs mirror the JWT config (access in minutes, refresh in hours).
+	authHandler := handlers.NewAuthHandler(authService, userService, handlers.AuthCookieConfig{
+		Secure:        cfg.JWT.CookieSecure,
+		Domain:        cfg.JWT.CookieDomain,
+		SameSite:      handlers.ParseSameSite(cfg.JWT.CookieSameSite),
+		AccessMaxAge:  cfg.JWT.AccessTokenTTL * 60,
+		RefreshMaxAge: cfg.JWT.RefreshTokenTTL * 3600,
+	})
 
 	// Create user handler
 	userHandler := handlers.NewUserHandler(userService)
@@ -668,8 +726,14 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Background monitors are tracked so shutdown can wait for an in-flight
+	// iteration (e.g. a sweep mid-write) instead of exiting under it.
+	var backgroundJobs sync.WaitGroup
+
 	// Start coexistence monitor background job (runs every hour)
+	backgroundJobs.Add(1)
 	go func() {
+		defer backgroundJobs.Done()
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 
@@ -693,11 +757,17 @@ func main() {
 	logger.Info("Coexistence monitor started (runs every hour)")
 
 	// Start SLA monitor (auto-close idle conversations, flag first-response breaches).
-	go slaMonitor.Start(ctx, 1*time.Minute)
+	backgroundJobs.Add(1)
+	go func() {
+		defer backgroundJobs.Done()
+		slaMonitor.Start(ctx, 1*time.Minute)
+	}()
 
 	// Start campaign sweeper: reconcile recipients stuck in 'queued' (worker never
 	// confirmed them — dead-lettered or down) into 'failed' so they can be retried.
+	backgroundJobs.Add(1)
 	go func() {
+		defer backgroundJobs.Done()
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -717,19 +787,101 @@ func main() {
 
 	if consumer != nil {
 		logger.Info("Starting message consumers...")
-		// Subscribe to inbound messages
+
+		// Observe the dead-letter stream so exhausted messages surface in the
+		// logs instead of dying silently.
+		dlqConsumer := nats.NewDLQConsumer(natsClient)
+		if err := dlqConsumer.Subscribe(ctx, nil); err != nil {
+			logger.Warn("Failed to subscribe DLQ observer: " + err.Error())
+		}
+
+		// Subscribe to inbound messages. Expected/permanent errors (duplicate
+		// delivery, validation, forbidden, not-found) are acked — retrying them is
+		// pointless and would pollute the DLQ and fire an alert on every duplicate
+		// webhook. Only genuinely transient errors are returned to trigger a NAK.
 		if err := consumer.SubscribeAllInbound(ctx, func(ctx context.Context, msg *nats.InboundMessage) error {
-			_, err := receiveMessageUC.Execute(ctx, msg)
-			return err
+			start := time.Now()
+			out, err := receiveMessageUC.Execute(ctx, msg)
+			if err != nil {
+				if !isRetryableInboundError(err) {
+					// A conflict means the message was a duplicate delivery, which
+					// is an expected outcome rather than a processing failure.
+					result := metrics.ResultFailed
+					var appErr *apperrors.AppError
+					if errors.As(err, &appErr) && appErr.Code == apperrors.ErrCodeConflict {
+						result = metrics.ResultDuplicate
+					}
+					metrics.RecordInbound(msg.ChannelType, result, start)
+					logger.Warn("inbound message dropped (non-retryable): " + err.Error())
+					return nil // ack: do not retry
+				}
+				metrics.RecordInbound(msg.ChannelType, metrics.ResultFailed, start)
+				return err
+			}
+			metrics.RecordInbound(msg.ChannelType, metrics.ResultProcessed, start)
+			maybeTriggerBot(ctx, botRepo, producer, out)
+			return nil
 		}); err != nil {
 			logger.Warn("Failed to subscribe to inbound messages")
 		}
 
+		// Reflect NATS connectivity into the Prometheus gauge (linktor_nats_up)
+		// and sample queue depth / consumer lag (incl. DLQ backlog) into gauges.
+		if natsClient != nil {
+			metrics.SetNATSUp(natsClient.IsConnected())
+			go func() {
+				t := time.NewTicker(10 * time.Second)
+				defer t.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.C:
+						metrics.SetNATSUp(natsClient.IsConnected())
+					}
+				}
+			}()
+			go nats.NewMonitor(natsClient).StartMetricsCollector(ctx, 15*time.Second)
+
+			// Drain the transactional outbox: publish durably-queued events
+			// (e.g. message.received) that were written in the same tx as their
+			// aggregate. The relay republishes with each event's idempotency key,
+			// so a retry after a partial failure is deduplicated by JetStream.
+			go outbox.NewRelay(outboxRepo, producer).Start(ctx, 2*time.Second)
+		}
+
 		// Subscribe to status updates
 		if err := consumer.SubscribeStatus(ctx, func(ctx context.Context, status *nats.StatusUpdate) error {
-			return handleMessageStatusUpdate(ctx, messageRepo, campaignRepo, status)
+			return handleMessageStatusUpdate(ctx, messageRepo, conversationRepo, campaignRepo, producer, status)
 		}); err != nil {
 			logger.Warn("Failed to subscribe to status updates")
+		}
+
+		// Outbound webhook pipeline (durable). The dispatcher converts internal
+		// message/status events into `linktor-channel-v1` envelopes and enqueues
+		// them on the durable webhooks stream; the delivery worker consumes that
+		// stream, signs with a fresh timestamp and performs the HTTP POST with
+		// NATS-driven retry + DLQ. Splitting enqueue from delivery makes the
+		// pipeline crash-safe: an event is never lost between receipt and delivery.
+		webhookDeliveryWorker := infrawebhook.NewDeliveryWorker(infrawebhook.NewWebhookProducer(), channelRepo)
+		if err := consumer.SubscribeWebhooks(ctx, webhookDeliveryWorker.Handle); err != nil {
+			logger.Warn("Failed to start webhook delivery worker: " + err.Error())
+		} else {
+			logger.Info("Webhook delivery worker started")
+		}
+
+		webhookDispatcher := infrawebhook.NewDispatcher(producer, channelRepo)
+		if err := webhookDispatcher.Start(ctx, consumer); err != nil {
+			logger.Warn("Failed to start outbound webhook dispatcher: " + err.Error())
+		} else {
+			logger.Info("Outbound webhook dispatcher started")
+		}
+
+		// Bind the Mattermost manager to the app context and start listeners for
+		// already-connected channels. Runtime connect/disconnect is handled via
+		// the channel lifecycle hooks above.
+		if err := mattermostManager.Start(ctx); err != nil {
+			logger.Warn("Failed to start Mattermost listeners: " + err.Error())
 		}
 
 		// Start the outbound delivery worker.
@@ -801,30 +953,30 @@ func main() {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestID())
+	router.Use(metrics.GinMiddleware())
 	router.Use(middleware.Logger())
+	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.CORS())
 
-	// Health check endpoints
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
-	})
-	router.GET("/ready", func(c *gin.Context) {
-		// Check database
-		if err := db.Ping(context.Background()); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready", "error": "database unavailable"})
-			return
-		}
-		// Check NATS (optional)
-		natsStatus := "disabled"
-		if natsClient != nil {
-			if natsClient.IsConnected() {
-				natsStatus = "connected"
-			} else {
-				natsStatus = "disconnected"
-			}
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ready", "nats": natsStatus})
-	})
+	// Prometheus scrape endpoint. Unauthenticated like /health so scrapers reach
+	// it without credentials; restrict it at the ingress/network layer if the
+	// deployment exposes the router publicly.
+	router.GET("/metrics", gin.WrapH(metrics.Handler()))
+
+	// Health check endpoints. Readiness verifies every hard dependency
+	// (Postgres, Redis, and — when enabled — NATS); a disconnected broker fails
+	// readiness so the orchestrator stops routing traffic to an instance that
+	// cannot process the messaging pipeline.
+	var redisPing func(context.Context) error
+	if redisClient != nil {
+		redisPing = func(ctx context.Context) error { return redisClient.Ping(ctx).Err() }
+	}
+	healthHandler := handlers.NewHealthHandler(db.Pool, redisPing)
+	if natsClient != nil {
+		healthHandler.SetNATSChecker(natsClient.IsConnected)
+	}
+	router.GET("/health", healthHandler.Health)
+	router.GET("/ready", healthHandler.Ready)
 
 	// Swagger documentation endpoint
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -845,6 +997,7 @@ func main() {
 		{
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/refresh", authHandler.RefreshToken)
+			auth.POST("/logout", authHandler.Logout)
 		}
 
 		// WebChat widget config (no auth required)
@@ -865,6 +1018,11 @@ func main() {
 		{
 			webhooks.Any("/whatsapp/:channelId", webhookHandler.WhatsAppWebhook)
 			webhooks.POST("/telegram/:channelId", webhookHandler.TelegramWebhook)
+			webhooks.POST("/teams/:channelId", webhookHandler.TeamsWebhook)
+			// Multi-tenant Teams: one shared Bot Framework messaging endpoint (no
+			// channelId) resolves the channel from the token audience + AAD tenant.
+			webhooks.POST("/teams", webhookHandler.TeamsWebhookShared)
+			webhooks.POST("/slack/:channelId", webhookHandler.SlackWebhook)
 			webhooks.Any("/twilio/:channelId", webhookHandler.TwilioWebhook)
 			webhooks.Any("/sms/:channelId", webhookHandler.TwilioWebhook) // Alias for Twilio
 			webhooks.Any("/facebook/:channelId", webhookHandler.FacebookWebhook)
@@ -896,6 +1054,40 @@ func main() {
 			protected.GET("/me", authHandler.Me)
 			protected.PUT("/me", authHandler.UpdateMe)
 			protected.PUT("/me/password", authHandler.ChangePassword)
+
+			// WebChat widget token: an authenticated backend mints a short-lived
+			// signed token for its browser widget, which then opens the public
+			// /ws/:channelId WebSocket. Enforcement is opt-in: the WS handler only
+			// requires a token when the channel has a widget_secret configured.
+			protected.POST("/webchat/:channelId/widget-token", func(c *gin.Context) {
+				tenantID := middleware.MustGetTenantID(c)
+				if tenantID == "" {
+					return
+				}
+				ch, err := channelService.GetByTenantAndID(c.Request.Context(), tenantID, c.Param("channelId"))
+				if err != nil {
+					handlers.RespondError(c, err)
+					return
+				}
+				if ch.Type != entity.ChannelTypeWebChat {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "not a webchat channel"})
+					return
+				}
+				secret := ch.Config["widget_secret"]
+				if secret == "" {
+					secret = ch.Credentials["widget_secret"]
+				}
+				if secret == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "widget_secret not configured for this channel"})
+					return
+				}
+				tok, err := webchat.IssueWidgetToken(ch.ID, secret, webchat.DefaultWidgetTokenTTL, time.Now())
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to issue widget token"})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"token": tok, "expires_in": int(webchat.DefaultWidgetTokenTTL.Seconds())})
+			})
 
 			// Tenant/Organization
 			protected.GET("/tenant", tenantHandler.Get)
@@ -950,6 +1142,9 @@ func main() {
 				channels.POST("/test-twilio", channelHandler.TestTwilioConnection)
 				channels.POST("/test-facebook", channelHandler.TestFacebookConnection)
 				channels.POST("/test-instagram", channelHandler.TestInstagramConnection)
+				channels.POST("/test-teams", channelHandler.TestTeamsConnection)
+				channels.POST("/test-slack", channelHandler.TestSlackConnection)
+				channels.POST("/test-mattermost", channelHandler.TestMattermostConnection)
 				channels.PUT("/:id/status", channelHandler.UpdateStatus)
 				channels.PUT("/:id/enabled", channelHandler.UpdateEnabled)
 				channels.POST("/:id/connect", channelHandler.Connect)
@@ -1291,6 +1486,18 @@ func main() {
 		aiConsumer.Stop()
 	}
 
+	// Wait (bounded) for background monitors to finish their current iteration.
+	backgroundDone := make(chan struct{})
+	go func() {
+		backgroundJobs.Wait()
+		close(backgroundDone)
+	}()
+	select {
+	case <-backgroundDone:
+	case <-time.After(10 * time.Second):
+		logger.Warn("Background monitors did not stop within 10s, continuing shutdown")
+	}
+
 	// Disconnect adapters
 	webchatAdapter.Disconnect(context.Background())
 	whatsappOfficialAdapter.Disconnect(context.Background())
@@ -1481,7 +1688,69 @@ func toRecipientStatus(status string) entity.RecipientStatus {
 	}
 }
 
-func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.MessageRepository, campaignRepo *database.CampaignRepository, status *nats.StatusUpdate) error {
+// isRetryableInboundError reports whether an inbound processing error is worth a
+// NATS redelivery. Application-level errors that will never succeed on retry
+// (duplicate/conflict, validation/bad-request, forbidden, not-found,
+// unauthorized) are treated as non-retryable so they are acked instead of
+// cycling to the DLQ. Anything else (DB hiccups, transient infra) is retryable.
+func isRetryableInboundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var appErr *apperrors.AppError
+	if errors.As(err, &appErr) {
+		switch appErr.Code {
+		case apperrors.ErrCodeConflict,
+			apperrors.ErrCodeValidation,
+			apperrors.ErrCodeBadRequest,
+			apperrors.ErrCodeForbidden,
+			apperrors.ErrCodeUnauthorized,
+			apperrors.ErrCodeNotFound:
+			return false
+		}
+	}
+	return true
+}
+
+// maybeTriggerBot fires the bot auto-reply pipeline for an inbound message when
+// it is eligible: it must come from a contact (never echo bot/agent messages),
+// the conversation must not already be assigned to a human agent, and the
+// channel must have an active bot. It publishes a BotResponseRequest that the AI
+// consumer turns into a generated reply. Without this, the bot subscribers were
+// wired but never received traffic, so auto-reply never happened.
+func maybeTriggerBot(ctx context.Context, botRepo *database.BotRepository, producer *nats.Producer, out *usecase.ReceiveMessageOutput) {
+	if producer == nil || botRepo == nil || out == nil || out.Message == nil || out.Conversation == nil {
+		return
+	}
+	if out.Message.SenderType != entity.SenderTypeContact {
+		return // only respond to inbound contact messages
+	}
+	if out.Conversation.AssignedUserID != nil && *out.Conversation.AssignedUserID != "" {
+		return // a human agent owns this conversation
+	}
+	bot, err := botRepo.FindByChannel(ctx, out.Conversation.ChannelID)
+	if err != nil || bot == nil {
+		return // no active bot on this channel
+	}
+	contactID := out.Conversation.ContactID
+	if out.Contact != nil {
+		contactID = out.Contact.ID
+	}
+	if err := producer.PublishBotResponse(ctx, &nats.BotResponseRequest{
+		MessageID:      out.Message.ID,
+		ConversationID: out.Conversation.ID,
+		TenantID:       out.Conversation.TenantID,
+		ChannelID:      out.Conversation.ChannelID,
+		ContactID:      contactID,
+		BotID:          bot.ID,
+		Content:        out.Message.Content,
+		Timestamp:      time.Now(),
+	}); err != nil {
+		logger.Warn("failed to trigger bot response: " + err.Error())
+	}
+}
+
+func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.MessageRepository, conversationRepo *database.ConversationRepository, campaignRepo *database.CampaignRepository, producer nats.Publisher, status *nats.StatusUpdate) error {
 	if status == nil {
 		return nil
 	}
@@ -1527,7 +1796,103 @@ func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.Messag
 		return nil
 	}
 
+	// Emit an outbound-webhook status event so external consumers (DeskLenz)
+	// receive message.{sent,delivered,read,failed}. Best-effort: never block the
+	// status pipeline on event publication.
+	publishStatusWebhookEvent(ctx, messageRepo, conversationRepo, producer, messageID, status)
+
 	return nil
+}
+
+// publishStatusWebhookEvent publishes a `message.<status>` event carrying the
+// channel id so the webhook dispatcher can resolve the channel's endpoint.
+func publishStatusWebhookEvent(ctx context.Context, messageRepo *database.MessageRepository, conversationRepo *database.ConversationRepository, producer nats.Publisher, messageID string, status *nats.StatusUpdate) {
+	if producer == nil || conversationRepo == nil {
+		return
+	}
+	eventType := statusEventType(status.Status)
+	if eventType == "" {
+		return
+	}
+
+	message, err := messageRepo.FindByID(ctx, messageID)
+	if err != nil || message == nil {
+		return
+	}
+	conversation, err := conversationRepo.FindByID(ctx, message.ConversationID)
+	if err != nil || conversation == nil {
+		return
+	}
+
+	_ = producer.PublishEvent(ctx, &nats.Event{
+		Type:     eventType,
+		TenantID: conversation.TenantID,
+		Payload: map[string]interface{}{
+			"message_id":  messageID,
+			"channel_id":  conversation.ChannelID,
+			"external_id": status.ExternalID,
+			"status":      status.Status,
+			"error":       status.ErrorMessage,
+		},
+		Timestamp: time.Now(),
+	})
+}
+
+// buildMediaStore constructs the optional inbound-media store from the
+// environment, preferring MinIO (S3-compatible) when configured and falling back
+// to a local filesystem store, then to nil. When nil, inbound media re-hosting
+// is disabled and provider URLs are passed through unchanged.
+func buildMediaStore() storageLib.Client {
+	// Preferred: MinIO / S3-compatible object storage.
+	if endpoint := os.Getenv("MINIO_ENDPOINT"); endpoint != "" {
+		bucket := os.Getenv("MINIO_BUCKET")
+		if bucket == "" {
+			bucket = "linktor-media"
+		}
+		client, err := storageLib.NewMinIOClient(
+			endpoint,
+			os.Getenv("MINIO_ACCESS_KEY"),
+			os.Getenv("MINIO_SECRET_KEY"),
+			bucket,
+			os.Getenv("MINIO_REGION"),
+			os.Getenv("MINIO_USE_SSL") == "true",
+		)
+		if err != nil {
+			logger.Warn("Inbound media store: MinIO init failed, falling back: " + err.Error())
+		} else {
+			logger.Info("Inbound media store: MinIO bucket '" + bucket + "' @ " + endpoint)
+			return client
+		}
+	}
+
+	// Fallback: local filesystem.
+	if dir := os.Getenv("MEDIA_UPLOAD_DIR"); dir != "" {
+		baseURL := os.Getenv("MEDIA_UPLOAD_BASE_URL")
+		if baseURL == "" {
+			baseURL = "/uploads/media"
+		}
+		logger.Info("Inbound media store: local dir " + dir)
+		return storageLib.NewLocalClient(dir, baseURL)
+	}
+
+	return nil
+}
+
+// statusEventType maps a provider status string to the NATS event type emitted
+// on the outbound webhook. Unknown statuses return "" (no event).
+func statusEventType(status string) string {
+	switch status {
+	case "sent":
+		return nats.EventMessageSent
+	case "delivered":
+		return nats.EventMessageDelivered
+	case "read":
+		return nats.EventMessageRead
+	case "failed":
+		return nats.EventMessageFailed
+	default:
+		return ""
+	}
 }
 
 // ListParams alias for database package

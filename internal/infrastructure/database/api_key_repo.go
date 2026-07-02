@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -75,6 +76,45 @@ func (r *APIKeyRepository) ListByTenant(ctx context.Context, tenantID string) ([
 	}
 
 	return apiKeys, nil
+}
+
+// FindActiveByPrefix returns non-expired keys whose stored prefix matches. The
+// key hash is included so the caller can verify the presented secret with bcrypt.
+func (r *APIKeyRepository) FindActiveByPrefix(ctx context.Context, prefix string) ([]*entity.APIKey, error) {
+	query := `
+		SELECT id, tenant_id, user_id, name, key_hash, key_prefix, scopes,
+		       last_used_at, expires_at, created_at
+		FROM api_keys
+		WHERE key_prefix = $1 AND (expires_at IS NULL OR expires_at > now())
+	`
+
+	rows, err := r.db.Pool.Query(ctx, query, prefix)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to query API keys")
+	}
+	defer rows.Close()
+
+	var apiKeys []*entity.APIKey
+	for rows.Next() {
+		apiKey, err := scanAPIKey(rows)
+		if err != nil {
+			return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan API key")
+		}
+		apiKeys = append(apiKeys, apiKey)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate API keys")
+	}
+	return apiKeys, nil
+}
+
+// TouchLastUsed records the last time a key authenticated a request.
+func (r *APIKeyRepository) TouchLastUsed(ctx context.Context, id string, at time.Time) error {
+	_, err := r.db.Pool.Exec(ctx, "UPDATE api_keys SET last_used_at = $2 WHERE id = $1", id, at)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to update API key last_used_at")
+	}
+	return nil
 }
 
 // Delete removes an API key by tenant and ID.

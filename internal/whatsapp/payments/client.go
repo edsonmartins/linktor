@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/msgfy/linktor/pkg/graphapi"
+	"github.com/msgfy/linktor/pkg/logger"
+	"go.uber.org/zap"
 )
 
 // Client handles WhatsApp Payments API interactions
@@ -23,8 +25,8 @@ type Client struct {
 	apiVersion    string
 	baseURL       string
 
-	gateway        Gateway
-	gatewayConfig  *GatewayConfig
+	gateway       Gateway
+	gatewayConfig *GatewayConfig
 
 	store          PaymentStore
 	organizationID string
@@ -79,16 +81,33 @@ func NewClient(config *ClientConfig) *Client {
 	return client
 }
 
-// initGateway initializes the appropriate payment gateway
+// initGateway initializes the appropriate payment gateway.
+// Unknown gateway types return nil so payment operations fail with an explicit
+// error instead of silently falling back to the mock gateway. The mock gateway
+// must be requested explicitly via Type "mock".
 func (c *Client) initGateway(config *GatewayConfig) Gateway {
 	switch config.Type {
 	case GatewayRazorpay:
 		return NewRazorpayGateway(config)
 	case GatewayPagSeguro:
 		return NewPagSeguroGateway(config)
-	default:
+	case GatewayMock:
 		return NewMockGateway(config)
+	default:
+		return nil
 	}
+}
+
+// activeGateway returns the configured gateway or a descriptive error when the
+// configured type is unsupported or no gateway was configured at all.
+func (c *Client) activeGateway() (Gateway, error) {
+	if c.gateway != nil {
+		return c.gateway, nil
+	}
+	if c.gatewayConfig != nil && c.gatewayConfig.Type != "" {
+		return nil, fmt.Errorf("unsupported payment gateway type %q", c.gatewayConfig.Type)
+	}
+	return nil, fmt.Errorf("payment gateway not configured")
 }
 
 // buildURL builds the API URL
@@ -135,7 +154,11 @@ func (c *Client) doRequest(ctx context.Context, method, url string, body interfa
 				Code    int    `json:"code"`
 			} `json:"error"`
 		}
-		json.Unmarshal(respBody, &errResp)
+		if err := json.Unmarshal(respBody, &errResp); err != nil || errResp.Error.Message == "" {
+			// Unparseable error payload: surface the raw body instead of an
+			// empty message.
+			return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(respBody))
+		}
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, errResp.Error.Message)
 	}
 
@@ -148,12 +171,13 @@ func (c *Client) doRequest(ctx context.Context, method, url string, body interfa
 
 // CreatePayment creates a new payment request
 func (c *Client) CreatePayment(ctx context.Context, req *PaymentRequest) (*PaymentResponse, error) {
-	if c.gateway == nil {
-		return nil, fmt.Errorf("payment gateway not configured")
+	gateway, err := c.activeGateway()
+	if err != nil {
+		return nil, err
 	}
 
 	// Create payment via gateway
-	gatewayResp, err := c.gateway.CreatePayment(ctx, req)
+	gatewayResp, err := gateway.CreatePayment(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("gateway error: %w", err)
 	}
@@ -302,7 +326,29 @@ func (c *Client) GetPayment(ctx context.Context, paymentID string) (*Payment, er
 	if c.store == nil {
 		return nil, fmt.Errorf("payment store not configured")
 	}
-	return c.store.GetByID(ctx, paymentID)
+	payment, err := c.store.GetByID(ctx, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.assertOwns(payment); err != nil {
+		return nil, err
+	}
+	return payment, nil
+}
+
+// assertOwns rejects a payment that belongs to another organization. The payment
+// store is queried by a global id/reference, so without this a client scoped to
+// org A could read — or refund — a payment belonging to org B by guessing its id.
+// The error deliberately mirrors "not found" so cross-tenant existence does not
+// leak.
+func (c *Client) assertOwns(p *Payment) error {
+	if p == nil {
+		return fmt.Errorf("payment not found")
+	}
+	if p.OrganizationID != c.organizationID {
+		return fmt.Errorf("payment not found")
+	}
+	return nil
 }
 
 // GetPaymentByReference retrieves a payment by reference ID
@@ -310,7 +356,14 @@ func (c *Client) GetPaymentByReference(ctx context.Context, referenceID string) 
 	if c.store == nil {
 		return nil, fmt.Errorf("payment store not configured")
 	}
-	return c.store.GetByReference(ctx, referenceID)
+	payment, err := c.store.GetByReference(ctx, referenceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.assertOwns(payment); err != nil {
+		return nil, err
+	}
+	return payment, nil
 }
 
 // UpdatePaymentStatus updates the status of a payment
@@ -321,6 +374,9 @@ func (c *Client) UpdatePaymentStatus(ctx context.Context, paymentID string, stat
 
 	payment, err := c.store.GetByID(ctx, paymentID)
 	if err != nil {
+		return fmt.Errorf("payment not found: %s", paymentID)
+	}
+	if err := c.assertOwns(payment); err != nil {
 		return fmt.Errorf("payment not found: %s", paymentID)
 	}
 
@@ -346,8 +402,9 @@ func (c *Client) UpdatePaymentStatus(ctx context.Context, paymentID string, stat
 
 // ProcessRefund processes a refund for a payment
 func (c *Client) ProcessRefund(ctx context.Context, req *RefundRequest) (*Refund, error) {
-	if c.gateway == nil {
-		return nil, fmt.Errorf("payment gateway not configured")
+	gateway, err := c.activeGateway()
+	if err != nil {
+		return nil, err
 	}
 
 	// Get payment
@@ -367,7 +424,7 @@ func (c *Client) ProcessRefund(ctx context.Context, req *RefundRequest) (*Refund
 	}
 
 	// Process refund via gateway
-	refund, err := c.gateway.ProcessRefund(ctx, req)
+	refund, err := gateway.ProcessRefund(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("gateway error: %w", err)
 	}
@@ -377,14 +434,21 @@ func (c *Client) ProcessRefund(ctx context.Context, req *RefundRequest) (*Refund
 		c.UpdatePaymentStatus(ctx, req.PaymentID, PaymentStatusRefunded)
 	}
 
-	// Send refund notification
-	c.sendRefundNotification(ctx, payment, refund)
+	// Send refund notification. The refund itself succeeded, so a delivery
+	// failure must not fail the operation — but it must be visible.
+	if err := c.sendRefundNotification(ctx, payment, refund); err != nil {
+		logger.Warn("refund processed but customer notification failed",
+			zap.String("payment_id", payment.ID),
+			zap.String("refund_id", refund.ID),
+			zap.Error(err),
+		)
+	}
 
 	return refund, nil
 }
 
 // sendRefundNotification sends a refund notification message
-func (c *Client) sendRefundNotification(ctx context.Context, payment *Payment, refund *Refund) {
+func (c *Client) sendRefundNotification(ctx context.Context, payment *Payment, refund *Refund) error {
 	message := fmt.Sprintf("Your refund of %.2f %s has been processed for payment %s.",
 		float64(refund.Amount)/100, refund.Currency, payment.ReferenceID)
 
@@ -400,7 +464,8 @@ func (c *Client) sendRefundNotification(ctx context.Context, payment *Payment, r
 		},
 	}
 
-	c.doRequest(ctx, http.MethodPost, apiURL, body)
+	_, err := c.doRequest(ctx, http.MethodPost, apiURL, body)
+	return err
 }
 
 // =============================================================================
@@ -768,8 +833,8 @@ func (g *PagSeguroGateway) CreatePayment(ctx context.Context, req *PaymentReques
 	defer resp.Body.Close()
 
 	var result struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
+		ID      string `json:"id"`
+		Status  string `json:"status"`
 		QRCodes []struct {
 			Text   string `json:"text"`
 			Images []struct {

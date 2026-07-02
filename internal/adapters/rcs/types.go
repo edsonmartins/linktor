@@ -18,10 +18,10 @@ var (
 type Provider string
 
 const (
-	ProviderZenvia    Provider = "zenvia"
-	ProviderInfobip   Provider = "infobip"
+	ProviderZenvia     Provider = "zenvia"
+	ProviderInfobip    Provider = "infobip"
 	ProviderPontaltech Provider = "pontaltech"
-	ProviderGoogle    Provider = "google"
+	ProviderGoogle     Provider = "google"
 )
 
 // Config holds the configuration for RCS adapter
@@ -87,16 +87,16 @@ func (c *Config) GetBaseURL() string {
 
 // IncomingMessage represents an incoming RCS message
 type IncomingMessage struct {
-	ExternalID  string       `json:"external_id"`
-	SenderPhone string       `json:"sender_phone"`
-	Text        string       `json:"text,omitempty"`
-	MediaURL    string       `json:"media_url,omitempty"`
-	MediaType   string       `json:"media_type,omitempty"`
-	Location    *Location    `json:"location,omitempty"`
-	Suggestion  *Suggestion  `json:"suggestion,omitempty"`
-	Timestamp   time.Time    `json:"timestamp"`
-	AgentID     string       `json:"agent_id"`
-	RawPayload  interface{}  `json:"raw_payload,omitempty"`
+	ExternalID  string      `json:"external_id"`
+	SenderPhone string      `json:"sender_phone"`
+	Text        string      `json:"text,omitempty"`
+	MediaURL    string      `json:"media_url,omitempty"`
+	MediaType   string      `json:"media_type,omitempty"`
+	Location    *Location   `json:"location,omitempty"`
+	Suggestion  *Suggestion `json:"suggestion,omitempty"`
+	Timestamp   time.Time   `json:"timestamp"`
+	AgentID     string      `json:"agent_id"`
+	RawPayload  interface{} `json:"raw_payload,omitempty"`
 }
 
 // OutboundMessage represents an outbound RCS message
@@ -113,10 +113,10 @@ type OutboundMessage struct {
 
 // SendResult represents the result of sending a message
 type SendResult struct {
-	Success    bool      `json:"success"`
-	MessageID  string    `json:"message_id,omitempty"`
-	Error      string    `json:"error,omitempty"`
-	Timestamp  time.Time `json:"timestamp"`
+	Success   bool      `json:"success"`
+	MessageID string    `json:"message_id,omitempty"`
+	Error     string    `json:"error,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // RichCard represents an RCS rich card
@@ -136,9 +136,9 @@ type Carousel struct {
 
 // Suggestion represents an RCS suggestion (action/reply)
 type Suggestion struct {
-	Type        SuggestionType `json:"type"`
-	Text        string         `json:"text"`
-	PostbackData string        `json:"postback_data,omitempty"`
+	Type         SuggestionType `json:"type"`
+	Text         string         `json:"text"`
+	PostbackData string         `json:"postback_data,omitempty"`
 	// For dial action
 	PhoneNumber string `json:"phone_number,omitempty"`
 	// For URL action
@@ -153,13 +153,13 @@ type Suggestion struct {
 type SuggestionType string
 
 const (
-	SuggestionTypeReply       SuggestionType = "reply"
-	SuggestionTypeAction      SuggestionType = "action"
-	SuggestionTypeDial        SuggestionType = "dial"
-	SuggestionTypeURL         SuggestionType = "url"
-	SuggestionTypeLocation    SuggestionType = "location"
-	SuggestionTypeCalendar    SuggestionType = "calendar"
-	SuggestionTypeShare       SuggestionType = "share"
+	SuggestionTypeReply    SuggestionType = "reply"
+	SuggestionTypeAction   SuggestionType = "action"
+	SuggestionTypeDial     SuggestionType = "dial"
+	SuggestionTypeURL      SuggestionType = "url"
+	SuggestionTypeLocation SuggestionType = "location"
+	SuggestionTypeCalendar SuggestionType = "calendar"
+	SuggestionTypeShare    SuggestionType = "share"
 )
 
 // Location represents a geographic location
@@ -180,10 +180,10 @@ type CalendarEvent struct {
 
 // DeliveryReport represents an RCS delivery report
 type DeliveryReport struct {
-	MessageID string        `json:"message_id"`
+	MessageID string         `json:"message_id"`
 	Status    DeliveryStatus `json:"status"`
-	Timestamp time.Time     `json:"timestamp"`
-	Error     string        `json:"error,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
+	Error     string         `json:"error,omitempty"`
 }
 
 // DeliveryStatus represents the delivery status
@@ -199,11 +199,11 @@ const (
 
 // WebhookPayload represents an incoming webhook payload
 type WebhookPayload struct {
-	Provider    Provider          `json:"provider"`
-	Type        string            `json:"type"` // "message", "status", "event"
-	Message     *IncomingMessage  `json:"message,omitempty"`
-	Status      *DeliveryReport   `json:"status,omitempty"`
-	RawPayload  interface{}       `json:"raw_payload,omitempty"`
+	Provider   Provider         `json:"provider"`
+	Type       string           `json:"type"` // "message", "status", "event"
+	Message    *IncomingMessage `json:"message,omitempty"`
+	Status     *DeliveryReport  `json:"status,omitempty"`
+	RawPayload interface{}      `json:"raw_payload,omitempty"`
 }
 
 // ProviderClient is the interface for RCS provider clients

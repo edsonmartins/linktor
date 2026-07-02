@@ -428,11 +428,11 @@ func parsePostmarkEvent(body []byte) (*WebhookPayload, error) {
 	status := mapPostmarkEventToStatus(event.RecordType)
 
 	callback := &StatusCallback{
-		ExternalID:   event.MessageID,
-		Status:       status,
-		Recipient:    event.Recipient,
-		Timestamp:    time.Now(),
-		Metadata:     make(map[string]string),
+		ExternalID: event.MessageID,
+		Status:     status,
+		Recipient:  event.Recipient,
+		Timestamp:  time.Now(),
+		Metadata:   make(map[string]string),
 	}
 
 	// Parse timestamp

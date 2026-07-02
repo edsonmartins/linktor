@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -119,11 +120,16 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		// IsNew should be true (new conversation)
 		assert.True(t, output.IsNew)
 
-		// 3 events: ContactCreated, ConversationCreated, MessageReceived
-		require.Len(t, f.producer.Events, 3)
-		assert.Equal(t, nats.EventContactCreated, f.producer.Events[0].Type)
-		assert.Equal(t, nats.EventConversationCreated, f.producer.Events[1].Type)
-		assert.Equal(t, nats.EventMessageReceived, f.producer.Events[2].Type)
+		// All three inbound events route through the transactional outbox (written
+		// in the same tx as their aggregate), so nothing is published inline here.
+		require.Len(t, f.producer.Events, 0)
+		require.Len(t, f.contactRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventContactCreated, f.contactRepo.OutboxEvents[0].EventType)
+		require.Len(t, f.conversationRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventConversationCreated, f.conversationRepo.OutboxEvents[0].EventType)
+		require.Len(t, f.messageRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
+		assert.Equal(t, "evt-message-received-"+output.Message.ID, f.messageRepo.OutboxEvents[0].IdempotencyKey)
 
 		// Message persisted in repo
 		assert.Len(t, f.messageRepo.Messages, 1)
@@ -168,10 +174,14 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		// No new contact created (still just 1 in repo)
 		assert.Len(t, f.contactRepo.Contacts, 1)
 
-		// Only 2 events: ConversationCreated, MessageReceived (no ContactCreated)
-		require.Len(t, f.producer.Events, 2)
-		assert.Equal(t, nats.EventConversationCreated, f.producer.Events[0].Type)
-		assert.Equal(t, nats.EventMessageReceived, f.producer.Events[1].Type)
+		// No ContactCreated for an existing contact; ConversationCreated and
+		// MessageReceived are queued in the outbox, nothing published inline.
+		require.Len(t, f.producer.Events, 0)
+		require.Len(t, f.contactRepo.OutboxEvents, 0)
+		require.Len(t, f.conversationRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventConversationCreated, f.conversationRepo.OutboxEvents[0].EventType)
+		require.Len(t, f.messageRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
 	})
 
 	t.Run("Existing Contact by Phone - Adds Identity", func(t *testing.T) {
@@ -208,10 +218,86 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, "whatsapp", identities[0].ChannelType)
 		assert.Equal(t, "+5511888888888", identities[0].Identifier)
 
-		// No ContactCreated event
-		for _, evt := range f.producer.Events {
-			assert.NotEqual(t, nats.EventContactCreated, evt.Type)
+		// No ContactCreated event (existing contact reused via phone).
+		assert.Empty(t, f.contactRepo.OutboxEvents)
+	})
+
+	// WS10-GETORCREATE: two inbound webhooks from the SAME brand-new contact
+	// arriving concurrently must not create two contact rows. This drives the
+	// identity race deterministically: the identity insert reports inserted=false
+	// because a winner committed first, so the loser reuses the winner and rolls
+	// back its orphan contact.
+	t.Run("Concurrent New Contact - Identity Race Reuses Winner", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		// Simulate the winning request committing its contact + identity in the
+		// window between the loser's find-miss and its own identity insert.
+		winner := &entity.Contact{
+			ID:       "contact-winner",
+			TenantID: "tenant-1",
+			Name:     "Winner",
+			Phone:    "+5511888888888",
+			Identities: []*entity.ContactIdentity{{
+				ID:          "identity-winner",
+				ContactID:   "contact-winner",
+				TenantID:    "tenant-1",
+				ChannelType: "whatsapp",
+				Identifier:  "+5511888888888",
+			}},
+			CustomFields: make(map[string]string),
+			Tags:         []string{},
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
 		}
+		var injected bool
+		f.contactRepo.CreateIdentityHook = func() {
+			if injected {
+				return
+			}
+			injected = true
+			f.contactRepo.Contacts[winner.ID] = winner
+		}
+
+		inbound := makeInbound("ch-1", "tenant-1")
+
+		output, err := f.uc.Execute(ctx, inbound)
+		require.NoError(t, err)
+		require.NotNil(t, output)
+
+		// The loser reused the winning contact, not its own freshly-created one.
+		assert.Equal(t, "contact-winner", output.Contact.ID)
+
+		// Exactly one contact remains: the orphan was rolled back.
+		assert.Len(t, f.contactRepo.Contacts, 1)
+
+		// No ContactCreated event for the loser: losing the identity race means the
+		// event is not enqueued (it is tied to the winning insert, same tx).
+		assert.Empty(t, f.contactRepo.OutboxEvents)
+	})
+
+	// Same identity arriving twice sequentially reuses the existing contact via
+	// the find fast path and never leaves a duplicate.
+	t.Run("Repeated New Contact - No Duplicate", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		first, err := f.uc.Execute(ctx, makeInbound("ch-1", "tenant-1"))
+		require.NoError(t, err)
+		require.NotNil(t, first)
+		assert.True(t, first.IsNew)
+
+		second := makeInbound("ch-1", "tenant-1")
+		second.ExternalID = "ext-456" // distinct message, same contact identity
+		out, err := f.uc.Execute(ctx, second)
+		require.NoError(t, err)
+		require.NotNil(t, out)
+
+		// Same contact reused, only one contact row.
+		assert.Equal(t, first.Contact.ID, out.Contact.ID)
+		assert.Len(t, f.contactRepo.Contacts, 1)
 	})
 
 	t.Run("Existing Open Conversation", func(t *testing.T) {
@@ -262,9 +348,11 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, "conv-existing", output.Conversation.ID)
 		assert.False(t, output.IsNew)
 
-		// Only 1 event: MessageReceived
-		require.Len(t, f.producer.Events, 1)
-		assert.Equal(t, nats.EventMessageReceived, f.producer.Events[0].Type)
+		// Existing contact + existing conversation → nothing published directly;
+		// MessageReceived is queued in the outbox.
+		require.Len(t, f.producer.Events, 0)
+		require.Len(t, f.messageRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
 	})
 
 	t.Run("Resolved Conversation - Creates New Conversation", func(t *testing.T) {
@@ -318,10 +406,10 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, entity.ConversationStatusOpen, output.Conversation.Status)
 		assert.True(t, output.IsNew)
 
-		// ConversationCreated event published
+		// ConversationCreated event enqueued in the outbox for the new conversation.
 		var hasConvCreated bool
-		for _, evt := range f.producer.Events {
-			if evt.Type == nats.EventConversationCreated {
+		for _, evt := range f.conversationRepo.OutboxEvents {
+			if evt.EventType == nats.EventConversationCreated {
 				hasConvCreated = true
 			}
 		}
@@ -658,21 +746,72 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, output)
 
-		// Find the MessageReceived event
-		var messageEvent *nats.Event
-		for _, evt := range f.producer.Events {
-			if evt.Type == nats.EventMessageReceived {
-				messageEvent = evt
-				break
-			}
-		}
-		require.NotNil(t, messageEvent)
+		// The MessageReceived event is queued in the outbox; its payload is the
+		// exact JSON the relay will publish.
+		require.Len(t, f.messageRepo.OutboxEvents, 1)
+		outEvt := f.messageRepo.OutboxEvents[0]
+		assert.Equal(t, nats.EventMessageReceived, outEvt.EventType)
+		assert.Equal(t, "tenant-1", outEvt.TenantID)
+		assert.Equal(t, "message", outEvt.AggregateType)
+		assert.Equal(t, output.Message.ID, outEvt.AggregateID)
 
-		assert.Equal(t, "tenant-1", messageEvent.TenantID)
-		assert.Equal(t, output.Message.ID, messageEvent.Payload["message_id"])
-		assert.Equal(t, output.Conversation.ID, messageEvent.Payload["conversation_id"])
-		assert.Equal(t, output.Contact.ID, messageEvent.Payload["contact_id"])
-		assert.Equal(t, "text", messageEvent.Payload["content_type"])
-		assert.Equal(t, "Hello, world!", messageEvent.Payload["content"])
+		var payload map[string]interface{}
+		require.NoError(t, json.Unmarshal(outEvt.Payload, &payload))
+		assert.Equal(t, output.Message.ID, payload["message_id"])
+		assert.Equal(t, output.Conversation.ID, payload["conversation_id"])
+		assert.Equal(t, output.Contact.ID, payload["contact_id"])
+		assert.Equal(t, "text", payload["content_type"])
+		assert.Equal(t, "Hello, world!", payload["content"])
 	})
+}
+
+// TestReceiveMessage_OutboxDecouplesFromNATSOutage verifies that the "message
+// received" event is durably enqueued in the transactional outbox as part of the
+// message write, so a NATS outage during intake never loses the event: the
+// message commits, the outbox row is written, and the relay publishes it later.
+// Intake no longer depends on broker availability.
+func TestReceiveMessage_OutboxDecouplesFromNATSOutage(t *testing.T) {
+	ctx := context.Background()
+	f := newReceiveMessageFixture()
+	channel := makeChannel("ch-1", "tenant-1")
+	f.channelRepo.Channels[channel.ID] = channel
+
+	// The producer is irrelevant to the critical event now — it is written to the
+	// outbox in the same tx as the message, not published inline.
+	f.producer.ReturnError = fmt.Errorf("nats unavailable")
+
+	out, err := f.uc.Execute(ctx, makeInbound("ch-1", "tenant-1"))
+	require.NoError(t, err, "intake must succeed even while NATS is down")
+	require.NotNil(t, out)
+
+	assert.Len(t, f.messageRepo.Messages, 1, "message persisted")
+	require.Len(t, f.messageRepo.OutboxEvents, 1, "received event durably queued for the relay")
+	assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
+	assert.Equal(t, "evt-message-received-"+out.Message.ID, f.messageRepo.OutboxEvents[0].IdempotencyKey)
+}
+
+// TestReceiveMessage_RedeliveryDoesNotDuplicateOutbox verifies exactly-once
+// enqueue: a redelivery of the same inbound is the ON CONFLICT no-op, returns a
+// conflict (so the consumer acks), and does NOT enqueue a second outbox event —
+// the original delivery's event is already durably queued for the relay.
+func TestReceiveMessage_RedeliveryDoesNotDuplicateOutbox(t *testing.T) {
+	ctx := context.Background()
+	f := newReceiveMessageFixture()
+	channel := makeChannel("ch-1", "tenant-1")
+	f.channelRepo.Channels[channel.ID] = channel
+	inbound := makeInbound("ch-1", "tenant-1")
+
+	// First delivery: message persisted, one outbox event queued.
+	_, err := f.uc.Execute(ctx, inbound)
+	require.NoError(t, err)
+	require.Len(t, f.messageRepo.Messages, 1)
+	require.Len(t, f.messageRepo.OutboxEvents, 1)
+
+	// Redelivery of the same inbound → conflict, no double-persist, no second
+	// outbox row.
+	_, err = f.uc.Execute(ctx, inbound)
+	require.Error(t, err, "duplicate delivery returns conflict so the consumer acks")
+
+	assert.Len(t, f.messageRepo.Messages, 1, "no duplicate message row")
+	assert.Len(t, f.messageRepo.OutboxEvents, 1, "no duplicate outbox event")
 }

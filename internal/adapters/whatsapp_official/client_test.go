@@ -519,13 +519,13 @@ func TestClient_GetBusinessProfile(t *testing.T) {
 		resp := map[string]interface{}{
 			"data": []map[string]interface{}{
 				{
-					"about":              "Test business",
-					"address":            "123 Main St",
-					"description":        "A test business profile",
-					"email":              "test@example.com",
+					"about":               "Test business",
+					"address":             "123 Main St",
+					"description":         "A test business profile",
+					"email":               "test@example.com",
 					"profile_picture_url": "https://example.com/pic.jpg",
-					"websites":           []string{"https://example.com"},
-					"vertical":           "OTHER",
+					"websites":            []string{"https://example.com"},
+					"vertical":            "OTHER",
 				},
 			},
 		}
@@ -764,6 +764,24 @@ func TestAPIRequestError_IsRateLimitError(t *testing.T) {
 			code:       1,
 			expected:   false,
 		},
+		{
+			name:       "code 130429 throughput throttle (HTTP 400) is transient",
+			statusCode: 400,
+			code:       130429,
+			expected:   true,
+		},
+		{
+			name:       "code 131048 spam throttle (HTTP 400) is transient",
+			statusCode: 400,
+			code:       131048,
+			expected:   true,
+		},
+		{
+			name:       "code 131056 pair throttle (HTTP 400) is transient",
+			statusCode: 400,
+			code:       131056,
+			expected:   true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -868,6 +886,14 @@ func TestIsRetryableError(t *testing.T) {
 				APIError:   APIError{Code: 100, Message: "Invalid parameter"},
 			},
 			expected: false,
+		},
+		{
+			name: "400 throttling code 130429 is retryable",
+			err: &APIRequestError{
+				StatusCode: 400,
+				APIError:   APIError{Code: 130429, Message: "Rate limit hit"},
+			},
+			expected: true,
 		},
 		{
 			name: "401 auth error is not retryable",

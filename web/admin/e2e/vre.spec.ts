@@ -278,6 +278,10 @@ test.describe('VRE Page', () => {
 
     await page.goto('/vre')
 
+    // Wait for the brand form to hydrate from GET /vre/config before typing,
+    // otherwise hydration can overwrite the filled values (flaky under load).
+    await expect(page.getByLabel('Brand name')).toHaveValue('Linktor Demo')
+
     await page.getByLabel('Brand name').fill('Linktor Labs')
     await page.getByLabel('Primary color').fill('#112233')
     await page.getByRole('button', { name: 'Save brand config' }).click()

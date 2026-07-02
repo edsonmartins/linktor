@@ -75,8 +75,8 @@ func (rl *RateLimiter) Limit() gin.HandlerFunc {
 
 		if !allowed {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"code":    "RATE_LIMITED",
-				"message": "Too many requests. Please try again later.",
+				"code":        "RATE_LIMITED",
+				"message":     "Too many requests. Please try again later.",
 				"retry_after": resetAt - time.Now().Unix(),
 			})
 			return
@@ -103,8 +103,8 @@ func (rl *RateLimiter) LimitByKey(keyFunc func(*gin.Context) string) gin.Handler
 
 		if !allowed {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"code":    "RATE_LIMITED",
-				"message": "Too many requests. Please try again later.",
+				"code":        "RATE_LIMITED",
+				"message":     "Too many requests. Please try again later.",
 				"retry_after": resetAt - time.Now().Unix(),
 			})
 			return

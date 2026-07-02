@@ -11,6 +11,11 @@ type MessageRepository interface {
 	// Create creates a new message
 	Create(ctx context.Context, message *entity.Message) error
 
+	// CreateWithOutboxEvent persists the message and enqueues an outbox event in
+	// one transaction (transactional outbox). Returns inserted=false for a
+	// duplicate delivery (no outbox row written). event may be nil.
+	CreateWithOutboxEvent(ctx context.Context, message *entity.Message, event *entity.OutboxEvent) (bool, error)
+
 	// FindByID finds a message by ID
 	FindByID(ctx context.Context, id string) (*entity.Message, error)
 
@@ -49,6 +54,10 @@ type MessageRepository interface {
 type ConversationRepository interface {
 	// Create creates a new conversation
 	Create(ctx context.Context, conversation *entity.Conversation) error
+
+	// CreateWithOutboxEvent persists the conversation and enqueues an outbox event
+	// in one transaction (transactional outbox). event may be nil.
+	CreateWithOutboxEvent(ctx context.Context, conversation *entity.Conversation, event *entity.OutboxEvent) error
 
 	// FindByID finds a conversation by ID
 	FindByID(ctx context.Context, id string) (*entity.Conversation, error)
@@ -131,6 +140,18 @@ type ContactRepository interface {
 	// AddIdentity adds a channel identity to a contact
 	AddIdentity(ctx context.Context, identity *entity.ContactIdentity) error
 
+	// CreateIdentityIfAbsent atomically inserts a channel identity scoped to a
+	// tenant. It returns inserted=false (without error) when an identity for the
+	// same (tenant_id, channel_type, identifier) already exists, letting the
+	// caller resolve the race to the winning contact instead of duplicating it.
+	CreateIdentityIfAbsent(ctx context.Context, identity *entity.ContactIdentity) (inserted bool, err error)
+
+	// CreateIdentityIfAbsentWithOutboxEvent is CreateIdentityIfAbsent that, only
+	// when it wins the insert, enqueues the given outbox event in the same
+	// transaction — tying a "contact created" event to owning the identity. A
+	// caller that loses the race (inserted=false) enqueues nothing. event may be nil.
+	CreateIdentityIfAbsentWithOutboxEvent(ctx context.Context, identity *entity.ContactIdentity, event *entity.OutboxEvent) (inserted bool, err error)
+
 	// RemoveIdentity removes a channel identity from a contact
 	RemoveIdentity(ctx context.Context, contactID, identityID string) error
 
@@ -151,6 +172,12 @@ type ChannelRepository interface {
 
 	// FindByType finds channels of a specific type for a tenant
 	FindByType(ctx context.Context, tenantID string, channelType entity.ChannelType) ([]*entity.Channel, error)
+
+	// FindAllByType finds channels of a specific type across all tenants. Used by
+	// shared inbound endpoints (e.g. a single Teams Bot Framework messaging
+	// endpoint serving many tenants) that must resolve the channel from the
+	// provider payload rather than from a per-channel URL.
+	FindAllByType(ctx context.Context, channelType entity.ChannelType) ([]*entity.Channel, error)
 
 	// FindEnabledByTenant finds enabled channels for a tenant
 	FindEnabledByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error)
@@ -182,4 +209,3 @@ type ChannelRepository interface {
 	// FindCoexistenceChannels finds all channels with coexistence enabled
 	FindCoexistenceChannels(ctx context.Context) ([]*entity.Channel, error)
 }
-

@@ -1,13 +1,10 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
-	"syscall"
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
@@ -32,78 +29,33 @@ var serverPluginCmd = &cobra.Command{
 }
 
 var (
-	serverPort        int
-	serverWorkers     int
-	serverConfigFile  string
-	rollbackSteps     int
-	pluginName        string
+	serverPort       int
+	serverWorkers    int
+	serverConfigFile string
+	rollbackSteps    int
+	pluginName       string
 )
 
 var serverStartCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start the Linktor server",
+	Short: "Start the Linktor server (not available via CLI)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Loading configuration...")
-
-		// Load server config
-		if serverConfigFile != "" {
-			viper.SetConfigFile(serverConfigFile)
-			if err := viper.ReadInConfig(); err != nil {
-				return fmt.Errorf("failed to load config: %w", err)
-			}
-		}
-
-		port := serverPort
-		if port == 0 {
-			port = viper.GetInt("server.port")
-			if port == 0 {
-				port = 8080
-			}
-		}
-
-		workers := serverWorkers
-		if workers == 0 {
-			workers = viper.GetInt("server.workers")
-			if workers == 0 {
-				workers = 4
-			}
-		}
-
-		fmt.Println("Connecting to database...")
-		// TODO: Actual database connection
-
-		fmt.Printf("Starting HTTP server on :%d\n", port)
-		fmt.Printf("Workers: %d\n", workers)
-
-		// Setup shutdown handler
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-		go func() {
-			<-sigChan
-			fmt.Println("\nShutting down...")
-			cancel()
-		}()
-
-		success("Server ready")
-		info("Press Ctrl+C to stop")
-
-		// Wait for shutdown
-		<-ctx.Done()
-
-		return nil
+		// The CLI does not boot the server. The real server is the dedicated
+		// `linktor` binary (cmd/server) which wires the database, NATS, Redis,
+		// consumers and HTTP routes. Returning an error avoids the previous
+		// behavior of printing "Server ready" without starting anything.
+		return fmt.Errorf("the server is not started from this CLI; run the `linktor` binary (cmd/server) directly or via docker compose")
 	},
 }
 
 var serverStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show server status",
+	Short: "Show server status (placeholder data — not yet wired to the server)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// This would connect to the server's status endpoint
-		// For now, showing a placeholder
+		// NOTE: this command does not query a live server yet; the values
+		// below are illustrative placeholders. Use the /ready and
+		// /observability endpoints for real status.
+		warn("server status shows placeholder data and is not connected to a live server")
 
 		status := map[string]interface{}{
 			"version":  "1.0.0",
@@ -184,8 +136,12 @@ var serverMigrateCmd = &cobra.Command{
 
 var serverHealthCmd = &cobra.Command{
 	Use:   "health",
-	Short: "Check server health",
+	Short: "Check server health (placeholder data — not yet wired to the server)",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// NOTE: not connected to a live server yet; use the /health and /ready
+		// HTTP endpoints for real health checks.
+		warn("server health shows placeholder data and is not connected to a live server")
+
 		// Health checks
 		checks := []struct {
 			Name    string

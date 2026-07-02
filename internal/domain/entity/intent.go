@@ -201,9 +201,9 @@ func (c *ConversationContext) NeedsAnalysis(maxAge time.Duration) bool {
 
 // IntentResult represents the result of intent classification
 type IntentResult struct {
-	Intent     *Intent   `json:"intent"`
-	Candidates []Intent  `json:"candidates,omitempty"`
-	RawScore   float64   `json:"raw_score,omitempty"`
+	Intent     *Intent  `json:"intent"`
+	Candidates []Intent `json:"candidates,omitempty"`
+	RawScore   float64  `json:"raw_score,omitempty"`
 }
 
 // SentimentResult represents the result of sentiment analysis

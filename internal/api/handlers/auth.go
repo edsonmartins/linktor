@@ -1,24 +1,81 @@
 package handlers
 
 import (
+	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/pkg/errors"
 )
 
+// AuthCookieConfig controls how auth tokens are written as browser cookies.
+type AuthCookieConfig struct {
+	Secure        bool
+	Domain        string
+	SameSite      http.SameSite
+	AccessMaxAge  int // seconds
+	RefreshMaxAge int // seconds
+}
+
 // AuthHandler handles authentication endpoints
 type AuthHandler struct {
 	authService *service.AuthService
 	userService *service.UserService
+	cookie      AuthCookieConfig
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(authService *service.AuthService, userService *service.UserService) *AuthHandler {
+func NewAuthHandler(authService *service.AuthService, userService *service.UserService, cookie AuthCookieConfig) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 		userService: userService,
+		cookie:      cookie,
 	}
+}
+
+// ParseSameSite maps a config string to http.SameSite (defaults to Lax).
+func ParseSameSite(v string) http.SameSite {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "strict":
+		return http.SameSiteStrictMode
+	case "none":
+		return http.SameSiteNoneMode
+	default:
+		return http.SameSiteLaxMode
+	}
+}
+
+const (
+	accessTokenCookie  = "access_token"
+	refreshTokenCookie = "refresh_token"
+)
+
+// setAuthCookies writes the HttpOnly access/refresh cookies. The tokens are
+// still returned in the JSON body for non-browser clients (CLI/mobile).
+func (h *AuthHandler) setAuthCookies(c *gin.Context, accessToken, refreshToken string) {
+	h.writeCookie(c, accessTokenCookie, accessToken, h.cookie.AccessMaxAge)
+	h.writeCookie(c, refreshTokenCookie, refreshToken, h.cookie.RefreshMaxAge)
+}
+
+// clearAuthCookies expires the auth cookies.
+func (h *AuthHandler) clearAuthCookies(c *gin.Context) {
+	h.writeCookie(c, accessTokenCookie, "", -1)
+	h.writeCookie(c, refreshTokenCookie, "", -1)
+}
+
+func (h *AuthHandler) writeCookie(c *gin.Context, name, value string, maxAge int) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		Domain:   h.cookie.Domain,
+		MaxAge:   maxAge,
+		Secure:   h.cookie.Secure,
+		HttpOnly: true,
+		SameSite: h.cookie.SameSite,
+	})
 }
 
 // LoginRequest represents a login request
@@ -35,9 +92,10 @@ type LoginResponse struct {
 	ExpiresIn    int64         `json:"expires_in"`
 }
 
-// RefreshRequest represents a token refresh request
+// RefreshRequest represents a token refresh request. The refresh token is
+// optional in the body: browsers send it as an HttpOnly cookie instead.
 type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 // RefreshResponse represents a token refresh response
@@ -77,6 +135,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	h.setAuthCookies(c, result.AccessToken, result.RefreshToken)
+
 	RespondSuccess(c, LoginResponse{
 		User:         toUserResponse(result.User),
 		AccessToken:  result.AccessToken,
@@ -98,22 +158,48 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // @Router       /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req RefreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		RespondValidationError(c, "Invalid request body", nil)
+	// Body is optional; a missing/blank JSON body is fine when the refresh
+	// token arrives as a cookie.
+	_ = c.ShouldBindJSON(&req)
+
+	refreshToken := req.RefreshToken
+	if refreshToken == "" {
+		if cookie, err := c.Cookie(refreshTokenCookie); err == nil {
+			refreshToken = cookie
+		}
+	}
+	if refreshToken == "" {
+		RespondError(c, errors.Unauthorized("missing refresh token"))
 		return
 	}
 
-	result, err := h.authService.RefreshToken(c.Request.Context(), req.RefreshToken)
+	result, err := h.authService.RefreshToken(c.Request.Context(), refreshToken)
 	if err != nil {
+		// A bad/expired refresh token should also drop the stale cookies.
+		h.clearAuthCookies(c)
 		RespondError(c, err)
 		return
 	}
+
+	h.setAuthCookies(c, result.AccessToken, result.RefreshToken)
 
 	RespondSuccess(c, RefreshResponse{
 		AccessToken:  result.AccessToken,
 		RefreshToken: result.RefreshToken,
 		ExpiresIn:    result.ExpiresIn,
 	})
+}
+
+// Logout godoc
+// @Summary      Logout user
+// @Description  Clears the auth cookies for the current browser session
+// @Tags         auth
+// @Produce      json
+// @Success      200 {object} Response{data=object{message=string}}
+// @Router       /auth/logout [post]
+func (h *AuthHandler) Logout(c *gin.Context) {
+	h.clearAuthCookies(c)
+	RespondSuccess(c, gin.H{"message": "Logged out"})
 }
 
 // Me godoc

@@ -3,6 +3,8 @@ package instagram
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/msgfy/linktor/internal/adapters/meta"
@@ -20,8 +22,16 @@ func NewClient(config *InstagramConfig) (*Client, error) {
 		return nil, err
 	}
 
-	// Use Instagram Graph API base URL
-	api := meta.NewInstagramClient(config.GetEffectiveAccessToken(), config.AppSecret)
+	// Route to the correct Graph host by token type. A Page access token (the
+	// IG-via-Facebook-Page flow) must call graph.facebook.com; an Instagram user
+	// token (direct Instagram login) calls graph.instagram.com. Using the wrong
+	// host makes every API call fail with an auth error.
+	var api *meta.Client
+	if config.AccessToken == "" && config.PageAccessToken != "" {
+		api = meta.NewClient(config.PageAccessToken, config.AppSecret)
+	} else {
+		api = meta.NewInstagramClient(config.GetEffectiveAccessToken(), config.AppSecret)
+	}
 
 	return &Client{
 		api:    api,
@@ -43,10 +53,27 @@ func (c *Client) GetAccountInfo(ctx context.Context) (*meta.InstagramAccount, er
 	}, nil
 }
 
-// SendTextMessage sends a text message
+// defaultMessagingType returns mt, or RESPONSE (a reply inside the 24h window)
+// when mt is empty.
+func defaultMessagingType(mt string) string {
+	if mt == "" {
+		return meta.MessagingTypeResponse
+	}
+	return mt
+}
+
+// SendTextMessage sends a text message as a RESPONSE (reply within the 24h window).
 func (c *Client) SendTextMessage(ctx context.Context, recipientID, text string) (*meta.SendMessageResponse, error) {
+	return c.SendTextMessageAs(ctx, recipientID, text, meta.MessagingTypeResponse, "")
+}
+
+// SendTextMessageAs sends a text message with an explicit messaging_type (and
+// optional message tag) for out-of-window / proactive sends.
+func (c *Client) SendTextMessageAs(ctx context.Context, recipientID, text, messagingType, tag string) (*meta.SendMessageResponse, error) {
 	msg := &meta.OutboundMessage{
-		Recipient: meta.MessageRecipient{ID: recipientID},
+		Recipient:     meta.MessageRecipient{ID: recipientID},
+		MessagingType: defaultMessagingType(messagingType),
+		Tag:           tag,
 		Message: meta.MessageContent{
 			Text: text,
 		},
@@ -55,10 +82,18 @@ func (c *Client) SendTextMessage(ctx context.Context, recipientID, text string) 
 	return c.api.SendInstagramMessage(ctx, c.config.InstagramID, msg)
 }
 
-// SendAttachment sends a media attachment
+// SendAttachment sends a media attachment as a RESPONSE (reply within 24h window).
 func (c *Client) SendAttachment(ctx context.Context, recipientID, attachmentType, url string) (*meta.SendMessageResponse, error) {
+	return c.SendAttachmentAs(ctx, recipientID, attachmentType, url, meta.MessagingTypeResponse, "")
+}
+
+// SendAttachmentAs sends a media attachment with an explicit messaging_type (and
+// optional message tag) for out-of-window / proactive sends.
+func (c *Client) SendAttachmentAs(ctx context.Context, recipientID, attachmentType, url, messagingType, tag string) (*meta.SendMessageResponse, error) {
 	msg := &meta.OutboundMessage{
-		Recipient: meta.MessageRecipient{ID: recipientID},
+		Recipient:     meta.MessageRecipient{ID: recipientID},
+		MessagingType: defaultMessagingType(messagingType),
+		Tag:           tag,
 		Message: meta.MessageContent{
 			Attachment: &meta.MessageAttachment{
 				Type: attachmentType,
@@ -109,13 +144,18 @@ func (c *Client) UnsubscribeFromWebhooks(ctx context.Context) error {
 
 // ValidateWebhookSignature validates the webhook signature
 func (c *Client) ValidateWebhookSignature(payload []byte, signature string) bool {
+	// Fail closed: reject webhooks when no app secret is configured rather than
+	// accepting unsigned payloads.
 	if c.config.AppSecret == "" {
-		return true // Skip validation if no app secret
+		return false
 	}
 	return meta.ValidateWebhookSignature(c.config.AppSecret, payload, signature)
 }
 
-// ConvertIncomingMessage converts a meta.MessagingEvent to IncomingMessage
+// ConvertIncomingMessage converts a meta.MessagingEvent to IncomingMessage.
+// It handles plain DMs as well as story replies and story mentions. Reaction
+// and read events (which carry no Message) are handled by ConvertReaction /
+// ConvertRead.
 func ConvertIncomingMessage(event *meta.MessagingEvent, instagramID string) *IncomingMessage {
 	if event.Message == nil {
 		return nil
@@ -129,11 +169,23 @@ func ConvertIncomingMessage(event *meta.MessagingEvent, instagramID string) *Inc
 		Text:        event.Message.Text,
 		IsEcho:      event.Message.IsEcho,
 		IsDeleted:   event.Message.IsDeleted,
+		EventType:   EventTypeMessage,
 	}
 
 	// Convert timestamp
 	if event.Timestamp > 0 {
 		msg.Timestamp = time.UnixMilli(event.Timestamp)
+	}
+
+	// A reply to a story carries a story reference. Preserve the reply text and
+	// mark it as a story reply so downstream consumers know the context.
+	if event.Message.ReplyTo != nil && event.Message.ReplyTo.Story != nil {
+		msg.EventType = EventTypeStoryReply
+		msg.StoryID = event.Message.ReplyTo.Story.ID
+		msg.StoryURL = event.Message.ReplyTo.Story.URL
+		if msg.Text == "" {
+			msg.Text = "[story reply]"
+		}
 	}
 
 	// Convert attachments
@@ -143,8 +195,63 @@ func ConvertIncomingMessage(event *meta.MessagingEvent, instagramID string) *Inc
 			URL:  att.Payload.URL,
 		}
 		msg.Attachments = append(msg.Attachments, attachment)
+
+		// A story mention arrives as an attachment with no message text; give it
+		// a meaningful body and event type instead of an empty message.
+		if att.Type == "story_mention" {
+			msg.EventType = EventTypeStoryMention
+			msg.StoryURL = att.Payload.URL
+			if msg.Text == "" {
+				msg.Text = "[mentioned you in a story]"
+			}
+		}
 	}
 
+	return msg
+}
+
+// ConvertReaction converts a message_reactions event into an IncomingMessage.
+// Reaction events carry no Message, so ConvertIncomingMessage returns nil for
+// them and this dedicated converter is required to avoid silently dropping them.
+func ConvertReaction(event *meta.MessagingEvent, instagramID string) *IncomingMessage {
+	if event.Reaction == nil {
+		return nil
+	}
+
+	msg := &IncomingMessage{
+		ExternalID:     event.Reaction.MID,
+		SenderID:       event.Sender.ID,
+		RecipientID:    event.Recipient.ID,
+		InstagramID:    instagramID,
+		EventType:      EventTypeReaction,
+		ReactionEmoji:  event.Reaction.Emoji,
+		ReactionAction: event.Reaction.Action,
+	}
+	if msg.ReactionEmoji == "" {
+		msg.ReactionEmoji = event.Reaction.Reaction
+	}
+	if event.Timestamp > 0 {
+		msg.Timestamp = time.UnixMilli(event.Timestamp)
+	}
+	return msg
+}
+
+// ConvertRead converts a messaging_seen (read receipt) event into an
+// IncomingMessage marked as EventTypeRead.
+func ConvertRead(event *meta.MessagingEvent, instagramID string) *IncomingMessage {
+	if event.Read == nil {
+		return nil
+	}
+
+	msg := &IncomingMessage{
+		SenderID:    event.Sender.ID,
+		RecipientID: event.Recipient.ID,
+		InstagramID: instagramID,
+		EventType:   EventTypeRead,
+	}
+	if event.Timestamp > 0 {
+		msg.Timestamp = time.UnixMilli(event.Timestamp)
+	}
 	return msg
 }
 
@@ -187,36 +294,32 @@ func NewOAuthHelper(appID, appSecret string) *OAuthHelper {
 func (h *OAuthHelper) GetLoginURL(redirectURI, state string, scopes []string) string {
 	scopeStr := "instagram_basic,instagram_manage_messages,pages_manage_metadata,pages_read_engagement,pages_show_list"
 	if len(scopes) > 0 {
-		scopeStr = ""
-		for i, s := range scopes {
-			if i > 0 {
-				scopeStr += ","
-			}
-			scopeStr += s
-		}
+		scopeStr = strings.Join(scopes, ",")
 	}
 
+	params := url.Values{}
+	params.Set("client_id", h.AppID)
+	params.Set("redirect_uri", redirectURI)
+	params.Set("state", state)
+	params.Set("scope", scopeStr)
+
 	return fmt.Sprintf(
-		"https://www.facebook.com/%s/dialog/oauth?client_id=%s&redirect_uri=%s&state=%s&scope=%s",
+		"https://www.facebook.com/%s/dialog/oauth?%s",
 		meta.DefaultAPIVersion,
-		h.AppID,
-		redirectURI,
-		state,
-		scopeStr,
+		params.Encode(),
 	)
 }
 
 // GetInstagramLoginURL generates the Instagram Direct Login URL (for IG direct integration)
 func (h *OAuthHelper) GetInstagramLoginURL(redirectURI, state string) string {
-	scopes := "instagram_business_basic,instagram_business_manage_messages"
+	params := url.Values{}
+	params.Set("client_id", h.AppID)
+	params.Set("redirect_uri", redirectURI)
+	params.Set("response_type", "code")
+	params.Set("scope", "instagram_business_basic,instagram_business_manage_messages")
+	params.Set("state", state)
 
-	return fmt.Sprintf(
-		"https://www.instagram.com/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
-		h.AppID,
-		redirectURI,
-		scopes,
-		state,
-	)
+	return "https://www.instagram.com/oauth/authorize?" + params.Encode()
 }
 
 // ExchangeCodeForToken exchanges an OAuth code for tokens
