@@ -385,7 +385,13 @@ Sem isto o produto não entrega recursos-chave, independentemente do canal.
 > Residual documentado: janela de crash entre commit e ack é coberta pela redelivery+dedup; um outbox
 > transacional seria o próximo passo se quiser exactly-once. `worker.go:131` (PublishStatusUpdate de recibo)
 > segue best-effort (menor severidade). Testes: falha de publish → erro; redelivery republica.
-> PENDENTES: WS10-GETORCREATE (upsert de contato — não feito),
+> **UPDATE backlog P2/P3 (sessão parte 9):** FEITOS — WS10-TPL-META-ERR (template não é mais persistido se a
+> Meta rejeita quando há credenciais), WS10-INDEXES (migração 00006: `messages(conversation_id,created_at)`,
+> `conversations(tenant_id,status)`/`(tenant_id,created_at)`), WS10-GETORCREATE (migração 00007: tenant_id +
+> UNIQUE parcial em contact_identities + `CreateIdentityIfAbsent`; getOrCreate deleta órfão e reusa vencedor na
+> corrida), WS10-PERSIST-FIELDS (migração 00008: coluna tags; conversation_repo persiste tags+metadata).
+> WS10-TPL-EXTID já existia no baseline (idx_templates_external_id_unique). Migrações até 00008.
+> PENDENTES (resíduo mínimo): 
 > WS10-PERSIST-FIELDS, WS10-TPL-EXTID, WS10-INDEXES (compostos), WS10-TPL-META-ERR, WS10-FLOW-NULLSCAN,
 > WS10-TENANT-USAGE, WS10-MINIO-PRESIGN, WS10-ESC-MODEL, e o tail P3.
 
