@@ -73,6 +73,72 @@ func TestTranslateMedia(t *testing.T) {
 	}
 }
 
+func TestTranslateInteractive(t *testing.T) {
+	raw := &nats.OutboundMessage{
+		ID: "m4", ChannelID: "c1", RecipientID: "+55",
+		ContentType: "interactive", Content: "Choose:",
+		Metadata: map[string]string{
+			"interactive_body": "Choose one",
+			"quick_replies":    `[{"id":"a","title":"Option A"},{"id":"b","title":"Option B"}]`,
+		},
+	}
+	msg := translate(raw)
+	in, ok := msg.Content.(Interactive)
+	if !ok {
+		t.Fatalf("expected Interactive, got %T (buttons dropped to text = the bug)", msg.Content)
+	}
+	if in.Body != "Choose one" || len(in.Buttons) != 2 {
+		t.Fatalf("bad interactive mapping: %+v", in)
+	}
+	if in.Buttons[0].ID != "a" || in.Buttons[1].Title != "Option B" {
+		t.Fatalf("buttons not carried: %+v", in.Buttons)
+	}
+}
+
+func TestTranslateInteractiveFallsBackToText(t *testing.T) {
+	raw := &nats.OutboundMessage{
+		ID: "m5", ChannelID: "c1", RecipientID: "+55",
+		ContentType: "interactive", Content: "plain",
+		Metadata: map[string]string{"interactive_body": "just text"},
+	}
+	msg := translate(raw)
+	if _, ok := msg.Content.(Text); !ok {
+		t.Fatalf("interactive with no buttons must fall back to Text, got %T", msg.Content)
+	}
+}
+
+func TestTranslateMediaFromAttachment(t *testing.T) {
+	raw := &nats.OutboundMessage{
+		ID: "m6", ChannelID: "c1", RecipientID: "+55",
+		ContentType: "document", Content: "here",
+		Attachments: []nats.AttachmentData{{Type: "document", URL: "https://x/y.pdf", Filename: "y.pdf"}},
+	}
+	msg := translate(raw)
+	md, ok := msg.Content.(Media)
+	if !ok {
+		t.Fatalf("expected Media, got %T", msg.Content)
+	}
+	if md.URL != "https://x/y.pdf" || md.Filename != "y.pdf" {
+		t.Fatalf("attachment not sourced into media (the dropped-attachment bug): %+v", md)
+	}
+}
+
+func TestTranslateTextWithAttachmentBecomesMedia(t *testing.T) {
+	raw := &nats.OutboundMessage{
+		ID: "m7", ChannelID: "c1", RecipientID: "+55",
+		ContentType: "text", Content: "look",
+		Attachments: []nats.AttachmentData{{MimeType: "image/png", URL: "https://x/y.png"}},
+	}
+	msg := translate(raw)
+	md, ok := msg.Content.(Media)
+	if !ok {
+		t.Fatalf("text message with an attachment should deliver the attachment as media, got %T", msg.Content)
+	}
+	if md.Type != MediaImage || md.URL != "https://x/y.png" {
+		t.Fatalf("bad inferred media: %+v", md)
+	}
+}
+
 func TestIsPermanent(t *testing.T) {
 	if !IsPermanent(Permanentf("bad template")) {
 		t.Fatal("Permanentf should be permanent")

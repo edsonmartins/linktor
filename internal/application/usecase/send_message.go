@@ -139,6 +139,13 @@ func (uc *SendMessageUseCase) Execute(ctx context.Context, input *SendMessageInp
 		interactiveJSON := buildInteractiveFromQuickReplies(input.Content, input.QuickReplies)
 		message.Metadata["interactive"] = interactiveJSON
 		message.Metadata["interactive_type"] = getInteractiveType(len(input.QuickReplies))
+		// Channel-agnostic representation consumed by the outbound worker's
+		// translate() so every supported sender (WhatsApp, Telegram, …) can
+		// render the buttons natively instead of falling back to plain text.
+		message.Metadata["interactive_body"] = input.Content
+		if qrJSON := marshalQuickReplies(input.QuickReplies); qrJSON != "" {
+			message.Metadata["quick_replies"] = qrJSON
+		}
 	}
 
 	// Create attachments
@@ -265,6 +272,23 @@ func getInteractiveType(optionCount int) string {
 		return "button"
 	}
 	return "list"
+}
+
+// marshalQuickReplies serializes quick replies into the channel-agnostic
+// [{"id","title"}] form the outbound worker reconstructs into Interactive buttons.
+func marshalQuickReplies(quickReplies []entity.QuickReply) string {
+	if len(quickReplies) == 0 {
+		return ""
+	}
+	generic := make([]map[string]string, 0, len(quickReplies))
+	for _, qr := range quickReplies {
+		generic = append(generic, map[string]string{"id": qr.ID, "title": qr.Title})
+	}
+	data, err := json.Marshal(generic)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // buildInteractiveFromQuickReplies creates interactive message JSON from quick replies

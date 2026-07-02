@@ -12,9 +12,10 @@ package outbound
 type Kind string
 
 const (
-	KindText     Kind = "text"
-	KindTemplate Kind = "template"
-	KindMedia    Kind = "media"
+	KindText        Kind = "text"
+	KindTemplate    Kind = "template"
+	KindMedia       Kind = "media"
+	KindInteractive Kind = "interactive"
 )
 
 // Content is a typed outbound payload. Implementations are value types that
@@ -65,6 +66,24 @@ type Media struct {
 }
 
 func (Media) Kind() Kind { return KindMedia }
+
+// InteractiveButton is a channel-agnostic quick-reply option. Each Sender maps
+// it to its provider's native control (WhatsApp reply button / list row,
+// Telegram inline keyboard button, …).
+type InteractiveButton struct {
+	ID    string
+	Title string
+}
+
+// Interactive is a message offering quick-reply buttons/options plus body text.
+// Senders that cannot render interactive controls fall back to sending Body as
+// plain text, so no message is ever dropped.
+type Interactive struct {
+	Body    string
+	Buttons []InteractiveButton
+}
+
+func (Interactive) Kind() Kind { return KindInteractive }
 
 // Message is a normalized outbound message ready for delivery on a specific
 // channel. It is produced by translating a transport-level nats.OutboundMessage.
