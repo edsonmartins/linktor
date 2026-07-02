@@ -106,6 +106,7 @@ import (
 	"github.com/msgfy/linktor/internal/infrastructure/database"
 	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
+	"github.com/msgfy/linktor/internal/infrastructure/outbox"
 	storageLib "github.com/msgfy/linktor/internal/infrastructure/storage"
 	infrawebhook "github.com/msgfy/linktor/internal/infrastructure/webhook"
 	"github.com/msgfy/linktor/internal/outbound"
@@ -194,6 +195,7 @@ func main() {
 	messageRepo := database.NewMessageRepository(db)
 	conversationRepo := database.NewConversationRepository(db)
 	contactRepo := database.NewContactRepository(db)
+	outboxRepo := database.NewOutboxRepository(db)
 	channelRepo := database.NewChannelRepository(db, encryptor)
 	botRepo := database.NewBotRepository(db)
 	contextRepo := database.NewConversationContextRepository(db)
@@ -840,6 +842,12 @@ func main() {
 				}
 			}()
 			go nats.NewMonitor(natsClient).StartMetricsCollector(ctx, 15*time.Second)
+
+			// Drain the transactional outbox: publish durably-queued events
+			// (e.g. message.received) that were written in the same tx as their
+			// aggregate. The relay republishes with each event's idempotency key,
+			// so a retry after a partial failure is deduplicated by JetStream.
+			go outbox.NewRelay(outboxRepo, producer).Start(ctx, 2*time.Second)
 		}
 
 		// Subscribe to status updates
