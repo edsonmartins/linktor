@@ -11,6 +11,11 @@ type MessageRepository interface {
 	// Create creates a new message
 	Create(ctx context.Context, message *entity.Message) error
 
+	// CreateWithOutboxEvent persists the message and enqueues an outbox event in
+	// one transaction (transactional outbox). Returns inserted=false for a
+	// duplicate delivery (no outbox row written). event may be nil.
+	CreateWithOutboxEvent(ctx context.Context, message *entity.Message, event *entity.OutboxEvent) (bool, error)
+
 	// FindByID finds a message by ID
 	FindByID(ctx context.Context, id string) (*entity.Message, error)
 

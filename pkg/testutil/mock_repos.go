@@ -432,9 +432,10 @@ func (m *MockConversationRepository) CountWaiting(ctx context.Context, tenantID 
 
 // MockMessageRepository is a mock implementation of repository.MessageRepository
 type MockMessageRepository struct {
-	Messages    map[string]*entity.Message
-	Attachments map[string][]*entity.MessageAttachment
-	ReturnError error
+	Messages     map[string]*entity.Message
+	Attachments  map[string][]*entity.MessageAttachment
+	OutboxEvents []*entity.OutboxEvent
+	ReturnError  error
 }
 
 // NewMockMessageRepository creates a new MockMessageRepository
@@ -451,6 +452,27 @@ func (m *MockMessageRepository) Create(ctx context.Context, message *entity.Mess
 	}
 	m.Messages[message.ID] = message
 	return nil
+}
+
+// CreateWithOutboxEvent mirrors the transactional-outbox repo: it dedupes by
+// (conversation_id, external_id) and, on a genuine insert, captures the outbox
+// event. A duplicate returns inserted=false and enqueues nothing.
+func (m *MockMessageRepository) CreateWithOutboxEvent(ctx context.Context, message *entity.Message, event *entity.OutboxEvent) (bool, error) {
+	if m.ReturnError != nil {
+		return false, m.ReturnError
+	}
+	if message.ExternalID != "" {
+		for _, existing := range m.Messages {
+			if existing.ExternalID == message.ExternalID && existing.ConversationID == message.ConversationID {
+				return false, nil // duplicate delivery
+			}
+		}
+	}
+	m.Messages[message.ID] = message
+	if event != nil {
+		m.OutboxEvents = append(m.OutboxEvents, event)
+	}
+	return true, nil
 }
 
 func (m *MockMessageRepository) FindByID(ctx context.Context, id string) (*entity.Message, error) {

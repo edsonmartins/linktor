@@ -78,6 +78,78 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 	return nil
 }
 
+const insertMessageQuery = `
+	INSERT INTO messages (
+		id, conversation_id, sender_type, sender_id, content_type, content,
+		metadata, status, external_id, error_message, sent_at, delivered_at,
+		read_at, created_at
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+	ON CONFLICT (conversation_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
+`
+
+// CreateWithOutboxEvent persists the message and enqueues an outbox event in a
+// single transaction — the event exists iff the message committed (transactional
+// outbox; a relay publishes it durably). Returns inserted=false for a duplicate
+// delivery (the ON CONFLICT no-op), in which case no outbox row is written since
+// the original delivery already enqueued one. The event may be nil to persist the
+// message without an outbox entry.
+func (r *MessageRepository) CreateWithOutboxEvent(ctx context.Context, message *entity.Message, event *entity.OutboxEvent) (bool, error) {
+	metadata, err := json.Marshal(message.Metadata)
+	if err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal metadata")
+	}
+
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to begin transaction")
+	}
+	defer tx.Rollback(ctx)
+
+	var senderID *string
+	if message.SenderID != "" {
+		senderID = &message.SenderID
+	}
+
+	tag, err := tx.Exec(ctx, insertMessageQuery,
+		message.ID, message.ConversationID, string(message.SenderType), senderID,
+		string(message.ContentType), message.Content, metadata, string(message.Status),
+		nullString(message.ExternalID), nullString(message.ErrorMessage),
+		message.SentAt, message.DeliveredAt, message.ReadAt, message.CreatedAt,
+	)
+	if err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to create message")
+	}
+
+	// Duplicate delivery: the message already exists, so its outbox event was
+	// enqueued by the original delivery — nothing more to do.
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+
+	if event != nil {
+		payload := event.Payload
+		if len(payload) == 0 {
+			payload = []byte("{}")
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO outbox_events (
+				id, event_type, tenant_id, aggregate_type, aggregate_id,
+				payload, idempotency_key, created_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			event.ID, event.EventType, nullString(event.TenantID),
+			nullString(event.AggregateType), nullString(event.AggregateID),
+			payload, nullString(event.IdempotencyKey), event.CreatedAt,
+		); err != nil {
+			return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to enqueue outbox event")
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to commit message transaction")
+	}
+	return true, nil
+}
+
 // FindByID finds a message by ID
 func (r *MessageRepository) FindByID(ctx context.Context, id string) (*entity.Message, error) {
 	query := `
