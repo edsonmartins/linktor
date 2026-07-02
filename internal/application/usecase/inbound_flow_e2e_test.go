@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -62,7 +63,7 @@ func TestInboundFlowE2E_ChainedFromHandlerToPersistence(t *testing.T) {
 		}
 	}
 
-	// --- First delivery: persist + publish MessageReceived ------------------
+	// --- First delivery: persist + enqueue MessageReceived in the outbox ----
 	out, err := f.uc.Execute(ctx, buildInbound())
 	require.NoError(t, err)
 	require.NotNil(t, out)
@@ -76,23 +77,24 @@ func TestInboundFlowE2E_ChainedFromHandlerToPersistence(t *testing.T) {
 	// Exactly one message persisted.
 	require.Len(t, f.messageRepo.Messages, 1)
 
-	// A MessageReceived event was published for the freshly stored message.
-	var received *nats.Event
-	for _, e := range f.producer.Events {
-		if e.Type == nats.EventMessageReceived {
-			received = e
-		}
-	}
-	require.NotNil(t, received, "MessageReceived event must be published on first delivery")
-	assert.Equal(t, out.Message.ID, received.Payload["message_id"])
+	// A MessageReceived event was durably enqueued (transactional outbox) for the
+	// freshly stored message; the relay publishes it, so it is not in the producer
+	// stream here.
+	require.Len(t, f.messageRepo.OutboxEvents, 1, "MessageReceived must be queued on first delivery")
+	received := f.messageRepo.OutboxEvents[0]
+	assert.Equal(t, nats.EventMessageReceived, received.EventType)
 	assert.Equal(t, "evt-message-received-"+out.Message.ID, received.IdempotencyKey)
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(received.Payload, &payload))
+	assert.Equal(t, out.Message.ID, payload["message_id"])
 
-	// --- Redelivery: same inbound → CONFLICT, no double-persist -------------
+	// --- Redelivery: same inbound → CONFLICT, no double-persist, no dup event -
 	dupOut, dupErr := f.uc.Execute(ctx, buildInbound())
 	assert.Nil(t, dupOut)
 	require.Error(t, dupErr, "duplicate delivery must return an error so the consumer acks")
 	assert.Contains(t, dupErr.Error(), "CONFLICT")
 
-	// No second message row was created.
+	// No second message row and no second outbox event were created.
 	assert.Len(t, f.messageRepo.Messages, 1, "duplicate delivery must not persist a second message")
+	assert.Len(t, f.messageRepo.OutboxEvents, 1, "duplicate delivery must not enqueue a second event")
 }

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -85,24 +86,15 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 	inbound.TenantID = channel.TenantID
 	inbound.ChannelType = string(channel.Type)
 
-	// Check for duplicate message in the same channel.
+	// Fast-path duplicate check to skip the contact/conversation work for an
+	// obvious redelivery. This is an optimization only — CreateWithOutboxEvent
+	// below is the authoritative dedup (ON CONFLICT), and the original delivery's
+	// outbox event is durably queued, so a duplicate needs no re-publish here.
 	if inbound.ExternalID != "" {
 		existing, err := uc.messageRepo.FindByExternalID(ctx, inbound.ExternalID)
 		if err == nil && existing != nil {
 			existingConversation, convErr := uc.conversationRepo.FindByID(ctx, existing.ConversationID)
 			if convErr != nil || existingConversation.ChannelID == channel.ID {
-				// Message already stored — this is a redelivery. A prior attempt
-				// may have persisted the message but failed to publish the
-				// "received" event (transient NATS outage), so re-publish it
-				// idempotently before acking. JetStream dedups by the message id,
-				// so a genuine duplicate is a server-side no-op. If the re-publish
-				// fails, surface it so the consumer NAKs and retries.
-				if existingConversation != nil {
-					contact := &entity.Contact{ID: existingConversation.ContactID}
-					if perr := uc.publishMessageReceivedEvent(ctx, inbound.TenantID, channel, existing, existingConversation, contact); perr != nil {
-						return nil, perr
-					}
-				}
 				return nil, errors.New(errors.ErrCodeConflict, "message already exists")
 			}
 		}
@@ -134,9 +126,21 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 		att.MessageID = message.ID
 	}
 
-	// Save message to database
-	if err := uc.messageRepo.Create(ctx, message); err != nil {
+	// Persist the message and enqueue its "received" event in ONE transaction
+	// (transactional outbox): the event is durably queued iff the message
+	// committed, and the relay publishes it — no dual-write window, no silent
+	// loss. A duplicate delivery is the ON CONFLICT no-op (inserted=false), whose
+	// original outbox event is already queued, so we just ack it as a conflict.
+	outboxEvent, err := uc.buildMessageReceivedOutboxEvent(inbound.TenantID, channel, message, conversation, contact)
+	if err != nil {
 		return nil, err
+	}
+	inserted, err := uc.messageRepo.CreateWithOutboxEvent(ctx, message, outboxEvent)
+	if err != nil {
+		return nil, err
+	}
+	if !inserted {
+		return nil, errors.New(errors.ErrCodeConflict, "message already exists")
 	}
 
 	// Save attachments
@@ -156,14 +160,6 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 		conversation.Status = entity.ConversationStatusOpen
 		conversation.ResolvedAt = nil
 		uc.conversationRepo.Update(ctx, conversation)
-	}
-
-	// Publish the "received" event durably. The message is already persisted, so
-	// if the publish fails we return the error: the consumer NAKs and the
-	// redelivery hits the duplicate path above, which re-publishes idempotently.
-	// This makes inbound delivery at-least-once instead of silently lossy.
-	if err := uc.publishMessageReceivedEvent(ctx, inbound.TenantID, channel, message, conversation, contact); err != nil {
-		return nil, err
 	}
 
 	return &ReceiveMessageOutput{
@@ -323,10 +319,12 @@ func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, te
 	return conversation, true, nil
 }
 
-func (uc *ReceiveMessageUseCase) publishMessageReceivedEvent(ctx context.Context, tenantID string, channel *entity.Channel, message *entity.Message, conversation *entity.Conversation, contact *entity.Contact) error {
-	// Carry everything the outbound-webhook dispatcher needs to build the
-	// `linktor-channel-v1` envelope without extra DB reads: channel identity,
-	// the stable provider sender id/name (from message metadata) and any media.
+// buildMessageReceivedOutboxEvent builds the durable outbox entry for the
+// "message received" event. Its payload carries everything the outbound-webhook
+// dispatcher needs to build the `linktor-channel-v1` envelope without extra DB
+// reads. The idempotency key is stable per message so a relay re-publish is
+// deduplicated by JetStream.
+func (uc *ReceiveMessageUseCase) buildMessageReceivedOutboxEvent(tenantID string, channel *entity.Channel, message *entity.Message, conversation *entity.Conversation, contact *entity.Contact) (*entity.OutboxEvent, error) {
 	payload := map[string]interface{}{
 		"message_id":      message.ID,
 		"conversation_id": conversation.ID,
@@ -343,19 +341,21 @@ func (uc *ReceiveMessageUseCase) publishMessageReceivedEvent(ctx context.Context
 		payload["attachments"] = atts
 	}
 
-	event := &nats.Event{
-		Type:      nats.EventMessageReceived,
-		TenantID:  tenantID,
-		Payload:   payload,
-		Timestamp: time.Now(),
-		// Stable dedup id so a redelivery-driven re-publish collapses to a single
-		// downstream event within the JetStream dedup window.
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal event payload")
+	}
+
+	return &entity.OutboxEvent{
+		ID:             uuid.New().String(),
+		EventType:      nats.EventMessageReceived,
+		TenantID:       tenantID,
+		AggregateType:  "message",
+		AggregateID:    message.ID,
+		Payload:        data,
 		IdempotencyKey: "evt-message-received-" + message.ID,
-	}
-	if uc.producer == nil {
-		return nil
-	}
-	return uc.producer.PublishEvent(ctx, event)
+		CreatedAt:      time.Now(),
+	}, nil
 }
 
 // attachmentsPayload flattens message attachments into the plain maps carried

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -119,11 +120,16 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		// IsNew should be true (new conversation)
 		assert.True(t, output.IsNew)
 
-		// 3 events: ContactCreated, ConversationCreated, MessageReceived
-		require.Len(t, f.producer.Events, 3)
+		// ContactCreated + ConversationCreated publish directly; MessageReceived is
+		// written to the transactional outbox (same tx as the message) and later
+		// published by the relay — so it is NOT in producer.Events here.
+		require.Len(t, f.producer.Events, 2)
 		assert.Equal(t, nats.EventContactCreated, f.producer.Events[0].Type)
 		assert.Equal(t, nats.EventConversationCreated, f.producer.Events[1].Type)
-		assert.Equal(t, nats.EventMessageReceived, f.producer.Events[2].Type)
+
+		require.Len(t, f.messageRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
+		assert.Equal(t, "evt-message-received-"+output.Message.ID, f.messageRepo.OutboxEvents[0].IdempotencyKey)
 
 		// Message persisted in repo
 		assert.Len(t, f.messageRepo.Messages, 1)
@@ -168,10 +174,12 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		// No new contact created (still just 1 in repo)
 		assert.Len(t, f.contactRepo.Contacts, 1)
 
-		// Only 2 events: ConversationCreated, MessageReceived (no ContactCreated)
-		require.Len(t, f.producer.Events, 2)
+		// Only ConversationCreated publishes directly (no ContactCreated for an
+		// existing contact); MessageReceived goes to the outbox.
+		require.Len(t, f.producer.Events, 1)
 		assert.Equal(t, nats.EventConversationCreated, f.producer.Events[0].Type)
-		assert.Equal(t, nats.EventMessageReceived, f.producer.Events[1].Type)
+		require.Len(t, f.messageRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
 	})
 
 	t.Run("Existing Contact by Phone - Adds Identity", func(t *testing.T) {
@@ -341,9 +349,11 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, "conv-existing", output.Conversation.ID)
 		assert.False(t, output.IsNew)
 
-		// Only 1 event: MessageReceived
-		require.Len(t, f.producer.Events, 1)
-		assert.Equal(t, nats.EventMessageReceived, f.producer.Events[0].Type)
+		// Existing contact + existing conversation → nothing published directly;
+		// MessageReceived is queued in the outbox.
+		require.Len(t, f.producer.Events, 0)
+		require.Len(t, f.messageRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
 	})
 
 	t.Run("Resolved Conversation - Creates New Conversation", func(t *testing.T) {
@@ -737,78 +747,72 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, output)
 
-		// Find the MessageReceived event
-		var messageEvent *nats.Event
-		for _, evt := range f.producer.Events {
-			if evt.Type == nats.EventMessageReceived {
-				messageEvent = evt
-				break
-			}
-		}
-		require.NotNil(t, messageEvent)
+		// The MessageReceived event is queued in the outbox; its payload is the
+		// exact JSON the relay will publish.
+		require.Len(t, f.messageRepo.OutboxEvents, 1)
+		outEvt := f.messageRepo.OutboxEvents[0]
+		assert.Equal(t, nats.EventMessageReceived, outEvt.EventType)
+		assert.Equal(t, "tenant-1", outEvt.TenantID)
+		assert.Equal(t, "message", outEvt.AggregateType)
+		assert.Equal(t, output.Message.ID, outEvt.AggregateID)
 
-		assert.Equal(t, "tenant-1", messageEvent.TenantID)
-		assert.Equal(t, output.Message.ID, messageEvent.Payload["message_id"])
-		assert.Equal(t, output.Conversation.ID, messageEvent.Payload["conversation_id"])
-		assert.Equal(t, output.Contact.ID, messageEvent.Payload["contact_id"])
-		assert.Equal(t, "text", messageEvent.Payload["content_type"])
-		assert.Equal(t, "Hello, world!", messageEvent.Payload["content"])
+		var payload map[string]interface{}
+		require.NoError(t, json.Unmarshal(outEvt.Payload, &payload))
+		assert.Equal(t, output.Message.ID, payload["message_id"])
+		assert.Equal(t, output.Conversation.ID, payload["conversation_id"])
+		assert.Equal(t, output.Contact.ID, payload["contact_id"])
+		assert.Equal(t, "text", payload["content_type"])
+		assert.Equal(t, "Hello, world!", payload["content"])
 	})
 }
 
-// TestReceiveMessage_PublishFailureIsNotSwallowed verifies that a failure to
-// publish the critical "message received" event surfaces as an error (so the
-// inbound consumer NAKs and JetStream redelivers) instead of silently dropping
-// the event while the message sits persisted in the DB.
-func TestReceiveMessage_PublishFailureIsNotSwallowed(t *testing.T) {
+// TestReceiveMessage_OutboxDecouplesFromNATSOutage verifies that the "message
+// received" event is durably enqueued in the transactional outbox as part of the
+// message write, so a NATS outage during intake never loses the event: the
+// message commits, the outbox row is written, and the relay publishes it later.
+// Intake no longer depends on broker availability.
+func TestReceiveMessage_OutboxDecouplesFromNATSOutage(t *testing.T) {
 	ctx := context.Background()
 	f := newReceiveMessageFixture()
 	channel := makeChannel("ch-1", "tenant-1")
 	f.channelRepo.Channels[channel.ID] = channel
 
+	// The producer is irrelevant to the critical event now — it is written to the
+	// outbox in the same tx as the message, not published inline.
 	f.producer.ReturnError = fmt.Errorf("nats unavailable")
 
-	_, err := f.uc.Execute(ctx, makeInbound("ch-1", "tenant-1"))
-	require.Error(t, err, "publish failure must propagate so the consumer NAKs")
+	out, err := f.uc.Execute(ctx, makeInbound("ch-1", "tenant-1"))
+	require.NoError(t, err, "intake must succeed even while NATS is down")
+	require.NotNil(t, out)
 
-	// The message is still persisted, so the redelivery can re-publish it.
-	assert.Len(t, f.messageRepo.Messages, 1)
+	assert.Len(t, f.messageRepo.Messages, 1, "message persisted")
+	require.Len(t, f.messageRepo.OutboxEvents, 1, "received event durably queued for the relay")
+	assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
+	assert.Equal(t, "evt-message-received-"+out.Message.ID, f.messageRepo.OutboxEvents[0].IdempotencyKey)
 }
 
-// TestReceiveMessage_RedeliveryRepublishesEvent verifies the at-least-once path:
-// if the first delivery persists the message but fails to publish, a redelivery
-// (detected as a duplicate) re-publishes the received event and acks, so the
-// event is never lost.
-func TestReceiveMessage_RedeliveryRepublishesEvent(t *testing.T) {
+// TestReceiveMessage_RedeliveryDoesNotDuplicateOutbox verifies exactly-once
+// enqueue: a redelivery of the same inbound is the ON CONFLICT no-op, returns a
+// conflict (so the consumer acks), and does NOT enqueue a second outbox event —
+// the original delivery's event is already durably queued for the relay.
+func TestReceiveMessage_RedeliveryDoesNotDuplicateOutbox(t *testing.T) {
 	ctx := context.Background()
 	f := newReceiveMessageFixture()
 	channel := makeChannel("ch-1", "tenant-1")
 	f.channelRepo.Channels[channel.ID] = channel
 	inbound := makeInbound("ch-1", "tenant-1")
 
-	// First delivery: publish fails after the message is persisted.
-	f.producer.ReturnError = fmt.Errorf("nats unavailable")
+	// First delivery: message persisted, one outbox event queued.
 	_, err := f.uc.Execute(ctx, inbound)
-	require.Error(t, err)
+	require.NoError(t, err)
 	require.Len(t, f.messageRepo.Messages, 1)
-	require.Len(t, f.producer.Events, 0, "nothing published while NATS was down")
+	require.Len(t, f.messageRepo.OutboxEvents, 1)
 
-	// Redelivery: NATS is back. The duplicate path must re-publish the event.
-	f.producer.ReturnError = nil
+	// Redelivery of the same inbound → conflict, no double-persist, no second
+	// outbox row.
 	_, err = f.uc.Execute(ctx, inbound)
 	require.Error(t, err, "duplicate delivery returns conflict so the consumer acks")
 
-	var storedID string
-	for id := range f.messageRepo.Messages {
-		storedID = id
-	}
-	var found bool
-	for _, e := range f.producer.Events {
-		if e.Type == nats.EventMessageReceived {
-			found = true
-			assert.Equal(t, "evt-message-received-"+storedID, e.IdempotencyKey)
-		}
-	}
-	assert.True(t, found, "received event must be re-published on redelivery")
 	assert.Len(t, f.messageRepo.Messages, 1, "no duplicate message row")
+	assert.Len(t, f.messageRepo.OutboxEvents, 1, "no duplicate outbox event")
 }
