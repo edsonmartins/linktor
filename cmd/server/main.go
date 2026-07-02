@@ -918,27 +918,20 @@ func main() {
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.CORS())
 
-	// Health check endpoints
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
-	})
-	router.GET("/ready", func(c *gin.Context) {
-		// Check database
-		if err := db.Ping(context.Background()); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready", "error": "database unavailable"})
-			return
-		}
-		// Check NATS (optional)
-		natsStatus := "disabled"
-		if natsClient != nil {
-			if natsClient.IsConnected() {
-				natsStatus = "connected"
-			} else {
-				natsStatus = "disconnected"
-			}
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ready", "nats": natsStatus})
-	})
+	// Health check endpoints. Readiness verifies every hard dependency
+	// (Postgres, Redis, and — when enabled — NATS); a disconnected broker fails
+	// readiness so the orchestrator stops routing traffic to an instance that
+	// cannot process the messaging pipeline.
+	var redisPing func(context.Context) error
+	if redisClient != nil {
+		redisPing = func(ctx context.Context) error { return redisClient.Ping(ctx).Err() }
+	}
+	healthHandler := handlers.NewHealthHandler(db.Pool, redisPing)
+	if natsClient != nil {
+		healthHandler.SetNATSChecker(natsClient.IsConnected)
+	}
+	router.GET("/health", healthHandler.Health)
+	router.GET("/ready", healthHandler.Ready)
 
 	// Swagger documentation endpoint
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

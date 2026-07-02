@@ -7,21 +7,35 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 )
 
 // HealthHandler handles health check endpoints
 type HealthHandler struct {
-	db    *pgxpool.Pool
-	redis *redis.Client
+	db *pgxpool.Pool
+	// redisPing, when set, checks Redis connectivity. A function (rather than a
+	// concrete client) keeps this handler independent of which go-redis major
+	// version the app wires in.
+	redisPing func(context.Context) error
+	// natsConnected, when set, reports whether the JetStream connection is live.
+	// NATS is a hard dependency of the messaging pipeline, so a disconnected
+	// broker must fail readiness (otherwise the orchestrator keeps routing to an
+	// instance that silently cannot process inbound/outbound traffic).
+	natsConnected func() bool
 }
 
-// NewHealthHandler creates a new health handler
-func NewHealthHandler(db *pgxpool.Pool, redis *redis.Client) *HealthHandler {
+// NewHealthHandler creates a new health handler. redisPing may be nil when Redis
+// is not configured, in which case readiness skips the Redis check.
+func NewHealthHandler(db *pgxpool.Pool, redisPing func(context.Context) error) *HealthHandler {
 	return &HealthHandler{
-		db:    db,
-		redis: redis,
+		db:        db,
+		redisPing: redisPing,
 	}
+}
+
+// SetNATSChecker registers a liveness probe for the NATS/JetStream connection.
+// Optional: when unset, readiness does not include a NATS check.
+func (h *HealthHandler) SetNATSChecker(connected func() bool) {
+	h.natsConnected = connected
 }
 
 // Health godoc
@@ -72,8 +86,8 @@ func (h *HealthHandler) Ready(c *gin.Context) {
 	}
 
 	// Check Redis
-	if h.redis != nil {
-		if err := h.redis.Ping(ctx).Err(); err != nil {
+	if h.redisPing != nil {
+		if err := h.redisPing(ctx); err != nil {
 			checks["redis"] = map[string]interface{}{
 				"status": "unhealthy",
 				"error":  err.Error(),
@@ -83,6 +97,20 @@ func (h *HealthHandler) Ready(c *gin.Context) {
 			checks["redis"] = map[string]interface{}{
 				"status": "healthy",
 			}
+		}
+	}
+
+	// Check NATS/JetStream — a disconnected broker means the messaging pipeline
+	// is down, so readiness must fail even though the HTTP layer is up.
+	if h.natsConnected != nil {
+		if h.natsConnected() {
+			checks["nats"] = map[string]interface{}{"status": "healthy"}
+		} else {
+			checks["nats"] = map[string]interface{}{
+				"status": "unhealthy",
+				"error":  "not connected",
+			}
+			allHealthy = false
 		}
 	}
 
