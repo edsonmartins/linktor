@@ -372,6 +372,12 @@ Sem isto o produto não entrega recursos-chave, independentemente do canal.
 > WS0-SCHEMA-VALIDATE FEITO — job `migrations` no ci.yml (Postgres pgvector/pgvector:pg16 + `go test -tags=integration`).
 > WS1-CONFIG-LEAK FEITO — `entity.Channel.MarshalJSON` redige chaves sensíveis do Config (lista única
 > `entity.SensitiveConfigKeys`, +widget_secret); `ChannelService.Update` faz merge preservando segredo mascarado.
+> > **UPDATE WS5I:** FLOW-METAID FEITO — coluna `meta_flow_id` (migração `00005_flow_meta_id.sql`) persistida
+> em `entity.Flow.MetaFlowID`, `flow_repo` (INSERT/UPDATE/5 SELECTs/scan nulável) e `whatsapp_flows` service usa
+> o ID da Meta em Update/Delete/Publish/Preview (antes mandava o UUID local → todas quebradas); guarda de
+> MetaFlowID vazio. WS5I-PAYMENTS-IDOR FEITO — `payments.Client.assertOwns` bloqueia leitura/refund/status de
+> pagamento de outra org (GetByID/GetByReference/UpdateStatus/ProcessRefund); commerce/calling/analytics
+> verificados sem IDOR (order repo já org-scoped; calling/analytics usam estado por-canal em memória + guard).
 > PENDENTES: WS10-GETORCREATE (upsert de contato — não feito),
 > WS10-PERSIST-FIELDS, WS10-TPL-EXTID, WS10-INDEXES (compostos), WS10-TPL-META-ERR, WS10-FLOW-NULLSCAN,
 > WS10-TENANT-USAGE, WS10-MINIO-PRESIGN, WS10-ESC-MODEL, e o tail P3.
