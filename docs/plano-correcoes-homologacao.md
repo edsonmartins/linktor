@@ -366,7 +366,13 @@ Sem isto o produto não entrega recursos-chave, independentemente do canal.
 > respeita filtros), WS10-CONV-STATUS (IsValid + validação em Update/Create/Assign), WS10-CAMPAIGN-CANCEL (relê
 > status entre lotes e a cada 50; Cancel rejeita terminal; CAVEAT multi-réplica documentado — follow-up lock Redis),
 > WS10-ORDER-TX (transação order+items). Testes de repo com DB real ficam sob tag `integration`.
-> PENDENTES: WS10-DEDUP-ATOMIC/WS10-GETORCREATE (precisam migração de índice único parcial + upsert — não feito),
+> **UPDATE:** WS10-DEDUP-ATOMIC FEITO — migração `00004_message_dedup_index.sql` (índice único parcial
+> `(conversation_id, external_id) WHERE external_id IS NOT NULL`) + `Create` com `ON CONFLICT DO NOTHING`
+> retornando `ErrCodeConflict` em duplicata (consumer inbound já faz ACK). Teste de integração adicionado.
+> WS0-SCHEMA-VALIDATE FEITO — job `migrations` no ci.yml (Postgres pgvector/pgvector:pg16 + `go test -tags=integration`).
+> WS1-CONFIG-LEAK FEITO — `entity.Channel.MarshalJSON` redige chaves sensíveis do Config (lista única
+> `entity.SensitiveConfigKeys`, +widget_secret); `ChannelService.Update` faz merge preservando segredo mascarado.
+> PENDENTES: WS10-GETORCREATE (upsert de contato — não feito),
 > WS10-PERSIST-FIELDS, WS10-TPL-EXTID, WS10-INDEXES (compostos), WS10-TPL-META-ERR, WS10-FLOW-NULLSCAN,
 > WS10-TENANT-USAGE, WS10-MINIO-PRESIGN, WS10-ESC-MODEL, e o tail P3.
 

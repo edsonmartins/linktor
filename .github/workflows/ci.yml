@@ -27,6 +27,43 @@ jobs:
       - name: Test
         run: go test -race -count=1 ./...
 
+  # Validates that the goose migrations build the schema cleanly (and idempotently)
+  # against a real Postgres with pgvector, and runs the DB-backed integration
+  # tests (migrations, order-create rollback, message-status monotonicity) that
+  # are excluded from the default unit run via the `integration` build tag.
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: linktor
+          POSTGRES_PASSWORD: linktor
+          POSTGRES_DB: linktor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U linktor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      LINKTOR_DATABASE_HOST: localhost
+      LINKTOR_DATABASE_PORT: "5432"
+      LINKTOR_DATABASE_USER: linktor
+      LINKTOR_DATABASE_PASSWORD: linktor
+      LINKTOR_DATABASE_DATABASE: linktor
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Migrations + DB integration tests
+        run: go test -tags=integration -count=1 ./internal/infrastructure/database/...
+
   admin:
     runs-on: ubuntu-latest
     defaults:
