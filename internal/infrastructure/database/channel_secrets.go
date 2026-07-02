@@ -2,39 +2,12 @@ package database
 
 import "github.com/msgfy/linktor/internal/domain/entity"
 
-// sensitiveConfigKeys lists Channel.Config keys whose values are secrets and
-// must be encrypted at rest. Non-listed keys (phone_number_id, waba_id, proxy
-// host/port, advanced settings, ...) stay plaintext so they remain queryable
-// via `config->>'key'` and readable for non-secret behavior.
-//
-// The Credentials map is encrypted in full and is therefore not listed here.
-var sensitiveConfigKeys = map[string]bool{
-	"access_token":          true,
-	"user_access_token":     true,
-	"page_access_token":     true,
-	"auth_token":            true,
-	"bot_token":             true,
-	"app_secret":            true,
-	"api_secret":            true,
-	"api_key":               true,
-	"api_key_secret":        true,
-	"api_key_sid":           true,
-	"account_sid":           true,
-	"messaging_service_sid": true,
-	"webhook_secret":        true,
-	"verify_token":          true,
-	"smtp_password":         true,
-	"imap_password":         true,
-	"mailgun_api_key":       true,
-	"sendgrid_api_key":      true,
-	"postmark_server_token": true,
-	"ses_access_key_id":     true,
-	"ses_secret_key":        true,
-	"private_key":           true,
-	"secret":                true,
-	"token":                 true,
-	"password":              true,
-}
+// sensitiveConfigKeys is the single source of truth for Channel.Config keys whose
+// values are secrets: encrypted at rest here and redacted from API responses in
+// entity.Channel.MarshalJSON. Non-listed keys (phone_number_id, waba_id, proxy
+// host/port, advanced settings, ...) stay plaintext so they remain queryable via
+// `config->>'key'`. The Credentials map is encrypted in full and is not listed.
+var sensitiveConfigKeys = entity.SensitiveConfigKeys
 
 // encryptChannelSecrets returns encrypted copies of the channel's Credentials
 // (all values) and Config (sensitive keys only), without mutating the channel.

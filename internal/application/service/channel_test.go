@@ -713,3 +713,32 @@ func TestChannelService_EnabledTypes_EmptyMeansAllAllowed(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+func TestChannelService_Update_PreservesRedactedSecret(t *testing.T) {
+	svc, _, _ := newChannelService()
+
+	created, err := svc.Create(context.Background(), &CreateChannelInput{
+		TenantID: "tenant1", Type: "whatsapp_official", Name: "WA",
+		Config: map[string]string{"access_token": "real-token", "phone_number_id": "111"},
+	})
+	require.NoError(t, err)
+
+	// Client GETs a redacted channel then PUTs it back unchanged: the masked
+	// secret must NOT overwrite the stored one, and a real new secret must win.
+	updated, err := svc.Update(context.Background(), created.ID, &UpdateChannelInput{
+		Config: map[string]string{
+			"access_token":    entity.RedactedSecret, // echoed masked value
+			"phone_number_id": "222",                 // legit non-secret change
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "real-token", updated.Config["access_token"], "stored secret preserved")
+	assert.Equal(t, "222", updated.Config["phone_number_id"])
+
+	// A real new secret overwrites.
+	updated2, err := svc.Update(context.Background(), created.ID, &UpdateChannelInput{
+		Config: map[string]string{"access_token": "rotated-token"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "rotated-token", updated2.Config["access_token"])
+}

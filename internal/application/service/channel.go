@@ -250,7 +250,26 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 		channel.Identifier = *input.Identifier
 	}
 	if input.Config != nil {
-		channel.Config = input.Config
+		// Non-secret keys are replaced wholesale, but sensitive keys follow the
+		// same merge rule as Credentials: the API redacts them on read, so an
+		// edit form never re-displays them — a blank or redacted incoming secret
+		// means "keep the stored one" rather than wipe it.
+		merged := make(map[string]string, len(input.Config))
+		for k, v := range input.Config {
+			merged[k] = v
+		}
+		for k := range entity.SensitiveConfigKeys {
+			incoming, present := merged[k]
+			if present && incoming != "" && incoming != entity.RedactedSecret {
+				continue // caller supplied a real new secret
+			}
+			if existing, ok := channel.Config[k]; ok && existing != "" {
+				merged[k] = existing // preserve the stored secret
+			} else {
+				delete(merged, k) // nothing stored and nothing usable incoming
+			}
+		}
+		channel.Config = merged
 	}
 	if input.Credentials != nil {
 		// Merge, not replace: an edit form does not re-display existing secrets,
