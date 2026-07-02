@@ -4,6 +4,28 @@ Base: `docs/auditoria-homologacao-2026-07.md` (auditoria de 2026-07-02).
 Objetivo: levar o projeto de "NÃO apto" a "apto para homologação", com backlog completo
 (dos bloqueadores aos itens menores) organizado em workstreams rastreáveis.
 
+## Auditoria de consistência handler-HTTP × adapter (2026-07-02, parte 12)
+Motivada por um bug real: a correção WS6 de postback do Facebook vivia só em
+`facebook.Adapter.ProcessWebhook` (não usado em produção); o handler HTTP
+`WebhookHandler.FacebookWebhook` só chamava `ExtractMessages` e **descartava
+cliques de botão**. CORRIGIDO (commit 119dcf1: `processFacebookPostback` +
+`ExtractPostbacks` no handler) e travado por E2E.
+
+Varredura dos demais canais em escopo (handler processa todos os eventos que
+geram mensagem de entrada?):
+- **Facebook**: messages + postbacks + delivery + read. ✓ (pós-fix)
+- **Telegram**: Message + EditedMessage + CallbackQuery. ✓
+- **WhatsApp**: switch por tipo (text/mídia/location/contacts/interactive/button/
+  reaction) + `default` que ainda publica. ✓
+- **Instagram**: messages + reactions + story replies (via `ExtractMessages`). ✓
+  GAP MENOR (P3, backlog): `ExtractReadReceipts` (read receipts `messaging_seen`)
+  NÃO é chamado por `InstagramWebhook` — só pelo `Adapter.ProcessWebhook` não
+  usado em produção. É apenas telemetria de status "lido"; o payload IG não traz
+  o message id específico, então o modelo correto (StatusUpdate por-mensagem, como
+  o Facebook) é impreciso. Não corrigido para evitar poluir conversas com eventos
+  read-only; requer decisão de modelagem.
+- **WebChat**: entrada via WebSocket (não é parse de webhook) — fora deste padrão.
+
 ## Como ler este plano
 - **ID** — identificador estável para commits/PRs (ex.: `WS1-CANAIS`).
 - **Prioridade** — P0 (gate de homologação, bloqueador), P1 (obrigatório p/ produto funcionar),
