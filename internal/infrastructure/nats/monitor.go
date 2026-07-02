@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -57,6 +58,41 @@ func (m *Monitor) GetQueueStats(ctx context.Context) (*entity.QueueStats, error)
 		TotalMessages: totalMessages,
 		TotalPending:  totalPending,
 	}, nil
+}
+
+// StartMetricsCollector periodically samples queue stats and publishes them to
+// the Prometheus gauges (stream depth incl. DLQ backlog, and per-consumer
+// pending/ack-pending/redelivered lag). It blocks until ctx is cancelled, so run
+// it in its own goroutine. A failed sample is skipped (kept quiet) and retried
+// on the next tick.
+func (m *Monitor) StartMetricsCollector(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 15 * time.Second
+	}
+	m.collectOnce(ctx) // seed immediately so gauges are populated before the first tick
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			m.collectOnce(ctx)
+		}
+	}
+}
+
+func (m *Monitor) collectOnce(ctx context.Context) {
+	stats, err := m.GetQueueStats(ctx)
+	if err != nil {
+		return
+	}
+	for _, s := range stats.Streams {
+		metrics.SetStreamGauge(s.Name, s.Messages)
+		for _, c := range s.Consumers {
+			metrics.SetConsumerGauges(s.Name, c.Name, c.Pending, c.AckPending, c.Redelivered)
+		}
+	}
 }
 
 // getStreamInfo retrieves information about a specific stream

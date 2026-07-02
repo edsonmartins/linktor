@@ -823,7 +823,8 @@ func main() {
 			logger.Warn("Failed to subscribe to inbound messages")
 		}
 
-		// Reflect NATS connectivity into the Prometheus gauge (linktor_nats_up).
+		// Reflect NATS connectivity into the Prometheus gauge (linktor_nats_up)
+		// and sample queue depth / consumer lag (incl. DLQ backlog) into gauges.
 		if natsClient != nil {
 			metrics.SetNATSUp(natsClient.IsConnected())
 			go func() {
@@ -838,6 +839,7 @@ func main() {
 					}
 				}
 			}()
+			go nats.NewMonitor(natsClient).StartMetricsCollector(ctx, 15*time.Second)
 		}
 
 		// Subscribe to status updates

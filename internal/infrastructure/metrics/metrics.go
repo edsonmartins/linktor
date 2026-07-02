@@ -99,7 +99,54 @@ var (
 		Help:      "HTTP request duration in seconds.",
 		Buckets:   prometheus.DefBuckets,
 	}, []string{"method", "route"})
+
+	// StreamMessages is the current number of messages held in each JetStream
+	// stream (the DLQ stream's value is the dead-letter backlog depth).
+	StreamMessages = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "stream",
+		Name:      "messages",
+		Help:      "Messages currently stored in a JetStream stream.",
+	}, []string{"stream"})
+
+	// ConsumerPending is the number of messages a consumer has not yet received
+	// (delivery backlog / lag).
+	ConsumerPending = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "consumer",
+		Name:      "pending",
+		Help:      "Messages pending (not yet delivered) for a consumer.",
+	}, []string{"stream", "consumer"})
+
+	// ConsumerAckPending is the number of in-flight messages awaiting ack.
+	ConsumerAckPending = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "consumer",
+		Name:      "ack_pending",
+		Help:      "In-flight messages awaiting ack for a consumer.",
+	}, []string{"stream", "consumer"})
+
+	// ConsumerRedelivered is the number of messages redelivered to a consumer
+	// (a rising value signals repeated processing failures).
+	ConsumerRedelivered = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Subsystem: "consumer",
+		Name:      "redelivered",
+		Help:      "Messages redelivered to a consumer.",
+	}, []string{"stream", "consumer"})
 )
+
+// SetStreamGauge records the current message count for a stream.
+func SetStreamGauge(stream string, messages uint64) {
+	StreamMessages.WithLabelValues(stream).Set(float64(messages))
+}
+
+// SetConsumerGauges records the current lag metrics for a consumer.
+func SetConsumerGauges(stream, consumer string, pending, ackPending, redelivered int) {
+	ConsumerPending.WithLabelValues(stream, consumer).Set(float64(pending))
+	ConsumerAckPending.WithLabelValues(stream, consumer).Set(float64(ackPending))
+	ConsumerRedelivered.WithLabelValues(stream, consumer).Set(float64(redelivered))
+}
 
 // Result label values.
 const (

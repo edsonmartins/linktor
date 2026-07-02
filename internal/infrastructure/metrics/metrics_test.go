@@ -66,3 +66,17 @@ func TestHandler_ExposesMetrics(t *testing.T) {
 		t.Fatalf("metrics output missing linktor_inbound_messages_total")
 	}
 }
+
+func TestQueueGauges(t *testing.T) {
+	SetStreamGauge("LINKTOR_DLQ", 7)
+	if got := testutil.ToFloat64(StreamMessages.WithLabelValues("LINKTOR_DLQ")); got != 7 {
+		t.Fatalf("stream gauge: want 7, got %v", got)
+	}
+	SetConsumerGauges("LINKTOR_MESSAGES", "inbound", 3, 2, 5)
+	if got := testutil.ToFloat64(ConsumerPending.WithLabelValues("LINKTOR_MESSAGES", "inbound")); got != 3 {
+		t.Fatalf("pending gauge: want 3, got %v", got)
+	}
+	if got := testutil.ToFloat64(ConsumerRedelivered.WithLabelValues("LINKTOR_MESSAGES", "inbound")); got != 5 {
+		t.Fatalf("redelivered gauge: want 5, got %v", got)
+	}
+}
