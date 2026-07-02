@@ -104,6 +104,7 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/infrastructure/config"
 	"github.com/msgfy/linktor/internal/infrastructure/database"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	storageLib "github.com/msgfy/linktor/internal/infrastructure/storage"
 	infrawebhook "github.com/msgfy/linktor/internal/infrastructure/webhook"
@@ -797,18 +798,46 @@ func main() {
 		// pointless and would pollute the DLQ and fire an alert on every duplicate
 		// webhook. Only genuinely transient errors are returned to trigger a NAK.
 		if err := consumer.SubscribeAllInbound(ctx, func(ctx context.Context, msg *nats.InboundMessage) error {
+			start := time.Now()
 			out, err := receiveMessageUC.Execute(ctx, msg)
 			if err != nil {
 				if !isRetryableInboundError(err) {
+					// A conflict means the message was a duplicate delivery, which
+					// is an expected outcome rather than a processing failure.
+					result := metrics.ResultFailed
+					var appErr *apperrors.AppError
+					if errors.As(err, &appErr) && appErr.Code == apperrors.ErrCodeConflict {
+						result = metrics.ResultDuplicate
+					}
+					metrics.RecordInbound(msg.ChannelType, result, start)
 					logger.Warn("inbound message dropped (non-retryable): " + err.Error())
 					return nil // ack: do not retry
 				}
+				metrics.RecordInbound(msg.ChannelType, metrics.ResultFailed, start)
 				return err
 			}
+			metrics.RecordInbound(msg.ChannelType, metrics.ResultProcessed, start)
 			maybeTriggerBot(ctx, botRepo, producer, out)
 			return nil
 		}); err != nil {
 			logger.Warn("Failed to subscribe to inbound messages")
+		}
+
+		// Reflect NATS connectivity into the Prometheus gauge (linktor_nats_up).
+		if natsClient != nil {
+			metrics.SetNATSUp(natsClient.IsConnected())
+			go func() {
+				t := time.NewTicker(10 * time.Second)
+				defer t.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.C:
+						metrics.SetNATSUp(natsClient.IsConnected())
+					}
+				}
+			}()
 		}
 
 		// Subscribe to status updates
@@ -914,9 +943,15 @@ func main() {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestID())
+	router.Use(metrics.GinMiddleware())
 	router.Use(middleware.Logger())
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.CORS())
+
+	// Prometheus scrape endpoint. Unauthenticated like /health so scrapers reach
+	// it without credentials; restrict it at the ingress/network layer if the
+	// deployment exposes the router publicly.
+	router.GET("/metrics", gin.WrapH(metrics.Handler()))
 
 	// Health check endpoints. Readiness verifies every hard dependency
 	// (Postgres, Redis, and — when enabled — NATS); a disconnected broker fails

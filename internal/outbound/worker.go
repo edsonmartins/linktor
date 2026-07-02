@@ -8,6 +8,7 @@ import (
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/logger"
 )
@@ -63,6 +64,8 @@ func (w *Worker) Start(ctx context.Context) error {
 //   - nil            -> ack (delivered, or permanently failed and recorded)
 //   - non-nil error  -> nak  -> redelivered (transient failure)
 func (w *Worker) handle(ctx context.Context, raw *nats.OutboundMessage) error {
+	start := time.Now()
+
 	// Honor a campaign cancellation that landed after enqueue.
 	if raw.Metadata != nil && raw.Metadata["campaign_id"] != "" && w.campaignRepo != nil {
 		if c, err := w.campaignRepo.FindByID(ctx, raw.Metadata["campaign_id"]); err == nil && c.Status == entity.CampaignStatusCancelled {
@@ -75,6 +78,7 @@ func (w *Worker) handle(ctx context.Context, raw *nats.OutboundMessage) error {
 	sender, err := w.resolver.For(ctx, msg.ChannelID)
 	if err != nil {
 		// No sender / bad credentials is not retryable.
+		metrics.RecordOutbound(raw.ChannelType, metrics.ResultFailed, start)
 		w.recordFailure(ctx, raw, msg, err.Error())
 		logger.Error("outbound: cannot resolve sender for channel " + msg.ChannelID + ": " + err.Error())
 		return nil
@@ -89,14 +93,18 @@ func (w *Worker) handle(ctx context.Context, raw *nats.OutboundMessage) error {
 	receipt, err := sender.Send(ctx, msg)
 	if err != nil {
 		if IsPermanent(err) {
+			metrics.RecordOutbound(raw.ChannelType, metrics.ResultFailed, start)
 			w.recordFailure(ctx, raw, msg, err.Error())
 			logger.Error("outbound: permanent send failure for " + msg.ID + ": " + err.Error())
 			return nil // ack: do not retry a permanent failure
 		}
+		// Transient failures are retried by NATS; they are not counted as a
+		// terminal outcome to avoid inflating the failure counter on each retry.
 		logger.Warn("outbound: transient send failure for " + msg.ID + ", will retry: " + err.Error())
 		return err // nak -> retry
 	}
 
+	metrics.RecordOutbound(raw.ChannelType, metrics.ResultSent, start)
 	w.recordSuccess(ctx, raw, msg, receipt)
 	return nil
 }

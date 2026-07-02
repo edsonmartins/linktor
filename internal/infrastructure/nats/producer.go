@@ -3,7 +3,9 @@ package nats
 import (
 	"context"
 	"encoding/json"
+
 	"fmt"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -137,6 +139,7 @@ func (p *Producer) PublishInbound(ctx context.Context, msg *InboundMessage) erro
 		jetstream.WithMsgID(msg.ID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("inbound")
 		return fmt.Errorf("failed to publish inbound message: %w", err)
 	}
 
@@ -158,6 +161,7 @@ func (p *Producer) PublishOutbound(ctx context.Context, msg *OutboundMessage) er
 		jetstream.WithMsgID(msg.ID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("outbound")
 		return fmt.Errorf("failed to publish outbound message: %w", err)
 	}
 
@@ -180,6 +184,7 @@ func (p *Producer) PublishStatusUpdate(ctx context.Context, status *StatusUpdate
 		jetstream.WithMsgID(msgID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("status")
 		return fmt.Errorf("failed to publish status update: %w", err)
 	}
 
@@ -205,6 +210,7 @@ func (p *Producer) PublishEvent(ctx context.Context, event *Event) error {
 		jetstream.WithMsgID(msgID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("event")
 		return fmt.Errorf("failed to publish event: %w", err)
 	}
 
@@ -226,6 +232,7 @@ func (p *Producer) PublishWebhookDelivery(ctx context.Context, webhook *WebhookD
 		jetstream.WithMsgID(webhook.ID),
 	)
 	if err != nil {
+		metrics.IncPublishFailure("webhook")
 		return fmt.Errorf("failed to publish webhook delivery: %w", err)
 	}
 
