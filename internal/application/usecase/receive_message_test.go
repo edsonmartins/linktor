@@ -120,13 +120,13 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		// IsNew should be true (new conversation)
 		assert.True(t, output.IsNew)
 
-		// ContactCreated + ConversationCreated publish directly; MessageReceived is
-		// written to the transactional outbox (same tx as the message) and later
-		// published by the relay — so it is NOT in producer.Events here.
-		require.Len(t, f.producer.Events, 2)
-		assert.Equal(t, nats.EventContactCreated, f.producer.Events[0].Type)
-		assert.Equal(t, nats.EventConversationCreated, f.producer.Events[1].Type)
-
+		// All three inbound events route through the transactional outbox (written
+		// in the same tx as their aggregate), so nothing is published inline here.
+		require.Len(t, f.producer.Events, 0)
+		require.Len(t, f.contactRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventContactCreated, f.contactRepo.OutboxEvents[0].EventType)
+		require.Len(t, f.conversationRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventConversationCreated, f.conversationRepo.OutboxEvents[0].EventType)
 		require.Len(t, f.messageRepo.OutboxEvents, 1)
 		assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
 		assert.Equal(t, "evt-message-received-"+output.Message.ID, f.messageRepo.OutboxEvents[0].IdempotencyKey)
@@ -174,10 +174,12 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		// No new contact created (still just 1 in repo)
 		assert.Len(t, f.contactRepo.Contacts, 1)
 
-		// Only ConversationCreated publishes directly (no ContactCreated for an
-		// existing contact); MessageReceived goes to the outbox.
-		require.Len(t, f.producer.Events, 1)
-		assert.Equal(t, nats.EventConversationCreated, f.producer.Events[0].Type)
+		// No ContactCreated for an existing contact; ConversationCreated and
+		// MessageReceived are queued in the outbox, nothing published inline.
+		require.Len(t, f.producer.Events, 0)
+		require.Len(t, f.contactRepo.OutboxEvents, 0)
+		require.Len(t, f.conversationRepo.OutboxEvents, 1)
+		assert.Equal(t, nats.EventConversationCreated, f.conversationRepo.OutboxEvents[0].EventType)
 		require.Len(t, f.messageRepo.OutboxEvents, 1)
 		assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
 	})
@@ -216,10 +218,8 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, "whatsapp", identities[0].ChannelType)
 		assert.Equal(t, "+5511888888888", identities[0].Identifier)
 
-		// No ContactCreated event
-		for _, evt := range f.producer.Events {
-			assert.NotEqual(t, nats.EventContactCreated, evt.Type)
-		}
+		// No ContactCreated event (existing contact reused via phone).
+		assert.Empty(t, f.contactRepo.OutboxEvents)
 	})
 
 	// WS10-GETORCREATE: two inbound webhooks from the SAME brand-new contact
@@ -272,10 +272,9 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		// Exactly one contact remains: the orphan was rolled back.
 		assert.Len(t, f.contactRepo.Contacts, 1)
 
-		// No duplicate ContactCreated event for the loser's orphan.
-		for _, evt := range f.producer.Events {
-			assert.NotEqual(t, nats.EventContactCreated, evt.Type)
-		}
+		// No ContactCreated event for the loser: losing the identity race means the
+		// event is not enqueued (it is tied to the winning insert, same tx).
+		assert.Empty(t, f.contactRepo.OutboxEvents)
 	})
 
 	// Same identity arriving twice sequentially reuses the existing contact via
@@ -407,10 +406,10 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, entity.ConversationStatusOpen, output.Conversation.Status)
 		assert.True(t, output.IsNew)
 
-		// ConversationCreated event published
+		// ConversationCreated event enqueued in the outbox for the new conversation.
 		var hasConvCreated bool
-		for _, evt := range f.producer.Events {
-			if evt.Type == nats.EventConversationCreated {
+		for _, evt := range f.conversationRepo.OutboxEvents {
+			if evt.EventType == nats.EventConversationCreated {
 				hasConvCreated = true
 			}
 		}

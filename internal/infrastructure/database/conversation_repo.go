@@ -63,6 +63,46 @@ func (r *ConversationRepository) Create(ctx context.Context, conversation *entit
 	return nil
 }
 
+// CreateWithOutboxEvent persists the conversation and enqueues an outbox event in
+// one transaction (transactional outbox), so the "conversation created" event is
+// durably queued iff the conversation committed. event may be nil.
+func (r *ConversationRepository) CreateWithOutboxEvent(ctx context.Context, conversation *entity.Conversation, event *entity.OutboxEvent) error {
+	metadata, err := json.Marshal(conversation.Metadata)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal conversation metadata")
+	}
+
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to begin transaction")
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO conversations (
+			id, tenant_id, channel_id, contact_id, assignee_id, status, priority,
+			subject, unread_count, first_reply_at, resolved_at, created_at, updated_at,
+			tags, metadata
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		conversation.ID, conversation.TenantID, conversation.ChannelID, conversation.ContactID,
+		conversation.AssignedUserID, string(conversation.Status), string(conversation.Priority),
+		nullString(conversation.Subject), conversation.UnreadCount, conversation.FirstReplyAt,
+		conversation.ResolvedAt, conversation.CreatedAt, conversation.UpdatedAt,
+		pq.Array(conversation.Tags), metadata,
+	); err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to create conversation")
+	}
+
+	if err := insertOutboxEventTx(ctx, tx, event); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to commit conversation transaction")
+	}
+	return nil
+}
+
 // FindByID finds a conversation by ID
 func (r *ConversationRepository) FindByID(ctx context.Context, id string) (*entity.Conversation, error) {
 	query := `

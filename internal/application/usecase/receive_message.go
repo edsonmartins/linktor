@@ -251,7 +251,14 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 		Metadata:    inbound.Metadata,
 		CreatedAt:   now,
 	}
-	inserted, err := uc.contactRepo.CreateIdentityIfAbsent(ctx, identity)
+	// Enqueue the "contact created" event in the SAME transaction as the winning
+	// identity insert: the event is durably queued iff we actually secured this
+	// contact's identity. A caller that loses the race enqueues nothing.
+	contactEvent, err := buildContactCreatedOutboxEvent(inbound.TenantID, contact)
+	if err != nil {
+		return nil, false, err
+	}
+	inserted, err := uc.contactRepo.CreateIdentityIfAbsentWithOutboxEvent(ctx, identity, contactEvent)
 	if err != nil {
 		return nil, false, err
 	}
@@ -267,11 +274,9 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 			return winner, false, nil
 		}
 		// Could not resolve the winner; fall through and keep our contact so the
-		// message is not lost. The identity simply was not attached.
+		// message is not lost. The identity simply was not attached, and no
+		// ContactCreated event was enqueued for this degenerate path.
 	}
-
-	// Publish contact created event
-	uc.publishContactCreatedEvent(ctx, inbound.TenantID, contact)
 
 	return contact, true, nil
 }
@@ -301,7 +306,14 @@ func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, te
 		UpdatedAt:   now,
 	}
 
-	if err := uc.conversationRepo.Create(ctx, conversation); err != nil {
+	// Persist the conversation and enqueue its "created" event atomically
+	// (transactional outbox), so the event is published iff the conversation
+	// committed and never depends on NATS being up at intake time.
+	conversationEvent, err := buildConversationCreatedOutboxEvent(tenantID, conversation)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := uc.conversationRepo.CreateWithOutboxEvent(ctx, conversation, conversationEvent); err != nil {
 		return nil, false, err
 	}
 
@@ -312,9 +324,6 @@ func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, te
 			_ = err
 		}
 	}
-
-	// Publish conversation created event
-	uc.publishConversationCreatedEvent(ctx, tenantID, conversation)
 
 	return conversation, true, nil
 }
@@ -341,21 +350,8 @@ func (uc *ReceiveMessageUseCase) buildMessageReceivedOutboxEvent(tenantID string
 		payload["attachments"] = atts
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal event payload")
-	}
-
-	return &entity.OutboxEvent{
-		ID:             uuid.New().String(),
-		EventType:      nats.EventMessageReceived,
-		TenantID:       tenantID,
-		AggregateType:  "message",
-		AggregateID:    message.ID,
-		Payload:        data,
-		IdempotencyKey: "evt-message-received-" + message.ID,
-		CreatedAt:      time.Now(),
-	}, nil
+	return newOutboxEvent(nats.EventMessageReceived, tenantID, "message", message.ID,
+		"evt-message-received-"+message.ID, payload)
 }
 
 // attachmentsPayload flattens message attachments into the plain maps carried
@@ -376,35 +372,42 @@ func attachmentsPayload(attachments []*entity.MessageAttachment) []map[string]in
 	return out
 }
 
-func (uc *ReceiveMessageUseCase) publishContactCreatedEvent(ctx context.Context, tenantID string, contact *entity.Contact) {
-	event := &nats.Event{
-		Type:     nats.EventContactCreated,
-		TenantID: tenantID,
-		Payload: map[string]interface{}{
+// newOutboxEvent builds an outbox entry with a JSON-marshaled payload. All three
+// inbound events (message received, contact created, conversation created) route
+// through the transactional outbox so they are published iff their aggregate
+// committed, and re-published safely (JetStream dedups on the idempotency key).
+func newOutboxEvent(eventType, tenantID, aggregateType, aggregateID, idempotencyKey string, payload map[string]interface{}) (*entity.OutboxEvent, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal event payload")
+	}
+	return &entity.OutboxEvent{
+		ID:             uuid.New().String(),
+		EventType:      eventType,
+		TenantID:       tenantID,
+		AggregateType:  aggregateType,
+		AggregateID:    aggregateID,
+		Payload:        data,
+		IdempotencyKey: idempotencyKey,
+		CreatedAt:      time.Now(),
+	}, nil
+}
+
+func buildContactCreatedOutboxEvent(tenantID string, contact *entity.Contact) (*entity.OutboxEvent, error) {
+	return newOutboxEvent(nats.EventContactCreated, tenantID, "contact", contact.ID,
+		"evt-contact-created-"+contact.ID, map[string]interface{}{
 			"contact_id": contact.ID,
 			"name":       contact.Name,
 			"phone":      contact.Phone,
 			"email":      contact.Email,
-		},
-		Timestamp: time.Now(),
-	}
-	if uc.producer != nil {
-		uc.producer.PublishEvent(ctx, event)
-	}
+		})
 }
 
-func (uc *ReceiveMessageUseCase) publishConversationCreatedEvent(ctx context.Context, tenantID string, conversation *entity.Conversation) {
-	event := &nats.Event{
-		Type:     nats.EventConversationCreated,
-		TenantID: tenantID,
-		Payload: map[string]interface{}{
+func buildConversationCreatedOutboxEvent(tenantID string, conversation *entity.Conversation) (*entity.OutboxEvent, error) {
+	return newOutboxEvent(nats.EventConversationCreated, tenantID, "conversation", conversation.ID,
+		"evt-conversation-created-"+conversation.ID, map[string]interface{}{
 			"conversation_id": conversation.ID,
 			"channel_id":      conversation.ChannelID,
 			"contact_id":      conversation.ContactID,
-		},
-		Timestamp: time.Now(),
-	}
-	if uc.producer != nil {
-		uc.producer.PublishEvent(ctx, event)
-	}
+		})
 }

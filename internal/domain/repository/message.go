@@ -55,6 +55,10 @@ type ConversationRepository interface {
 	// Create creates a new conversation
 	Create(ctx context.Context, conversation *entity.Conversation) error
 
+	// CreateWithOutboxEvent persists the conversation and enqueues an outbox event
+	// in one transaction (transactional outbox). event may be nil.
+	CreateWithOutboxEvent(ctx context.Context, conversation *entity.Conversation, event *entity.OutboxEvent) error
+
 	// FindByID finds a conversation by ID
 	FindByID(ctx context.Context, id string) (*entity.Conversation, error)
 
@@ -141,6 +145,12 @@ type ContactRepository interface {
 	// same (tenant_id, channel_type, identifier) already exists, letting the
 	// caller resolve the race to the winning contact instead of duplicating it.
 	CreateIdentityIfAbsent(ctx context.Context, identity *entity.ContactIdentity) (inserted bool, err error)
+
+	// CreateIdentityIfAbsentWithOutboxEvent is CreateIdentityIfAbsent that, only
+	// when it wins the insert, enqueues the given outbox event in the same
+	// transaction — tying a "contact created" event to owning the identity. A
+	// caller that loses the race (inserted=false) enqueues nothing. event may be nil.
+	CreateIdentityIfAbsentWithOutboxEvent(ctx context.Context, identity *entity.ContactIdentity, event *entity.OutboxEvent) (inserted bool, err error)
 
 	// RemoveIdentity removes a channel identity from a contact
 	RemoveIdentity(ctx context.Context, contactID, identityID string) error

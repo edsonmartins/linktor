@@ -3,9 +3,37 @@ package database
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/pkg/errors"
 )
+
+// insertOutboxEventTx enqueues an outbox event on the given transaction. It is
+// the transactional-enqueue side shared by the *WithOutboxEvent repository
+// methods, so the event commits atomically with its aggregate write. A nil event
+// is a no-op.
+func insertOutboxEventTx(ctx context.Context, tx pgx.Tx, event *entity.OutboxEvent) error {
+	if event == nil {
+		return nil
+	}
+	payload := event.Payload
+	if len(payload) == 0 {
+		payload = []byte("{}")
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO outbox_events (
+			id, event_type, tenant_id, aggregate_type, aggregate_id,
+			payload, idempotency_key, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		event.ID, event.EventType, nullString(event.TenantID),
+		nullString(event.AggregateType), nullString(event.AggregateID),
+		payload, nullString(event.IdempotencyKey), event.CreatedAt,
+	)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to enqueue outbox event")
+	}
+	return nil
+}
 
 // OutboxRepository implements repository.OutboxRepository with PostgreSQL.
 type OutboxRepository struct {

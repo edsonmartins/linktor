@@ -126,22 +126,8 @@ func (r *MessageRepository) CreateWithOutboxEvent(ctx context.Context, message *
 		return false, nil
 	}
 
-	if event != nil {
-		payload := event.Payload
-		if len(payload) == 0 {
-			payload = []byte("{}")
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO outbox_events (
-				id, event_type, tenant_id, aggregate_type, aggregate_id,
-				payload, idempotency_key, created_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			event.ID, event.EventType, nullString(event.TenantID),
-			nullString(event.AggregateType), nullString(event.AggregateID),
-			payload, nullString(event.IdempotencyKey), event.CreatedAt,
-		); err != nil {
-			return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to enqueue outbox event")
-		}
+	if err := insertOutboxEventTx(ctx, tx, event); err != nil {
+		return false, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

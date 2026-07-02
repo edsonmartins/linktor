@@ -20,6 +20,7 @@ type MockContactRepository struct {
 	// before the uniqueness check. Tests use it to deterministically simulate a
 	// concurrent request winning the identity race.
 	CreateIdentityHook func()
+	OutboxEvents       []*entity.OutboxEvent
 	ReturnError        error
 }
 
@@ -185,6 +186,17 @@ func (m *MockContactRepository) CreateIdentityIfAbsent(ctx context.Context, iden
 	return true, nil
 }
 
+func (m *MockContactRepository) CreateIdentityIfAbsentWithOutboxEvent(ctx context.Context, identity *entity.ContactIdentity, event *entity.OutboxEvent) (bool, error) {
+	inserted, err := m.CreateIdentityIfAbsent(ctx, identity)
+	if err != nil {
+		return false, err
+	}
+	if inserted && event != nil {
+		m.OutboxEvents = append(m.OutboxEvents, event)
+	}
+	return inserted, nil
+}
+
 func (m *MockContactRepository) RemoveIdentity(ctx context.Context, contactID, identityID string) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
@@ -217,6 +229,7 @@ func (m *MockContactRepository) FindIdentitiesByContact(ctx context.Context, con
 // MockConversationRepository is a mock implementation of repository.ConversationRepository
 type MockConversationRepository struct {
 	Conversations map[string]*entity.Conversation
+	OutboxEvents  []*entity.OutboxEvent
 	ReturnError   error
 }
 
@@ -232,6 +245,16 @@ func (m *MockConversationRepository) Create(ctx context.Context, conversation *e
 		return m.ReturnError
 	}
 	m.Conversations[conversation.ID] = conversation
+	return nil
+}
+
+func (m *MockConversationRepository) CreateWithOutboxEvent(ctx context.Context, conversation *entity.Conversation, event *entity.OutboxEvent) error {
+	if err := m.Create(ctx, conversation); err != nil {
+		return err
+	}
+	if event != nil {
+		m.OutboxEvents = append(m.OutboxEvents, event)
+	}
 	return nil
 }
 
