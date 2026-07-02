@@ -64,10 +64,10 @@ type FlowAction struct {
 
 // VRENodeConfig represents configuration for a VRE node
 type VRENodeConfig struct {
-	TemplateID    string            `json:"template_id"`              // Template to render (menu_opcoes, card_produto, etc.)
-	DataMapping   map[string]string `json:"data_mapping,omitempty"`   // Maps flow variables to template data
-	Caption       string            `json:"caption,omitempty"`        // Optional custom caption
-	FollowUpText  string            `json:"follow_up_text,omitempty"` // Optional text to send after image
+	TemplateID   string            `json:"template_id"`              // Template to render (menu_opcoes, card_produto, etc.)
+	DataMapping  map[string]string `json:"data_mapping,omitempty"`   // Maps flow variables to template data
+	Caption      string            `json:"caption,omitempty"`        // Optional custom caption
+	FollowUpText string            `json:"follow_up_text,omitempty"` // Optional text to send after image
 }
 
 // FlowTransition represents a transition between nodes

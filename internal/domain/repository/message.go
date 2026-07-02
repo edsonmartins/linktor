@@ -152,6 +152,12 @@ type ChannelRepository interface {
 	// FindByType finds channels of a specific type for a tenant
 	FindByType(ctx context.Context, tenantID string, channelType entity.ChannelType) ([]*entity.Channel, error)
 
+	// FindAllByType finds channels of a specific type across all tenants. Used by
+	// shared inbound endpoints (e.g. a single Teams Bot Framework messaging
+	// endpoint serving many tenants) that must resolve the channel from the
+	// provider payload rather than from a per-channel URL.
+	FindAllByType(ctx context.Context, channelType entity.ChannelType) ([]*entity.Channel, error)
+
 	// FindEnabledByTenant finds enabled channels for a tenant
 	FindEnabledByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error)
 
@@ -182,4 +188,3 @@ type ChannelRepository interface {
 	// FindCoexistenceChannels finds all channels with coexistence enabled
 	FindCoexistenceChannels(ctx context.Context) ([]*entity.Channel, error)
 }
-

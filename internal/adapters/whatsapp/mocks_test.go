@@ -10,7 +10,7 @@ import (
 
 // MockMessageHandler captures message handler calls for testing
 type MockMessageHandler struct {
-	Calls    []*plugin.InboundMessage
+	Calls     []*plugin.InboundMessage
 	ReturnErr error
 }
 
@@ -191,7 +191,7 @@ func (f *TestFixtures) SampleReceipt(messageIDs []string, receiptType ReceiptTyp
 
 // Helper function to format float as string
 func formatFloat(f float64) string {
-	return string(rune(int(f*1000000))) // Simple conversion for testing
+	return string(rune(int(f * 1000000))) // Simple conversion for testing
 }
 
 // AssertEventually waits for a condition to be true

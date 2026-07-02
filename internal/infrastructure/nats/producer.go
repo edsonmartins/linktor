@@ -101,15 +101,20 @@ type Event struct {
 
 // WebhookDelivery represents a webhook to be delivered
 type WebhookDelivery struct {
-	ID         string                 `json:"id"`
-	TenantID   string                 `json:"tenant_id"`
-	URL        string                 `json:"url"`
-	EventType  string                 `json:"event_type"`
-	Payload    map[string]interface{} `json:"payload"`
-	Headers    map[string]string      `json:"headers,omitempty"`
-	RetryCount int                    `json:"retry_count"`
-	MaxRetries int                    `json:"max_retries"`
-	Timestamp  time.Time              `json:"timestamp"`
+	ID        string                 `json:"id"`
+	TenantID  string                 `json:"tenant_id"`
+	ChannelID string                 `json:"channel_id,omitempty"`
+	URL       string                 `json:"url"`
+	EventType string                 `json:"event_type"`
+	Payload   map[string]interface{} `json:"payload,omitempty"`
+	// Body carries the exact pre-serialized payload bytes to deliver. When set it
+	// is sent verbatim (sign-what-you-send) instead of re-marshaling Payload, so
+	// HMAC signatures stay valid across durable redelivery.
+	Body       []byte            `json:"body,omitempty"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	RetryCount int               `json:"retry_count"`
+	MaxRetries int               `json:"max_retries"`
+	Timestamp  time.Time         `json:"timestamp"`
 }
 
 // PublishInbound publishes an inbound message to the stream

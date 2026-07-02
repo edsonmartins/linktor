@@ -8,10 +8,10 @@ type Component interface {
 
 // BaseComponent contains common component properties
 type BaseComponent struct {
-	Type     string `json:"type"`
-	Name     string `json:"name,omitempty"`
-	Visible  *bool  `json:"visible,omitempty"`
-	OnClick  string `json:"on-click-action,omitempty"`
+	Type    string `json:"type"`
+	Name    string `json:"name,omitempty"`
+	Visible *bool  `json:"visible,omitempty"`
+	OnClick string `json:"on-click-action,omitempty"`
 }
 
 // =============================================================================
@@ -20,10 +20,10 @@ type BaseComponent struct {
 
 // Form represents a Form layout component
 type Form struct {
-	Name     string      `json:"name"`
-	Children []Component `json:"children"`
-	InitValues map[string]interface{} `json:"init-values,omitempty"`
-	ErrorMessages map[string]string `json:"error-messages,omitempty"`
+	Name          string                 `json:"name"`
+	Children      []Component            `json:"children"`
+	InitValues    map[string]interface{} `json:"init-values,omitempty"`
+	ErrorMessages map[string]string      `json:"error-messages,omitempty"`
 }
 
 func (f *Form) ComponentType() string { return "Form" }
@@ -56,8 +56,8 @@ func (f *Form) ToMap() map[string]interface{} {
 
 // TextHeading represents a heading text component
 type TextHeading struct {
-	Text     string `json:"text"`
-	Visible  *bool  `json:"visible,omitempty"`
+	Text    string `json:"text"`
+	Visible *bool  `json:"visible,omitempty"`
 }
 
 func (t *TextHeading) ComponentType() string { return "TextHeading" }
@@ -136,16 +136,16 @@ func (t *TextCaption) ToMap() map[string]interface{} {
 
 // TextInput represents a text input component
 type TextInput struct {
-	Name        string `json:"name"`
-	Label       string `json:"label"`
-	InputType   string `json:"input-type,omitempty"` // text, email, password, passcode, phone, number
-	Required    bool   `json:"required,omitempty"`
-	MinChars    int    `json:"min-chars,omitempty"`
-	MaxChars    int    `json:"max-chars,omitempty"`
-	HelperText  string `json:"helper-text,omitempty"`
-	Enabled     *bool  `json:"enabled,omitempty"`
-	Visible     *bool  `json:"visible,omitempty"`
-	Pattern     string `json:"pattern,omitempty"`
+	Name       string `json:"name"`
+	Label      string `json:"label"`
+	InputType  string `json:"input-type,omitempty"` // text, email, password, passcode, phone, number
+	Required   bool   `json:"required,omitempty"`
+	MinChars   int    `json:"min-chars,omitempty"`
+	MaxChars   int    `json:"max-chars,omitempty"`
+	HelperText string `json:"helper-text,omitempty"`
+	Enabled    *bool  `json:"enabled,omitempty"`
+	Visible    *bool  `json:"visible,omitempty"`
+	Pattern    string `json:"pattern,omitempty"`
 }
 
 func (t *TextInput) ComponentType() string { return "TextInput" }
@@ -271,13 +271,13 @@ type DropdownOption struct {
 
 // Dropdown represents a dropdown selection component
 type Dropdown struct {
-	Name       string            `json:"name"`
-	Label      string            `json:"label"`
-	DataSource []DropdownOption  `json:"data-source"`
-	Required   bool              `json:"required,omitempty"`
-	HelperText string            `json:"helper-text,omitempty"`
-	Enabled    *bool             `json:"enabled,omitempty"`
-	Visible    *bool             `json:"visible,omitempty"`
+	Name       string           `json:"name"`
+	Label      string           `json:"label"`
+	DataSource []DropdownOption `json:"data-source"`
+	Required   bool             `json:"required,omitempty"`
+	HelperText string           `json:"helper-text,omitempty"`
+	Enabled    *bool            `json:"enabled,omitempty"`
+	Visible    *bool            `json:"visible,omitempty"`
 }
 
 func (d *Dropdown) ComponentType() string { return "Dropdown" }
@@ -368,15 +368,15 @@ func (r *RadioButtonsGroup) ToMap() map[string]interface{} {
 
 // CheckboxGroup represents a checkbox group component
 type CheckboxGroup struct {
-	Name       string           `json:"name"`
-	Label      string           `json:"label"`
-	DataSource []DropdownOption `json:"data-source"`
-	Required   bool             `json:"required,omitempty"`
-	MinSelected int             `json:"min-selected-items,omitempty"`
-	MaxSelected int             `json:"max-selected-items,omitempty"`
-	HelperText string           `json:"helper-text,omitempty"`
-	Enabled    *bool            `json:"enabled,omitempty"`
-	Visible    *bool            `json:"visible,omitempty"`
+	Name        string           `json:"name"`
+	Label       string           `json:"label"`
+	DataSource  []DropdownOption `json:"data-source"`
+	Required    bool             `json:"required,omitempty"`
+	MinSelected int              `json:"min-selected-items,omitempty"`
+	MaxSelected int              `json:"max-selected-items,omitempty"`
+	HelperText  string           `json:"helper-text,omitempty"`
+	Enabled     *bool            `json:"enabled,omitempty"`
+	Visible     *bool            `json:"visible,omitempty"`
 }
 
 func (c *CheckboxGroup) ComponentType() string { return "CheckboxGroup" }
@@ -499,9 +499,9 @@ func (i *Image) ToMap() map[string]interface{} {
 
 // EmbeddedLink represents an embedded link component
 type EmbeddedLink struct {
-	Text    string `json:"text"`
+	Text    string         `json:"text"`
 	OnClick *OnClickAction `json:"on-click-action,omitempty"`
-	Visible *bool  `json:"visible,omitempty"`
+	Visible *bool          `json:"visible,omitempty"`
 }
 
 func (e *EmbeddedLink) ComponentType() string { return "EmbeddedLink" }
@@ -559,13 +559,13 @@ func (n *NavigationTarget) ToMap() map[string]interface{} {
 
 // Footer represents a footer with action button
 type Footer struct {
-	Label          string         `json:"label"`
-	OnClickAction  *OnClickAction `json:"on-click-action"`
-	LeftCaption    string         `json:"left-caption,omitempty"`
-	CenterCaption  string         `json:"center-caption,omitempty"`
-	RightCaption   string         `json:"right-caption,omitempty"`
-	Enabled        *bool          `json:"enabled,omitempty"`
-	Visible        *bool          `json:"visible,omitempty"`
+	Label         string         `json:"label"`
+	OnClickAction *OnClickAction `json:"on-click-action"`
+	LeftCaption   string         `json:"left-caption,omitempty"`
+	CenterCaption string         `json:"center-caption,omitempty"`
+	RightCaption  string         `json:"right-caption,omitempty"`
+	Enabled       *bool          `json:"enabled,omitempty"`
+	Visible       *bool          `json:"visible,omitempty"`
 }
 
 func (f *Footer) ComponentType() string { return "Footer" }

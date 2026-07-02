@@ -29,11 +29,11 @@ var serverPluginCmd = &cobra.Command{
 }
 
 var (
-	serverPort        int
-	serverWorkers     int
-	serverConfigFile  string
-	rollbackSteps     int
-	pluginName        string
+	serverPort       int
+	serverWorkers    int
+	serverConfigFile string
+	rollbackSteps    int
+	pluginName       string
 )
 
 var serverStartCmd = &cobra.Command{

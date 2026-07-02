@@ -1012,10 +1012,10 @@ func TestTwilioProvider_ParseWebhook_CustomFields(t *testing.T) {
 	p := NewTwilioProvider()
 
 	body := url.Values{
-		"CallSid":     {"CA123"},
-		"CallStatus":  {"ringing"},
-		"AccountSid":  {"AC_test"},
-		"ApiVersion":  {"2010-04-01"},
+		"CallSid":       {"CA123"},
+		"CallStatus":    {"ringing"},
+		"AccountSid":    {"AC_test"},
+		"ApiVersion":    {"2010-04-01"},
 		"ForwardedFrom": {"+5511777777777"},
 	}.Encode()
 

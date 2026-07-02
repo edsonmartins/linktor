@@ -18,14 +18,14 @@ const (
 type EscalationReason string
 
 const (
-	EscalationReasonLowConfidence   EscalationReason = "low_confidence"
+	EscalationReasonLowConfidence     EscalationReason = "low_confidence"
 	EscalationReasonNegativeSentiment EscalationReason = "negative_sentiment"
-	EscalationReasonKeywordTrigger  EscalationReason = "keyword_trigger"
-	EscalationReasonUserRequest     EscalationReason = "user_request"
-	EscalationReasonFlowAction      EscalationReason = "flow_action"
-	EscalationReasonBotFailure      EscalationReason = "bot_failure"
-	EscalationReasonComplexQuery    EscalationReason = "complex_query"
-	EscalationReasonManual          EscalationReason = "manual"
+	EscalationReasonKeywordTrigger    EscalationReason = "keyword_trigger"
+	EscalationReasonUserRequest       EscalationReason = "user_request"
+	EscalationReasonFlowAction        EscalationReason = "flow_action"
+	EscalationReasonBotFailure        EscalationReason = "bot_failure"
+	EscalationReasonComplexQuery      EscalationReason = "complex_query"
+	EscalationReasonManual            EscalationReason = "manual"
 )
 
 // EscalationContext represents the full context for an escalated conversation
@@ -37,7 +37,7 @@ type EscalationContext struct {
 	TenantID       string `json:"tenant_id"`
 
 	// Summary and Analysis
-	Summary          string           `json:"summary"`           // AI-generated conversation summary
+	Summary          string           `json:"summary"` // AI-generated conversation summary
 	DetectedIntent   string           `json:"detected_intent,omitempty"`
 	Sentiment        string           `json:"sentiment,omitempty"`
 	SentimentScore   float64          `json:"sentiment_score,omitempty"`
@@ -45,9 +45,9 @@ type EscalationContext struct {
 	ReasonDetail     string           `json:"reason_detail,omitempty"`
 
 	// Priority and Assignment
-	Priority         EscalationPriority `json:"priority"`
-	SuggestedTeam    string             `json:"suggested_team,omitempty"`    // Based on intent/tags
-	SuggestedUserID  string             `json:"suggested_user_id,omitempty"` // Based on skills
+	Priority        EscalationPriority `json:"priority"`
+	SuggestedTeam   string             `json:"suggested_team,omitempty"`    // Based on intent/tags
+	SuggestedUserID string             `json:"suggested_user_id,omitempty"` // Based on skills
 
 	// Collected Information
 	CollectedEntities map[string]string `json:"collected_entities,omitempty"` // From flow or AI
@@ -55,10 +55,10 @@ type EscalationContext struct {
 	Tags              []string          `json:"tags,omitempty"`               // Conversation tags
 
 	// Conversation History
-	LastMessages     []EscalationMessage `json:"last_messages"`      // Last N messages
-	MessageCount     int                 `json:"message_count"`      // Total messages in conversation
-	BotAttempts      int                 `json:"bot_attempts"`       // How many bot responses
-	BotSuccessRate   float64             `json:"bot_success_rate"`   // Bot confidence average
+	LastMessages   []EscalationMessage `json:"last_messages"`    // Last N messages
+	MessageCount   int                 `json:"message_count"`    // Total messages in conversation
+	BotAttempts    int                 `json:"bot_attempts"`     // How many bot responses
+	BotSuccessRate float64             `json:"bot_success_rate"` // Bot confidence average
 
 	// Customer Information
 	Customer *EscalationCustomer `json:"customer,omitempty"`
@@ -95,12 +95,12 @@ type EscalationMessage struct {
 
 // EscalationCustomer represents customer info in escalation context
 type EscalationCustomer struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Email       string            `json:"email,omitempty"`
-	Phone       string            `json:"phone,omitempty"`
-	AvatarURL   string            `json:"avatar_url,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Email        string            `json:"email,omitempty"`
+	Phone        string            `json:"phone,omitempty"`
+	AvatarURL    string            `json:"avatar_url,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
 	CustomFields map[string]string `json:"custom_fields,omitempty"`
 
 	// History

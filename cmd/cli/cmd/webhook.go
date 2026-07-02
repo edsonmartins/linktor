@@ -28,11 +28,11 @@ Examples:
 }
 
 var (
-	webhookURL       string
-	webhookPort      int
-	webhookEvent     string
-	webhookData      string
-	webhookLimit     int
+	webhookURL   string
+	webhookPort  int
+	webhookEvent string
+	webhookData  string
+	webhookLimit int
 )
 
 var webhookListCmd = &cobra.Command{
@@ -395,10 +395,10 @@ func generateSamplePayload(eventType string) map[string]interface{} {
 	case "conversation.closed":
 		return map[string]interface{}{
 			"data": map[string]interface{}{
-				"id":        "cv_sample456",
-				"status":    "closed",
-				"closedAt":  time.Now().Format(time.RFC3339),
-				"closedBy":  "agent",
+				"id":       "cv_sample456",
+				"status":   "closed",
+				"closedAt": time.Now().Format(time.RFC3339),
+				"closedBy": "agent",
 			},
 		}
 	default:

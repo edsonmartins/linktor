@@ -18,11 +18,11 @@ type UpdateTenantInput struct {
 
 // TenantUsage represents tenant usage statistics
 type TenantUsage struct {
-	Users            int64 `json:"users"`
-	Channels         int64 `json:"channels"`
-	Contacts         int64 `json:"contacts"`
-	MessagesThisMonth int64 `json:"messages_this_month"`
-	Limits           *entity.TenantLimits `json:"limits"`
+	Users             int64                `json:"users"`
+	Channels          int64                `json:"channels"`
+	Contacts          int64                `json:"contacts"`
+	MessagesThisMonth int64                `json:"messages_this_month"`
+	Limits            *entity.TenantLimits `json:"limits"`
 }
 
 // TenantService handles tenant operations

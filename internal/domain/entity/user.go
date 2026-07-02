@@ -25,17 +25,17 @@ const (
 
 // User represents a system user
 type User struct {
-	ID           string      `json:"id"`
-	TenantID     string      `json:"tenant_id"`
-	Email        string      `json:"email"`
-	PasswordHash string      `json:"-"`
-	Name         string      `json:"name"`
-	Role         UserRole    `json:"role"`
-	AvatarURL    *string     `json:"avatar_url,omitempty"`
-	Status       UserStatus  `json:"status"`
-	LastLoginAt  *time.Time  `json:"last_login_at,omitempty"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
+	ID           string     `json:"id"`
+	TenantID     string     `json:"tenant_id"`
+	Email        string     `json:"email"`
+	PasswordHash string     `json:"-"`
+	Name         string     `json:"name"`
+	Role         UserRole   `json:"role"`
+	AvatarURL    *string    `json:"avatar_url,omitempty"`
+	Status       UserStatus `json:"status"`
+	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // NewUser creates a new user

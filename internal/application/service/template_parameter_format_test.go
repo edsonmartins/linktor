@@ -52,4 +52,3 @@ func TestValidateParameterFormat_BothSidesAgree(t *testing.T) {
 		{Type: "BODY", Text: "No variables here"},
 	}))
 }
-

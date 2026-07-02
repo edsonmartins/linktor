@@ -102,9 +102,9 @@ func (c *Client) GetAgentInfo(ctx context.Context) (map[string]interface{}, erro
 
 // ZenviaMessage represents a Zenvia RCS message
 type ZenviaMessage struct {
-	From     string            `json:"from"`
-	To       string            `json:"to"`
-	Contents []ZenviaContent   `json:"contents"`
+	From     string          `json:"from"`
+	To       string          `json:"to"`
+	Contents []ZenviaContent `json:"contents"`
 }
 
 // ZenviaContent represents Zenvia message content
@@ -116,9 +116,9 @@ type ZenviaContent struct {
 
 // ZenviaFile represents a Zenvia file
 type ZenviaFile struct {
-	FileURL   string `json:"fileUrl"`
-	FileMIME  string `json:"fileMimeType"`
-	FileName  string `json:"fileName,omitempty"`
+	FileURL  string `json:"fileUrl"`
+	FileMIME string `json:"fileMimeType"`
+	FileName string `json:"fileName,omitempty"`
 }
 
 func (c *Client) sendZenviaMessage(ctx context.Context, msg *OutboundMessage) (*SendResult, error) {
@@ -272,9 +272,9 @@ func (c *Client) getZenviaAgentInfo(ctx context.Context) (map[string]interface{}
 
 // InfobipMessage represents an Infobip RCS message
 type InfobipMessage struct {
-	From         string             `json:"from"`
-	Destinations []InfobipDest      `json:"destinations"`
-	Content      InfobipContent     `json:"content"`
+	From         string         `json:"from"`
+	Destinations []InfobipDest  `json:"destinations"`
+	Content      InfobipContent `json:"content"`
 }
 
 // InfobipDest represents a destination
@@ -349,12 +349,12 @@ func (c *Client) sendInfobipMessage(ctx context.Context, msg *OutboundMessage) (
 func (c *Client) parseInfobipWebhook(body []byte) (*WebhookPayload, error) {
 	var webhook struct {
 		Results []struct {
-			MessageID   string `json:"messageId"`
-			From        string `json:"from"`
-			To          string `json:"to"`
-			ReceivedAt  string `json:"receivedAt"`
-			Text        string `json:"text,omitempty"`
-			Status      string `json:"status,omitempty"`
+			MessageID  string `json:"messageId"`
+			From       string `json:"from"`
+			To         string `json:"to"`
+			ReceivedAt string `json:"receivedAt"`
+			Text       string `json:"text,omitempty"`
+			Status     string `json:"status,omitempty"`
 		} `json:"results"`
 	}
 

@@ -65,18 +65,18 @@ type OrderItem struct {
 
 // Address represents a shipping or billing address
 type Address struct {
-	ID          string `json:"id,omitempty" db:"id"`
-	Name        string `json:"name,omitempty" db:"name"`
-	PhoneNumber string `json:"phone_number,omitempty" db:"phone_number"`
-	Street      string `json:"street,omitempty" db:"street"`
-	Number      string `json:"number,omitempty" db:"number"`
-	Complement  string `json:"complement,omitempty" db:"complement"`
+	ID           string `json:"id,omitempty" db:"id"`
+	Name         string `json:"name,omitempty" db:"name"`
+	PhoneNumber  string `json:"phone_number,omitempty" db:"phone_number"`
+	Street       string `json:"street,omitempty" db:"street"`
+	Number       string `json:"number,omitempty" db:"number"`
+	Complement   string `json:"complement,omitempty" db:"complement"`
 	Neighborhood string `json:"neighborhood,omitempty" db:"neighborhood"`
-	City        string `json:"city,omitempty" db:"city"`
-	State       string `json:"state,omitempty" db:"state"`
-	ZipCode     string `json:"zip_code,omitempty" db:"zip_code"`
-	Country     string `json:"country,omitempty" db:"country"`
-	CountryCode string `json:"country_code,omitempty" db:"country_code"`
+	City         string `json:"city,omitempty" db:"city"`
+	State        string `json:"state,omitempty" db:"state"`
+	ZipCode      string `json:"zip_code,omitempty" db:"zip_code"`
+	Country      string `json:"country,omitempty" db:"country"`
+	CountryCode  string `json:"country_code,omitempty" db:"country_code"`
 }
 
 // OrderStatusHistory represents a status change in order history

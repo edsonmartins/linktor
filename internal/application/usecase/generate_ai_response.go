@@ -24,16 +24,16 @@ type GenerateAIResponseInput struct {
 
 // GenerateAIResponseOutput represents the result of AI response generation
 type GenerateAIResponseOutput struct {
-	Response       string               `json:"response"`
-	Confidence     float64              `json:"confidence"`
-	TokensUsed     int                  `json:"tokens_used"`
-	LatencyMs      int64                `json:"latency_ms"`
-	Model          string               `json:"model"`
-	ShouldEscalate bool                 `json:"should_escalate"`
-	EscalateReason string               `json:"escalate_reason,omitempty"`
-	QuickReplies   []entity.QuickReply  `json:"quick_replies,omitempty"` // Interactive buttons
-	FlowID         string               `json:"flow_id,omitempty"`       // Active flow if any
-	FlowEnded      bool                 `json:"flow_ended,omitempty"`    // True if flow just ended
+	Response       string              `json:"response"`
+	Confidence     float64             `json:"confidence"`
+	TokensUsed     int                 `json:"tokens_used"`
+	LatencyMs      int64               `json:"latency_ms"`
+	Model          string              `json:"model"`
+	ShouldEscalate bool                `json:"should_escalate"`
+	EscalateReason string              `json:"escalate_reason,omitempty"`
+	QuickReplies   []entity.QuickReply `json:"quick_replies,omitempty"` // Interactive buttons
+	FlowID         string              `json:"flow_id,omitempty"`       // Active flow if any
+	FlowEnded      bool                `json:"flow_ended,omitempty"`    // True if flow just ended
 }
 
 // KnowledgeSearchService interface for knowledge base search (optional)

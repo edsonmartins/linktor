@@ -11,10 +11,10 @@ import (
 )
 
 var (
-	cfgFile       string
-	profile       string
-	outputFormat  string
-	noColor       bool
+	cfgFile      string
+	profile      string
+	outputFormat string
+	noColor      bool
 
 	// Version info (set at build time)
 	Version   = "dev"

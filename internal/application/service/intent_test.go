@@ -214,9 +214,9 @@ func TestIntentService_ShouldEscalate(t *testing.T) {
 			shouldEscalate: true,
 		},
 		{
-			name:     "no rules",
-			analysis: &MessageAnalysis{},
-			rules:    []entity.EscalationRule{},
+			name:           "no rules",
+			analysis:       &MessageAnalysis{},
+			rules:          []entity.EscalationRule{},
 			shouldEscalate: false,
 		},
 	}

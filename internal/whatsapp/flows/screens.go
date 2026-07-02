@@ -7,13 +7,13 @@ import (
 
 // Screen represents a WhatsApp Flow screen
 type Screen struct {
-	ID         string                 `json:"id"`
-	Title      string                 `json:"title,omitempty"`
-	Terminal   bool                   `json:"terminal,omitempty"`
-	Success    bool                   `json:"success,omitempty"`
-	RefreshOnBack bool                `json:"refresh-on-back,omitempty"`
-	Data       map[string]interface{} `json:"data,omitempty"`
-	Layout     *Layout                `json:"layout"`
+	ID            string                 `json:"id"`
+	Title         string                 `json:"title,omitempty"`
+	Terminal      bool                   `json:"terminal,omitempty"`
+	Success       bool                   `json:"success,omitempty"`
+	RefreshOnBack bool                   `json:"refresh-on-back,omitempty"`
+	Data          map[string]interface{} `json:"data,omitempty"`
+	Layout        *Layout                `json:"layout"`
 }
 
 // Layout represents the layout of a screen
@@ -298,10 +298,10 @@ func (sb *ScreenBuilder) ToJSON() (string, error) {
 
 // Flow represents a complete WhatsApp Flow
 type Flow struct {
-	Version       string             `json:"version"`
-	DataAPIVersion string            `json:"data_api_version,omitempty"`
-	RoutingModel  map[string]interface{} `json:"routing_model,omitempty"`
-	Screens       []*Screen          `json:"screens"`
+	Version        string                 `json:"version"`
+	DataAPIVersion string                 `json:"data_api_version,omitempty"`
+	RoutingModel   map[string]interface{} `json:"routing_model,omitempty"`
+	Screens        []*Screen              `json:"screens"`
 }
 
 // FlowBuilder helps build complete flows
@@ -313,9 +313,9 @@ type FlowBuilder struct {
 func NewFlowBuilder() *FlowBuilder {
 	return &FlowBuilder{
 		flow: &Flow{
-			Version:       "3.1",
+			Version:        "3.1",
 			DataAPIVersion: "3.0",
-			Screens:       make([]*Screen, 0),
+			Screens:        make([]*Screen, 0),
 		},
 	}
 }

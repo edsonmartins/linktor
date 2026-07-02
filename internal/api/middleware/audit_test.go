@@ -4,9 +4,9 @@ import "testing"
 
 func TestDeriveAuditFromPath(t *testing.T) {
 	cases := []struct {
-		method, path, id   string
-		wantRes, wantAct   string
-		wantID             string
+		method, path, id string
+		wantRes, wantAct string
+		wantID           string
 	}{
 		{"POST", "/api/v1/channels", "", "channel", "channel.create", ""},
 		{"PUT", "/api/v1/channels/:id", "c1", "channel", "channel.update", "c1"},

@@ -13,8 +13,8 @@ import (
 
 // Provider implements the AIProvider interface for OpenAI
 type Provider struct {
-	client       *Client
-	defaultModel string
+	client         *Client
+	defaultModel   string
 	embeddingModel string
 }
 

@@ -455,10 +455,10 @@ func (c *CatalogClient) SendCatalogMessage(ctx context.Context, msg *CatalogMess
 // CatalogCache provides an in-memory cache for catalog data
 type CatalogCache struct {
 	mu       sync.RWMutex
-	products map[string]*Product         // key: product_id
-	catalogs map[string]*Catalog         // key: catalog_id
+	products map[string]*Product // key: product_id
+	catalogs map[string]*Catalog // key: catalog_id
 	ttl      time.Duration
-	expiry   map[string]time.Time        // key: id, value: expiry time
+	expiry   map[string]time.Time // key: id, value: expiry time
 }
 
 // NewCatalogCache creates a new catalog cache
@@ -565,10 +565,10 @@ func (cc *CatalogCache) Cleanup() {
 
 // CatalogSyncer handles catalog synchronization
 type CatalogSyncer struct {
-	client    *CatalogClient
-	cache     *CatalogCache
-	mu        sync.RWMutex
-	status    map[string]*CatalogSyncStatus
+	client *CatalogClient
+	cache  *CatalogCache
+	mu     sync.RWMutex
+	status map[string]*CatalogSyncStatus
 }
 
 // NewCatalogSyncer creates a new catalog syncer

@@ -31,12 +31,12 @@ var kbDocCmd = &cobra.Command{
 }
 
 var (
-	kbName      string
-	kbLimit     int
-	docTitle    string
-	docFile     string
-	docURL      string
-	queryLimit  int
+	kbName        string
+	kbLimit       int
+	docTitle      string
+	docFile       string
+	docURL        string
+	queryLimit    int
 	queryMinScore float64
 )
 

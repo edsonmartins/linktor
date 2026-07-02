@@ -148,7 +148,7 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 	}
 
 	// Publish event
-	uc.publishMessageReceivedEvent(ctx, inbound.TenantID, message, conversation, contact)
+	uc.publishMessageReceivedEvent(ctx, inbound.TenantID, channel, message, conversation, contact)
 
 	return &ReceiveMessageOutput{
 		Message:      message,
@@ -285,22 +285,53 @@ func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, te
 	return conversation, true, nil
 }
 
-func (uc *ReceiveMessageUseCase) publishMessageReceivedEvent(ctx context.Context, tenantID string, message *entity.Message, conversation *entity.Conversation, contact *entity.Contact) {
+func (uc *ReceiveMessageUseCase) publishMessageReceivedEvent(ctx context.Context, tenantID string, channel *entity.Channel, message *entity.Message, conversation *entity.Conversation, contact *entity.Contact) {
+	// Carry everything the outbound-webhook dispatcher needs to build the
+	// `linktor-channel-v1` envelope without extra DB reads: channel identity,
+	// the stable provider sender id/name (from message metadata) and any media.
+	payload := map[string]interface{}{
+		"message_id":      message.ID,
+		"conversation_id": conversation.ID,
+		"contact_id":      contact.ID,
+		"channel_id":      channel.ID,
+		"channel_type":    string(channel.Type),
+		"content_type":    string(message.ContentType),
+		"content":         message.Content,
+		"external_id":     message.ExternalID,
+		"sender_id":       message.Metadata["sender_id"],
+		"sender_name":     message.Metadata["sender_name"],
+	}
+	if atts := attachmentsPayload(message.Attachments); len(atts) > 0 {
+		payload["attachments"] = atts
+	}
+
 	event := &nats.Event{
-		Type:     nats.EventMessageReceived,
-		TenantID: tenantID,
-		Payload: map[string]interface{}{
-			"message_id":      message.ID,
-			"conversation_id": conversation.ID,
-			"contact_id":      contact.ID,
-			"content_type":    string(message.ContentType),
-			"content":         message.Content,
-		},
+		Type:      nats.EventMessageReceived,
+		TenantID:  tenantID,
+		Payload:   payload,
 		Timestamp: time.Now(),
 	}
 	if uc.producer != nil {
 		uc.producer.PublishEvent(ctx, event)
 	}
+}
+
+// attachmentsPayload flattens message attachments into the plain maps carried
+// on the event payload (and later round-tripped through NATS as JSON).
+func attachmentsPayload(attachments []*entity.MessageAttachment) []map[string]interface{} {
+	if len(attachments) == 0 {
+		return nil
+	}
+	out := make([]map[string]interface{}, 0, len(attachments))
+	for _, att := range attachments {
+		out = append(out, map[string]interface{}{
+			"url":        att.URL,
+			"mime_type":  att.MimeType,
+			"filename":   att.Filename,
+			"size_bytes": att.SizeBytes,
+		})
+	}
+	return out
 }
 
 func (uc *ReceiveMessageUseCase) publishContactCreatedEvent(ctx context.Context, tenantID string, contact *entity.Contact) {

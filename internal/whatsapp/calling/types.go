@@ -12,15 +12,15 @@ import (
 type CallStatus string
 
 const (
-	CallStatusInitiated  CallStatus = "initiated"
-	CallStatusRinging    CallStatus = "ringing"
-	CallStatusConnected  CallStatus = "connected"
-	CallStatusCompleted  CallStatus = "completed"
-	CallStatusFailed     CallStatus = "failed"
-	CallStatusBusy       CallStatus = "busy"
-	CallStatusNoAnswer   CallStatus = "no_answer"
-	CallStatusCanceled   CallStatus = "canceled"
-	CallStatusRejected   CallStatus = "rejected"
+	CallStatusInitiated CallStatus = "initiated"
+	CallStatusRinging   CallStatus = "ringing"
+	CallStatusConnected CallStatus = "connected"
+	CallStatusCompleted CallStatus = "completed"
+	CallStatusFailed    CallStatus = "failed"
+	CallStatusBusy      CallStatus = "busy"
+	CallStatusNoAnswer  CallStatus = "no_answer"
+	CallStatusCanceled  CallStatus = "canceled"
+	CallStatusRejected  CallStatus = "rejected"
 )
 
 // CallDirection represents the direction of a call
@@ -67,12 +67,12 @@ type Call struct {
 
 // CallMetadata contains additional call information
 type CallMetadata struct {
-	UserAgent     string `json:"user_agent,omitempty"`
-	NetworkType   string `json:"network_type,omitempty"`
-	QualityScore  int    `json:"quality_score,omitempty"`
-	PacketLoss    float64 `json:"packet_loss,omitempty"`
-	Jitter        float64 `json:"jitter,omitempty"`
-	Latency       int    `json:"latency,omitempty"` // In milliseconds
+	UserAgent    string  `json:"user_agent,omitempty"`
+	NetworkType  string  `json:"network_type,omitempty"`
+	QualityScore int     `json:"quality_score,omitempty"`
+	PacketLoss   float64 `json:"packet_loss,omitempty"`
+	Jitter       float64 `json:"jitter,omitempty"`
+	Latency      int     `json:"latency,omitempty"` // In milliseconds
 }
 
 // =============================================================================
@@ -133,12 +133,12 @@ type CallWebhookPayload struct {
 
 // Call webhook type constants
 const (
-	CallWebhookTypeInitiated  = "call.initiated"
-	CallWebhookTypeRinging    = "call.ringing"
-	CallWebhookTypeConnected  = "call.connected"
-	CallWebhookTypeCompleted  = "call.completed"
-	CallWebhookTypeFailed     = "call.failed"
-	CallWebhookTypeMissed     = "call.missed"
+	CallWebhookTypeInitiated = "call.initiated"
+	CallWebhookTypeRinging   = "call.ringing"
+	CallWebhookTypeConnected = "call.connected"
+	CallWebhookTypeCompleted = "call.completed"
+	CallWebhookTypeFailed    = "call.failed"
+	CallWebhookTypeMissed    = "call.missed"
 )
 
 // =============================================================================
@@ -147,17 +147,17 @@ const (
 
 // CallStats represents call statistics
 type CallStats struct {
-	TotalCalls       int                    `json:"total_calls"`
-	InboundCalls     int                    `json:"inbound_calls"`
-	OutboundCalls    int                    `json:"outbound_calls"`
-	CompletedCalls   int                    `json:"completed_calls"`
-	MissedCalls      int                    `json:"missed_calls"`
-	FailedCalls      int                    `json:"failed_calls"`
-	TotalDuration    int                    `json:"total_duration"` // In seconds
-	AverageDuration  float64                `json:"average_duration"`
-	ByStatus         map[CallStatus]int     `json:"by_status"`
-	ByDirection      map[CallDirection]int  `json:"by_direction"`
-	DailyStats       []DailyCallStats       `json:"daily_stats,omitempty"`
+	TotalCalls      int                   `json:"total_calls"`
+	InboundCalls    int                   `json:"inbound_calls"`
+	OutboundCalls   int                   `json:"outbound_calls"`
+	CompletedCalls  int                   `json:"completed_calls"`
+	MissedCalls     int                   `json:"missed_calls"`
+	FailedCalls     int                   `json:"failed_calls"`
+	TotalDuration   int                   `json:"total_duration"` // In seconds
+	AverageDuration float64               `json:"average_duration"`
+	ByStatus        map[CallStatus]int    `json:"by_status"`
+	ByDirection     map[CallDirection]int `json:"by_direction"`
+	DailyStats      []DailyCallStats      `json:"daily_stats,omitempty"`
 }
 
 // DailyCallStats represents daily call statistics
@@ -211,13 +211,13 @@ func NewCallEvent(eventType string, call *Call) *CallEvent {
 
 // CallQuality represents call quality metrics
 type CallQuality struct {
-	CallID       string    `json:"call_id"`
-	Score        int       `json:"score"` // 1-5
-	PacketLoss   float64   `json:"packet_loss"`
-	Jitter       float64   `json:"jitter"`
-	Latency      int       `json:"latency"`
-	Bitrate      int       `json:"bitrate"`
-	MeasuredAt   time.Time `json:"measured_at"`
+	CallID     string    `json:"call_id"`
+	Score      int       `json:"score"` // 1-5
+	PacketLoss float64   `json:"packet_loss"`
+	Jitter     float64   `json:"jitter"`
+	Latency    int       `json:"latency"`
+	Bitrate    int       `json:"bitrate"`
+	MeasuredAt time.Time `json:"measured_at"`
 }
 
 // QualityThresholds defines quality thresholds
@@ -231,9 +231,9 @@ type QualityThresholds struct {
 // DefaultQualityThresholds returns default quality thresholds
 func DefaultQualityThresholds() *QualityThresholds {
 	return &QualityThresholds{
-		MaxPacketLoss: 3.0,   // 3%
-		MaxJitter:     30.0,  // 30ms
-		MaxLatency:    150,   // 150ms
-		MinBitrate:    64,    // 64kbps
+		MaxPacketLoss: 3.0,  // 3%
+		MaxJitter:     30.0, // 30ms
+		MaxLatency:    150,  // 150ms
+		MinBitrate:    64,   // 64kbps
 	}
 }

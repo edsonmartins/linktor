@@ -12,10 +12,10 @@ import (
 type ReferralSource string
 
 const (
-	ReferralSourceAd       ReferralSource = "ad"
-	ReferralSourcePost     ReferralSource = "post"
-	ReferralSourceStory    ReferralSource = "story"
-	ReferralSourceUnknown  ReferralSource = "unknown"
+	ReferralSourceAd      ReferralSource = "ad"
+	ReferralSourcePost    ReferralSource = "post"
+	ReferralSourceStory   ReferralSource = "story"
+	ReferralSourceUnknown ReferralSource = "unknown"
 )
 
 // AdType represents the type of ad
@@ -30,9 +30,9 @@ const (
 type ConversionStatus string
 
 const (
-	ConversionStatusPending    ConversionStatus = "pending"
-	ConversionStatusConverted  ConversionStatus = "converted"
-	ConversionStatusExpired    ConversionStatus = "expired"
+	ConversionStatusPending   ConversionStatus = "pending"
+	ConversionStatusConverted ConversionStatus = "converted"
+	ConversionStatusExpired   ConversionStatus = "expired"
 )
 
 // =============================================================================
@@ -103,14 +103,14 @@ type ReferralMessage struct {
 
 // ReferralPayload represents the referral data in a webhook message
 type ReferralPayload struct {
-	SourceID    string `json:"source_id"`
-	SourceType  string `json:"source_type"` // ad, post
-	SourceURL   string `json:"source_url,omitempty"`
-	Headline    string `json:"headline,omitempty"`
-	Body        string `json:"body,omitempty"`
-	MediaType   string `json:"media_type,omitempty"`
-	MediaURL    string `json:"media_url,omitempty"`
-	CTWAClid    string `json:"ctwa_clid,omitempty"`
+	SourceID   string `json:"source_id"`
+	SourceType string `json:"source_type"` // ad, post
+	SourceURL  string `json:"source_url,omitempty"`
+	Headline   string `json:"headline,omitempty"`
+	Body       string `json:"body,omitempty"`
+	MediaType  string `json:"media_type,omitempty"`
+	MediaURL   string `json:"media_url,omitempty"`
+	CTWAClid   string `json:"ctwa_clid,omitempty"`
 	// Ad details (from extended referral data)
 	AdID         string `json:"ad_id,omitempty"`
 	AdTitle      string `json:"ad_title,omitempty"`
@@ -126,18 +126,18 @@ type ReferralPayload struct {
 
 // CTWAStats represents CTWA statistics
 type CTWAStats struct {
-	TotalReferrals      int                        `json:"total_referrals"`
-	TotalConversions    int                        `json:"total_conversions"`
-	ConversionRate      float64                    `json:"conversion_rate"`
-	TotalValue          float64                    `json:"total_value"`
-	Currency            string                     `json:"currency"`
-	AverageValue        float64                    `json:"average_value"`
-	ByCampaign          map[string]*CampaignStats  `json:"by_campaign"`
-	ByAdSet             map[string]*AdSetStats     `json:"by_adset"`
-	ByAd                map[string]*AdStats        `json:"by_ad"`
-	BySource            map[ReferralSource]int     `json:"by_source"`
-	DailyStats          []DailyCTWAStats           `json:"daily_stats,omitempty"`
-	TopPerformingAds    []AdPerformance            `json:"top_performing_ads,omitempty"`
+	TotalReferrals   int                       `json:"total_referrals"`
+	TotalConversions int                       `json:"total_conversions"`
+	ConversionRate   float64                   `json:"conversion_rate"`
+	TotalValue       float64                   `json:"total_value"`
+	Currency         string                    `json:"currency"`
+	AverageValue     float64                   `json:"average_value"`
+	ByCampaign       map[string]*CampaignStats `json:"by_campaign"`
+	ByAdSet          map[string]*AdSetStats    `json:"by_adset"`
+	ByAd             map[string]*AdStats       `json:"by_ad"`
+	BySource         map[ReferralSource]int    `json:"by_source"`
+	DailyStats       []DailyCTWAStats          `json:"daily_stats,omitempty"`
+	TopPerformingAds []AdPerformance           `json:"top_performing_ads,omitempty"`
 }
 
 // CampaignStats represents statistics for a campaign
@@ -202,8 +202,8 @@ type AdPerformance struct {
 
 // AttributionWindow represents the attribution window configuration
 type AttributionWindow struct {
-	ClickWindow      time.Duration `json:"click_window"`       // Default: 7 days
-	ViewWindow       time.Duration `json:"view_window"`        // Default: 1 day
+	ClickWindow       time.Duration `json:"click_window"`        // Default: 7 days
+	ViewWindow        time.Duration `json:"view_window"`         // Default: 1 day
 	FreeMessageWindow time.Duration `json:"free_message_window"` // 72 hours
 }
 
@@ -249,16 +249,16 @@ func (f *FreeMessagingWindow) TimeRemaining() time.Duration {
 
 // CTWAEvent represents a CTWA event for pub/sub
 type CTWAEvent struct {
-	Type      string     `json:"type"`
-	Referral  *Referral  `json:"referral,omitempty"`
-	Timestamp time.Time  `json:"timestamp"`
+	Type      string    `json:"type"`
+	Referral  *Referral `json:"referral,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // CTWA event type constants
 const (
-	CTWAEventReferralReceived   = "ctwa.referral.received"
-	CTWAEventConversionTracked  = "ctwa.conversion.tracked"
-	CTWAEventFreeWindowExpired  = "ctwa.free_window.expired"
+	CTWAEventReferralReceived  = "ctwa.referral.received"
+	CTWAEventConversionTracked = "ctwa.conversion.tracked"
+	CTWAEventFreeWindowExpired = "ctwa.free_window.expired"
 )
 
 // NewCTWAEvent creates a new CTWA event
@@ -276,13 +276,13 @@ func NewCTWAEvent(eventType string, referral *Referral) *CTWAEvent {
 
 // CTWAReport represents a CTWA performance report
 type CTWAReport struct {
-	Period        ReportPeriod     `json:"period"`
-	Summary       CTWAStats        `json:"summary"`
-	Campaigns     []CampaignStats  `json:"campaigns"`
-	TopAds        []AdPerformance  `json:"top_ads"`
-	Trends        []TrendData      `json:"trends"`
-	Insights      []ReportInsight  `json:"insights,omitempty"`
-	GeneratedAt   time.Time        `json:"generated_at"`
+	Period      ReportPeriod    `json:"period"`
+	Summary     CTWAStats       `json:"summary"`
+	Campaigns   []CampaignStats `json:"campaigns"`
+	TopAds      []AdPerformance `json:"top_ads"`
+	Trends      []TrendData     `json:"trends"`
+	Insights    []ReportInsight `json:"insights,omitempty"`
+	GeneratedAt time.Time       `json:"generated_at"`
 }
 
 // ReportPeriod represents the period for a report

@@ -69,18 +69,18 @@ func NewClient(config *ClientConfig) *Client {
 
 // ChatCompletionRequest represents a chat completion request
 type ChatCompletionRequest struct {
-	Model            string            `json:"model"`
-	Messages         []ChatMessage     `json:"messages"`
-	MaxTokens        int               `json:"max_tokens,omitempty"`
-	Temperature      float64           `json:"temperature,omitempty"`
-	TopP             float64           `json:"top_p,omitempty"`
-	N                int               `json:"n,omitempty"`
-	Stream           bool              `json:"stream,omitempty"`
-	Stop             []string          `json:"stop,omitempty"`
-	PresencePenalty  float64           `json:"presence_penalty,omitempty"`
-	FrequencyPenalty float64           `json:"frequency_penalty,omitempty"`
-	User             string            `json:"user,omitempty"`
-	ResponseFormat   *ResponseFormat   `json:"response_format,omitempty"`
+	Model            string          `json:"model"`
+	Messages         []ChatMessage   `json:"messages"`
+	MaxTokens        int             `json:"max_tokens,omitempty"`
+	Temperature      float64         `json:"temperature,omitempty"`
+	TopP             float64         `json:"top_p,omitempty"`
+	N                int             `json:"n,omitempty"`
+	Stream           bool            `json:"stream,omitempty"`
+	Stop             []string        `json:"stop,omitempty"`
+	PresencePenalty  float64         `json:"presence_penalty,omitempty"`
+	FrequencyPenalty float64         `json:"frequency_penalty,omitempty"`
+	User             string          `json:"user,omitempty"`
+	ResponseFormat   *ResponseFormat `json:"response_format,omitempty"`
 }
 
 // ChatMessage represents a message in the chat

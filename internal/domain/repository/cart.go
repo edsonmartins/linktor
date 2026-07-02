@@ -60,11 +60,11 @@ type CartRepository interface {
 
 // CartStats represents cart statistics
 type CartStats struct {
-	ActiveCarts      int   `json:"active_carts"`
-	AbandonedCarts   int   `json:"abandoned_carts"`
-	TotalItems       int   `json:"total_items"`
-	TotalValue       int64 `json:"total_value"`
-	AverageCartValue int64 `json:"average_cart_value"`
-	Currency         string `json:"currency"`
+	ActiveCarts      int     `json:"active_carts"`
+	AbandonedCarts   int     `json:"abandoned_carts"`
+	TotalItems       int     `json:"total_items"`
+	TotalValue       int64   `json:"total_value"`
+	AverageCartValue int64   `json:"average_cart_value"`
+	Currency         string  `json:"currency"`
 	AbandonmentRate  float64 `json:"abandonment_rate"`
 }

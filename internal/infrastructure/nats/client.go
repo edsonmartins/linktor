@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/msgfy/linktor/internal/infrastructure/config"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/msgfy/linktor/internal/infrastructure/config"
 )
 
 // Client wraps a NATS connection with JetStream support
@@ -102,7 +102,7 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Retention:    jetstream.WorkQueuePolicy,
 			MaxConsumers: -1,
 			MaxMsgs:      -1,
-			MaxBytes:     500 * 1024 * 1024, // 500MB
+			MaxBytes:     500 * 1024 * 1024,  // 500MB
 			MaxAge:       7 * 24 * time.Hour, // 7 days
 			MaxMsgSize:   4 * 1024 * 1024,    // 4MB per message
 			Discard:      jetstream.DiscardOld,
@@ -135,7 +135,7 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Retention:    jetstream.WorkQueuePolicy,
 			MaxConsumers: -1,
 			MaxMsgs:      -1,
-			MaxBytes:     128 * 1024 * 1024, // 128MB
+			MaxBytes:     128 * 1024 * 1024,  // 128MB
 			MaxAge:       3 * 24 * time.Hour, // 3 days
 			MaxMsgSize:   1024 * 1024,        // 1MB per message
 			Discard:      jetstream.DiscardOld,
@@ -151,7 +151,7 @@ func (c *Client) initializeStreams(ctx context.Context) error {
 			Retention:    jetstream.LimitsPolicy, // retain for inspection/replay
 			MaxConsumers: -1,
 			MaxMsgs:      -1,
-			MaxBytes:     128 * 1024 * 1024,  // 128MB
+			MaxBytes:     128 * 1024 * 1024,   // 128MB
 			MaxAge:       14 * 24 * time.Hour, // 14 days
 			MaxMsgSize:   4 * 1024 * 1024,     // 4MB per message
 			Discard:      jetstream.DiscardOld,

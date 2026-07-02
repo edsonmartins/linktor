@@ -9,8 +9,8 @@ import (
 
 // Response represents a standard API response
 type Response struct {
-	Success bool        `json:"success"`
-	Data    interface{} `json:"data,omitempty"`
+	Success bool           `json:"success"`
+	Data    interface{}    `json:"data,omitempty"`
 	Error   *ErrorResponse `json:"error,omitempty"`
 	Meta    *MetaResponse  `json:"meta,omitempty"`
 }

@@ -41,43 +41,43 @@ const (
 
 // FlowInfo represents information about a WhatsApp Flow
 type FlowInfo struct {
-	ID                string       `json:"id"`
-	Name              string       `json:"name"`
-	Status            FlowStatus   `json:"status"`
-	Categories        []string     `json:"categories,omitempty"`
-	ValidationErrors  []FlowError  `json:"validation_errors,omitempty"`
-	JSONVersion       string       `json:"json_version,omitempty"`
-	DataAPIVersion    string       `json:"data_api_version,omitempty"`
-	EndpointURI       string       `json:"endpoint_uri,omitempty"`
-	PreviewURL        string       `json:"preview_url,omitempty"`
-	WhatsAppBusinessAccountID string `json:"whatsapp_business_account_id,omitempty"`
+	ID                        string      `json:"id"`
+	Name                      string      `json:"name"`
+	Status                    FlowStatus  `json:"status"`
+	Categories                []string    `json:"categories,omitempty"`
+	ValidationErrors          []FlowError `json:"validation_errors,omitempty"`
+	JSONVersion               string      `json:"json_version,omitempty"`
+	DataAPIVersion            string      `json:"data_api_version,omitempty"`
+	EndpointURI               string      `json:"endpoint_uri,omitempty"`
+	PreviewURL                string      `json:"preview_url,omitempty"`
+	WhatsAppBusinessAccountID string      `json:"whatsapp_business_account_id,omitempty"`
 }
 
 // FlowError represents a validation error in a flow
 type FlowError struct {
-	Error            string `json:"error"`
-	ErrorType        string `json:"error_type"`
-	Message          string `json:"message"`
-	LineStart        int    `json:"line_start,omitempty"`
-	LineEnd          int    `json:"line_end,omitempty"`
-	ColumnStart      int    `json:"column_start,omitempty"`
-	ColumnEnd        int    `json:"column_end,omitempty"`
+	Error       string `json:"error"`
+	ErrorType   string `json:"error_type"`
+	Message     string `json:"message"`
+	LineStart   int    `json:"line_start,omitempty"`
+	LineEnd     int    `json:"line_end,omitempty"`
+	ColumnStart int    `json:"column_start,omitempty"`
+	ColumnEnd   int    `json:"column_end,omitempty"`
 }
 
 // CreateFlowRequest represents a request to create a new flow
 type CreateFlowRequest struct {
-	Name           string       `json:"name"`
-	Categories     []string     `json:"categories,omitempty"`
-	EndpointURI    string       `json:"endpoint_uri,omitempty"`
-	CloneFlowID    string       `json:"clone_flow_id,omitempty"`
+	Name        string   `json:"name"`
+	Categories  []string `json:"categories,omitempty"`
+	EndpointURI string   `json:"endpoint_uri,omitempty"`
+	CloneFlowID string   `json:"clone_flow_id,omitempty"`
 }
 
 // UpdateFlowRequest represents a request to update a flow
 type UpdateFlowRequest struct {
-	Name           string   `json:"name,omitempty"`
-	Categories     []string `json:"categories,omitempty"`
-	EndpointURI    string   `json:"endpoint_uri,omitempty"`
-	ApplicationID  string   `json:"application_id,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	Categories    []string `json:"categories,omitempty"`
+	EndpointURI   string   `json:"endpoint_uri,omitempty"`
+	ApplicationID string   `json:"application_id,omitempty"`
 }
 
 // FlowAssets represents the JSON assets of a flow
@@ -87,11 +87,11 @@ type FlowAssets struct {
 
 // FlowClient is a client for the WhatsApp Flows API
 type FlowClient struct {
-	httpClient     *http.Client
-	accessToken    string
-	wabaID         string // WhatsApp Business Account ID
-	apiVersion     string
-	baseURL        string
+	httpClient  *http.Client
+	accessToken string
+	wabaID      string // WhatsApp Business Account ID
+	apiVersion  string
+	baseURL     string
 }
 
 // FlowClientConfig represents configuration for the flow client
@@ -336,8 +336,8 @@ func (c *FlowClient) GetFlowAssets(ctx context.Context, flowID string) (*FlowAss
 
 	var result struct {
 		Data []struct {
-			Name      string `json:"name"`
-			AssetType string `json:"asset_type"`
+			Name        string `json:"name"`
+			AssetType   string `json:"asset_type"`
 			DownloadURL string `json:"download_url"`
 		} `json:"data"`
 	}
@@ -385,17 +385,17 @@ type FlowMessage struct {
 
 // FlowInteractiveContent represents the interactive content for a flow
 type FlowInteractiveContent struct {
-	Type   string           `json:"type"` // "flow"
-	Header *FlowHeader      `json:"header,omitempty"`
-	Body   FlowBody         `json:"body"`
-	Footer *FlowFooter      `json:"footer,omitempty"`
-	Action FlowAction       `json:"action"`
+	Type   string      `json:"type"` // "flow"
+	Header *FlowHeader `json:"header,omitempty"`
+	Body   FlowBody    `json:"body"`
+	Footer *FlowFooter `json:"footer,omitempty"`
+	Action FlowAction  `json:"action"`
 }
 
 // FlowHeader represents the header of a flow message
 type FlowHeader struct {
-	Type     string `json:"type"` // "text", "image", "video", "document"
-	Text     string `json:"text,omitempty"`
+	Type     string    `json:"type"` // "text", "image", "video", "document"
+	Text     string    `json:"text,omitempty"`
 	Image    *MediaRef `json:"image,omitempty"`
 	Video    *MediaRef `json:"video,omitempty"`
 	Document *MediaRef `json:"document,omitempty"`
@@ -419,8 +419,8 @@ type FlowFooter struct {
 
 // FlowAction represents the action configuration for a flow
 type FlowAction struct {
-	Name       string                 `json:"name"` // "flow"
-	Parameters FlowActionParameters   `json:"parameters"`
+	Name       string               `json:"name"` // "flow"
+	Parameters FlowActionParameters `json:"parameters"`
 }
 
 // FlowActionParameters represents the parameters for a flow action
@@ -436,16 +436,16 @@ type FlowActionParameters struct {
 
 // SendFlowInput represents input for sending a flow message
 type SendFlowInput struct {
-	To           string
-	FlowID       string
-	FlowCTA      string // Button text
-	BodyText     string
-	HeaderText   string
-	FooterText   string
-	FlowToken    string // Token to track the flow session
+	To            string
+	FlowID        string
+	FlowCTA       string // Button text
+	BodyText      string
+	HeaderText    string
+	FooterText    string
+	FlowToken     string // Token to track the flow session
 	InitialScreen string
-	InitialData  map[string]interface{}
-	Mode         string // "draft" for testing, empty for published
+	InitialData   map[string]interface{}
+	Mode          string // "draft" for testing, empty for published
 }
 
 // FlowSender sends flow messages

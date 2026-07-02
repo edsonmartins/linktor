@@ -54,6 +54,7 @@ export interface Channel {
   enabled: boolean
   connection_status: ConnectionStatus
   config: Record<string, unknown>
+  webhook_url?: string
   created_at: string
   updated_at: string
   // WhatsApp Coexistence fields
@@ -74,6 +75,9 @@ export type ChannelType =
   | 'rcs'
   | 'email'
   | 'voice'
+  | 'teams'
+  | 'slack'
+  | 'mattermost'
 
 // Voice Provider Types
 export type VoiceProvider = 'twilio' | 'vonage' | 'amazon_connect' | 'asterisk' | 'freeswitch'

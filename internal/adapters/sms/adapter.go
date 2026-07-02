@@ -49,9 +49,9 @@ func NewAdapter() *Adapter {
 			SupportsReactions:       false,
 			SupportsReplies:         false,
 			SupportsForwarding:      false,
-			MaxMessageLength:        1600, // SMS segment limit
+			MaxMessageLength:        1600,            // SMS segment limit
 			MaxMediaSize:            5 * 1024 * 1024, // 5MB for MMS
-			MaxAttachments:          10, // MMS supports up to 10 media items
+			MaxAttachments:          10,              // MMS supports up to 10 media items
 			SupportedMediaTypes: []string{
 				"image/jpeg", "image/png", "image/gif",
 			},

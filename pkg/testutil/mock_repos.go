@@ -584,6 +584,19 @@ func (m *MockChannelRepository) FindByType(ctx context.Context, tenantID string,
 	return result, nil
 }
 
+func (m *MockChannelRepository) FindAllByType(ctx context.Context, channelType entity.ChannelType) ([]*entity.Channel, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
+	var result []*entity.Channel
+	for _, ch := range m.Channels {
+		if ch.Type == channelType {
+			result = append(result, ch)
+		}
+	}
+	return result, nil
+}
+
 func (m *MockChannelRepository) FindEnabledByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
 	if m.ReturnError != nil {
 		return nil, m.ReturnError

@@ -442,13 +442,13 @@ func (om *OrderManager) GetOrderSummary(orderID string) (string, error) {
 
 // OrderStats represents order statistics
 type OrderStats struct {
-	TotalOrders     int                    `json:"total_orders"`
-	PendingOrders   int                    `json:"pending_orders"`
-	CompletedOrders int                    `json:"completed_orders"`
-	CancelledOrders int                    `json:"cancelled_orders"`
-	TotalRevenue    int64                  `json:"total_revenue"`
-	Currency        string                 `json:"currency"`
-	ByStatus        map[OrderStatus]int    `json:"by_status"`
+	TotalOrders     int                 `json:"total_orders"`
+	PendingOrders   int                 `json:"pending_orders"`
+	CompletedOrders int                 `json:"completed_orders"`
+	CancelledOrders int                 `json:"cancelled_orders"`
+	TotalRevenue    int64               `json:"total_revenue"`
+	Currency        string              `json:"currency"`
+	ByStatus        map[OrderStatus]int `json:"by_status"`
 }
 
 // GetOrderStats returns order statistics

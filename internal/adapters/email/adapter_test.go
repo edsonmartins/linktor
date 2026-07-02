@@ -46,13 +46,13 @@ func TestAdapter_Initialize(t *testing.T) {
 		{
 			name: "valid SMTP config",
 			config: map[string]string{
-				"provider":   "smtp",
-				"from_email": "test@example.com",
-				"from_name":  "Test User",
-				"smtp_host":  "smtp.example.com",
-				"smtp_port":  "587",
-				"smtp_username": "user",
-				"smtp_password": "pass",
+				"provider":        "smtp",
+				"from_email":      "test@example.com",
+				"from_name":       "Test User",
+				"smtp_host":       "smtp.example.com",
+				"smtp_port":       "587",
+				"smtp_username":   "user",
+				"smtp_password":   "pass",
 				"smtp_encryption": "tls",
 			},
 			check: func(t *testing.T, a *Adapter) {
@@ -118,9 +118,9 @@ func TestAdapter_Initialize(t *testing.T) {
 		{
 			name: "valid Postmark config",
 			config: map[string]string{
-				"provider":               "postmark",
-				"from_email":             "test@example.com",
-				"postmark_server_token":  "token-abc123",
+				"provider":              "postmark",
+				"from_email":            "test@example.com",
+				"postmark_server_token": "token-abc123",
 			},
 			check: func(t *testing.T, a *Adapter) {
 				cfg := a.GetConfig()
@@ -131,22 +131,22 @@ func TestAdapter_Initialize(t *testing.T) {
 		{
 			name: "all fields parsed correctly",
 			config: map[string]string{
-				"provider":            "smtp",
-				"from_email":          "from@example.com",
-				"from_name":           "From Name",
-				"reply_to":            "reply@example.com",
-				"smtp_host":           "smtp.example.com",
-				"smtp_port":           "465",
-				"smtp_username":       "smtpuser",
-				"smtp_password":       "smtppass",
-				"smtp_encryption":     "starttls",
-				"imap_host":           "imap.example.com",
-				"imap_port":           "993",
-				"imap_username":       "imapuser",
-				"imap_password":       "imappass",
-				"imap_folder":         "Custom",
-				"imap_poll_interval":  "60",
-				"webhook_secret":      "secret123",
+				"provider":           "smtp",
+				"from_email":         "from@example.com",
+				"from_name":          "From Name",
+				"reply_to":           "reply@example.com",
+				"smtp_host":          "smtp.example.com",
+				"smtp_port":          "465",
+				"smtp_username":      "smtpuser",
+				"smtp_password":      "smtppass",
+				"smtp_encryption":    "starttls",
+				"imap_host":          "imap.example.com",
+				"imap_port":          "993",
+				"imap_username":      "imapuser",
+				"imap_password":      "imappass",
+				"imap_folder":        "Custom",
+				"imap_poll_interval": "60",
+				"webhook_secret":     "secret123",
 			},
 			check: func(t *testing.T, a *Adapter) {
 				cfg := a.GetConfig()
@@ -274,7 +274,7 @@ func TestBuildOutboundEmail(t *testing.T) {
 			ContentType: plugin.ContentTypeText,
 			Content:     "Reply",
 			Metadata: map[string]string{
-				"subject":    "Re: Thread",
+				"subject":     "Re: Thread",
 				"in_reply_to": "<abc123@example.com>",
 				"references":  "<abc123@example.com> <def456@example.com>",
 			},

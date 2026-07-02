@@ -9,17 +9,20 @@ import (
 type ChannelType string
 
 const (
-	ChannelTypeWebChat             ChannelType = "webchat"
-	ChannelTypeWhatsApp            ChannelType = "whatsapp"
-	ChannelTypeWhatsAppOfficial    ChannelType = "whatsapp_official"
-	ChannelTypeWhatsAppUnofficial  ChannelType = "whatsapp_unofficial"
-	ChannelTypeTelegram            ChannelType = "telegram"
-	ChannelTypeSMS                 ChannelType = "sms"
-	ChannelTypeRCS                 ChannelType = "rcs"
-	ChannelTypeInstagram           ChannelType = "instagram"
-	ChannelTypeFacebook            ChannelType = "facebook"
-	ChannelTypeEmail               ChannelType = "email"
-	ChannelTypeVoice               ChannelType = "voice"
+	ChannelTypeWebChat            ChannelType = "webchat"
+	ChannelTypeWhatsApp           ChannelType = "whatsapp"
+	ChannelTypeWhatsAppOfficial   ChannelType = "whatsapp_official"
+	ChannelTypeWhatsAppUnofficial ChannelType = "whatsapp_unofficial"
+	ChannelTypeTelegram           ChannelType = "telegram"
+	ChannelTypeSMS                ChannelType = "sms"
+	ChannelTypeRCS                ChannelType = "rcs"
+	ChannelTypeInstagram          ChannelType = "instagram"
+	ChannelTypeFacebook           ChannelType = "facebook"
+	ChannelTypeEmail              ChannelType = "email"
+	ChannelTypeVoice              ChannelType = "voice"
+	ChannelTypeTeams              ChannelType = "teams"
+	ChannelTypeSlack              ChannelType = "slack"
+	ChannelTypeMattermost         ChannelType = "mattermost"
 )
 
 // ConnectionStatus represents the connection status of a channel
@@ -63,10 +66,10 @@ type Channel struct {
 	Type             ChannelType       `json:"type"`
 	Name             string            `json:"name"`
 	Identifier       string            `json:"identifier,omitempty"`
-	Enabled          bool              `json:"enabled"`                      // Whether channel is enabled in system
-	ConnectionStatus ConnectionStatus  `json:"connection_status"`            // Connection state (connected/disconnected/etc)
+	Enabled          bool              `json:"enabled"`           // Whether channel is enabled in system
+	ConnectionStatus ConnectionStatus  `json:"connection_status"` // Connection state (connected/disconnected/etc)
 	Config           map[string]string `json:"config,omitempty"`
-	Credentials      map[string]string `json:"-"`                            // Never expose credentials
+	Credentials      map[string]string `json:"-"` // Never expose credentials
 	WebhookURL       string            `json:"webhook_url,omitempty"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
@@ -93,8 +96,8 @@ func NewChannel(tenantID string, channelType ChannelType, name, identifier strin
 		Type:             channelType,
 		Name:             name,
 		Identifier:       identifier,
-		Enabled:          true,                          // Enabled by default
-		ConnectionStatus: ConnectionStatusDisconnected,  // Start disconnected
+		Enabled:          true,                         // Enabled by default
+		ConnectionStatus: ConnectionStatusDisconnected, // Start disconnected
 		Config:           make(map[string]string),
 		Credentials:      make(map[string]string),
 		CreatedAt:        now,

@@ -60,11 +60,11 @@ func TestValidateSignature(t *testing.T) {
 	authToken := "12345"
 	webhookURL := "https://mycompany.com/myapp.php?foo=1&bar=2"
 	params := map[string]string{
-		"CallSid":    "CA1234567890ABCDE",
-		"Caller":     "+14158675310",
-		"Digits":     "1234",
-		"From":       "+14158675310",
-		"To":         "+18005551212",
+		"CallSid": "CA1234567890ABCDE",
+		"Caller":  "+14158675310",
+		"Digits":  "1234",
+		"From":    "+14158675310",
+		"To":      "+18005551212",
 	}
 
 	// Compute expected signature

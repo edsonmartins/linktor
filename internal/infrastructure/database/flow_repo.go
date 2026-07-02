@@ -387,12 +387,12 @@ func (r *FlowRepository) scanFlowFromRows(rows pgx.Rows) (*entity.Flow, error) {
 
 func sanitizeFlowColumn(col string) string {
 	allowed := map[string]bool{
-		"created_at":  true,
-		"updated_at":  true,
-		"name":        true,
-		"trigger":     true,
-		"is_active":   true,
-		"priority":    true,
+		"created_at": true,
+		"updated_at": true,
+		"name":       true,
+		"trigger":    true,
+		"is_active":  true,
+		"priority":   true,
 	}
 	if allowed[col] {
 		return col

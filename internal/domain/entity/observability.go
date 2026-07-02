@@ -92,9 +92,9 @@ type SystemStats struct {
 
 // MessageStats contains message-related statistics
 type MessageStats struct {
-	Total     int64           `json:"total"`
-	PerHour   []HourlyCount   `json:"per_hour"`
-	ByChannel []ChannelCount  `json:"by_channel"`
+	Total     int64          `json:"total"`
+	PerHour   []HourlyCount  `json:"per_hour"`
+	ByChannel []ChannelCount `json:"by_channel"`
 }
 
 // HourlyCount represents message count for a specific hour
@@ -134,9 +134,9 @@ type ConversationStats struct {
 
 // ErrorStats contains error-related statistics
 type ErrorStats struct {
-	LastHour  int64 `json:"last_hour"`
-	Last24h   int64 `json:"last_24h"`
-	BySource  []SourceErrorCount `json:"by_source"`
+	LastHour int64              `json:"last_hour"`
+	Last24h  int64              `json:"last_24h"`
+	BySource []SourceErrorCount `json:"by_source"`
 }
 
 // SourceErrorCount represents error count by source
@@ -149,9 +149,9 @@ type SourceErrorCount struct {
 type StatsPeriod string
 
 const (
-	StatsPeriodHour  StatsPeriod = "hour"
-	StatsPeriodDay   StatsPeriod = "day"
-	StatsPeriodWeek  StatsPeriod = "week"
+	StatsPeriodHour StatsPeriod = "hour"
+	StatsPeriodDay  StatsPeriod = "day"
+	StatsPeriodWeek StatsPeriod = "week"
 )
 
 // StatsFilter contains filter parameters for statistics queries

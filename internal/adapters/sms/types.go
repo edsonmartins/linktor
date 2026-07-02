@@ -8,9 +8,9 @@ import (
 type TwilioConfig struct {
 	AccountSID          string `json:"account_sid"`
 	AuthToken           string `json:"auth_token"`
-	APIKeySID           string `json:"api_key_sid,omitempty"`       // Optional: for API Key auth
-	APIKeySecret        string `json:"api_key_secret,omitempty"`    // Optional: for API Key auth
-	PhoneNumber         string `json:"phone_number,omitempty"`      // Either this or MessagingServiceSID
+	APIKeySID           string `json:"api_key_sid,omitempty"`           // Optional: for API Key auth
+	APIKeySecret        string `json:"api_key_secret,omitempty"`        // Optional: for API Key auth
+	PhoneNumber         string `json:"phone_number,omitempty"`          // Either this or MessagingServiceSID
 	MessagingServiceSID string `json:"messaging_service_sid,omitempty"` // Preferred over PhoneNumber
 	StatusCallbackURL   string `json:"status_callback_url,omitempty"`
 }
@@ -34,24 +34,24 @@ const (
 
 // IncomingMessage represents an incoming SMS/MMS message from Twilio webhook
 type IncomingMessage struct {
-	MessageSID          string
-	AccountSID          string
-	From                string
-	To                  string
-	Body                string
-	NumMedia            int
-	MediaContentTypes   []string
-	MediaURLs           []string
-	FromCity            string
-	FromState           string
-	FromZip             string
-	FromCountry         string
-	ToCity              string
-	ToState             string
-	ToZip               string
-	ToCountry           string
-	APIVersion          string
-	Timestamp           time.Time
+	MessageSID        string
+	AccountSID        string
+	From              string
+	To                string
+	Body              string
+	NumMedia          int
+	MediaContentTypes []string
+	MediaURLs         []string
+	FromCity          string
+	FromState         string
+	FromZip           string
+	FromCountry       string
+	ToCity            string
+	ToState           string
+	ToZip             string
+	ToCountry         string
+	APIVersion        string
+	Timestamp         time.Time
 }
 
 // StatusCallback represents a delivery status callback from Twilio
@@ -84,33 +84,33 @@ type SendResult struct {
 // WebhookPayload represents the raw Twilio webhook payload
 type WebhookPayload struct {
 	// Message fields
-	MessageSID        string `form:"MessageSid"`
-	SmsSID            string `form:"SmsSid"`
-	AccountSID        string `form:"AccountSid"`
+	MessageSID          string `form:"MessageSid"`
+	SmsSID              string `form:"SmsSid"`
+	AccountSID          string `form:"AccountSid"`
 	MessagingServiceSID string `form:"MessagingServiceSid"`
-	From              string `form:"From"`
-	To                string `form:"To"`
-	Body              string `form:"Body"`
-	NumMedia          string `form:"NumMedia"`
+	From                string `form:"From"`
+	To                  string `form:"To"`
+	Body                string `form:"Body"`
+	NumMedia            string `form:"NumMedia"`
 
 	// Status callback fields
-	MessageStatus     string `form:"MessageStatus"`
-	SmsStatus         string `form:"SmsStatus"`
-	ErrorCode         string `form:"ErrorCode"`
-	ErrorMessage      string `form:"ErrorMessage"`
+	MessageStatus string `form:"MessageStatus"`
+	SmsStatus     string `form:"SmsStatus"`
+	ErrorCode     string `form:"ErrorCode"`
+	ErrorMessage  string `form:"ErrorMessage"`
 
 	// Location fields (inbound only)
-	FromCity          string `form:"FromCity"`
-	FromState         string `form:"FromState"`
-	FromZip           string `form:"FromZip"`
-	FromCountry       string `form:"FromCountry"`
-	ToCity            string `form:"ToCity"`
-	ToState           string `form:"ToState"`
-	ToZip             string `form:"ToZip"`
-	ToCountry         string `form:"ToCountry"`
+	FromCity    string `form:"FromCity"`
+	FromState   string `form:"FromState"`
+	FromZip     string `form:"FromZip"`
+	FromCountry string `form:"FromCountry"`
+	ToCity      string `form:"ToCity"`
+	ToState     string `form:"ToState"`
+	ToZip       string `form:"ToZip"`
+	ToCountry   string `form:"ToCountry"`
 
 	// API info
-	APIVersion        string `form:"ApiVersion"`
+	APIVersion string `form:"ApiVersion"`
 }
 
 // ParseMessageStatus converts a Twilio status string to MessageStatus

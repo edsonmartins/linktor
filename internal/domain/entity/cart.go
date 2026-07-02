@@ -24,15 +24,15 @@ type Cart struct {
 
 // CartItem represents an item in a cart
 type CartItem struct {
-	ID          string `json:"id" db:"id"`
-	CartID      string `json:"cart_id" db:"cart_id"`
-	ProductID   string `json:"product_id" db:"product_id"`
-	ProductName string `json:"product_name" db:"product_name"`
-	ProductSKU  string `json:"product_sku,omitempty" db:"product_sku"`
-	Quantity    int    `json:"quantity" db:"quantity"`
-	UnitPrice   int64  `json:"unit_price" db:"unit_price"`
-	Currency    string `json:"currency" db:"currency"`
-	ImageURL    string `json:"image_url,omitempty" db:"image_url"`
+	ID          string    `json:"id" db:"id"`
+	CartID      string    `json:"cart_id" db:"cart_id"`
+	ProductID   string    `json:"product_id" db:"product_id"`
+	ProductName string    `json:"product_name" db:"product_name"`
+	ProductSKU  string    `json:"product_sku,omitempty" db:"product_sku"`
+	Quantity    int       `json:"quantity" db:"quantity"`
+	UnitPrice   int64     `json:"unit_price" db:"unit_price"`
+	Currency    string    `json:"currency" db:"currency"`
+	ImageURL    string    `json:"image_url,omitempty" db:"image_url"`
 	AddedAt     time.Time `json:"added_at" db:"added_at"`
 }
 
@@ -204,13 +204,13 @@ func (c *Cart) ToOrder() *Order {
 
 // CartSummary represents a cart summary
 type CartSummary struct {
-	CartID        string `json:"cart_id"`
-	CustomerPhone string `json:"customer_phone"`
-	ItemCount     int    `json:"item_count"`
-	TotalItems    int    `json:"total_items"`
-	Subtotal      int64  `json:"subtotal"`
-	Currency      string `json:"currency"`
-	Abandoned     bool   `json:"abandoned"`
+	CartID        string    `json:"cart_id"`
+	CustomerPhone string    `json:"customer_phone"`
+	ItemCount     int       `json:"item_count"`
+	TotalItems    int       `json:"total_items"`
+	Subtotal      int64     `json:"subtotal"`
+	Currency      string    `json:"currency"`
+	Abandoned     bool      `json:"abandoned"`
 	ExpiresAt     time.Time `json:"expires_at"`
 }
 

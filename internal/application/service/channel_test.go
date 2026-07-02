@@ -27,11 +27,11 @@ func TestChannelService_Create(t *testing.T) {
 	svc, repo, _ := newChannelService()
 
 	ch, err := svc.Create(context.Background(), &CreateChannelInput{
-		TenantID:   "tenant1",
-		Type:       "webchat",
-		Name:       "Support Chat",
-		Identifier: "support-widget",
-		Config:     map[string]string{"color": "blue"},
+		TenantID:    "tenant1",
+		Type:        "webchat",
+		Name:        "Support Chat",
+		Identifier:  "support-widget",
+		Config:      map[string]string{"color": "blue"},
 		Credentials: map[string]string{"api_key": "secret"},
 	})
 
@@ -178,6 +178,27 @@ func TestChannelService_Update(t *testing.T) {
 	assert.Equal(t, "dark", updated.Config["theme"])
 	assert.Equal(t, "new-token", updated.Credentials["token"])
 	assert.True(t, updated.UpdatedAt.After(created.CreatedAt) || updated.UpdatedAt.Equal(created.CreatedAt))
+}
+
+func TestChannelService_Update_PreservesSecretsOnBlank(t *testing.T) {
+	svc, _, _ := newChannelService()
+
+	created, err := svc.Create(context.Background(), &CreateChannelInput{
+		TenantID:    "tenant1",
+		Type:        "slack",
+		Name:        "Slack",
+		Credentials: map[string]string{"bot_token": "xoxb-secret", "app_id": "A1"},
+	})
+	require.NoError(t, err)
+
+	// Edit form re-sends a changed non-secret field but a BLANK secret (not
+	// re-typed). The blank must NOT wipe the stored secret.
+	updated, err := svc.Update(context.Background(), created.ID, &UpdateChannelInput{
+		Credentials: map[string]string{"bot_token": "", "app_id": "A2"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "xoxb-secret", updated.Credentials["bot_token"], "blank secret must preserve stored value")
+	assert.Equal(t, "A2", updated.Credentials["app_id"], "non-empty value should overwrite")
 }
 
 func TestChannelService_Update_PartialFields(t *testing.T) {
@@ -653,4 +674,42 @@ func TestChannelService_Create_UniqueIDs(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotEqual(t, ch1.ID, ch2.ID)
+}
+
+// ---------------------------------------------------------------------------
+// Channel-type allowlist (homologation scope gating, WS14)
+// ---------------------------------------------------------------------------
+
+func TestChannelService_EnabledTypes_BlocksOutOfScopeCreate(t *testing.T) {
+	svc, repo, _ := newChannelService()
+	svc.SetEnabledChannelTypes([]entity.ChannelType{
+		entity.ChannelTypeWhatsAppOfficial,
+		entity.ChannelTypeTelegram,
+		entity.ChannelTypeWebChat,
+	})
+
+	// In-scope type is allowed.
+	_, err := svc.Create(context.Background(), &CreateChannelInput{
+		TenantID: "tenant1", Type: "telegram", Name: "TG",
+	})
+	require.NoError(t, err)
+
+	// Out-of-scope type is rejected and not persisted.
+	_, err = svc.Create(context.Background(), &CreateChannelInput{
+		TenantID: "tenant1", Type: "voice", Name: "Voice",
+	})
+	require.Error(t, err)
+	assert.Len(t, repo.Channels, 1, "out-of-scope channel must not be created")
+}
+
+func TestChannelService_EnabledTypes_EmptyMeansAllAllowed(t *testing.T) {
+	svc, _, _ := newChannelService()
+	// Setting then clearing the allowlist restores "all allowed".
+	svc.SetEnabledChannelTypes([]entity.ChannelType{entity.ChannelTypeTelegram})
+	svc.SetEnabledChannelTypes(nil)
+
+	_, err := svc.Create(context.Background(), &CreateChannelInput{
+		TenantID: "tenant1", Type: "email", Name: "Email",
+	})
+	require.NoError(t, err)
 }

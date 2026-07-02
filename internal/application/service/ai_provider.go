@@ -10,7 +10,7 @@ import (
 
 // Message represents a message in the completion request
 type Message struct {
-	Role    string `json:"role"`    // system, user, assistant
+	Role    string `json:"role"` // system, user, assistant
 	Content string `json:"content"`
 }
 
@@ -21,21 +21,21 @@ type CompletionRequest struct {
 	MaxTokens    int            `json:"max_tokens"`
 	Temperature  float64        `json:"temperature"`
 	SystemPrompt string         `json:"system_prompt,omitempty"`
-	Tools        []*entity.Tool `json:"tools,omitempty"`        // Available tools for the AI
-	ToolChoice   string         `json:"tool_choice,omitempty"`  // auto, none, required, or specific tool name
+	Tools        []*entity.Tool `json:"tools,omitempty"`       // Available tools for the AI
+	ToolChoice   string         `json:"tool_choice,omitempty"` // auto, none, required, or specific tool name
 }
 
 // CompletionResponse represents a response from AI completion
 type CompletionResponse struct {
-	Content      string              `json:"content"`
-	Model        string              `json:"model"`
-	TokensUsed   int                 `json:"tokens_used"`
-	PromptTokens int                 `json:"prompt_tokens"`
-	CompTokens   int                 `json:"completion_tokens"`
-	FinishReason string              `json:"finish_reason"` // stop, length, tool_calls, content_filter
-	Confidence   float64             `json:"confidence,omitempty"`
-	LatencyMs    int64               `json:"latency_ms"`
-	ToolCalls    []*entity.ToolCall  `json:"tool_calls,omitempty"` // Tool calls made by the AI
+	Content      string             `json:"content"`
+	Model        string             `json:"model"`
+	TokensUsed   int                `json:"tokens_used"`
+	PromptTokens int                `json:"prompt_tokens"`
+	CompTokens   int                `json:"completion_tokens"`
+	FinishReason string             `json:"finish_reason"` // stop, length, tool_calls, content_filter
+	Confidence   float64            `json:"confidence,omitempty"`
+	LatencyMs    int64              `json:"latency_ms"`
+	ToolCalls    []*entity.ToolCall `json:"tool_calls,omitempty"` // Tool calls made by the AI
 }
 
 // EmbeddingRequest represents a request for embedding generation
@@ -93,14 +93,14 @@ type AIProvider interface {
 
 // AIProviderConfig holds common configuration for AI providers
 type AIProviderConfig struct {
-	APIKey        string  `json:"api_key"`
-	BaseURL       string  `json:"base_url,omitempty"`
-	OrgID         string  `json:"org_id,omitempty"`
-	DefaultModel  string  `json:"default_model,omitempty"`
-	MaxRetries    int     `json:"max_retries,omitempty"`
-	TimeoutSecs   int     `json:"timeout_secs,omitempty"`
-	Temperature   float64 `json:"temperature,omitempty"`
-	MaxTokens     int     `json:"max_tokens,omitempty"`
+	APIKey       string  `json:"api_key"`
+	BaseURL      string  `json:"base_url,omitempty"`
+	OrgID        string  `json:"org_id,omitempty"`
+	DefaultModel string  `json:"default_model,omitempty"`
+	MaxRetries   int     `json:"max_retries,omitempty"`
+	TimeoutSecs  int     `json:"timeout_secs,omitempty"`
+	Temperature  float64 `json:"temperature,omitempty"`
+	MaxTokens    int     `json:"max_tokens,omitempty"`
 }
 
 // AIProviderFactory creates AI provider instances
@@ -223,7 +223,7 @@ type BotResponse struct {
 
 // BotAction represents an action the bot wants to perform
 type BotAction struct {
-	Type       string                 `json:"type"`   // send_message, assign_tag, set_field, etc.
+	Type       string                 `json:"type"` // send_message, assign_tag, set_field, etc.
 	Parameters map[string]interface{} `json:"parameters"`
 }
 

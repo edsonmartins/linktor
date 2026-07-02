@@ -299,10 +299,10 @@ func (p *FreeSWITCHProvider) Capabilities() ProviderCapabilities {
 		TextToSpeech:      true,
 		SpeechRecognition: true,
 		DTMF:              true,
-		Conferencing: true,
-		CallQueues:   true,
-		WebRTC:       true,
-		SIP:          true,
+		Conferencing:      true,
+		CallQueues:        true,
+		WebRTC:            true,
+		SIP:               true,
 	}
 }
 

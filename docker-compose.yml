@@ -114,6 +114,15 @@ services:
       LINKTOR_JWT_COOKIE_SECURE: "false"
       BASE_URL: ${LINKTOR_BASE_URL:-http://localhost:${LINKTOR_API_PORT:-8081}}
       VRE_UPLOAD_DIR: /app/uploads/vre
+      # Inbound media store (re-hosts Slack url_private / Mattermost files so
+      # external consumers can fetch them). MINIO_ENDPOINT must be reachable by
+      # the consumer: 'minio:9000' works inside this compose network; set a
+      # public endpoint when the consumer (e.g. DeskLenz) runs elsewhere.
+      MINIO_ENDPOINT: ${LINKTOR_MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${LINKTOR_MINIO_ACCESS_KEY:-linktor}
+      MINIO_SECRET_KEY: ${LINKTOR_MINIO_SECRET_KEY:-linktor123}
+      MINIO_BUCKET: ${LINKTOR_MINIO_BUCKET:-linktor-media}
+      MINIO_USE_SSL: ${LINKTOR_MINIO_USE_SSL:-false}
     ports:
       - "${LINKTOR_API_PORT:-8081}:${LINKTOR_API_PORT:-8081}"
     volumes:

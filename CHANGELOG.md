@@ -10,6 +10,33 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 Features de operação inspiradas na análise do whatomate + subsistema de entrega
 outbound que as torna funcionais ponta-a-ponta. Tudo com backend, testes e UI.
 
+### Segurança / Correções (hardening dos conectores Teams/Slack/Mattermost)
+
+- **Teams — exfiltração de token bloqueada:** o `serviceUrl` recebido na Activity
+  só é persistido/usado como destino de saída se apontar para um host confiável do
+  Bot Framework/Teams (`*.botframework.com`, `smba.trafficmanager.net`, `*.skype.com`)
+  via `teams.IsTrustedServiceURL`. Antes, um `serviceUrl` envenenado vazaria o bearer
+  AAD do bot para um host arbitrário.
+- **Teams — endpoint compartilhado:** documentado o limite de confiança do modelo
+  multi-tenant (o JWT do Bot Connector prova só `app_id`, não o tenant AAD); para
+  isolamento estrito use o endpoint por canal com app registration distinto.
+- **Webhook de saída — assinatura forjável:** entregas com `webhook_secret` vazio
+  não são mais enviadas (fail-closed) em vez de emitir HMAC com chave vazia.
+- **Webhook de saída — dedup:** o id de entrega passa a ser determinístico
+  (`message_id`+tipo), evitando POSTs duplicados ao DeskLenz em redelivery.
+- **Webhook de saída — canal removido:** entrega para canal deletado é descartada
+  (ack) em vez de inundar a DLQ; só erros transitórios redelivram.
+- **Download de mídia inbound (Slack/Teams/Mattermost):** limitado a 64 MiB para
+  evitar OOM com anexos hostis/gigantes.
+- **Mattermost:** corrigido vazamento de goroutine por reconexão (watcher de
+  cancelamento agora encerra com a conexão) e posts só-anexo não viram mais
+  mensagem vazia quando não há media store (metadados do anexo são preservados).
+- **Facebook/Instagram:** `messaging_type` agora sobreponível por metadata
+  (`messaging_type`/`message_tag`), default `RESPONSE` — permite envios fora da
+  janela de 24h (UPDATE/MESSAGE_TAG) que antes ficavam travados.
+- **Webhook producer:** corrigido off-by-one no backoff de retry (clamp no índice;
+  sem panic de índice fora do range para `MaxRetries` > nº de delays).
+
 ### Adicionado
 
 #### Entrega outbound unificada
@@ -41,6 +68,104 @@ outbound que as torna funcionais ponta-a-ponta. Tudo com backend, testes e UI.
 - **Trilha de auditoria** via middleware (deriva ação/recurso da rota) +
   registros explícitos nos handlers especializados, com UI read-only filtrável.
 
+#### Conectores de canal Teams / Slack / Mattermost
+- **Webhook de saída `linktor-channel-v1`** (`internal/infrastructure/webhook`):
+  envelope assinado (HMAC-SHA256, headers `X-Linktor-Signature`/`X-Linktor-Timestamp`,
+  tolerância anti-replay 300s) entregue por canal ao consumidor externo (DeskLenz).
+  `Dispatcher` consome eventos NATS (`message.received` + `message.{sent,delivered,
+  read,failed}`), resolve o endpoint do canal (`channel.WebhookURL` +
+  `credentials.webhook_secret`) e entrega via `WebhookProducer` (retry/backoff).
+- **Microsoft Teams** (`internal/adapters/teams`): Bot Framework / Bot Connector.
+  Inbound via webhook (`POST /webhooks/teams/:channelId`) com validação de JWT do
+  Bot Connector (JWKS + issuer/audience); outbound `POST {serviceUrl}/v3/
+  conversations/{id}/activities` com bearer AAD (token de app cacheado/renovado).
+  Persiste a *conversation reference* (`service_url`) no 1º inbound para
+  mensageria proativa. Suporta os dois modelos de propriedade do bot
+  (single-tenant e multi-tenant) — distinção por `tenant_id` da Activity.
+- **Slack** (`internal/adapters/slack`): Events API (inbound) + Web API (outbound).
+  Handshake `url_verification`, verificação `X-Slack-Signature`
+  (`v0:timestamp:body`, anti-replay), filtro de eco do próprio bot;
+  outbound via `chat.postMessage` (bot token `xoxb-`).
+- **Mattermost** (`internal/adapters/mattermost`): self-hosted. Inbound via
+  WebSocket persistente (`{base_url}/api/v4/websocket`, evento `posted`, anti-eco
+  por `bot_user_id`, reconexão com backoff). `Manager` inicia os listeners no boot
+  e reage a connect/disconnect em runtime (via `ChannelLifecycleHooks`), iniciando/
+  parando o listener por canal sem reinício; outbound REST `POST /api/v4/posts` com PAT.
+- Enum `ChannelType` estendido (`teams=11`, `slack=12`, `mattermost=13`) no proto,
+  entidade e `pkg/plugin`; senders registrados no `outboundResolver`.
+- **Admin (web/admin)**: tipo `ChannelType` + ícones/labels/descrições (en/pt-BR/es),
+  cards na lista de canais e telas de configuração (`teams-config.tsx`,
+  `slack-config.tsx`, `mattermost-config.tsx`) com os campos de credencial exatos do
+  backend (tudo em `credentials`) + seção opcional de webhook de saída (DeskLenz:
+  `webhook_url` top-level + `webhook_secret`); E2E (`e2e/channels.spec.ts`) cobrindo
+  criação + envio por canal. Paridade visual nos demais mapas por canal (dashboard,
+  tabela de analytics, variantes de badge, opções de identidade de contato).
+- **API de canal**: `webhook_url` aceito no create/update (`CreateChannelRequest` +
+  `CreateChannelInput`/`UpdateChannelInput`), persistido na coluna `webhook_url`.
+- **Mídia inbound re-hospedada**: anexos atrás de URLs autenticadas — Slack
+  (`url_private`, baixado com bearer do bot token) e Mattermost (`/api/v4/files/{id}`
+  via PAT) — são baixados com autenticação e re-hospedados num *media store*
+  (`storage.Client.Upload`) para o consumidor externo (DeskLenz) conseguir buscá-los.
+  Opt-in por `MEDIA_UPLOAD_DIR`/`MEDIA_UPLOAD_BASE_URL`; sem store configurado, mantém
+  a URL do provedor (best-effort, sem regressão). Ligado no `WebhookHandler` (Slack) e
+  no `mattermost.Manager`/listener. Store de mídia agora também suporta **MinIO/S3**
+  (preferido quando `MINIO_ENDPOINT` setado; senão dir local; senão desligado).
+
+#### Conectores — endurecimento (contrato + robustez)
+- **Auth `X-API-Key` (DeskLenz → Linktor)**: o endpoint de envio
+  (`POST /conversations/:id/messages`) e demais rotas protegidas passam a aceitar
+  uma chave de API de tenant via header `X-API-Key`, além do JWT Bearer/cookie.
+  `APIKeyService.Authenticate` resolve a chave por prefixo público + comparação
+  bcrypt em tempo constante (chaves expiradas excluídas no SQL), registra
+  `last_used_at` (best effort) e injeta o contexto de tenant. Papel `api` —
+  passa nas rotas comuns, mas barrado de rotas admin-only.
+- **Webhook de saída durável**: a entrega ao DeskLenz deixou de ser
+  fire-and-forget em goroutine e passou pelo **stream durável NATS
+  `LINKTOR_WEBHOOKS`**. O `Dispatcher` serializa o envelope e **enfileira** (carregando
+  os bytes exatos + `channel_id`); um `DeliveryWorker` consome, **resolve o canal,
+  assina com timestamp fresco** (mantém o retry dentro da janela anti-replay de 300s,
+  sem o segredo trafegar no stream) e faz 1 tentativa HTTP — NATS cuida de
+  retry/backoff e DLQ. Crash entre evento e entrega não perde mais o webhook.
+- **Teams multi-tenant (1 app Azure → N clientes)**: novo endpoint compartilhado
+  `POST /webhooks/teams` (sem `channelId`). Resolve o canal pela audiência do token
+  (app id, lida sem verificar) + `tenant_id` AAD da Activity (`MatchSharedChannel`:
+  match exato de org vence; fallback p/ canal multi-tenant), e **só então valida o
+  JWT (JWKS)** contra o `app_id` do canal resolvido. Novo
+  `ChannelRepository.FindAllByType` (cross-tenant, credenciais descriptografadas).
+- **Mídia inbound do Teams re-hospedada**: anexos do Bot Connector (atrás de URL com
+  bearer) são baixados com o token AAD e re-hospedados no media store
+  (`teams.Client.DownloadAttachment`), com fallback para a URL do provedor.
+- **Mattermost — validação do handshake WebSocket**: a resposta ao
+  `authentication_challenge` passa a ser validada (status `seq_reply`); PAT inválido
+  retorna erro explícito (backoff/log) em vez de aguardar posts em silêncio, e posts
+  só são processados após o handshake autenticado.
+- **Mattermost — auto-detecção de `bot_user_id`**: como o anti-eco depende
+  inteiramente do `bot_user_id`, se ele não for configurado o listener resolve o id
+  do próprio bot via `/api/v4/users/me` no connect (best effort), evitando que o bot
+  reprocesse os próprios posts (loop de eco).
+- **Edição de canal — prefill de campos não-secretos**: a resposta de
+  `GET/List /channels` passa a expor os campos **não-secretos** das credenciais
+  (whitelist por tipo — ex.: Teams `app_id`/`tenant_id`/`service_url`, Slack `app_id`/
+  `bot_user_id`, Mattermost `base_url`/`bot_user_id`) dentro de `config`, para o
+  formulário de edição preencher. Segredos (`*_token`, `*_password`, `signing_secret`,
+  `webhook_secret`) continuam `json:"-"` e nunca são retornados (cópia defensiva, sem
+  mutar a entidade).
+- **Edição de canal — merge de credenciais**: `ChannelService.Update` passou de
+  *replace* para *merge* nas credenciais — um campo de segredo em branco na edição
+  (não redigitado) **preserva** o valor armazenado em vez de apagá-lo. Valores não
+  vazios sobrescrevem; chaves novas são adicionadas.
+- **Upload nativo de mídia outbound**: Slack (fluxo external upload —
+  `files.getUploadURLExternal` → POST bytes → `files.completeUploadExternal`) e
+  Mattermost (`POST /api/v4/files` multipart → post com `file_ids`) passam a enviar
+  mídia como **arquivo nativo** (caption como comentário/corpo) em vez de link. A
+  mídia (hospedada no Linktor) é baixada via `outbound.FetchMedia` (cap de 64 MiB);
+  qualquer falha faz **fallback para o link** (entrega nunca é perdida).
+- **Test connection (ao vivo) dos 3 canais**: endpoints `POST /channels/test-{teams,
+  slack,mattermost}` validam as credenciais contra o provedor de verdade — Teams
+  (token AAD client-credentials), Slack (`auth.test`), Mattermost (`/api/v4/users/me`)
+  — com timeout de 10s, além da validação de forma dos campos obrigatórios. Botão
+  "Testar conexão" nas 3 telas de configuração do admin.
+
 #### Segurança
 - **Criptografia de credenciais em repouso** (AES-256-GCM, prefixo `enc:v1:`,
   retrocompatível com texto puro), com validação obrigatória em release.
@@ -58,6 +183,10 @@ outbound que as torna funcionais ponta-a-ponta. Tudo com backend, testes e UI.
   criptografia (round-trip + rotação), RBAC, tradução/resolver de outbound,
   classificação de erro, plugin sender, e os serviços de campanha, atribuição,
   SLA, papéis e canned.
+- Conectores: golden do envelope `linktor-channel-v1` (inbound/status + assinatura
+  HMAC), e por canal — Teams (build de Activity, classificação de erro, conversation
+  reference), Slack (assinatura `v0`, anti-eco, render), Mattermost (URL WS, parse de
+  post, frame de auth).
 
 ### Documentação
 - README: seções de funcionalidades 9–15, diagramas/mockups SVG e config de

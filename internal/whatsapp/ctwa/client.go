@@ -9,11 +9,11 @@ import (
 
 // Client handles Click-to-WhatsApp Ads tracking and attribution
 type Client struct {
-	mu              sync.RWMutex
-	referrals       map[string]*Referral       // key: referral_id
-	conversions     map[string]*AdConversion   // key: conversion_id
-	freeWindows     map[string]*FreeMessagingWindow // key: customer_phone
-	attributionCfg  *AttributionWindow
+	mu             sync.RWMutex
+	referrals      map[string]*Referral            // key: referral_id
+	conversions    map[string]*AdConversion        // key: conversion_id
+	freeWindows    map[string]*FreeMessagingWindow // key: customer_phone
+	attributionCfg *AttributionWindow
 }
 
 // ClientConfig represents configuration for the CTWA client

@@ -288,12 +288,12 @@ func (p *AsteriskProvider) makeCallARI(ctx context.Context, input MakeCallInput)
 // makeCallAMI makes a call using AMI Originate
 func (p *AsteriskProvider) makeCallAMI(ctx context.Context, input MakeCallInput) (*MakeCallResult, error) {
 	params := map[string]string{
-		"Channel":   fmt.Sprintf("PJSIP/%s", input.To),
-		"Context":   p.context,
-		"Exten":     input.To,
-		"Priority":  "1",
-		"CallerID":  input.From,
-		"Async":     "true",
+		"Channel":  fmt.Sprintf("PJSIP/%s", input.To),
+		"Context":  p.context,
+		"Exten":    input.To,
+		"Priority": "1",
+		"CallerID": input.From,
+		"Async":    "true",
 	}
 
 	if input.Timeout > 0 {
@@ -349,10 +349,10 @@ func (p *AsteriskProvider) getCallARI(ctx context.Context, callID string) (*Call
 	}
 
 	var channel struct {
-		ID        string `json:"id"`
-		Name      string `json:"name"`
-		State     string `json:"state"`
-		Caller    struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		State  string `json:"state"`
+		Caller struct {
 			Number string `json:"number"`
 			Name   string `json:"name"`
 		} `json:"caller"`
@@ -488,9 +488,9 @@ func (p *AsteriskProvider) GetRecording(ctx context.Context, recordingID string)
 	}
 
 	var rec struct {
-		Name      string `json:"name"`
-		Format    string `json:"format"`
-		Duration  int    `json:"duration_seconds"`
+		Name     string `json:"name"`
+		Format   string `json:"format"`
+		Duration int    `json:"duration_seconds"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&rec); err != nil {
 		return nil, err
@@ -660,15 +660,15 @@ func (p *AsteriskProvider) ValidateWebhook(ctx context.Context, headers map[stri
 // mapState maps Asterisk channel state to CallStatus
 func (p *AsteriskProvider) mapState(state string) CallStatus {
 	stateMap := map[string]CallStatus{
-		"Down":      CallStatusInitiated,
-		"Rsrvd":     CallStatusInitiated,
-		"OffHook":   CallStatusInitiated,
-		"Dialing":   CallStatusInitiated,
-		"Ring":      CallStatusRinging,
-		"Ringing":   CallStatusRinging,
-		"Up":        CallStatusInProgress,
-		"Busy":      CallStatusBusy,
-		"Unknown":   CallStatusFailed,
+		"Down":    CallStatusInitiated,
+		"Rsrvd":   CallStatusInitiated,
+		"OffHook": CallStatusInitiated,
+		"Dialing": CallStatusInitiated,
+		"Ring":    CallStatusRinging,
+		"Ringing": CallStatusRinging,
+		"Up":      CallStatusInProgress,
+		"Busy":    CallStatusBusy,
+		"Unknown": CallStatusFailed,
 	}
 
 	if mapped, ok := stateMap[state]; ok {

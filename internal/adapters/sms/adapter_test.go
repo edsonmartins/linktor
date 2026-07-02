@@ -46,9 +46,9 @@ func TestAdapter_Initialize(t *testing.T) {
 		{
 			name: "valid with api_key and messaging_service",
 			config: map[string]string{
-				"account_sid":          "AC123",
-				"api_key_sid":          "SK123",
-				"api_key_secret":       "secret",
+				"account_sid":           "AC123",
+				"api_key_sid":           "SK123",
+				"api_key_secret":        "secret",
 				"messaging_service_sid": "MG123",
 			},
 		},

@@ -196,11 +196,11 @@ type StatusCallback struct {
 
 // WebhookPayload represents a generic webhook payload from providers
 type WebhookPayload struct {
-	Provider       Provider         `json:"provider"`
-	Type           string           `json:"type"` // "inbound" or "status"
-	IncomingEmail  *IncomingEmail   `json:"incoming_email,omitempty"`
-	StatusCallback *StatusCallback  `json:"status_callback,omitempty"`
-	RawPayload     []byte           `json:"raw_payload,omitempty"`
+	Provider       Provider        `json:"provider"`
+	Type           string          `json:"type"` // "inbound" or "status"
+	IncomingEmail  *IncomingEmail  `json:"incoming_email,omitempty"`
+	StatusCallback *StatusCallback `json:"status_callback,omitempty"`
+	RawPayload     []byte          `json:"raw_payload,omitempty"`
 }
 
 // SendGrid webhook types
@@ -250,8 +250,8 @@ type MailgunEventWebhook struct {
 		Signature string `json:"signature"`
 	} `json:"signature"`
 	EventData struct {
-		Event     string `json:"event"` // delivered, failed, opened, clicked, unsubscribed, complained
-		ID        string `json:"id"`
+		Event     string  `json:"event"` // delivered, failed, opened, clicked, unsubscribed, complained
+		ID        string  `json:"id"`
 		Timestamp float64 `json:"timestamp"`
 		Message   struct {
 			Headers struct {
@@ -274,18 +274,18 @@ type SESNotification struct {
 }
 
 type SESMessage struct {
-	NotificationType string       `json:"notificationType"` // Bounce, Complaint, Delivery
-	Bounce           *SESBounce   `json:"bounce,omitempty"`
+	NotificationType string        `json:"notificationType"` // Bounce, Complaint, Delivery
+	Bounce           *SESBounce    `json:"bounce,omitempty"`
 	Complaint        *SESComplaint `json:"complaint,omitempty"`
 	Delivery         *SESDelivery  `json:"delivery,omitempty"`
-	Mail             *SESMail     `json:"mail"`
+	Mail             *SESMail      `json:"mail"`
 }
 
 type SESBounce struct {
-	BounceType        string              `json:"bounceType"` // Permanent, Transient
-	BounceSubType     string              `json:"bounceSubType"`
+	BounceType        string                `json:"bounceType"` // Permanent, Transient
+	BounceSubType     string                `json:"bounceSubType"`
 	BouncedRecipients []SESBouncedRecipient `json:"bouncedRecipients"`
-	Timestamp         string              `json:"timestamp"`
+	Timestamp         string                `json:"timestamp"`
 }
 
 type SESBouncedRecipient struct {
@@ -296,9 +296,9 @@ type SESBouncedRecipient struct {
 }
 
 type SESComplaint struct {
-	ComplainedRecipients []SESComplainedRecipient `json:"complainedRecipients"`
+	ComplainedRecipients  []SESComplainedRecipient `json:"complainedRecipients"`
 	ComplaintFeedbackType string                   `json:"complaintFeedbackType,omitempty"`
-	Timestamp            string                   `json:"timestamp"`
+	Timestamp             string                   `json:"timestamp"`
 }
 
 type SESComplainedRecipient struct {
@@ -313,35 +313,35 @@ type SESDelivery struct {
 }
 
 type SESMail struct {
-	Timestamp        string   `json:"timestamp"`
-	MessageId        string   `json:"messageId"`
-	Source           string   `json:"source"`
-	Destination      []string `json:"destination"`
-	CommonHeaders    map[string]interface{} `json:"commonHeaders,omitempty"`
+	Timestamp     string                 `json:"timestamp"`
+	MessageId     string                 `json:"messageId"`
+	Source        string                 `json:"source"`
+	Destination   []string               `json:"destination"`
+	CommonHeaders map[string]interface{} `json:"commonHeaders,omitempty"`
 }
 
 // Postmark webhook types
 type PostmarkInboundWebhook struct {
-	From          string                 `json:"From"`
-	FromName      string                 `json:"FromName"`
-	To            string                 `json:"To"`
-	CC            string                 `json:"Cc"`
-	Subject       string                 `json:"Subject"`
-	TextBody      string                 `json:"TextBody"`
-	HtmlBody      string                 `json:"HtmlBody"`
-	MessageID     string                 `json:"MessageID"`
-	ReplyTo       string                 `json:"ReplyTo"`
-	OriginalRecipient string             `json:"OriginalRecipient"`
-	Attachments   []PostmarkAttachment   `json:"Attachments"`
-	Headers       []PostmarkHeader       `json:"Headers"`
+	From              string               `json:"From"`
+	FromName          string               `json:"FromName"`
+	To                string               `json:"To"`
+	CC                string               `json:"Cc"`
+	Subject           string               `json:"Subject"`
+	TextBody          string               `json:"TextBody"`
+	HtmlBody          string               `json:"HtmlBody"`
+	MessageID         string               `json:"MessageID"`
+	ReplyTo           string               `json:"ReplyTo"`
+	OriginalRecipient string               `json:"OriginalRecipient"`
+	Attachments       []PostmarkAttachment `json:"Attachments"`
+	Headers           []PostmarkHeader     `json:"Headers"`
 }
 
 type PostmarkAttachment struct {
-	Name        string `json:"Name"`
-	Content     string `json:"Content"` // Base64 encoded
-	ContentType string `json:"ContentType"`
-	ContentID   string `json:"ContentID,omitempty"`
-	ContentLength int64 `json:"ContentLength"`
+	Name          string `json:"Name"`
+	Content       string `json:"Content"` // Base64 encoded
+	ContentType   string `json:"ContentType"`
+	ContentID     string `json:"ContentID,omitempty"`
+	ContentLength int64  `json:"ContentLength"`
 }
 
 type PostmarkHeader struct {

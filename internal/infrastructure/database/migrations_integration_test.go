@@ -15,7 +15,8 @@ import (
 )
 
 // Run with: LINKTOR_TEST_DB_DSN unused — uses discrete env vars below.
-//   go test -tags=integration ./internal/infrastructure/database/ -run TestMigrations
+//
+//	go test -tags=integration ./internal/infrastructure/database/ -run TestMigrations
 //
 // Requires a reachable PostgreSQL (the dev docker-compose `postgres` service).
 func testDBConfig(t *testing.T) *config.DatabaseConfig {

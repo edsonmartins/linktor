@@ -24,6 +24,9 @@ const badgeVariants = cva(
         telegram: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
         webchat: 'bg-primary/20 text-primary border-primary/30',
         sms: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+        teams: 'bg-blue-700/20 text-blue-300 border-blue-700/30',
+        slack: 'bg-violet-500/20 text-violet-300 border-violet-500/30',
+        mattermost: 'bg-sky-600/20 text-sky-300 border-sky-600/30',
       },
     },
     defaultVariants: {

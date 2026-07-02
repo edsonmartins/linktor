@@ -12,20 +12,20 @@ import (
 type PaymentStatus string
 
 const (
-	PaymentStatusPending   PaymentStatus = "pending"
-	PaymentStatusSuccess   PaymentStatus = "success"
-	PaymentStatusFailed    PaymentStatus = "failed"
-	PaymentStatusCanceled  PaymentStatus = "canceled"
-	PaymentStatusRefunded  PaymentStatus = "refunded"
-	PaymentStatusExpired   PaymentStatus = "expired"
+	PaymentStatusPending  PaymentStatus = "pending"
+	PaymentStatusSuccess  PaymentStatus = "success"
+	PaymentStatusFailed   PaymentStatus = "failed"
+	PaymentStatusCanceled PaymentStatus = "canceled"
+	PaymentStatusRefunded PaymentStatus = "refunded"
+	PaymentStatusExpired  PaymentStatus = "expired"
 )
 
 // PaymentType represents the type of payment
 type PaymentType string
 
 const (
-	PaymentTypeOrder      PaymentType = "order"
-	PaymentTypeInvoice    PaymentType = "invoice"
+	PaymentTypeOrder        PaymentType = "order"
+	PaymentTypeInvoice      PaymentType = "invoice"
 	PaymentTypeSubscription PaymentType = "subscription"
 )
 
@@ -33,11 +33,11 @@ const (
 type PaymentMethod string
 
 const (
-	PaymentMethodUPI        PaymentMethod = "upi"         // India
-	PaymentMethodNetBanking PaymentMethod = "netbanking"  // India
+	PaymentMethodUPI        PaymentMethod = "upi"        // India
+	PaymentMethodNetBanking PaymentMethod = "netbanking" // India
 	PaymentMethodCard       PaymentMethod = "card"
-	PaymentMethodPix        PaymentMethod = "pix"         // Brazil
-	PaymentMethodBoleto     PaymentMethod = "boleto"      // Brazil
+	PaymentMethodPix        PaymentMethod = "pix"    // Brazil
+	PaymentMethodBoleto     PaymentMethod = "boleto" // Brazil
 	PaymentMethodWallet     PaymentMethod = "wallet"
 )
 
@@ -47,28 +47,28 @@ const (
 
 // Payment represents a payment transaction
 type Payment struct {
-	ID                string        `json:"id"`
-	OrganizationID    string        `json:"organization_id"`
-	ChannelID         string        `json:"channel_id"`
-	OrderID           string        `json:"order_id,omitempty"`
-	ReferenceID       string        `json:"reference_id"`
-	CustomerPhone     string        `json:"customer_phone"`
-	Amount            int64         `json:"amount"` // In cents
-	Currency          string        `json:"currency"`
-	Status            PaymentStatus `json:"status"`
-	Type              PaymentType   `json:"type"`
-	Method            PaymentMethod `json:"method,omitempty"`
-	GatewayPaymentID  string        `json:"gateway_payment_id,omitempty"`
-	GatewayOrderID    string        `json:"gateway_order_id,omitempty"`
-	Description       string        `json:"description,omitempty"`
-	ExpiresAt         *time.Time    `json:"expires_at,omitempty"`
-	PaidAt            *time.Time    `json:"paid_at,omitempty"`
-	FailedAt          *time.Time    `json:"failed_at,omitempty"`
-	RefundedAt        *time.Time    `json:"refunded_at,omitempty"`
-	FailureReason     string        `json:"failure_reason,omitempty"`
-	MessageID         string        `json:"message_id,omitempty"`
-	CreatedAt         time.Time     `json:"created_at"`
-	UpdatedAt         time.Time     `json:"updated_at"`
+	ID               string        `json:"id"`
+	OrganizationID   string        `json:"organization_id"`
+	ChannelID        string        `json:"channel_id"`
+	OrderID          string        `json:"order_id,omitempty"`
+	ReferenceID      string        `json:"reference_id"`
+	CustomerPhone    string        `json:"customer_phone"`
+	Amount           int64         `json:"amount"` // In cents
+	Currency         string        `json:"currency"`
+	Status           PaymentStatus `json:"status"`
+	Type             PaymentType   `json:"type"`
+	Method           PaymentMethod `json:"method,omitempty"`
+	GatewayPaymentID string        `json:"gateway_payment_id,omitempty"`
+	GatewayOrderID   string        `json:"gateway_order_id,omitempty"`
+	Description      string        `json:"description,omitempty"`
+	ExpiresAt        *time.Time    `json:"expires_at,omitempty"`
+	PaidAt           *time.Time    `json:"paid_at,omitempty"`
+	FailedAt         *time.Time    `json:"failed_at,omitempty"`
+	RefundedAt       *time.Time    `json:"refunded_at,omitempty"`
+	FailureReason    string        `json:"failure_reason,omitempty"`
+	MessageID        string        `json:"message_id,omitempty"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at"`
 }
 
 // PaymentItem represents an item in a payment
@@ -88,35 +88,35 @@ type PaymentItem struct {
 
 // PaymentRequest represents a request to create a payment
 type PaymentRequest struct {
-	To              string         `json:"to"`
-	ReferenceID     string         `json:"reference_id"`
-	Type            PaymentType    `json:"type"`
-	Amount          int64          `json:"amount"`
-	Currency        string         `json:"currency"`
-	Description     string         `json:"description,omitempty"`
-	Items           []PaymentItem  `json:"items,omitempty"`
-	ExpiresIn       time.Duration  `json:"expires_in,omitempty"` // Duration until expiry
-	CallbackURL     string         `json:"callback_url,omitempty"`
+	To              string           `json:"to"`
+	ReferenceID     string           `json:"reference_id"`
+	Type            PaymentType      `json:"type"`
+	Amount          int64            `json:"amount"`
+	Currency        string           `json:"currency"`
+	Description     string           `json:"description,omitempty"`
+	Items           []PaymentItem    `json:"items,omitempty"`
+	ExpiresIn       time.Duration    `json:"expires_in,omitempty"` // Duration until expiry
+	CallbackURL     string           `json:"callback_url,omitempty"`
 	PaymentSettings *PaymentSettings `json:"payment_settings,omitempty"`
 }
 
 // PaymentSettings represents payment configuration
 type PaymentSettings struct {
-	AllowedMethods    []PaymentMethod `json:"allowed_methods,omitempty"`
-	UPIDetails        *UPIDetails     `json:"upi_details,omitempty"`
-	PixDetails        *PixDetails     `json:"pix_details,omitempty"`
+	AllowedMethods []PaymentMethod `json:"allowed_methods,omitempty"`
+	UPIDetails     *UPIDetails     `json:"upi_details,omitempty"`
+	PixDetails     *PixDetails     `json:"pix_details,omitempty"`
 }
 
 // UPIDetails represents UPI-specific payment details (India)
 type UPIDetails struct {
-	VPA           string `json:"vpa"` // Virtual Payment Address
-	MerchantName  string `json:"merchant_name"`
+	VPA             string `json:"vpa"` // Virtual Payment Address
+	MerchantName    string `json:"merchant_name"`
 	TransactionNote string `json:"transaction_note,omitempty"`
 }
 
 // PixDetails represents Pix-specific payment details (Brazil)
 type PixDetails struct {
-	Key          string `json:"key"` // CPF, CNPJ, email, phone, or random key
+	Key          string `json:"key"`      // CPF, CNPJ, email, phone, or random key
 	KeyType      string `json:"key_type"` // CPF, CNPJ, EMAIL, PHONE, RANDOM
 	MerchantName string `json:"merchant_name"`
 	MerchantCity string `json:"merchant_city"`
@@ -129,13 +129,13 @@ type PixDetails struct {
 
 // PaymentResponse represents the response from a payment request
 type PaymentResponse struct {
-	PaymentID     string        `json:"payment_id"`
-	Status        PaymentStatus `json:"status"`
-	PaymentURL    string        `json:"payment_url,omitempty"`
-	QRCode        string        `json:"qr_code,omitempty"`
-	QRCodeBase64  string        `json:"qr_code_base64,omitempty"`
-	ExpiresAt     *time.Time    `json:"expires_at,omitempty"`
-	MessageID     string        `json:"message_id,omitempty"`
+	PaymentID    string        `json:"payment_id"`
+	Status       PaymentStatus `json:"status"`
+	PaymentURL   string        `json:"payment_url,omitempty"`
+	QRCode       string        `json:"qr_code,omitempty"`
+	QRCodeBase64 string        `json:"qr_code_base64,omitempty"`
+	ExpiresAt    *time.Time    `json:"expires_at,omitempty"`
+	MessageID    string        `json:"message_id,omitempty"`
 }
 
 // =============================================================================
@@ -209,12 +209,12 @@ type RefundRequest struct {
 type GatewayType string
 
 const (
-	GatewayRazorpay GatewayType = "razorpay" // India
-	GatewayPayU     GatewayType = "payu"     // India
-	GatewayPagSeguro GatewayType = "pagseguro" // Brazil
+	GatewayRazorpay    GatewayType = "razorpay"    // India
+	GatewayPayU        GatewayType = "payu"        // India
+	GatewayPagSeguro   GatewayType = "pagseguro"   // Brazil
 	GatewayMercadoPago GatewayType = "mercadopago" // Brazil
-	GatewayStripe   GatewayType = "stripe"    // Global
-	GatewayMock     GatewayType = "mock"      // Testing only — never use in production
+	GatewayStripe      GatewayType = "stripe"      // Global
+	GatewayMock        GatewayType = "mock"        // Testing only — never use in production
 )
 
 // GatewayConfig represents payment gateway configuration
@@ -233,16 +233,16 @@ type GatewayConfig struct {
 
 // RazorpayConfig represents Razorpay-specific configuration
 type RazorpayConfig struct {
-	AccountID      string `json:"account_id"`
+	AccountID      string          `json:"account_id"`
 	EnabledMethods []PaymentMethod `json:"enabled_methods"`
 }
 
 // PagSeguroConfig represents PagSeguro-specific configuration
 type PagSeguroConfig struct {
-	Email          string `json:"email"`
-	Token          string `json:"token"`
-	EnablePix      bool   `json:"enable_pix"`
-	EnableBoleto   bool   `json:"enable_boleto"`
+	Email        string `json:"email"`
+	Token        string `json:"token"`
+	EnablePix    bool   `json:"enable_pix"`
+	EnableBoleto bool   `json:"enable_boleto"`
 }
 
 // =============================================================================
@@ -251,25 +251,25 @@ type PagSeguroConfig struct {
 
 // PaymentStats represents payment statistics
 type PaymentStats struct {
-	TotalPayments     int                      `json:"total_payments"`
-	SuccessfulPayments int                     `json:"successful_payments"`
-	FailedPayments    int                      `json:"failed_payments"`
-	TotalAmount       int64                    `json:"total_amount"`
-	RefundedAmount    int64                    `json:"refunded_amount"`
-	Currency          string                   `json:"currency"`
-	SuccessRate       float64                  `json:"success_rate"`
-	ByStatus          map[PaymentStatus]int    `json:"by_status"`
-	ByMethod          map[PaymentMethod]int    `json:"by_method"`
-	DailyStats        []DailyPaymentStats      `json:"daily_stats"`
+	TotalPayments      int                   `json:"total_payments"`
+	SuccessfulPayments int                   `json:"successful_payments"`
+	FailedPayments     int                   `json:"failed_payments"`
+	TotalAmount        int64                 `json:"total_amount"`
+	RefundedAmount     int64                 `json:"refunded_amount"`
+	Currency           string                `json:"currency"`
+	SuccessRate        float64               `json:"success_rate"`
+	ByStatus           map[PaymentStatus]int `json:"by_status"`
+	ByMethod           map[PaymentMethod]int `json:"by_method"`
+	DailyStats         []DailyPaymentStats   `json:"daily_stats"`
 }
 
 // DailyPaymentStats represents daily payment statistics
 type DailyPaymentStats struct {
-	Date         string  `json:"date"`
-	Count        int     `json:"count"`
-	Amount       int64   `json:"amount"`
-	SuccessCount int     `json:"success_count"`
-	FailedCount  int     `json:"failed_count"`
+	Date         string `json:"date"`
+	Count        int    `json:"count"`
+	Amount       int64  `json:"amount"`
+	SuccessCount int    `json:"success_count"`
+	FailedCount  int    `json:"failed_count"`
 }
 
 // =============================================================================
@@ -278,15 +278,15 @@ type DailyPaymentStats struct {
 
 // PaymentMessage represents a payment request message
 type PaymentMessage struct {
-	To              string        `json:"to"`
-	Type            string        `json:"type"` // "order_details"
-	ReferenceID     string        `json:"reference_id"`
-	PaymentStatus   string        `json:"payment_status"`
-	OrderStatus     string        `json:"order_status,omitempty"`
-	Description     string        `json:"description,omitempty"`
-	TotalAmount     *Amount       `json:"total_amount,omitempty"`
-	Items           []PaymentItem `json:"items,omitempty"`
-	PaymentLink     *PaymentLink  `json:"payment_link,omitempty"`
+	To            string        `json:"to"`
+	Type          string        `json:"type"` // "order_details"
+	ReferenceID   string        `json:"reference_id"`
+	PaymentStatus string        `json:"payment_status"`
+	OrderStatus   string        `json:"order_status,omitempty"`
+	Description   string        `json:"description,omitempty"`
+	TotalAmount   *Amount       `json:"total_amount,omitempty"`
+	Items         []PaymentItem `json:"items,omitempty"`
+	PaymentLink   *PaymentLink  `json:"payment_link,omitempty"`
 }
 
 // Amount represents an amount with currency
@@ -318,13 +318,13 @@ type PaymentEvent struct {
 
 // Payment event type constants
 const (
-	PaymentEventCreated   = "payment.created"
-	PaymentEventPending   = "payment.pending"
-	PaymentEventSuccess   = "payment.success"
-	PaymentEventFailed    = "payment.failed"
-	PaymentEventCanceled  = "payment.canceled"
-	PaymentEventRefunded  = "payment.refunded"
-	PaymentEventExpired   = "payment.expired"
+	PaymentEventCreated  = "payment.created"
+	PaymentEventPending  = "payment.pending"
+	PaymentEventSuccess  = "payment.success"
+	PaymentEventFailed   = "payment.failed"
+	PaymentEventCanceled = "payment.canceled"
+	PaymentEventRefunded = "payment.refunded"
+	PaymentEventExpired  = "payment.expired"
 )
 
 // NewPaymentEvent creates a new payment event

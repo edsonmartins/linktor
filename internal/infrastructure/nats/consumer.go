@@ -42,11 +42,11 @@ func NewConsumer(client *Client) *Consumer {
 
 // ConsumerConfig holds configuration for a consumer
 type ConsumerConfig struct {
-	Stream       string
-	Name         string
+	Stream        string
+	Name          string
 	FilterSubject string
-	MaxDeliver   int
-	AckWait      time.Duration
+	MaxDeliver    int
+	AckWait       time.Duration
 	MaxAckPending int
 }
 

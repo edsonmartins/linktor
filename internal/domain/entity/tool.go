@@ -22,12 +22,12 @@ type ToolMeta struct {
 
 // ToolParameter defines a parameter for a tool
 type ToolParameter struct {
-	Name        string      `json:"name"`
-	Type        string      `json:"type"` // string, number, boolean, array, object
-	Description string      `json:"description"`
-	Required    bool        `json:"required"`
-	Enum        []string    `json:"enum,omitempty"`
-	Default     interface{} `json:"default,omitempty"`
+	Name        string         `json:"name"`
+	Type        string         `json:"type"` // string, number, boolean, array, object
+	Description string         `json:"description"`
+	Required    bool           `json:"required"`
+	Enum        []string       `json:"enum,omitempty"`
+	Default     interface{}    `json:"default,omitempty"`
 	Items       *ToolParameter `json:"items,omitempty"` // For array types
 }
 

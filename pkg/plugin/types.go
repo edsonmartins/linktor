@@ -18,6 +18,9 @@ const (
 	ChannelTypeFacebook         ChannelType = "facebook"
 	ChannelTypeEmail            ChannelType = "email"
 	ChannelTypeVoice            ChannelType = "voice"
+	ChannelTypeTeams            ChannelType = "teams"
+	ChannelTypeSlack            ChannelType = "slack"
+	ChannelTypeMattermost       ChannelType = "mattermost"
 )
 
 // MessageStatus represents the delivery status of a message
@@ -104,20 +107,20 @@ type ChannelCapabilities struct {
 	SupportedContentTypes []ContentType `json:"supported_content_types"`
 
 	// Features
-	SupportsMedia        bool `json:"supports_media"`
-	SupportsLocation     bool `json:"supports_location"`
-	SupportsTemplates    bool `json:"supports_templates"`
-	SupportsInteractive  bool `json:"supports_interactive"`
-	SupportsReadReceipts bool `json:"supports_read_receipts"`
+	SupportsMedia           bool `json:"supports_media"`
+	SupportsLocation        bool `json:"supports_location"`
+	SupportsTemplates       bool `json:"supports_templates"`
+	SupportsInteractive     bool `json:"supports_interactive"`
+	SupportsReadReceipts    bool `json:"supports_read_receipts"`
 	SupportsTypingIndicator bool `json:"supports_typing_indicator"`
-	SupportsReactions    bool `json:"supports_reactions"`
-	SupportsReplies      bool `json:"supports_replies"`
-	SupportsForwarding   bool `json:"supports_forwarding"`
+	SupportsReactions       bool `json:"supports_reactions"`
+	SupportsReplies         bool `json:"supports_replies"`
+	SupportsForwarding      bool `json:"supports_forwarding"`
 
 	// Limits
-	MaxMessageLength  int   `json:"max_message_length"`
-	MaxMediaSize      int64 `json:"max_media_size"`
-	MaxAttachments    int   `json:"max_attachments"`
+	MaxMessageLength int   `json:"max_message_length"`
+	MaxMediaSize     int64 `json:"max_media_size"`
+	MaxAttachments   int   `json:"max_attachments"`
 
 	// Supported media types
 	SupportedMediaTypes []string `json:"supported_media_types"`
@@ -125,20 +128,20 @@ type ChannelCapabilities struct {
 
 // ChannelInfo provides information about a channel adapter
 type ChannelInfo struct {
-	Type        ChannelType          `json:"type"`
-	Name        string               `json:"name"`
-	Description string               `json:"description"`
-	Version     string               `json:"version"`
-	Author      string               `json:"author"`
+	Type         ChannelType          `json:"type"`
+	Name         string               `json:"name"`
+	Description  string               `json:"description"`
+	Version      string               `json:"version"`
+	Author       string               `json:"author"`
 	Capabilities *ChannelCapabilities `json:"capabilities"`
 }
 
 // ConnectionStatus represents the connection state of a channel
 type ConnectionStatus struct {
-	Connected   bool      `json:"connected"`
-	Status      string    `json:"status"`
-	Error       string    `json:"error,omitempty"`
-	LastConnect time.Time `json:"last_connect,omitempty"`
+	Connected   bool              `json:"connected"`
+	Status      string            `json:"status"`
+	Error       string            `json:"error,omitempty"`
+	LastConnect time.Time         `json:"last_connect,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 

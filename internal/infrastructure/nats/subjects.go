@@ -171,25 +171,25 @@ const StreamWhatsApp = "LINKTOR_WHATSAPP"
 // Subject patterns for WhatsApp-specific events
 const (
 	// Template events
-	SubjectWhatsAppTemplateStatusAll     = "linktor.whatsapp.template.status.>"
-	SubjectWhatsAppTemplateStatusPattern = "linktor.whatsapp.template.status.%s" // %s = tenant_id
-	SubjectWhatsAppTemplateQualityAll     = "linktor.whatsapp.template.quality.>"
-	SubjectWhatsAppTemplateQualityPattern = "linktor.whatsapp.template.quality.%s"
-	SubjectWhatsAppTemplateCategoryAll    = "linktor.whatsapp.template.category.>"
+	SubjectWhatsAppTemplateStatusAll       = "linktor.whatsapp.template.status.>"
+	SubjectWhatsAppTemplateStatusPattern   = "linktor.whatsapp.template.status.%s" // %s = tenant_id
+	SubjectWhatsAppTemplateQualityAll      = "linktor.whatsapp.template.quality.>"
+	SubjectWhatsAppTemplateQualityPattern  = "linktor.whatsapp.template.quality.%s"
+	SubjectWhatsAppTemplateCategoryAll     = "linktor.whatsapp.template.category.>"
 	SubjectWhatsAppTemplateCategoryPattern = "linktor.whatsapp.template.category.%s"
 
 	// Account events
-	SubjectWhatsAppAccountAlertAll     = "linktor.whatsapp.account.alert.>"
-	SubjectWhatsAppAccountAlertPattern = "linktor.whatsapp.account.alert.%s"
-	SubjectWhatsAppAccountUpdateAll    = "linktor.whatsapp.account.update.>"
+	SubjectWhatsAppAccountAlertAll      = "linktor.whatsapp.account.alert.>"
+	SubjectWhatsAppAccountAlertPattern  = "linktor.whatsapp.account.alert.%s"
+	SubjectWhatsAppAccountUpdateAll     = "linktor.whatsapp.account.update.>"
 	SubjectWhatsAppAccountUpdatePattern = "linktor.whatsapp.account.update.%s"
-	SubjectWhatsAppAccountReviewAll    = "linktor.whatsapp.account.review.>"
+	SubjectWhatsAppAccountReviewAll     = "linktor.whatsapp.account.review.>"
 	SubjectWhatsAppAccountReviewPattern = "linktor.whatsapp.account.review.%s"
 
 	// Phone number events
-	SubjectWhatsAppPhoneNameAll      = "linktor.whatsapp.phone.name.>"
-	SubjectWhatsAppPhoneNamePattern  = "linktor.whatsapp.phone.name.%s"
-	SubjectWhatsAppPhoneQualityAll   = "linktor.whatsapp.phone.quality.>"
+	SubjectWhatsAppPhoneNameAll        = "linktor.whatsapp.phone.name.>"
+	SubjectWhatsAppPhoneNamePattern    = "linktor.whatsapp.phone.name.%s"
+	SubjectWhatsAppPhoneQualityAll     = "linktor.whatsapp.phone.quality.>"
 	SubjectWhatsAppPhoneQualityPattern = "linktor.whatsapp.phone.quality.%s"
 
 	// Flow events
@@ -211,20 +211,20 @@ const (
 
 // WhatsApp-specific event types
 const (
-	EventWhatsAppTemplateApproved     = "whatsapp.template.approved"
-	EventWhatsAppTemplateRejected     = "whatsapp.template.rejected"
-	EventWhatsAppTemplatePaused       = "whatsapp.template.paused"
-	EventWhatsAppTemplateDisabled     = "whatsapp.template.disabled"
-	EventWhatsAppTemplateQualityGreen = "whatsapp.template.quality.green"
+	EventWhatsAppTemplateApproved      = "whatsapp.template.approved"
+	EventWhatsAppTemplateRejected      = "whatsapp.template.rejected"
+	EventWhatsAppTemplatePaused        = "whatsapp.template.paused"
+	EventWhatsAppTemplateDisabled      = "whatsapp.template.disabled"
+	EventWhatsAppTemplateQualityGreen  = "whatsapp.template.quality.green"
 	EventWhatsAppTemplateQualityYellow = "whatsapp.template.quality.yellow"
-	EventWhatsAppTemplateQualityRed   = "whatsapp.template.quality.red"
+	EventWhatsAppTemplateQualityRed    = "whatsapp.template.quality.red"
 
-	EventWhatsAppAccountAlert   = "whatsapp.account.alert"
-	EventWhatsAppAccountBanned  = "whatsapp.account.banned"
-	EventWhatsAppAccountReview  = "whatsapp.account.review"
+	EventWhatsAppAccountAlert  = "whatsapp.account.alert"
+	EventWhatsAppAccountBanned = "whatsapp.account.banned"
+	EventWhatsAppAccountReview = "whatsapp.account.review"
 
-	EventWhatsAppPhoneFlagged   = "whatsapp.phone.flagged"
-	EventWhatsAppPhoneUnflagged = "whatsapp.phone.unflagged"
+	EventWhatsAppPhoneFlagged      = "whatsapp.phone.flagged"
+	EventWhatsAppPhoneUnflagged    = "whatsapp.phone.unflagged"
 	EventWhatsAppPhoneNameApproved = "whatsapp.phone.name.approved"
 	EventWhatsAppPhoneNameRejected = "whatsapp.phone.name.rejected"
 

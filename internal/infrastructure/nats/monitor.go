@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // Monitor provides methods to monitor NATS JetStream streams and consumers
