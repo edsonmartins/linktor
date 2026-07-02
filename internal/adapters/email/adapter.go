@@ -3,11 +3,13 @@ package email
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 )
 
@@ -156,14 +158,24 @@ func (a *Adapter) Connect(ctx context.Context) error {
 	a.client = client
 	a.stopCh = make(chan struct{})
 
-	// Start IMAP polling if configured (for SMTP provider)
+	// Start IMAP polling if configured (SMTP provider). The hand-rolled IMAP
+	// fetch/parse path is not homologation-ready (it silently returns zero
+	// messages), so it is disabled by default: an SMTP+IMAP channel would look
+	// "connected" while dropping every inbound email. Opt in explicitly with
+	// LINKTOR_ENABLE_IMAP_INBOUND=true for experimental use; production inbound
+	// should use a hosted-webhook provider (Mailgun/SendGrid/SES/Postmark).
 	if a.config.Provider == ProviderSMTP && a.config.IMAPHost != "" {
-		imapClient, err := NewIMAPClient(a.config)
-		if err == nil {
-			if err := imapClient.Connect(ctx); err == nil {
-				a.imapClient = imapClient
-				go a.startIMAPPolling()
+		if os.Getenv("LINKTOR_ENABLE_IMAP_INBOUND") == "true" {
+			imapClient, err := NewIMAPClient(a.config)
+			if err == nil {
+				if err := imapClient.Connect(ctx); err == nil {
+					a.imapClient = imapClient
+					go a.startIMAPPolling()
+				}
 			}
+		} else {
+			logger.Warn("email IMAP inbound is disabled (experimental); SMTP outbound only. " +
+				"Set LINKTOR_ENABLE_IMAP_INBOUND=true to enable, or use a hosted-webhook provider for inbound")
 		}
 	}
 
