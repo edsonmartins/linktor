@@ -2,12 +2,20 @@ package logger
 
 import (
 	"os"
+	"sync"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-var log *zap.Logger
+// mu guards the package logger. Init (write), Default (read + lazy init) and
+// every log helper touch the same global, and tests/goroutines call them
+// concurrently — without this lock `go test -race` flags a data race between a
+// test's Init and a still-running goroutine's Default/Info.
+var (
+	mu  sync.RWMutex
+	log *zap.Logger
+)
 
 // Init initializes the logger with the given configuration
 func Init(level, format string) error {
@@ -34,18 +42,31 @@ func Init(level, format string) error {
 		config.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
 	}
 
-	var err error
-	log, err = config.Build(zap.AddCallerSkip(1))
+	built, err := config.Build(zap.AddCallerSkip(1))
 	if err != nil {
 		return err
 	}
 
+	mu.Lock()
+	log = built
+	mu.Unlock()
 	return nil
 }
 
-// Default returns a default logger if Init wasn't called
+// Default returns the configured logger, lazily creating a development logger if
+// Init wasn't called. The returned *zap.Logger is itself safe for concurrent use;
+// only the global pointer needs guarding.
 func Default() *zap.Logger {
-	if log == nil {
+	mu.RLock()
+	l := log
+	mu.RUnlock()
+	if l != nil {
+		return l
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if log == nil { // re-check: another goroutine may have set it
 		log, _ = zap.NewDevelopment()
 	}
 	return log
