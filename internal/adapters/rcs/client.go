@@ -146,6 +146,13 @@ func (c *Client) sendZenviaMessage(ctx context.Context, msg *OutboundMessage) (*
 		})
 	}
 
+	// NOTE: msg.Card, msg.Carousel and msg.Suggestions are intentionally NOT
+	// serialized yet. Zenvia's RCS rich-content (rich card / carousel / suggested
+	// replies & actions) wire format is not encoded anywhere in this codebase, and
+	// emitting a guessed schema would make Zenvia reject the whole send. Rich
+	// outbound is therefore a documented follow-up pending confirmation of Zenvia's
+	// RCS content schema; text + media send/receive is homologation-ready today.
+
 	body, err := json.Marshal(zenviaMsg)
 	if err != nil {
 		return nil, err
@@ -201,6 +208,11 @@ func (c *Client) parseZenviaWebhook(body []byte) (*WebhookPayload, error) {
 			Contents []struct {
 				Type string `json:"type"`
 				Text string `json:"text,omitempty"`
+				// Media (file) content mirrors the outbound ZenviaFile shape.
+				File *struct {
+					FileURL  string `json:"fileUrl"`
+					FileMIME string `json:"fileMimeType"`
+				} `json:"file,omitempty"`
 			} `json:"contents"`
 		} `json:"message,omitempty"`
 		MessageStatus *struct {
@@ -220,9 +232,23 @@ func (c *Client) parseZenviaWebhook(body []byte) (*WebhookPayload, error) {
 
 	if webhook.Type == "MESSAGE" && webhook.Message != nil {
 		timestamp, _ := time.Parse(time.RFC3339, webhook.Timestamp)
-		text := ""
-		if len(webhook.Message.Contents) > 0 {
-			text = webhook.Message.Contents[0].Text
+
+		// Iterate every content part: an inbound RCS message can carry text and/or
+		// a file (image/video/document). The previous code read only Contents[0].Text,
+		// so a media-first or media-only message was silently delivered as empty text.
+		var text, mediaURL, mediaType string
+		for i := range webhook.Message.Contents {
+			ct := webhook.Message.Contents[i]
+			if ct.Text != "" {
+				if text != "" {
+					text += "\n"
+				}
+				text += ct.Text
+			}
+			if ct.File != nil && ct.File.FileURL != "" && mediaURL == "" {
+				mediaURL = ct.File.FileURL
+				mediaType = ct.File.FileMIME
+			}
 		}
 
 		payload.Type = "message"
@@ -230,6 +256,8 @@ func (c *Client) parseZenviaWebhook(body []byte) (*WebhookPayload, error) {
 			ExternalID:  webhook.Message.ID,
 			SenderPhone: webhook.Message.From,
 			Text:        text,
+			MediaURL:    mediaURL,
+			MediaType:   mediaType,
 			Timestamp:   timestamp,
 			AgentID:     webhook.Message.To,
 		}

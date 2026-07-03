@@ -41,9 +41,13 @@ mapeou o esforço de reativação por canal:
   `parseSearchResponse` é stub (sempre vazio) + `parseMIMEEmail` nunca chamado. Webhooks hospedados
   (Mailgun HMAC ok; SendGrid/SES sem assinatura nativa). Caminho rápido: escopar a Mailgun + corrigir
   outbound.
-- **RCS — Grande (Médio se só Zenvia).** Esqueleto text-only: cards/carrosséis/sugestões nunca
-  serializados nos `send*`/parsers; auth Google RBM errada (Bearer api_key vs OAuth2); `RCSWebhook`
-  dá 500 sem `provider` default.
+- **RCS (Zenvia) — PARCIAL nesta parte.** Corrigido: parser Zenvia agora itera todos os `contents`
+  e extrai mídia (antes só `contents[0].text` → mídia/multi-content perdidos); handler `RCSWebhook`
+  faz default de provider→zenvia (elimina o 500) e retorna 500 em falha de publish (at-least-once,
+  antes engolia). Texto+mídia send/receive homologável. PENDENTE (não reativado no allowlist):
+  serialização de rich card/carousel/suggestions no `sendZenviaMessage` — o wire format RCS rico da
+  Zenvia não existe no código e chutar quebraria o envio; requer confirmar o schema da API Zenvia.
+  Google RBM (auth OAuth) permanece fora de escopo.
 - **Voz — Grande + descompasso.** Adapter existe mas NÃO integrado: sem `plugin.Register`, sem rota
   de webhook, sem ponte call→conversa; IVR síncrono não encaixa no worker outbound assíncrono.
   Vários `ValidateWebhook` fail-open (Vonage/Asterisk/Connect) e stubs (Connect recording).

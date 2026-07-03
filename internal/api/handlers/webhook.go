@@ -1726,9 +1726,15 @@ func (h *WebhookHandler) RCSWebhook(c *gin.Context) {
 		return
 	}
 
-	// Create RCS client for validation
+	// Create RCS client for validation. Default the provider to Zenvia when the
+	// channel omits it — mirrors Adapter.Initialize. Without this, an empty
+	// provider fails Config.Validate and every inbound webhook returns HTTP 500.
+	provider := rcs.Provider(channel.Config["provider"])
+	if provider == "" {
+		provider = rcs.ProviderZenvia
+	}
 	rcsConfig := &rcs.Config{
-		Provider:      rcs.Provider(channel.Config["provider"]),
+		Provider:      provider,
 		AgentID:       channel.Config["agent_id"],
 		APIKey:        channel.Credentials["api_key"],
 		WebhookSecret: channel.Credentials["webhook_secret"],
@@ -1765,8 +1771,11 @@ func (h *WebhookHandler) RCSWebhook(c *gin.Context) {
 	switch payload.Type {
 	case "message":
 		if payload.Message != nil {
+			// Surface a publish failure as 500 so Zenvia retries the delivery,
+			// rather than acking and silently losing the inbound message.
 			if err := h.processRCSMessage(c.Request.Context(), channel, payload.Message); err != nil {
-				// Log error but continue
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process message"})
+				return
 			}
 		}
 	case "status":
