@@ -518,9 +518,11 @@ func (p *AmazonConnectProvider) ParseWebhook(ctx context.Context, headers map[st
 
 // ValidateWebhook validates Amazon Connect webhook signature
 func (p *AmazonConnectProvider) ValidateWebhook(ctx context.Context, headers map[string]string, body []byte) bool {
-	// EventBridge events are delivered via HTTPS from AWS
-	// Additional validation can be done via Lambda authorizer
-	return true
+	// Fail closed. EventBridge/SNS deliveries must be verified via the SNS message
+	// signature (or a Lambda authorizer); that is not implemented yet. Reject
+	// rather than accept every request as the previous "return true" did. Wiring
+	// the Amazon Connect voice provider requires implementing SNS verification.
+	return false
 }
 
 // mapStatus maps Amazon Connect status to CallStatus

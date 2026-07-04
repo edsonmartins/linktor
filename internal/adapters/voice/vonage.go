@@ -645,10 +645,12 @@ func (p *VonageProvider) ParseWebhook(ctx context.Context, headers map[string]st
 
 // ValidateWebhook validates Vonage webhook signature
 func (p *VonageProvider) ValidateWebhook(ctx context.Context, headers map[string]string, body []byte) bool {
-	// Vonage uses JWT-based signing for webhooks
-	// In production, validate the JWT signature
-	// For now, accept all webhooks
-	return true
+	// Fail closed. Vonage signs webhooks with a JWT (Authorization: Bearer) that
+	// must be verified against the application's signature secret; that
+	// verification is not implemented yet. Until it is, reject rather than accept
+	// every request — a blanket "return true" let any caller forge webhooks.
+	// Wiring the Vonage voice provider requires implementing JWT verification here.
+	return false
 }
 
 // mapStatus maps Vonage status to CallStatus
