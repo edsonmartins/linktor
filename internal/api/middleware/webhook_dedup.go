@@ -87,6 +87,16 @@ func (d *WebhookDedup) Middleware(channelKey string) gin.HandlerFunc {
 
 		c.Header("X-Webhook-Dedup", "fresh")
 		c.Next()
+
+		// If the handler failed (5xx), release the dedup key so the provider's
+		// retry actually re-runs the handler. Otherwise the key we just set would
+		// short-circuit every retry as a duplicate and the event would be lost —
+		// defeating handlers that return 5xx specifically to force a retry.
+		if c.Writer.Status() >= http.StatusInternalServerError {
+			delCtx, delCancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+			defer delCancel()
+			d.redis.Del(delCtx, key)
+		}
 	}
 }
 
