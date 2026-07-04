@@ -40,8 +40,8 @@ func (s *emailSender) Send(ctx context.Context, msg *outbound.Message) (*outboun
 		return nil, outbound.Permanentf("recipient email is required")
 	}
 
-	email := buildOutboundEmail(msg)
-	if email.TextBody == "" && email.HTMLBody == "" && len(email.Attachments) == 0 {
+	email := buildOutboundEmail(ctx, msg)
+	if email.TextBody == "" && email.HTMLBody == "" && !hasContentAttachment(email.Attachments) {
 		return nil, outbound.Permanentf("empty email body")
 	}
 
@@ -68,7 +68,7 @@ func (s *emailSender) Send(ctx context.Context, msg *outbound.Message) (*outboun
 // HTML alternative, Reply-To, CC/BCC and media attachments — all previously
 // dropped by the text-only SendText path, which broke reply threading and made
 // every agent reply start a new thread in the recipient's inbox.
-func buildOutboundEmail(msg *outbound.Message) *OutboundEmail {
+func buildOutboundEmail(ctx context.Context, msg *outbound.Message) *OutboundEmail {
 	subject, body := emailSubjectBody(msg)
 
 	email := &OutboundEmail{
@@ -87,15 +87,37 @@ func buildOutboundEmail(msg *outbound.Message) *OutboundEmail {
 		email.BCC = splitAddresses(bcc)
 	}
 
-	// A media reply becomes an attachment (URL-hosted); the caption is the body.
+	// A media reply becomes a real attachment. Email providers only send the
+	// attachment BYTES (Content) — none of them fetch a bare URL — so download the
+	// media and attach it. If the fetch fails, fall back to putting the link in
+	// the body so the media is never silently lost.
 	if m, ok := msg.Content.(outbound.Media); ok && m.URL != "" {
-		email.Attachments = append(email.Attachments, &Attachment{
-			Filename:    m.Filename,
-			ContentType: msg.Meta("mime_type"),
-			URL:         m.URL,
-		})
+		data, name, err := outbound.FetchMedia(ctx, m.URL, m.Filename)
+		if err == nil && len(data) > 0 {
+			email.Attachments = append(email.Attachments, &Attachment{
+				Filename:    name,
+				ContentType: msg.Meta("mime_type"),
+				Content:     data,
+			})
+		} else {
+			if email.TextBody != "" {
+				email.TextBody += "\n"
+			}
+			email.TextBody += m.URL
+		}
 	}
 	return email
+}
+
+// hasContentAttachment reports whether any attachment carries actual bytes, so
+// the empty-body guard is not satisfied by a content-less placeholder.
+func hasContentAttachment(atts []*Attachment) bool {
+	for _, a := range atts {
+		if len(a.Content) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // splitAddresses splits a comma-separated address list, trimming whitespace and

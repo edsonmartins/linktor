@@ -1,6 +1,9 @@
 package email
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,7 +30,7 @@ func TestBuildOutboundEmail_PreservesThreadingHTMLAndAddressing(t *testing.T) {
 		},
 	}
 
-	email := buildOutboundEmail(msg)
+	email := buildOutboundEmail(context.Background(), msg)
 
 	assert.Equal(t, []string{"customer@example.com"}, email.To)
 	assert.Equal(t, "Re: your question", email.Subject)
@@ -40,20 +43,44 @@ func TestBuildOutboundEmail_PreservesThreadingHTMLAndAddressing(t *testing.T) {
 	assert.Equal(t, []string{"audit@us.example.com"}, email.BCC)
 }
 
-func TestBuildOutboundEmail_MediaBecomesAttachment(t *testing.T) {
+// Media is downloaded and attached as real bytes (email providers only send
+// attachment Content, never a bare URL).
+func TestBuildOutboundEmail_MediaIsFetchedIntoAttachmentBytes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write([]byte("%PDF-1.4 fake bytes"))
+	}))
+	defer srv.Close()
+
 	msg := &outbound.Message{
 		To:       "customer@example.com",
-		Content:  outbound.Media{URL: "https://files.example.com/invoice.pdf", Filename: "invoice.pdf", Caption: "see attached"},
+		Content:  outbound.Media{URL: srv.URL + "/invoice.pdf", Filename: "invoice.pdf", Caption: "see attached"},
 		Metadata: map[string]string{"mime_type": "application/pdf"},
 	}
 
-	email := buildOutboundEmail(msg)
+	email := buildOutboundEmail(context.Background(), msg)
 
 	assert.Equal(t, "see attached", email.TextBody)
 	require.Len(t, email.Attachments, 1)
-	assert.Equal(t, "invoice.pdf", email.Attachments[0].Filename)
 	assert.Equal(t, "application/pdf", email.Attachments[0].ContentType)
-	assert.Equal(t, "https://files.example.com/invoice.pdf", email.Attachments[0].URL)
+	assert.Equal(t, []byte("%PDF-1.4 fake bytes"), email.Attachments[0].Content)
+	assert.NotEmpty(t, email.Attachments[0].Filename)
+}
+
+// When the media can't be fetched, the link falls back into the body so the
+// media is never silently lost, and no empty content-less attachment is created.
+func TestBuildOutboundEmail_MediaFetchFailureFallsBackToBodyLink(t *testing.T) {
+	msg := &outbound.Message{
+		To:       "customer@example.com",
+		Content:  outbound.Media{URL: "http://127.0.0.1:1/nope.pdf", Filename: "nope.pdf", Caption: "see attached"},
+		Metadata: map[string]string{"mime_type": "application/pdf"},
+	}
+
+	email := buildOutboundEmail(context.Background(), msg)
+
+	assert.Empty(t, email.Attachments)
+	assert.Contains(t, email.TextBody, "see attached")
+	assert.Contains(t, email.TextBody, "http://127.0.0.1:1/nope.pdf")
 }
 
 // A plain text reply with no threading metadata still produces a valid text email
@@ -61,7 +88,7 @@ func TestBuildOutboundEmail_MediaBecomesAttachment(t *testing.T) {
 func TestBuildOutboundEmail_PlainTextDefaults(t *testing.T) {
 	msg := &outbound.Message{To: "c@example.com", Content: outbound.Text{Body: "hi"}}
 
-	email := buildOutboundEmail(msg)
+	email := buildOutboundEmail(context.Background(), msg)
 
 	assert.Equal(t, "Message", email.Subject)
 	assert.Equal(t, "hi", email.TextBody)
