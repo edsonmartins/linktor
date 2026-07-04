@@ -51,7 +51,7 @@ func (r *OrderRepository) Create(ctx context.Context, order *entity.Order) error
 			tracking_url, created_at, updated_at, confirmed_at, shipped_at,
 			delivered_at, cancelled_at
 		) VALUES (
-			$1, $2, $3, NULLIF($4,''), $5, $6, $7, $8, $9, $10, $11, $12,
+			$1, $2, $3, NULLIF($4,'')::uuid, $5, $6, $7, $8, $9, $10, $11, $12,
 			$13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
 		)
 	`

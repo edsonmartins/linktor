@@ -115,7 +115,10 @@ func TestMigrations_Rollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("provider: %v", err)
 	}
-	if _, err := provider.Down(ctx); err != nil {
+	// DownTo(0) rolls the whole stack back (00009 → baseline); the baseline's Down
+	// drops every application table. A single Down() would only revert the newest
+	// migration and leave the baseline tables (incl. tenants) in place.
+	if _, err := provider.DownTo(ctx, 0); err != nil {
 		t.Fatalf("migrate down: %v", err)
 	}
 
