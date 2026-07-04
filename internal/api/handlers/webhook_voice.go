@@ -39,23 +39,16 @@ func (h *WebhookHandler) VoiceWebhook(c *gin.Context) {
 		return
 	}
 
-	authToken := channel.Credentials["auth_token"]
-	if authToken != "" {
-		values, _ := url.ParseQuery(string(body))
-		if !sms.ValidateSignature(authToken, requestURL(c), firstValues(values), c.GetHeader("X-Twilio-Signature")) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
-			return
-		}
-	} else if h.requireWebhookSecrets {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+	if !h.twilioSignatureOK(c, channel, body) {
 		return
 	}
 
-	// Reuse the Twilio voice parser to normalize the form into a WebhookEvent.
+	// Reuse the shared Twilio voice parser to normalize the form into a
+	// WebhookEvent (stateless — one instance is reused across requests).
 	headers := map[string]string{
 		"X-Twilio-Signature": c.GetHeader("X-Twilio-Signature"),
 	}
-	event, err := voice.NewTwilioProvider().ParseWebhook(c.Request.Context(), headers, body)
+	event, err := voiceTwilioParser.ParseWebhook(c.Request.Context(), headers, body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
@@ -78,7 +71,32 @@ func (h *WebhookHandler) VoiceWebhook(c *gin.Context) {
 		c.String(http.StatusOK, voiceGreetingTwiML(channel))
 		return
 	}
-	c.String(http.StatusOK, emptyVoiceTwiML())
+	c.String(http.StatusOK, sms.EmptyTwiMLResponse())
+}
+
+// voiceTwilioParser is a shared, stateless parser reused across voice webhook
+// requests so each callback doesn't allocate a provider + http.Client.
+var voiceTwilioParser = voice.NewTwilioProvider()
+
+// twilioSignatureOK validates the Twilio HMAC-SHA1 signature for the request and
+// is shared by the SMS and voice webhooks (both are Twilio). It returns true if
+// the handler may proceed; otherwise it has already written a 401. When no
+// auth_token is configured it falls back to the requireWebhookSecrets policy.
+func (h *WebhookHandler) twilioSignatureOK(c *gin.Context, channel *entity.Channel, body []byte) bool {
+	authToken := channel.Credentials["auth_token"]
+	if authToken != "" {
+		values, _ := url.ParseQuery(string(body))
+		if !sms.ValidateSignature(authToken, requestURL(c), firstValues(values), c.GetHeader("X-Twilio-Signature")) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+			return false
+		}
+		return true
+	}
+	if h.requireWebhookSecrets {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+		return false
+	}
+	return true
 }
 
 // isInitialInboundCall reports whether the event is the first webhook for a new
@@ -125,6 +143,26 @@ func (h *WebhookHandler) voiceInboundFromEvent(channel *entity.Channel, e *voice
 		return nil
 	}
 
+	// The caller id keys the conversation; without it we'd create a junk
+	// empty-identifier contact, so skip events that carry no caller.
+	if e.From == "" {
+		return nil
+	}
+
+	// The inbound pipeline dedups on (conversation, external_id). Every webhook of
+	// one call shares the CallSid, so qualify it with the event type: distinct
+	// events (recording/transcription/ended) each persist, while the several
+	// lifecycle callbacks that all mean "call started" collapse to a single
+	// message. DTMF/speech can legitimately repeat within a call, so include the
+	// input value to keep each entry.
+	externalID := e.CallID + ":" + eventType
+	switch eventType {
+	case "dtmf":
+		externalID += ":" + e.Digits
+	case "speech":
+		externalID += ":" + e.SpeechResult
+	}
+
 	metadata := map[string]string{
 		"sender_id":   e.From,
 		"from":        e.From,
@@ -142,7 +180,7 @@ func (h *WebhookHandler) voiceInboundFromEvent(channel *entity.Channel, e *voice
 		TenantID:    channel.TenantID,
 		ChannelID:   channel.ID,
 		ChannelType: "voice",
-		ExternalID:  e.CallID,
+		ExternalID:  externalID,
 		ContentType: contentType,
 		Content:     content,
 		Metadata:    metadata,
@@ -179,10 +217,6 @@ func voiceGreetingTwiML(channel *entity.Channel) string {
 	return `<?xml version="1.0" encoding="UTF-8"?>` +
 		`<Response><Say>` + xmlEscape(greeting) + `</Say>` +
 		`<Record maxLength="120" transcribe="true" playBeep="true"/></Response>`
-}
-
-func emptyVoiceTwiML() string {
-	return `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`
 }
 
 // xmlEscape escapes the minimal set of characters unsafe inside an XML text node.

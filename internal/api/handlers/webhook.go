@@ -332,15 +332,7 @@ func (h *WebhookHandler) TwilioWebhook(c *gin.Context) {
 		return
 	}
 
-	authToken := channel.Credentials["auth_token"]
-	if authToken != "" {
-		values, _ := url.ParseQuery(string(body))
-		if !sms.ValidateSignature(authToken, requestURL(c), firstValues(values), c.GetHeader("X-Twilio-Signature")) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
-			return
-		}
-	} else if h.requireWebhookSecrets {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
+	if !h.twilioSignatureOK(c, channel, body) {
 		return
 	}
 
