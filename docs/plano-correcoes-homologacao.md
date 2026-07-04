@@ -48,9 +48,14 @@ mapeou o esforço de reativação por canal:
   serialização de rich card/carousel/suggestions no `sendZenviaMessage` — o wire format RCS rico da
   Zenvia não existe no código e chutar quebraria o envio; requer confirmar o schema da API Zenvia.
   Google RBM (auth OAuth) permanece fora de escopo.
-- **Voz — Grande + descompasso.** Adapter existe mas NÃO integrado: sem `plugin.Register`, sem rota
-  de webhook, sem ponte call→conversa; IVR síncrono não encaixa no worker outbound assíncrono.
-  Vários `ValidateWebhook` fail-open (Vonage/Asterisk/Connect) e stubs (Connect recording).
+- **Voz (Twilio) — BASELINE INBOUND nesta parte.** Corrigido: todos os `ValidateWebhook` fail-open
+  fechados (Twilio removeu o "skip in development"; Vonage/Asterisk/Connect → false pendente de
+  verificação real). Adicionado handler `VoiceWebhook` + rota `/webhooks/voice/:channelId`: valida
+  assinatura Twilio (HMAC-SHA1, igual ao SMS), traduz eventos de chamada (status/DTMF/fala/gravação/
+  transcrição) em mensagens inbound (conversa por contato) e responde TwiML estático (saudação +
+  `<Record transcribe>`). PENDENTE (design/grande): outbound (originar chamadas) exige shim que
+  implemente `plugin.ChannelAdapter` (o `voice.Adapter` não o satisfaz); URA dinâmica exige estado de
+  fluxo persistente (atual em memória). Voz NÃO entra no allowlist ainda.
 
 Padrão comum a todos: produção usa handler HTTP + funcs de pacote, não `Adapter.ProcessWebhook`;
 adapters têm `ValidateWebhook` fail-open (código morto mas perigoso).

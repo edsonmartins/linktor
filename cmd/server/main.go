@@ -1029,6 +1029,7 @@ func main() {
 			webhooks.Any("/messenger/:channelId", webhookHandler.FacebookWebhook) // Alias for Facebook
 			webhooks.Any("/instagram/:channelId", webhookHandler.InstagramWebhook)
 			webhooks.Any("/rcs/:channelId", webhookHandler.RCSWebhook)
+			webhooks.Any("/voice/:channelId", webhookHandler.VoiceWebhook)
 			webhooks.Any("/email/:channelId", webhookHandler.EmailWebhook)
 			webhooks.Any("/email/:channelId/sendgrid", webhookHandler.EmailWebhook)
 			webhooks.Any("/email/:channelId/mailgun", webhookHandler.EmailWebhook)
