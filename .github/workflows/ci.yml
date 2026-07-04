@@ -74,7 +74,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 24 (npm 11) matches the environment package-lock.json is generated in;
+          # npm 10 (node 22) resolves the optional @swc/helpers peer to a different
+          # version and rejects the lock at `npm ci`.
+          node-version: 24
           cache: npm
           cache-dependency-path: web/admin/package-lock.json
 
