@@ -152,6 +152,17 @@ func (c *Client) sendZenviaMessage(ctx context.Context, msg *OutboundMessage) (*
 	// emitting a guessed schema would make Zenvia reject the whole send. Rich
 	// outbound is therefore a documented follow-up pending confirmation of Zenvia's
 	// RCS content schema; text + media send/receive is homologation-ready today.
+	//
+	// Guard the rich-only case explicitly: a message carrying only a card/carousel/
+	// suggestion would otherwise marshal to an empty contents array and Zenvia
+	// would reject it with a raw HTTP 400. Fail with a clear, actionable message.
+	if len(zenviaMsg.Contents) == 0 {
+		return &SendResult{
+			Success:   false,
+			Error:     "rcs: message has no sendable content (text or media); rich card/carousel/suggestions are not yet supported for the Zenvia provider",
+			Timestamp: time.Now(),
+		}, nil
+	}
 
 	body, err := json.Marshal(zenviaMsg)
 	if err != nil {
