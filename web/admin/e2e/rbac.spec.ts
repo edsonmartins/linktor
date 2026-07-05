@@ -119,6 +119,19 @@ test.describe('RBAC', () => {
     await page.goto('/settings')
 
     await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible({ timeout: 15000 })
+
+    // After logout the refresh-token cookie is gone, so the AuthGuard's on-mount
+    // re-auth refresh must fail. Without this override the refresh mock still
+    // returns 200, re-authenticating the just-logged-out user and bouncing them
+    // to /dashboard. Re-route refresh to 401 to mirror the cleared session.
+    await page.route('**/api/v1/auth/refresh', async (route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, error: { code: '401', message: 'session ended' } }),
+      })
+    })
+
     await page.getByRole('button', { name: 'Logout' }).click()
 
     // AuthGuard redirects unauthenticated users to /login (with returnUrl).

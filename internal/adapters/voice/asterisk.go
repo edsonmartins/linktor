@@ -652,9 +652,11 @@ func (p *AsteriskProvider) ParseWebhook(ctx context.Context, headers map[string]
 
 // ValidateWebhook validates Asterisk webhook
 func (p *AsteriskProvider) ValidateWebhook(ctx context.Context, headers map[string]string, body []byte) bool {
-	// ARI webhooks are typically from localhost or internal network
-	// Add IP whitelisting or auth token validation as needed
-	return true
+	// Fail closed. ARI events carry no signature, so authenticity must come from a
+	// shared-secret/auth-token check or IP allowlist — neither is implemented yet.
+	// Rejecting is safer than the previous blanket "return true"; wiring the
+	// Asterisk voice provider requires adding a real control here.
+	return false
 }
 
 // mapState maps Asterisk channel state to CallStatus

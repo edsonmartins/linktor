@@ -256,7 +256,14 @@ func InferMimeType(filename string) string {
 	ext := strings.ToLower(filepath.Ext(filename))
 	mimeType := mime.TypeByExtension(ext)
 	if mimeType != "" {
-		return mimeType
+		// mime.TypeByExtension consults the platform's mime.types database, whose
+		// casing varies by OS (Linux returns "audio/AMR", macOS "audio/amr").
+		// type/subtype are case-insensitive per RFC 2045, so canonicalize the base
+		// to lowercase for deterministic, portable output while preserving params.
+		if i := strings.IndexByte(mimeType, ';'); i >= 0 {
+			return strings.ToLower(mimeType[:i]) + mimeType[i:]
+		}
+		return strings.ToLower(mimeType)
 	}
 
 	// Fallback for common extensions

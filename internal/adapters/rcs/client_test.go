@@ -353,6 +353,38 @@ func TestParseWebhook_Zenvia_Message(t *testing.T) {
 	assert.Equal(t, "agent-123", payload.Message.AgentID)
 }
 
+// An inbound RCS message carrying a media (file) part must surface MediaURL/
+// MediaType. Previously the parser read only contents[0].Text, so media — and
+// media-only messages — were dropped.
+func TestParseWebhook_Zenvia_InboundMedia(t *testing.T) {
+	cfg := validConfig()
+	cfg.Provider = ProviderZenvia
+	client, err := NewClient(cfg)
+	require.NoError(t, err)
+
+	body := []byte(`{
+		"id": "wh-2",
+		"timestamp": "2026-03-08T10:00:00Z",
+		"type": "MESSAGE",
+		"message": {
+			"id": "msg-ext-2",
+			"from": "+5511999999999",
+			"to": "agent-123",
+			"contents": [
+				{"type": "file", "file": {"fileUrl": "https://cdn.zenvia/x.jpg", "fileMimeType": "image/jpeg"}},
+				{"type": "text", "text": "check this"}
+			]
+		}
+	}`)
+
+	payload, err := client.ParseWebhook(body)
+	require.NoError(t, err)
+	require.NotNil(t, payload.Message)
+	assert.Equal(t, "check this", payload.Message.Text)
+	assert.Equal(t, "https://cdn.zenvia/x.jpg", payload.Message.MediaURL)
+	assert.Equal(t, "image/jpeg", payload.Message.MediaType)
+}
+
 func TestParseWebhook_Zenvia_Status(t *testing.T) {
 	cfg := validConfig()
 	cfg.Provider = ProviderZenvia

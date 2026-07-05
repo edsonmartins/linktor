@@ -555,6 +555,22 @@ func TestTwilioProvider_ValidateWebhook_WrongSignature(t *testing.T) {
 	assert.False(t, result)
 }
 
+// When the request URL cannot be reconstructed (proxy headers absent), the
+// signature cannot be verified, so validation must fail closed instead of the old
+// "skip in development" bypass that accepted any request.
+func TestTwilioProvider_ValidateWebhook_NoURLHeadersFailsClosed(t *testing.T) {
+	p := NewTwilioProvider()
+	p.authToken = "test_auth_token"
+
+	headers := map[string]string{
+		"X-Twilio-Signature": "any-signature",
+		// no X-Forwarded-Proto / Host / X-Original-URI
+	}
+
+	result := p.ValidateWebhook(context.Background(), headers, []byte("CallSid=CA123"))
+	assert.False(t, result)
+}
+
 func TestTwilioProvider_ValidateWebhook_MissingSignature(t *testing.T) {
 	p := NewTwilioProvider()
 	p.authToken = "test_auth_token"
@@ -590,19 +606,6 @@ func TestTwilioProvider_ValidateWebhook_LowercaseHeader(t *testing.T) {
 
 	result := p.ValidateWebhook(context.Background(), headers, []byte(body.Encode()))
 	assert.True(t, result)
-}
-
-func TestTwilioProvider_ValidateWebhook_DevFallback(t *testing.T) {
-	// When URL headers are missing, it falls back to "://" and skips validation
-	p := NewTwilioProvider()
-	p.authToken = "test_auth_token"
-
-	headers := map[string]string{
-		"X-Twilio-Signature": "any_signature",
-	}
-
-	result := p.ValidateWebhook(context.Background(), headers, []byte("CallSid=CA123"))
-	assert.True(t, result) // development fallback
 }
 
 // --- MakeCall with httptest ---

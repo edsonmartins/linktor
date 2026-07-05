@@ -495,11 +495,13 @@ func TestVonageProvider_ParseWebhook_InvalidJSON(t *testing.T) {
 
 // --- ValidateWebhook ---
 
-func TestVonageProvider_ValidateWebhook_AlwaysTrue(t *testing.T) {
+// ValidateWebhook fails closed until JWT verification is implemented, rather than
+// accepting every (potentially forged) webhook.
+func TestVonageProvider_ValidateWebhook_FailsClosed(t *testing.T) {
 	p := NewVonageProvider()
 
 	result := p.ValidateWebhook(context.Background(), nil, nil)
-	assert.True(t, result)
+	assert.False(t, result)
 }
 
 // --- mapStatus tests ---

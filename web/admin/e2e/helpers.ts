@@ -55,6 +55,19 @@ export async function setupAuth(page: Page, role: UserRole = 'admin') {
     })
   })
 
+  // Mock logout: the real backend returns 200 and expires the auth cookies. Without
+  // this, the POST /auth/logout is unmocked → the api client treats it as 401 →
+  // triggers the (mocked) refresh → re-authenticates mid-logout and lands on
+  // /dashboard instead of /login. Return 200 and clear the JS-readable marker.
+  await page.route('**/api/v1/auth/logout', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'Set-Cookie': 'linktor_authed=; Path=/; Max-Age=0' },
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true }),
+    })
+  })
+
   // Mock /me
   await page.route('**/api/v1/me', async (route) => {
     await route.fulfill({

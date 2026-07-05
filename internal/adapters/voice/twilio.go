@@ -579,8 +579,10 @@ func (p *TwilioProvider) ValidateWebhook(ctx context.Context, headers map[string
 	// Get the full URL from headers
 	requestURL := headers["X-Forwarded-Proto"] + "://" + headers["Host"] + headers["X-Original-URI"]
 	if requestURL == "://" {
-		// Fallback if headers not available
-		return true // Skip validation in development
+		// Fail closed: Twilio signs the exact request URL, so without it we cannot
+		// verify the signature. Accepting here (the old "skip in development"
+		// behavior) let any caller forge webhooks by omitting the proxy headers.
+		return false
 	}
 
 	// Parse body parameters
