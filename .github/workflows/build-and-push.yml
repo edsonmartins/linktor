@@ -55,12 +55,18 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Images publish under the integrall-tech org, but this repo lives under a
+      # different owner, so the automatic GITHUB_TOKEN cannot push there ('the
+      # requested installation does not exist'). Authenticate with a PAT that has
+      # write:packages on integrall-tech, provided via the GHCR_ORG_TOKEN secret.
+      # Set GHCR_ORG_USERNAME if the PAT belongs to an account other than the
+      # workflow actor.
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.GHCR_ORG_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_ORG_TOKEN }}
 
       - name: Compute tags
         id: tags
