@@ -20,9 +20,18 @@ mapeia para o `vendorId` do Core, sem reforma de domínio.
   publica em `tenant.{id}.linktor.inbound` via **NATS core publish** (o Core consome com core sub).
 - **Outbound (Core → Linktor):** assina `tenant.*.core.outbound` via **NATS core subscribe**, resolve
   a conversa do Linktor por `(customerId, channel)` (sem estado) e entrega via `SendMessageUseCase`.
+- **Channel config (Core → Linktor, L1):** assina `tenant.*.core.channel.config` (o Admin VendaX /
+  CA-06 publica), resolve o canal existente no Linktor por `(type, identifier)` e aplica os metadados
+  declarativos que o Core é autoridade: `status` → `Channel.Enabled`, e `settings.vendorId` →
+  `Channel.Config["vendax_vendor_id"]` (o vendedor-dono do canal). **O Linktor continua dono** do
+  canal — se a instância declarada não existe, apenas loga um aviso (não cria; pairing/credenciais
+  são do Linktor). Idempotente por versão (só aplica versões crescentes).
 
-Escopo do L0: **só texto, 1 canal, 1 vendedor por canal.** channel.config (L1), robustez/identidade
-(L2), rich objects/áudio (L3) e multi-vendedor (L4) são fases seguintes.
+O `vendax_vendor_id` do canal serve de **fallback do vendorId no inbound**: quando a conversa ainda
+não tem vendedor atribuído, o bridge usa o vendedor-dono do canal (fecha o "1 canal = 1 vendedor").
+
+Escopo até L1: **texto, canais mapeados por identifier, 1 vendedor por canal.** Robustez/identidade
+fina (L2), rich objects/áudio (L3) e multi-vendedor (L4) são fases seguintes.
 
 ## Pré-requisito de infra
 

@@ -44,8 +44,13 @@ type Bridge struct {
 	channelRepo      repository.ChannelRepository
 
 	outboundSub *natsgo.Subscription
+	channelSub  *natsgo.Subscription
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
+
+	// appliedVersion guarda a última versão de channel.config aplicada por tenant (idempotência).
+	mu             sync.Mutex
+	appliedVersion map[string]int
 }
 
 // NewBridge monta o bridge com a conexão NATS, o usecase de envio e os repositórios necessários
@@ -63,6 +68,7 @@ func NewBridge(
 		conversationRepo: conversationRepo,
 		contactRepo:      contactRepo,
 		channelRepo:      channelRepo,
+		appliedVersion:   make(map[string]int),
 	}
 }
 
@@ -76,7 +82,10 @@ func (b *Bridge) Start(ctx context.Context) error {
 	if err := b.startOutbound(ctx); err != nil {
 		return fmt.Errorf("bridge outbound: %w", err)
 	}
-	logger.Info("VendaX bridge iniciado (L0: texto, vendedor = usuário atribuído)")
+	if err := b.startChannelConfig(ctx); err != nil {
+		return fmt.Errorf("bridge channel.config: %w", err)
+	}
+	logger.Info("VendaX bridge iniciado (L0 texto + L1 channel.config)")
 	return nil
 }
 
@@ -87,6 +96,9 @@ func (b *Bridge) Stop() {
 	}
 	if b.outboundSub != nil {
 		_ = b.outboundSub.Unsubscribe()
+	}
+	if b.channelSub != nil {
+		_ = b.channelSub.Unsubscribe()
 	}
 	b.wg.Wait()
 	logger.Info("VendaX bridge parado")

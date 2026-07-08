@@ -90,6 +90,68 @@ func TestBuildSendInput(t *testing.T) {
 	}
 }
 
+// TestChannelConfigUnmarshal garante que o evento channel.config do Core é desserializado.
+func TestChannelConfigUnmarshal(t *testing.T) {
+	raw := []byte(`{
+		"tenantId": "acme",
+		"version": 3,
+		"channels": [
+			{"id":"wpp-01","type":"WHATSAPP","identifier":"+5511999990001","displayName":"WhatsApp Vendas","status":"ATIVO","settings":{"vendorId":"vendor-42"}}
+		]
+	}`)
+	var cfg channelConfigChanged
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.TenantID != "acme" || cfg.Version != 3 || len(cfg.Channels) != 1 {
+		t.Fatalf("cabeçalho incorreto: %+v", cfg)
+	}
+	ch := cfg.Channels[0]
+	if ch.Type != "WHATSAPP" || ch.Identifier != "+5511999990001" || ch.Status != "ATIVO" {
+		t.Errorf("canal incorreto: %+v", ch)
+	}
+	if ch.Settings["vendorId"] != "vendor-42" {
+		t.Errorf("vendorId = %q, quero vendor-42", ch.Settings["vendorId"])
+	}
+}
+
+// TestShouldApplyIsIdempotent prova o versionamento: só aplica versões estritamente crescentes.
+func TestShouldApplyIsIdempotent(t *testing.T) {
+	b := &Bridge{appliedVersion: make(map[string]int)}
+	if !b.shouldApply("acme", 1) {
+		t.Error("v1 deveria aplicar (primeira vez)")
+	}
+	if b.shouldApply("acme", 1) {
+		t.Error("v1 repetida NÃO deveria reaplicar")
+	}
+	if b.shouldApply("acme", 1) { // replay do NATS
+		t.Error("replay de v1 NÃO deveria reaplicar")
+	}
+	if !b.shouldApply("acme", 2) {
+		t.Error("v2 deveria aplicar")
+	}
+	if b.shouldApply("acme", 1) {
+		t.Error("v1 tardia (fora de ordem) NÃO deveria reaplicar")
+	}
+	if !b.shouldApply("other", 1) {
+		t.Error("outro tenant é independente")
+	}
+}
+
+// TestLinktorChannelTypes prova o mapeamento de tipo Core→Linktor (WhatsApp tem 3 candidatos).
+func TestLinktorChannelTypes(t *testing.T) {
+	wa := linktorChannelTypes("WHATSAPP")
+	if len(wa) != 3 || wa[0] != entity.ChannelTypeWhatsAppOfficial {
+		t.Errorf("WHATSAPP = %v, quero [official, unofficial, whatsapp]", wa)
+	}
+	if got := linktorChannelTypes("MESSENGER"); len(got) != 1 || got[0] != entity.ChannelTypeFacebook {
+		t.Errorf("MESSENGER = %v, quero [facebook]", got)
+	}
+	if got := linktorChannelTypes("TELEGRAM"); got[0] != entity.ChannelTypeTelegram {
+		t.Errorf("TELEGRAM = %v", got)
+	}
+}
+
 // TestMessageReceivedUnmarshal garante que o envelope real do Linktor (nats.Event com payload) é
 // desserializado nos campos que o bridge usa.
 func TestMessageReceivedUnmarshal(t *testing.T) {

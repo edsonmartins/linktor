@@ -86,8 +86,12 @@ func (b *Bridge) handleMessageReceived(ctx context.Context, data []byte) error {
 		vendorID = *conv.AssignedUserID
 	}
 	if vendorID == "" {
-		// Sem vendedor atribuído não há a quem entregar no VendaX; não vazamos a mensagem ao Core.
-		logger.Warn("bridge inbound: conversa sem vendedor atribuído; ignorando",
+		// Fallback "1 canal = 1 vendedor": usa o vendedor-dono do canal (channel.config, L1).
+		vendorID = b.channelVendorID(ctx, p.ChannelID)
+	}
+	if vendorID == "" {
+		// Sem vendedor não há a quem entregar no VendaX; não vazamos a mensagem ao Core.
+		logger.Warn("bridge inbound: conversa sem vendedor (nem atribuído nem por canal); ignorando",
 			zap.String("conversation_id", p.ConversationID))
 		return nil
 	}
@@ -102,6 +106,15 @@ func (b *Bridge) handleMessageReceived(ctx context.Context, data []byte) error {
 		return fmt.Errorf("publish inbound: %w", err)
 	}
 	return nil
+}
+
+// channelVendorID lê o vendedor-dono do canal gravado pelo channel.config (L1). "" se não houver.
+func (b *Bridge) channelVendorID(ctx context.Context, channelID string) string {
+	ch, err := b.channelRepo.FindByID(ctx, channelID)
+	if err != nil || ch == nil {
+		return ""
+	}
+	return ch.Config[channelVendorConfigKey]
 }
 
 // resolveCustomerID devolve o identifier do contato para o canal (telefone/handle) — a chave que o
