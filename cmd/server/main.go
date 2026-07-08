@@ -109,6 +109,7 @@ import (
 	"github.com/msgfy/linktor/internal/infrastructure/outbox"
 	storageLib "github.com/msgfy/linktor/internal/infrastructure/storage"
 	infrawebhook "github.com/msgfy/linktor/internal/infrastructure/webhook"
+	"github.com/msgfy/linktor/internal/integration/vendax"
 	"github.com/msgfy/linktor/internal/outbound"
 	"github.com/msgfy/linktor/internal/whatsapp/analytics"
 	"github.com/msgfy/linktor/internal/whatsapp/calling"
@@ -784,6 +785,18 @@ func main() {
 	logger.Info("Campaign sweeper started (every 5m, stale threshold 15m)")
 
 	var aiConsumer *nats.AIConsumer
+	var vendaxBridge *vendax.Bridge
+
+	// VendaX bridge (L0): integra o Linktor ao VendaX Core por NATS. Opt-in por env.
+	// Ver docs/vendax-integration/PLANO-integracao-linktor-vendax.md.
+	if natsClient != nil && os.Getenv("LINKTOR_VENDAX_BRIDGE_ENABLED") == "true" {
+		logger.Info("Starting VendaX bridge...")
+		vendaxBridge = vendax.NewBridge(natsClient, sendMessageUC, conversationRepo, contactRepo, channelRepo)
+		if err := vendaxBridge.Start(ctx); err != nil {
+			logger.Warn("Failed to start VendaX bridge: " + err.Error())
+			vendaxBridge = nil
+		}
+	}
 
 	if consumer != nil {
 		logger.Info("Starting message consumers...")
@@ -1485,6 +1498,11 @@ func main() {
 	// Stop AI consumers
 	if aiConsumer != nil {
 		aiConsumer.Stop()
+	}
+
+	// Stop VendaX bridge
+	if vendaxBridge != nil {
+		vendaxBridge.Stop()
 	}
 
 	// Wait (bounded) for background monitors to finish their current iteration.
