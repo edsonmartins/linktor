@@ -152,6 +152,64 @@ func TestLinktorChannelTypes(t *testing.T) {
 	}
 }
 
+// TestBuildInboundEnvelopeMedia prova que mídia sem legenda vira messageType canônico + URL do anexo.
+func TestBuildInboundEnvelopeMedia(t *testing.T) {
+	ev := messageReceivedEvent{
+		TenantID: "acme",
+		Payload: messageReceivedPayload{
+			MessageID:   "m2",
+			ChannelType: "whatsapp_official",
+			ContentType: "audio",
+			Content:     "", // áudio sem legenda
+			Attachments: []attachment{{URL: "https://cdn/audio/abc.ogg", MimeType: "audio/ogg"}},
+		},
+	}
+	env := buildInboundEnvelope(ev, "vendor-1", "+55")
+	if env.MessageType != "audio" {
+		t.Errorf("MessageType = %q, quero audio", env.MessageType)
+	}
+	if env.Content != "https://cdn/audio/abc.ogg" {
+		t.Errorf("Content = %q, quero a URL do anexo", env.Content)
+	}
+	if env.Channel != "WHATSAPP" {
+		t.Errorf("Channel = %q, quero WHATSAPP", env.Channel)
+	}
+}
+
+// TestBuildSendInputMedia prova que uma mídia do Core vira anexo (não texto) no SendMessageInput.
+func TestBuildSendInputMedia(t *testing.T) {
+	out := LinktorOutbound{
+		TenantID:    "acme",
+		VendorID:    "v1",
+		MessageType: "image",
+		Content:     "https://cdn/img/1.jpg",
+	}
+	in := buildSendInput(out, "conv-1")
+	if in.ContentType != entity.ContentTypeImage {
+		t.Errorf("ContentType = %q, quero image", in.ContentType)
+	}
+	if in.Content != "" {
+		t.Errorf("Content = %q, quero vazio (mídia vai como anexo)", in.Content)
+	}
+	if len(in.Attachments) != 1 || in.Attachments[0].URL != "https://cdn/img/1.jpg" {
+		t.Errorf("Attachments = %+v, quero 1 com a URL", in.Attachments)
+	}
+}
+
+// TestDeliverableToChannel prova a guarda: texto/mídia entregam; rich objects não.
+func TestDeliverableToChannel(t *testing.T) {
+	for _, ok := range []string{"text", "image", "audio", "video", "document"} {
+		if !deliverableToChannel(ok) {
+			t.Errorf("%q deveria ser entregável", ok)
+		}
+	}
+	for _, no := range []string{"quote", "suggestion", "boleto", "tracking", "credit", "interactive"} {
+		if deliverableToChannel(no) {
+			t.Errorf("%q NÃO deveria ser entregável ao canal (rich object)", no)
+		}
+	}
+}
+
 // TestCoreChannelType prova a normalização Linktor→Core (os subtipos de WhatsApp colapsam em WHATSAPP)
 // e a simetria com linktorChannelTypes.
 func TestCoreChannelType(t *testing.T) {

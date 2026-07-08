@@ -42,8 +42,22 @@ não tem vendedor atribuído, o bridge usa o vendedor-dono do canal (fecha o "1 
 - **Isolamento de tenant:** o inbound recusa uma conversa cujo `TenantID` não bate com o do evento
   (defense-in-depth, além da validação de ownership do `SendMessageUseCase`).
 
-Escopo até L2: **texto, canais canônicos, 1 vendedor por canal, idempotente nas duas pontas.** Rich
-objects/áudio (L3) e multi-vendedor (L4) são fases seguintes.
+## Tipos de mensagem (L3)
+
+- **Mapeamento de content-type bidirecional** (`messagetypes.go`): inbound normaliza o `content_type`
+  do Linktor → `messageType` do Core (ADR-010); outbound reexpande para o `ContentType` do Linktor.
+- **Mídia (áudio/imagem/vídeo/documento):**
+  - *Inbound:* mídia sem legenda vira `messageType` canônico + a **URL do anexo** no `content` (a
+    mensagem não se perde). **A transcrição de áudio é caminho separado no Core** (HTTP multipart
+    `POST /v1/messages/audio`), não o inbound NATS — integrá-la exigiria o bridge baixar o áudio e
+    postar no Core; fica como evolução.
+  - *Outbound:* mídia do Core é entregue como **anexo** (`SendMessageInput.Attachments`), não texto.
+- **Rich objects** (quote/suggestion/boleto/tracking/credit) **não são entregues ao canal** — o
+  outbound os **pula com aviso** (`deliverableToChannel`) em vez de vazar JSON cru ao cliente. Como
+  renderizá-los no canal (texto formatado? template do WhatsApp?) é **decisão de produto pendente**.
+
+Escopo até L3: **texto + mídia, canais canônicos, idempotente nas duas pontas.** Falta: rendering de
+rich objects ao canal (produto), transcrição de áudio via Core, e multi-vendedor/roteamento (L4).
 
 ## Pré-requisito de infra
 

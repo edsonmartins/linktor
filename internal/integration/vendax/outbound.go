@@ -36,6 +36,13 @@ func (b *Bridge) handleOutbound(ctx context.Context, data []byte) error {
 		return fmt.Errorf("unmarshal outbound: %w", err)
 	}
 
+	// Rich objects (quote/suggestion/…) não são entregues ao canal como tal — decisão de produto
+	// pendente (ver README §L3). Não vazamos JSON cru ao cliente.
+	if !deliverableToChannel(out.MessageType) {
+		logger.Warn("bridge outbound: tipo não entregável ao canal ainda; ignorando: " + out.MessageType)
+		return nil
+	}
+
 	// Idempotência: um retry do outbox do Core reemite a mesma idempotencyKey — não entregar 2×.
 	if b.outboundDedupe.seenBefore(out.IdempotencyKey) {
 		return nil
@@ -56,20 +63,27 @@ func (b *Bridge) handleOutbound(ctx context.Context, data []byte) error {
 }
 
 // buildSendInput monta o input do SendMessageUseCase a partir do envelope de saída do Core. A
-// mensagem que chega ao cliente é sempre do vendedor (SenderTypeUser). Pura, para ser testável.
+// mensagem que chega ao cliente é sempre do vendedor (SenderTypeUser). Para mídia, o content do Core
+// carrega a URL e é entregue como anexo. Pura, para ser testável.
 func buildSendInput(out LinktorOutbound, conversationID string) *usecase.SendMessageInput {
-	return &usecase.SendMessageInput{
+	ct := linktorContentType(out.MessageType)
+	in := &usecase.SendMessageInput{
 		TenantID:       out.TenantID,
 		ConversationID: conversationID,
 		SenderID:       out.VendorID,
 		SenderType:     entity.SenderTypeUser,
-		ContentType:    entity.ContentType(out.MessageType),
+		ContentType:    ct,
 		Content:        out.Content,
 		Metadata: map[string]string{
 			"source":          "vendax",
 			"idempotency_key": out.IdempotencyKey,
 		},
 	}
+	if isMediaType(ct) {
+		in.Attachments = []*usecase.AttachmentInput{{URL: out.Content, Type: string(ct)}}
+		in.Content = ""
+	}
+	return in
 }
 
 // resolveConversation reencontra a conversa do Linktor a partir de (customerId, channel) do envelope
