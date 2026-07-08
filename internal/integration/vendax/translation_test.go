@@ -34,8 +34,8 @@ func TestBuildInboundEnvelope(t *testing.T) {
 	if env.CustomerID != "+5511999990001" {
 		t.Errorf("CustomerID = %q, quero o identifier do contato", env.CustomerID)
 	}
-	if env.Channel != "whatsapp" {
-		t.Errorf("Channel = %q, quero whatsapp", env.Channel)
+	if env.Channel != "WHATSAPP" {
+		t.Errorf("Channel = %q, quero WHATSAPP (vocabulário canônico do Core)", env.Channel)
 	}
 	if env.MessageType != "text" {
 		t.Errorf("MessageType = %q, quero text", env.MessageType)
@@ -149,6 +149,52 @@ func TestLinktorChannelTypes(t *testing.T) {
 	}
 	if got := linktorChannelTypes("TELEGRAM"); got[0] != entity.ChannelTypeTelegram {
 		t.Errorf("TELEGRAM = %v", got)
+	}
+}
+
+// TestCoreChannelType prova a normalização Linktor→Core (os subtipos de WhatsApp colapsam em WHATSAPP)
+// e a simetria com linktorChannelTypes.
+func TestCoreChannelType(t *testing.T) {
+	cases := map[string]string{
+		"whatsapp":            "WHATSAPP",
+		"whatsapp_official":   "WHATSAPP",
+		"whatsapp_unofficial": "WHATSAPP",
+		"telegram":            "TELEGRAM",
+		"facebook":            "MESSENGER",
+		"instagram":           "INSTAGRAM",
+		"sms":                 "SMS",
+	}
+	for linktorType, want := range cases {
+		if got := coreChannelType(linktorType); got != want {
+			t.Errorf("coreChannelType(%q) = %q, quero %q", linktorType, got, want)
+		}
+	}
+	// simetria: cada subtipo do Linktor volta a estar entre os candidatos do seu tipo canônico
+	if types := linktorChannelTypes("WHATSAPP"); len(types) != 3 {
+		t.Errorf("WHATSAPP deveria ter 3 subtipos candidatos, tem %d", len(types))
+	}
+}
+
+// TestDedupe prova a guarda de idempotência do outbound (FIFO com limite).
+func TestDedupe(t *testing.T) {
+	d := newDedupe(2)
+	if d.seenBefore("k1") {
+		t.Error("k1 é novo")
+	}
+	if !d.seenBefore("k1") {
+		t.Error("k1 repetido deveria ser visto")
+	}
+	if d.seenBefore("") {
+		t.Error("chave vazia nunca deduplica")
+	}
+	if d.seenBefore("") {
+		t.Error("chave vazia nunca deduplica (2)")
+	}
+	// enche além do limite (2): k1 já está; adiciona k2, k3 -> k1 é despejado
+	d.seenBefore("k2")
+	d.seenBefore("k3")
+	if d.seenBefore("k1") {
+		t.Error("k1 deveria ter sido despejado (FIFO, max=2) e tratado como novo")
 	}
 }
 

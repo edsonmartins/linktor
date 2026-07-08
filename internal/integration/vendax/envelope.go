@@ -42,7 +42,7 @@ func buildInboundEnvelope(ev messageReceivedEvent, vendorID, customerID string) 
 		TenantID:       ev.TenantID,
 		VendorID:       vendorID,
 		CustomerID:     customerID,
-		Channel:        ev.Payload.ChannelType,
+		Channel:        coreChannelType(ev.Payload.ChannelType), // vocabulário canônico do Core
 		MessageType:    ev.Payload.ContentType,
 		Content:        ev.Payload.Content,
 		IdempotencyKey: ev.Payload.MessageID,

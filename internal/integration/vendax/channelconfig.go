@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	natsgo "github.com/nats-io/nats.go"
 
@@ -118,27 +117,4 @@ func (b *Bridge) resolveLinktorChannel(ctx context.Context, tenantID string, dec
 		}
 	}
 	return nil
-}
-
-// linktorChannelTypes mapeia o tipo do Core (CA-06) para os tipos equivalentes no Linktor. WhatsApp
-// do Core pode ser oficial, não-oficial ou o genérico no Linktor — todos são candidatos por identifier.
-func linktorChannelTypes(coreType string) []entity.ChannelType {
-	switch strings.ToUpper(coreType) {
-	case "WHATSAPP":
-		return []entity.ChannelType{
-			entity.ChannelTypeWhatsAppOfficial,
-			entity.ChannelTypeWhatsAppUnofficial,
-			entity.ChannelTypeWhatsApp,
-		}
-	case "TELEGRAM":
-		return []entity.ChannelType{entity.ChannelTypeTelegram}
-	case "INSTAGRAM":
-		return []entity.ChannelType{entity.ChannelTypeInstagram}
-	case "MESSENGER":
-		return []entity.ChannelType{entity.ChannelTypeFacebook}
-	case "SMS":
-		return []entity.ChannelType{entity.ChannelTypeSMS}
-	default:
-		return []entity.ChannelType{entity.ChannelType(strings.ToLower(coreType))}
-	}
 }

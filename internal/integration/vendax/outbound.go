@@ -36,6 +36,11 @@ func (b *Bridge) handleOutbound(ctx context.Context, data []byte) error {
 		return fmt.Errorf("unmarshal outbound: %w", err)
 	}
 
+	// Idempotência: um retry do outbox do Core reemite a mesma idempotencyKey — não entregar 2×.
+	if b.outboundDedupe.seenBefore(out.IdempotencyKey) {
+		return nil
+	}
+
 	conv, err := b.resolveConversation(ctx, out)
 	if err != nil {
 		return err
@@ -68,32 +73,30 @@ func buildSendInput(out LinktorOutbound, conversationID string) *usecase.SendMes
 }
 
 // resolveConversation reencontra a conversa do Linktor a partir de (customerId, channel) do envelope
-// do Core, sem manter tabela de correlação (decisão de arquitetura #5). No L0 há 1 canal por tipo.
+// do Core, sem manter tabela de correlação (decisão de arquitetura #5). O channel vem no vocabulário
+// canônico do Core (ex.: WHATSAPP); iteramos os subtipos equivalentes do Linktor (official/unofficial/…)
+// tanto para o contato quanto para o canal, casando por identifier.
 func (b *Bridge) resolveConversation(ctx context.Context, out LinktorOutbound) (*entity.Conversation, error) {
-	contact, err := b.contactRepo.FindByIdentity(ctx, out.TenantID, out.Channel, out.CustomerID)
-	if err != nil {
-		return nil, fmt.Errorf("contato por identidade (%s/%s): %w", out.Channel, out.CustomerID, err)
-	}
-	if contact == nil {
-		return nil, fmt.Errorf("contato não encontrado (channel=%s id=%s)", out.Channel, out.CustomerID)
-	}
-
-	channels, err := b.channelRepo.FindByType(ctx, out.TenantID, entity.ChannelType(out.Channel))
-	if err != nil {
-		return nil, fmt.Errorf("canais do tipo %s: %w", out.Channel, err)
-	}
-	if len(channels) == 0 {
-		return nil, fmt.Errorf("nenhum canal do tipo %s no tenant %s", out.Channel, out.TenantID)
-	}
-
-	// L0: 1 canal por tipo. Procura a conversa aberta do contato em qualquer canal desse tipo.
-	for _, ch := range channels {
-		conv, err := b.conversationRepo.FindOpenByContactAndChannel(ctx, contact.ID, ch.ID)
+	for _, lt := range linktorChannelTypes(out.Channel) {
+		contact, err := b.contactRepo.FindByIdentity(ctx, out.TenantID, string(lt), out.CustomerID)
 		if err != nil {
-			return nil, fmt.Errorf("conversa aberta (contato=%s canal=%s): %w", contact.ID, ch.ID, err)
+			return nil, fmt.Errorf("contato por identidade (%s/%s): %w", lt, out.CustomerID, err)
 		}
-		if conv != nil {
-			return conv, nil
+		if contact == nil {
+			continue
+		}
+		channels, err := b.channelRepo.FindByType(ctx, out.TenantID, lt)
+		if err != nil {
+			continue
+		}
+		for _, ch := range channels {
+			conv, err := b.conversationRepo.FindOpenByContactAndChannel(ctx, contact.ID, ch.ID)
+			if err != nil {
+				return nil, fmt.Errorf("conversa aberta (contato=%s canal=%s): %w", contact.ID, ch.ID, err)
+			}
+			if conv != nil {
+				return conv, nil
+			}
 		}
 	}
 	return nil, nil

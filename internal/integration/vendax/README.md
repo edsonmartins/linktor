@@ -30,8 +30,20 @@ mapeia para o `vendorId` do Core, sem reforma de domínio.
 O `vendax_vendor_id` do canal serve de **fallback do vendorId no inbound**: quando a conversa ainda
 não tem vendedor atribuído, o bridge usa o vendedor-dono do canal (fecha o "1 canal = 1 vendedor").
 
-Escopo até L1: **texto, canais mapeados por identifier, 1 vendedor por canal.** Robustez/identidade
-fina (L2), rich objects/áudio (L3) e multi-vendedor (L4) são fases seguintes.
+## Robustez (L2)
+
+- **Vocabulário de canal canônico:** o `channel` do envelope trocado com o Core usa sempre os tipos
+  canônicos (`WHATSAPP`, `TELEGRAM`, `MESSENGER`, …); os subtipos do Linktor (`whatsapp_official`/
+  `unofficial`/`whatsapp`) são detalhe interno. `coreChannelType` normaliza no inbound;
+  `linktorChannelTypes` reexpande no outbound e no channel.config (ver `channeltypes.go`).
+- **Idempotência do outbound:** o Core entrega o outbound at-least-once; um retry do outbox reemite a
+  mesma `idempotencyKey`. O bridge deduplica por `idempotencyKey` (FIFO com limite, `dedupe.go`) para
+  não entregar a mensagem 2× ao cliente. O inbound já é idempotente no Core (dedup por `message.ID`).
+- **Isolamento de tenant:** o inbound recusa uma conversa cujo `TenantID` não bate com o do evento
+  (defense-in-depth, além da validação de ownership do `SendMessageUseCase`).
+
+Escopo até L2: **texto, canais canônicos, 1 vendedor por canal, idempotente nas duas pontas.** Rich
+objects/áudio (L3) e multi-vendedor (L4) são fases seguintes.
 
 ## Pré-requisito de infra
 

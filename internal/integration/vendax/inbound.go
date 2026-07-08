@@ -80,6 +80,11 @@ func (b *Bridge) handleMessageReceived(ctx context.Context, data []byte) error {
 	if conv == nil {
 		return fmt.Errorf("conversa %s não encontrada", p.ConversationID)
 	}
+	// Defense-in-depth: a conversa tem de pertencer ao tenant do evento (nunca cruzar tenants).
+	if conv.TenantID != ev.TenantID {
+		return fmt.Errorf("conversa %s do tenant %s não bate com o evento (%s)",
+			p.ConversationID, conv.TenantID, ev.TenantID)
+	}
 
 	vendorID := ""
 	if conv.AssignedUserID != nil {

@@ -51,6 +51,9 @@ type Bridge struct {
 	// appliedVersion guarda a última versão de channel.config aplicada por tenant (idempotência).
 	mu             sync.Mutex
 	appliedVersion map[string]int
+
+	// outboundDedupe evita entregar a mesma mensagem do Core duas vezes ao cliente (at-least-once).
+	outboundDedupe *dedupe
 }
 
 // NewBridge monta o bridge com a conexão NATS, o usecase de envio e os repositórios necessários
@@ -69,6 +72,7 @@ func NewBridge(
 		contactRepo:      contactRepo,
 		channelRepo:      channelRepo,
 		appliedVersion:   make(map[string]int),
+		outboundDedupe:   newDedupe(10000),
 	}
 }
 
