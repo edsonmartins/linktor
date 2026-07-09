@@ -13,6 +13,11 @@ type Config struct {
 	VerifyToken   string `json:"verify_token"`
 	WebhookSecret string `json:"webhook_secret"`
 	APIVersion    string `json:"api_version"` // e.g., v18.0
+
+	// Calling (WhatsApp Business Calling API) — optional.
+	EnableCalls       bool   `json:"enable_calls"`        // turn calling on and answer inbound calls
+	AutoAnswerCalls   bool   `json:"auto_answer_calls"`   // auto-answer inbound calls (bot/IVR)
+	CallRecordingsDir string `json:"call_recordings_dir"` // if set, record calls to Ogg here
 }
 
 // DefaultAPIVersion is the default Meta Graph API version
