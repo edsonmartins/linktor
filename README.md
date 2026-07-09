@@ -34,6 +34,8 @@
 
 | Recurso | O que é |
 |---------|---------|
+| 📞 **Chamadas WhatsApp (não-oficial)** | Voz/vídeo nativas via whatsmeow (codec mlow próprio) + **gravação em WAV** ligável por config |
+| 🔘 **Botões & listas no canal não-oficial** | Mensagens interativas native-flow (quick-reply + single-select) que renderizam no WhatsApp Web multi-device |
 | 📣 **Campanhas em massa** | Disparo de templates com entrega assíncrona, progresso ao vivo, retry e DLQ |
 | 🔐 **RBAC granular** | Papéis customizados por tenant (recurso × ação) com cache no Redis |
 | 🎯 **Atribuição + SLA** | Roteamento automático (round-robin/balanceado) + breach de SLA e auto-close |
@@ -100,7 +102,7 @@ msgfy (GitHub org: msgfy)
 | Canal | Status | Descrição |
 |-------|--------|-----------|
 | WhatsApp Business API | ✅ Completo | Integração oficial Meta Cloud API + **Coexistence (SMB)** |
-| WhatsApp Unofficial | ✅ Completo | Baileys/WhatsApp Web Multi-device |
+| WhatsApp Unofficial | ✅ Completo | whatsmeow (WhatsApp Web Multi-device) — mídia, interativos native-flow, edit/revoke/forward, resolução LID↔PN e **chamadas de voz/vídeo com gravação** |
 | WebChat | ✅ Completo | Widget embeddable para websites |
 | Telegram | ✅ Completo | Bot API com suporte a mídia |
 | SMS | ✅ Completo | Twilio, Vonage, Plivo |
@@ -180,6 +182,50 @@ Após ativar Coexistence, algumas features do App são desabilitadas:
 - ❌ View Once Media
 - ❌ WhatsApp for Windows/WearOS
 - ✅ WhatsApp Web e Mac funcionam normalmente
+
+### WhatsApp Não-Oficial (whatsmeow)
+
+Além da Cloud API oficial, o Linktor traz um canal **não-oficial** sobre o
+protocolo multi-device do WhatsApp (biblioteca [whatsmeow](https://github.com/tulir/whatsmeow)),
+pareado por **QR code** ou **código de telefone**. O adapter vive em
+`internal/adapters/whatsapp` e o motor de chamadas em `internal/voip`.
+
+#### Mensageria
+
+| Recurso | Descrição |
+|---------|-----------|
+| Mídia | Imagem, vídeo, áudio/PTT, documento, sticker, localização — download+decifra automáticos no inbound (com proteção SSRF no fetch por URL) |
+| **Interativos native-flow** | Botões de resposta rápida e listas de seleção que **renderizam no WhatsApp Web multi-device**, com fallback automático para texto; respostas mapeadas para `selected_id` |
+| **Unwrap de envelopes** | Desembrulho recursivo de mensagens efêmeras, view-once (v1/v2/v2ext), device-sent, editadas e protocol antes de classificar |
+| **Edit / revoke / forward** | Edição, apagar-para-todos e encaminhamento de mensagens |
+| Reactions, reply, presença | Envio de reações, respostas com citação, indicador de digitação e read-receipts |
+| **Resolução LID↔PN** | Contatos com identidade `@lid` (privacidade) são resolvidos para o número de telefone e casam com o histórico, com cache TTL |
+
+#### Chamadas de voz/vídeo (VoIP nativo)
+
+Chamadas nativas do WhatsApp diretamente no canal não-oficial, com implementação
+própria do codec de voz do WhatsApp (**mlow**), SRTP e travessia por relay:
+
+- Iniciar/receber chamadas de **áudio e vídeo** (`PlaceCall` / `AcceptCall` / `RejectCall` / `EndCall`)
+- Eventos de ciclo de vida (`incoming` / `state` / `ended`) via `SetCallHandler`
+- Hook de stream (`SetCallAudioSink`) para processar o áudio do peer **sem interferir na ligação**
+
+#### Gravação de chamadas
+
+Ligável por configuração do canal. A gravação **não interfere na chamada**: o
+callback de áudio apenas copia o PCM em memória; o arquivo é escrito no fim da
+ligação. Grava em **WAV estéreo** (esquerda = interlocutor, direita = local) e
+cai para mono quando a chamada é só de escuta.
+
+| Parâmetro de canal | Valores | Efeito |
+|--------------------|---------|--------|
+| `record_calls` | `"true"` / `"false"` (padrão desligado) | Liga a gravação das chamadas |
+| `recordings_dir` | caminho (padrão `media/recordings`) | Onde os WAVs são gravados |
+
+O evento `ended` carrega o `recording_path` do arquivo gerado.
+
+> **Nota de deploy:** o store de sessão do canal usa SQLite **pure-Go**
+> (`modernc.org/sqlite`, sem cgo) — o binário compila com `CGO_ENABLED=0`.
 
 ### Core Features
 
