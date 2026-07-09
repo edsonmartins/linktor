@@ -34,6 +34,7 @@
 
 | Recurso | O que é |
 |---------|---------|
+| ☎️ **Ligações WhatsApp (oficial)** | WhatsApp Business Calling API: sinalização Graph (connect/accept/reject/terminate + SDP) + mídia WebRTC (pion, OPUS) com **gravação em Ogg/Opus** |
 | 📞 **Chamadas WhatsApp (não-oficial)** | Voz/vídeo nativas via whatsmeow (codec mlow próprio) + **gravação em WAV** ligável por config |
 | 🔘 **Botões & listas no canal não-oficial** | Mensagens interativas native-flow (quick-reply + single-select) que renderizam no WhatsApp Web multi-device |
 | 📣 **Campanhas em massa** | Disparo de templates com entrega assíncrona, progresso ao vivo, retry e DLQ |
@@ -101,7 +102,7 @@ msgfy (GitHub org: msgfy)
 
 | Canal | Status | Descrição |
 |-------|--------|-----------|
-| WhatsApp Business API | ✅ Completo | Integração oficial Meta Cloud API + **Coexistence (SMB)** |
+| WhatsApp Business API | ✅ Completo | Integração oficial Meta Cloud API + **Coexistence (SMB)** + **ligações (WhatsApp Business Calling API)** |
 | WhatsApp Unofficial | ✅ Completo | whatsmeow (WhatsApp Web Multi-device) — mídia, interativos native-flow, edit/revoke/forward, resolução LID↔PN e **chamadas de voz/vídeo com gravação** |
 | WebChat | ✅ Completo | Widget embeddable para websites |
 | Telegram | ✅ Completo | Bot API com suporte a mídia |
@@ -226,6 +227,61 @@ O evento `ended` carrega o `recording_path` do arquivo gerado.
 
 > **Nota de deploy:** o store de sessão do canal usa SQLite **pure-Go**
 > (`modernc.org/sqlite`, sem cgo) — o binário compila com `CGO_ENABLED=0`.
+
+### Ligações no canal oficial (WhatsApp Business Calling API)
+
+Além do canal não-oficial, o Linktor implementa **ligações de voz no canal
+oficial** da Meta usando a [WhatsApp Business Calling API](https://developers.facebook.com/documentation/business-messaging/whatsapp/calling).
+O pacote vive em `internal/whatsapp/officialcalls` e é acoplado ao adapter
+oficial (`internal/adapters/whatsapp_official`).
+
+Diferente do canal não-oficial (codec mlow próprio + relay), a via oficial usa
+**WebRTC padrão** (ICE/DTLS/SRTP, OPUS) — a sinalização troca SDP pela Graph API
+e a mídia flui direto por [pion/webrtc](https://github.com/pion/webrtc).
+
+#### Sinalização (Graph API)
+
+`POST /{phone_number_id}/calls` com as ações do protocolo — cada uma carregando
+o `session {sdp_type, sdp}` quando aplicável:
+
+| Ação | Método | Efeito |
+|------|--------|--------|
+| `connect` | `Connect` | Inicia chamada de saída (envia SDP offer) |
+| `pre_accept` | `PreAccept` | Pré-aceita para acelerar a conexão de mídia |
+| `accept` | `Accept` | Atende (envia SDP answer) |
+| `reject` | `Reject` | Recusa a chamada |
+| `terminate` | `Terminate` | Encerra a chamada |
+
+O recurso de calling é habilitado por `POST /{phone_number_id}/settings`
+(`EnableCalling`, best-effort no `Connect` do adapter).
+
+#### Webhook e ciclo de vida
+
+O webhook `calls` é parseado por `ParseWebhookCalls`; o `Gateway` roteia:
+
+- `event=connect` → chega o **SDP offer**; com `auto_answer_calls` ligado o
+  gateway negocia o answer e chama `accept` automaticamente (típico de bot/IVR),
+  senão a chamada fica pendente até `AcceptCall` / `RejectCall`
+- `event=terminate` → encerra a mídia e emite o evento com o `recording_path`
+
+Fases expostas ao host via handler: `ringing` → `connected` → `ended`.
+
+#### Mídia e gravação (WebRTC / Ogg-Opus)
+
+O `CallSession` (pion `PeerConnection` + track OPUS local) negocia o SDP e, quando
+`call_recordings_dir` está configurado, grava o RTP recebido **direto em Ogg/Opus
+sem decodificar** (pure-Go, sem interferir na chamada). Áudio de saída é injetado
+por `WriteAudio`.
+
+| Parâmetro de canal | Valores | Efeito |
+|--------------------|---------|--------|
+| `enable_calls` | `"true"` / `"false"` (padrão desligado) | Habilita calling no canal oficial |
+| `auto_answer_calls` | `"true"` / `"false"` (padrão desligado) | Atende automaticamente chamadas de entrada |
+| `call_recordings_dir` | caminho (vazio = sem gravação) | Onde os arquivos Ogg/Opus são gravados |
+
+> **Validação:** a sinalização, o parse de webhook e a mídia WebRTC (loopback
+> pion) têm cobertura de testes. O caminho de ponta-a-ponta contra a Meta exige
+> um número com calling habilitado e só pode ser confirmado em **teste ao vivo**.
 
 ### Core Features
 
