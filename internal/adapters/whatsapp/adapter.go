@@ -93,15 +93,23 @@ func (a *Adapter) Initialize(config map[string]string) error {
 	}
 
 	a.config = &Config{
-		ChannelID:    config["channel_id"],
-		DatabasePath: config["database_path"],
-		DeviceName:   config["device_name"],
-		PlatformType: config["platform_type"],
-		LogLevel:     config["log_level"],
+		ChannelID:     config["channel_id"],
+		DatabasePath:  config["database_path"],
+		DeviceName:    config["device_name"],
+		PlatformType:  config["platform_type"],
+		LogLevel:      config["log_level"],
+		RecordCalls:   config["record_calls"] == "true",
+		RecordingsDir: config["recordings_dir"],
 	}
 
 	if a.config.LogLevel == "" {
 		a.config.LogLevel = "WARN"
+	}
+
+	// Config-driven call recording; EnableCallRecording can still toggle it at
+	// runtime.
+	if a.config.RecordCalls {
+		a.callRecorder = NewCallRecorder(a.config.RecordingsDir, 16000)
 	}
 
 	return nil

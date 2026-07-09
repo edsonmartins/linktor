@@ -75,3 +75,22 @@ func TestAdapterCall_NotConnected(t *testing.T) {
 	assert.ErrorIs(t, a.RejectCall(ctx, "C1"), ErrClientNotReady)
 	assert.ErrorIs(t, a.EndCall(ctx, "C1"), ErrClientNotReady)
 }
+
+func TestInitialize_RecordCallsParam(t *testing.T) {
+	a := NewAdapter()
+	err := a.Initialize(map[string]string{
+		"channel_id":     "test-channel",
+		"record_calls":   "true",
+		"recordings_dir": "/tmp/rec",
+	})
+	assert.NoError(t, err)
+	assert.True(t, a.config.RecordCalls)
+	assert.Equal(t, "/tmp/rec", a.config.RecordingsDir)
+	assert.NotNil(t, a.callRecorder, "recorder built from config")
+
+	// Default: recording off when the param is absent/false.
+	b := NewAdapter()
+	_ = b.Initialize(map[string]string{"channel_id": "c2"})
+	assert.False(t, b.config.RecordCalls)
+	assert.Nil(t, b.callRecorder)
+}

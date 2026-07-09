@@ -53,6 +53,13 @@ type Config struct {
 
 	// PlatformType identifies the platform (e.g., "chrome", "firefox", "safari")
 	PlatformType string
+
+	// RecordCalls enables per-call WAV recording of native VoIP calls.
+	RecordCalls bool
+
+	// RecordingsDir is where call recordings are written (default
+	// "media/recordings"). Only used when RecordCalls is true.
+	RecordingsDir string
 }
 
 // Validate validates the configuration
