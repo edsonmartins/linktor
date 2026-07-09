@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite" // pure-Go SQLite driver (no cgo), registered as "sqlite"
 )
 
 // Client wraps the whatsmeow client
@@ -31,6 +32,11 @@ type Client struct {
 	eventCh chan any
 	qrCh    chan QRCodeEvent
 	stopCh  chan struct{}
+
+	// lidPNCache memoizes LID→PN resolutions with a TTL so we don't hit the
+	// device store on every inbound message from a hidden-user (@lid) sender.
+	lidPNMu    sync.Mutex
+	lidPNCache map[types.JID]lidCacheEntry
 }
 
 // NewClient creates a new WhatsApp client
@@ -49,11 +55,21 @@ func NewClient(config *Config) (*Client, error) {
 	// Create logger
 	logger := waLog.Stdout("WhatsApp", config.LogLevel, true)
 
-	// Initialize database container
-	dbURI := fmt.Sprintf("file:%s?_foreign_keys=on", config.DatabasePath)
-	container, err := sqlstore.New(context.Background(), "sqlite3", dbURI, logger)
+	// Open the session store with the pure-Go modernc SQLite driver (no cgo) so
+	// the binary builds and deploys statically. whatsmeow still generates SQLite
+	// SQL (dialect "sqlite3"); only the underlying driver changes. WAL + a busy
+	// timeout keep the single-file store resilient under concurrent access.
+	dbURI := fmt.Sprintf(
+		"file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)",
+		config.DatabasePath)
+	db, err := sql.Open("sqlite", dbURI)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create database: %w", err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+	container := sqlstore.NewWithDB(db, "sqlite3", logger)
+	if err := container.Upgrade(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to upgrade database schema: %w", err)
 	}
 
 	return &Client{

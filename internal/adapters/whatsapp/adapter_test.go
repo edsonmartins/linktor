@@ -69,11 +69,13 @@ func (suite *AdapterTestSuite) TestNewAdapter_HasCorrectCapabilities() {
 	assert.True(suite.T(), caps.SupportsTypingIndicator)
 	assert.True(suite.T(), caps.SupportsReactions)
 	assert.True(suite.T(), caps.SupportsReplies)
+	// Native-flow buttons/lists over the unofficial protocol (interactive.go).
+	assert.True(suite.T(), caps.SupportsInteractive)
+	// Text forward via metadata is_forwarded (edit.go).
+	assert.True(suite.T(), caps.SupportsForwarding)
 
 	// Unofficial API limitations
 	assert.False(suite.T(), caps.SupportsTemplates)
-	assert.False(suite.T(), caps.SupportsInteractive)
-	assert.False(suite.T(), caps.SupportsForwarding)
 
 	// Check limits
 	assert.Equal(suite.T(), 65536, caps.MaxMessageLength)
