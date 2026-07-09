@@ -40,6 +40,10 @@ type CallEvent struct {
 	IsVideo bool          `json:"is_video"`
 	State   string        `json:"state,omitempty"`
 	Reason  string        `json:"reason,omitempty"`
+
+	// RecordingPath is set on the ended event when call recording is enabled and
+	// a WAV file was written for this call.
+	RecordingPath string `json:"recording_path,omitempty"`
 }
 
 // CallHandler receives call lifecycle events. Handlers must not block.
@@ -60,6 +64,10 @@ type CallGateway struct {
 	// AudioSink, when set, receives the remote peer's decoded PCM for every
 	// active call (recording / transcription). Optional.
 	AudioSink PeerAudioSink
+
+	// Recorder, when set, captures each call's peer audio to a WAV file, flushed
+	// when the call ends (the ended CallEvent carries RecordingPath). Optional.
+	Recorder *CallRecorder
 
 	mu    sync.Mutex
 	calls map[string]*call.CallManager
@@ -143,6 +151,9 @@ func (g *CallGateway) RejectCall(ctx context.Context, callID string) error {
 		return fmt.Errorf("no active call %s", callID)
 	}
 	m.RejectCall(ctx, callID, core.EndCallReasonDeclined)
+	if g.Recorder != nil {
+		g.Recorder.discard(callID)
+	}
 	g.remove(callID)
 	return nil
 }
@@ -190,12 +201,27 @@ func (g *CallGateway) newManager(callID string) *call.CallManager {
 	m.OnIncoming = func(ci *call.CallInfo) { g.emit(callEvent(CallEventIncoming, ci)) }
 	m.OnStateChange = func(ci *call.CallInfo) { g.emit(callEvent(CallEventState, ci)) }
 	m.OnEnded = func(ci *call.CallInfo) {
-		g.emit(callEvent(CallEventEnded, ci))
+		evt := callEvent(CallEventEnded, ci)
+		// Flush the recording (if any) off the audio path, at teardown.
+		if g.Recorder != nil {
+			if path, err := g.Recorder.finish(ci.CallID); err == nil {
+				evt.RecordingPath = path
+			}
+		}
+		g.emit(evt)
 		g.remove(ci.CallID)
 	}
-	if g.AudioSink != nil {
-		sink := g.AudioSink
-		m.OnPeerAudio = func(pcm []float32) { sink(callID, pcm) }
+	// Feed the peer PCM to the recorder and/or the generic sink. The callback
+	// only copies bytes and returns, so it never blocks the RTP decode loop.
+	if g.Recorder != nil || g.AudioSink != nil {
+		m.OnPeerAudio = func(pcm []float32) {
+			if g.Recorder != nil {
+				g.Recorder.write(callID, pcm)
+			}
+			if g.AudioSink != nil {
+				g.AudioSink(callID, pcm)
+			}
+		}
 	}
 
 	g.mu.Lock()

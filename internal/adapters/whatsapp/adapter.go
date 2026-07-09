@@ -37,6 +37,7 @@ type Adapter struct {
 	callGateway   *CallGateway
 	callHandler   CallHandler
 	callAudioSink PeerAudioSink
+	callRecorder  *CallRecorder
 }
 
 // NewAdapter creates a new WhatsApp unofficial adapter
@@ -148,6 +149,7 @@ func (a *Adapter) Connect(ctx context.Context) error {
 			}
 		})
 		g.AudioSink = a.callAudioSink
+		g.Recorder = a.callRecorder
 		a.callGateway = g
 		raw.AddEventHandler(g.HandleWhatsmeowEvent)
 	}
@@ -436,6 +438,20 @@ func (a *Adapter) SetCallAudioSink(sink PeerAudioSink) {
 	a.callAudioSink = sink
 	if a.callGateway != nil {
 		a.callGateway.AudioSink = sink
+	}
+}
+
+// EnableCallRecording turns on per-call WAV recording of the peer's audio,
+// written under dir (default "media/recordings"). The ended CallEvent carries
+// the resulting RecordingPath. Recording never blocks the live call — the audio
+// callback only buffers in memory; the file is written at call teardown.
+func (a *Adapter) EnableCallRecording(dir string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	rec := NewCallRecorder(dir, 16000)
+	a.callRecorder = rec
+	if a.callGateway != nil {
+		a.callGateway.Recorder = rec
 	}
 }
 
