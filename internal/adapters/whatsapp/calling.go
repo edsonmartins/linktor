@@ -216,12 +216,16 @@ func (g *CallGateway) newManager(callID string) *call.CallManager {
 	if g.Recorder != nil || g.AudioSink != nil {
 		m.OnPeerAudio = func(pcm []float32) {
 			if g.Recorder != nil {
-				g.Recorder.write(callID, pcm)
+				g.Recorder.writePeer(callID, pcm)
 			}
 			if g.AudioSink != nil {
 				g.AudioSink(callID, pcm)
 			}
 		}
+	}
+	// Tap the local/outgoing leg for full-duplex recording.
+	if g.Recorder != nil {
+		m.OnSelfAudio = func(pcm []float32) { g.Recorder.writeSelf(callID, pcm) }
 	}
 
 	g.mu.Lock()

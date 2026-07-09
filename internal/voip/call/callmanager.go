@@ -63,6 +63,9 @@ type CallManager struct {
 	OnEnded       func(*CallInfo)
 	OnPeerAudio   func([]float32)
 	OnPeerVideo   func([]byte)
+	// OnSelfAudio taps the local/outgoing PCM fed via FeedCapturedPCM, enabling
+	// full-duplex recording. Invoked without the manager lock held.
+	OnSelfAudio func([]float32)
 }
 
 func NewCallManager(sock core.VoipSocket, log *slog.Logger) *CallManager {

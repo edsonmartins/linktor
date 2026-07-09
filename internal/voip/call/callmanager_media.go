@@ -21,8 +21,8 @@ func (m *CallManager) initCodec() {
 
 func (m *CallManager) FeedCapturedPCM(data []float32) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.codec == nil || len(data) == 0 {
+		m.mu.Unlock()
 		return
 	}
 	if m.captureRing == nil {
@@ -35,6 +35,14 @@ func (m *CallManager) FeedCapturedPCM(data []float32) {
 	// the per-feed copy + GC pressure that previously caused the send loop
 	// to stutter under load.
 	m.captureRing.Write(data)
+	cb := m.OnSelfAudio
+	m.mu.Unlock()
+
+	// Tap the local leg for full-duplex recording, outside the lock so the
+	// sink cannot stall the send path or deadlock by re-entering the manager.
+	if cb != nil {
+		cb(data)
+	}
 }
 
 func (m *CallManager) sendOpusFrameLocked(opus []byte) {
