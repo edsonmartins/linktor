@@ -1,7 +1,11 @@
 name: ci
 
 on:
+  # Only validate changes headed for main — pull requests targeting main, plus
+  # the main build pipeline (via workflow_call). Stacked/feature-branch PRs that
+  # don't target main no longer trigger CI.
   pull_request:
+    branches: [main]
   workflow_call:
 
 permissions:
