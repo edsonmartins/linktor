@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -167,10 +168,16 @@ func (a *Adapter) Connect(ctx context.Context) error {
 				}
 			},
 		})
-		// Best-effort: turn calling on for the number. A failure here is logged
-		// via the returned error path but must not block messaging, so we ignore
-		// it (the operator may enable calling out-of-band).
-		_ = signaling.EnableCalling(ctx)
+		// Best-effort: turn calling on for the number. Done off the adapter lock
+		// and detached from the Connect context so a slow/unreachable Graph API
+		// can't stall messaging or webhook processing (the operator may also
+		// enable calling out-of-band).
+		sig := signaling
+		go func() {
+			if err := sig.EnableCalling(context.WithoutCancel(ctx)); err != nil {
+				slog.Warn("whatsapp official: enable calling failed", "err", err)
+			}
+		}()
 	}
 
 	return nil
@@ -657,7 +664,7 @@ func (a *Adapter) HandleWebhook(ctx context.Context, body []byte) error {
 	if gateway != nil {
 		if err := gateway.HandleWebhook(ctx, body); err != nil {
 			// Log and continue; a malformed calls payload must not drop messages.
-			_ = err
+			slog.Warn("whatsapp official: calls webhook parse failed", "err", err)
 		}
 	}
 

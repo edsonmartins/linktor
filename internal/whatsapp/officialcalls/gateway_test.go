@@ -130,6 +130,42 @@ func TestGateway_ManualRejectDoesNotAnswer(t *testing.T) {
 	assert.Equal(t, []CallAction{ActionReject}, actions)
 }
 
+func TestGateway_ManualRejectEmitsEnded(t *testing.T) {
+	c, srv := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	})
+	defer srv.Close()
+
+	ec := &eventCollector{}
+	g := NewGateway(GatewayConfig{Signaling: c, Session: hostOnly, AutoAnswer: false, Handler: ec.handler})
+
+	offerer, _ := newOfferer(t)
+	defer offerer.Close()
+	offer := offerSDP(t, offerer)
+	require.NoError(t, g.HandleWebhook(context.Background(), connectWebhookBody("call-rj", "5511", offer)))
+	require.NoError(t, g.RejectCall(context.Background(), "call-rj"))
+
+	// The host must get a terminal phase, not be left stuck in "ringing".
+	assert.Contains(t, ec.phases(), PhaseEnded)
+}
+
+func TestGateway_AutoAnswerFailureEmitsEnded(t *testing.T) {
+	c, srv := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	})
+	defer srv.Close()
+
+	ec := &eventCollector{}
+	g := NewGateway(GatewayConfig{Signaling: c, Session: hostOnly, AutoAnswer: true, Handler: ec.handler})
+
+	// A garbage SDP offer makes AnswerOffer fail, so the auto-answer path errors.
+	require.NoError(t, g.HandleWebhook(context.Background(), connectWebhookBody("call-bad", "5511", "not-a-valid-sdp")))
+
+	assert.Contains(t, ec.phases(), PhaseRinging)
+	assert.Contains(t, ec.phases(), PhaseEnded)
+	assert.Nil(t, g.Session("call-bad"))
+}
+
 func TestGateway_TerminateEmitsEnded(t *testing.T) {
 	c, srv := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{}`))

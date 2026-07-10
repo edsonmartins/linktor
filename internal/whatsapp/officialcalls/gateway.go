@@ -50,11 +50,17 @@ type Gateway struct {
 	mu       sync.Mutex
 	sessions map[string]*CallSession
 	pending  map[string]pendingCall
+	meta     map[string]callMeta // from/phone-number-id per call, for events
+	ended    map[string]struct{} // calls that already reached a terminal state
 }
 
 type pendingCall struct {
-	from  string
 	offer string
+}
+
+type callMeta struct {
+	from          string
+	phoneNumberID string
 }
 
 // NewGateway builds a call gateway.
@@ -71,6 +77,8 @@ func NewGateway(cfg GatewayConfig) *Gateway {
 		log:        log,
 		sessions:   make(map[string]*CallSession),
 		pending:    make(map[string]pendingCall),
+		meta:       make(map[string]callMeta),
+		ended:      make(map[string]struct{}),
 	}
 }
 
@@ -97,17 +105,21 @@ func (g *Gateway) onConnect(ctx context.Context, phoneNumberID string, ev Webhoo
 		g.log.Warn("call connect without SDP offer", "call_id", ev.ID)
 		return
 	}
+	g.mu.Lock()
+	g.meta[ev.ID] = callMeta{from: ev.From, phoneNumberID: phoneNumberID}
+	g.mu.Unlock()
 	g.emit(ctx, GatewayEvent{CallID: ev.ID, Phase: PhaseRinging, From: ev.From, PhoneNumberID: phoneNumberID})
 
 	if !g.autoAnswer {
 		g.mu.Lock()
-		g.pending[ev.ID] = pendingCall{from: ev.From, offer: ev.Session.SDP}
+		g.pending[ev.ID] = pendingCall{offer: ev.Session.SDP}
 		g.mu.Unlock()
 		return
 	}
-	if err := g.answer(ctx, ev.ID, ev.From, phoneNumberID, ev.Session.SDP); err != nil {
+	if err := g.answer(ctx, ev.ID, ev.Session.SDP); err != nil {
 		g.log.Error("failed to answer inbound call", "call_id", ev.ID, "err", err)
 		_ = g.signaling.Reject(ctx, ev.ID)
+		g.finishCall(ctx, ev.ID) // never leave the host stuck in "ringing"
 	}
 }
 
@@ -120,7 +132,12 @@ func (g *Gateway) AcceptCall(ctx context.Context, callID string) error {
 	if !ok {
 		return fmt.Errorf("no pending call %s", callID)
 	}
-	return g.answer(ctx, callID, p.from, "", p.offer)
+	if err := g.answer(ctx, callID, p.offer); err != nil {
+		_ = g.signaling.Reject(ctx, callID)
+		g.finishCall(ctx, callID)
+		return err
+	}
+	return nil
 }
 
 // RejectCall declines a ringing inbound call.
@@ -128,30 +145,38 @@ func (g *Gateway) RejectCall(ctx context.Context, callID string) error {
 	g.mu.Lock()
 	delete(g.pending, callID)
 	g.mu.Unlock()
-	return g.signaling.Reject(ctx, callID)
+	err := g.signaling.Reject(ctx, callID)
+	g.finishCall(ctx, callID) // emit a terminal event even on manual reject
+	return err
 }
 
 // EndCall terminates an active call and tears down its media.
 func (g *Gateway) EndCall(ctx context.Context, callID string) error {
-	g.mu.Lock()
-	sess := g.sessions[callID]
-	delete(g.sessions, callID)
-	g.mu.Unlock()
-	if sess != nil {
-		_ = sess.Close()
-	}
-	return g.signaling.Terminate(ctx, callID)
+	err := g.signaling.Terminate(ctx, callID)
+	g.finishCall(ctx, callID)
+	return err
 }
 
-// answer builds the media session, negotiates the SDP answer and accepts.
-func (g *Gateway) answer(ctx context.Context, callID, from, phoneNumberID, offer string) error {
+// answer builds the media session, negotiates the SDP answer and accepts. The
+// per-call from/phone-number-id come from meta captured at connect time.
+func (g *Gateway) answer(ctx context.Context, callID, offer string) error {
+	g.mu.Lock()
+	meta := g.meta[callID]
+	g.mu.Unlock()
+
 	sess, err := NewCallSession(callID, g.sessCfg)
 	if err != nil {
 		return fmt.Errorf("media session: %w", err)
 	}
-	sess.OnConnected = func() {
-		g.emit(context.Background(), GatewayEvent{CallID: callID, Phase: PhaseConnected, From: from, PhoneNumberID: phoneNumberID})
-	}
+	// Wire handlers before negotiation so a media failure is never lost: OnClosed
+	// finalizes recording, removes the session and emits PhaseEnded even when no
+	// terminate webhook ever arrives (e.g. ICE failure).
+	sess.SetHandlers(
+		func() {
+			g.emit(context.Background(), GatewayEvent{CallID: callID, Phase: PhaseConnected, From: meta.from, PhoneNumberID: meta.phoneNumberID})
+		},
+		func() { g.finishCall(context.Background(), callID) },
+	)
 
 	answerSDP, err := sess.AnswerOffer(ctx, offer)
 	if err != nil {
@@ -164,16 +189,38 @@ func (g *Gateway) answer(ctx context.Context, callID, from, phoneNumberID, offer
 	}
 
 	g.mu.Lock()
+	// If a terminate already arrived while we were negotiating, don't register a
+	// doomed session — tear it down instead of leaking it.
+	if _, done := g.ended[callID]; done {
+		g.mu.Unlock()
+		_ = sess.Close()
+		return nil
+	}
 	g.sessions[callID] = sess
 	g.mu.Unlock()
 	return nil
 }
 
-func (g *Gateway) onTerminate(ctx context.Context, phoneNumberID string, ev WebhookCallEvent) {
+func (g *Gateway) onTerminate(ctx context.Context, _ string, ev WebhookCallEvent) {
+	g.finishCall(ctx, ev.ID)
+}
+
+// finishCall marks a call terminal exactly once: it tears down any media
+// session, finalizes the recording and emits PhaseEnded. Subsequent calls
+// (duplicate terminate webhook, OnClosed after an explicit End, etc.) are
+// no-ops, so the host receives a single terminal event per call.
+func (g *Gateway) finishCall(ctx context.Context, callID string) {
 	g.mu.Lock()
-	sess := g.sessions[ev.ID]
-	delete(g.sessions, ev.ID)
-	delete(g.pending, ev.ID)
+	if _, done := g.ended[callID]; done {
+		g.mu.Unlock()
+		return
+	}
+	g.ended[callID] = struct{}{}
+	sess := g.sessions[callID]
+	meta := g.meta[callID]
+	delete(g.sessions, callID)
+	delete(g.pending, callID)
+	delete(g.meta, callID)
 	g.mu.Unlock()
 
 	rec := ""
@@ -182,8 +229,8 @@ func (g *Gateway) onTerminate(ctx context.Context, phoneNumberID string, ev Webh
 		_ = sess.Close()
 	}
 	g.emit(ctx, GatewayEvent{
-		CallID: ev.ID, Phase: PhaseEnded, From: ev.From,
-		PhoneNumberID: phoneNumberID, RecordingPath: rec,
+		CallID: callID, Phase: PhaseEnded, From: meta.from,
+		PhoneNumberID: meta.phoneNumberID, RecordingPath: rec,
 	})
 }
 
@@ -204,6 +251,8 @@ func (g *Gateway) Shutdown() {
 	}
 	g.sessions = make(map[string]*CallSession)
 	g.pending = make(map[string]pendingCall)
+	g.meta = make(map[string]callMeta)
+	g.ended = make(map[string]struct{})
 	g.mu.Unlock()
 
 	for _, s := range sessions {

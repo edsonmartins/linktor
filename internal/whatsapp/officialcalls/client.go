@@ -98,7 +98,9 @@ func (c *Client) GetCallPermission(ctx context.Context, userWaID string) (*CallP
 	if len(wrapper.Data) > 0 {
 		perm = wrapper.Data[0]
 	}
-	perm.CanPlaceCall = perm.Status == "temporary" || perm.Status == "permanent"
+	// Keep the API's own can_place_call when it grants permission; only fall back
+	// to the status allow-list, so a new/renamed granting status isn't clobbered.
+	perm.CanPlaceCall = perm.CanPlaceCall || perm.Status == "temporary" || perm.Status == "permanent"
 	return &perm, nil
 }
 
@@ -217,6 +219,11 @@ func (c *Client) do(ctx context.Context, method, path string, payload any) ([]by
 	if resp.StatusCode/100 != 2 {
 		return nil, parseGraphError(resp.StatusCode, body)
 	}
+	// Graph can return HTTP 200 with an embedded error envelope; treat that as a
+	// failure rather than silently proceeding as success.
+	if gerr := graphErrorFromBody(resp.StatusCode, body); gerr != nil {
+		return nil, gerr
+	}
 	return body, nil
 }
 
@@ -231,7 +238,12 @@ func (e *GraphError) Error() string {
 	return fmt.Sprintf("whatsapp calling API error (http %d, code %d): %s", e.HTTPStatus, e.Code, e.Message)
 }
 
-func parseGraphError(status int, body []byte) error {
+// graphErrorFromBody returns a *GraphError if the body carries a Graph error
+// envelope ({"error":{...}}), else nil.
+func graphErrorFromBody(status int, body []byte) error {
+	if len(body) == 0 {
+		return nil
+	}
 	var env struct {
 		Error struct {
 			Message string `json:"message"`
@@ -240,6 +252,13 @@ func parseGraphError(status int, body []byte) error {
 	}
 	if err := json.Unmarshal(body, &env); err == nil && env.Error.Message != "" {
 		return &GraphError{HTTPStatus: status, Code: env.Error.Code, Message: env.Error.Message}
+	}
+	return nil
+}
+
+func parseGraphError(status int, body []byte) error {
+	if gerr := graphErrorFromBody(status, body); gerr != nil {
+		return gerr
 	}
 	return &GraphError{HTTPStatus: status, Message: strings.TrimSpace(string(body))}
 }

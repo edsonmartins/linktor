@@ -32,14 +32,29 @@ type CallSession struct {
 	pc     *webrtc.PeerConnection
 	local  *webrtc.TrackLocalStaticSample
 
-	mu      sync.Mutex
-	ogg     *oggwriter.OggWriter
-	recPath string
-	closed  bool
+	mu         sync.Mutex
+	ogg        *oggwriter.OggWriter
+	recPath    string
+	recStarted bool // true once the Ogg file has actually been created
+	closed     bool
 
-	// OnConnected fires when media is connected; OnClosed when it ends.
-	OnConnected func()
-	OnClosed    func()
+	// Handlers are guarded by mu (set via SetHandlers, read when firing) and each
+	// fires at most once: onConnected when media connects, onClosed at teardown.
+	onConnected    func()
+	onClosed       func()
+	connectedFired bool
+	closedFired    bool
+}
+
+// SetHandlers registers the connect/close callbacks. onConnected fires at most
+// once when media connects; onClosed fires at most once when the call is torn
+// down (peer failure or Close). Both are guarded so pion's state-change
+// goroutine never races the caller setting them.
+func (s *CallSession) SetHandlers(onConnected, onClosed func()) {
+	s.mu.Lock()
+	s.onConnected = onConnected
+	s.onClosed = onClosed
+	s.mu.Unlock()
 }
 
 // NewCallSession builds a media session for callID.
@@ -89,19 +104,44 @@ func NewCallSession(callID string, cfg SessionConfig) (*CallSession, error) {
 	pc.OnConnectionStateChange(func(st webrtc.PeerConnectionState) {
 		switch st {
 		case webrtc.PeerConnectionStateConnected:
-			if s.OnConnected != nil {
-				s.OnConnected()
-			}
+			s.fireConnected()
+		// Disconnected is transient (ICE may recover), so it is not terminal;
+		// only Failed/Closed end the call.
 		case webrtc.PeerConnectionStateFailed,
-			webrtc.PeerConnectionStateDisconnected,
 			webrtc.PeerConnectionStateClosed:
-			if s.OnClosed != nil {
-				s.OnClosed()
-			}
+			s.fireClosed()
 		}
 	})
 
 	return s, nil
+}
+
+func (s *CallSession) fireConnected() {
+	s.mu.Lock()
+	if s.connectedFired {
+		s.mu.Unlock()
+		return
+	}
+	s.connectedFired = true
+	cb := s.onConnected
+	s.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+}
+
+func (s *CallSession) fireClosed() {
+	s.mu.Lock()
+	if s.closedFired {
+		s.mu.Unlock()
+		return
+	}
+	s.closedFired = true
+	cb := s.onClosed
+	s.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
 }
 
 // AnswerOffer sets the remote SDP offer, creates our answer, waits for ICE
@@ -159,10 +199,15 @@ func (s *CallSession) WriteAudio(sample media.Sample) error {
 	return s.local.WriteSample(sample)
 }
 
-// RecordingPath returns the Ogg file path (empty when recording is off).
+// RecordingPath returns the Ogg file path, or empty if recording is off or no
+// audio ever arrived (so callers never get a path to a file that was never
+// created).
 func (s *CallSession) RecordingPath() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !s.recStarted {
+		return ""
+	}
 	return s.recPath
 }
 
@@ -174,18 +219,19 @@ func (s *CallSession) Close() error {
 		return nil
 	}
 	s.closed = true
-	ogg := s.ogg
-	s.ogg = nil
-	s.mu.Unlock()
-
-	if ogg != nil {
-		_ = ogg.Close()
+	// Finalize the writer under the lock so it can never race a concurrent
+	// WriteRTP in recordTrack (oggwriter is not safe for concurrent use).
+	if s.ogg != nil {
+		_ = s.ogg.Close()
+		s.ogg = nil
 	}
+	s.mu.Unlock()
 	return s.pc.Close()
 }
 
 // recordTrack streams the remote OPUS RTP into an Ogg file. It copies packets
-// straight through (no decode), so it never blocks on codec work.
+// straight through (no decode), so it never blocks on codec work. Every write
+// happens under the session lock, serialized against Close.
 func (s *CallSession) recordTrack(track *webrtc.TrackRemote) {
 	s.mu.Lock()
 	if s.recPath == "" || s.closed {
@@ -203,8 +249,8 @@ func (s *CallSession) recordTrack(track *webrtc.TrackRemote) {
 			return
 		}
 		s.ogg = ogg
+		s.recStarted = true
 	}
-	ogg := s.ogg
 	s.mu.Unlock()
 
 	for {
@@ -213,12 +259,12 @@ func (s *CallSession) recordTrack(track *webrtc.TrackRemote) {
 			return
 		}
 		s.mu.Lock()
-		closed := s.closed
-		s.mu.Unlock()
-		if closed {
+		if s.closed || s.ogg == nil {
+			s.mu.Unlock()
 			return
 		}
-		_ = ogg.WriteRTP(pkt)
+		_ = s.ogg.WriteRTP(pkt)
+		s.mu.Unlock()
 	}
 }
 

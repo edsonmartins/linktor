@@ -76,3 +76,18 @@ func TestParseWebhookCalls_IgnoresNonCalls(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, calls)
 }
+
+// A change whose field is not "calls" must be ignored even if it carries a
+// "calls" array — routing keys off the field name, not the array's presence.
+func TestParseWebhookCalls_IgnoresCallsArrayUnderNonCallsField(t *testing.T) {
+	const body = `{
+      "object": "whatsapp_business_account",
+      "entry": [{"changes": [{"field": "messages", "value": {
+        "metadata": {"phone_number_id": "phone-55"},
+        "calls": [{"id": "call-x", "event": "connect", "session": {"sdp_type": "offer", "sdp": "v=0"}}]
+      }}]}]
+    }`
+	calls, err := ParseWebhookCalls([]byte(body))
+	require.NoError(t, err)
+	assert.Empty(t, calls)
+}

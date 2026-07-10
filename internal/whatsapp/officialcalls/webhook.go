@@ -43,7 +43,9 @@ func ParseWebhookCalls(body []byte) ([]CallWebhook, error) {
 	var out []CallWebhook
 	for _, entry := range env.Entry {
 		for _, ch := range entry.Changes {
-			if len(ch.Value.Calls) == 0 {
+			// Only the "calls" change field carries call events; ignore anything
+			// else even if it happens to include a calls array.
+			if ch.Field != "calls" || len(ch.Value.Calls) == 0 {
 				continue
 			}
 			pnID := ch.Value.Metadata.PhoneNumberID

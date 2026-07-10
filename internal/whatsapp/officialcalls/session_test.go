@@ -74,7 +74,9 @@ func TestRecordingPathAndCloseIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewCallSession("call-3", SessionConfig{ICEServers: []webrtc.ICEServer{}, RecordDir: dir})
 	require.NoError(t, err)
-	assert.Contains(t, s.RecordingPath(), dir)
+	// No audio arrived yet, so there is no recording file — RecordingPath must be
+	// empty rather than point at a file that was never created.
+	assert.Empty(t, s.RecordingPath())
 	assert.NoError(t, s.Close())
 	assert.NoError(t, s.Close(), "Close is idempotent")
 
@@ -99,12 +101,12 @@ func TestSession_LoopbackConnectAndRecord(t *testing.T) {
 	defer answerer.Close()
 
 	connected := make(chan struct{}, 1)
-	answerer.OnConnected = func() {
+	answerer.SetHandlers(func() {
 		select {
 		case connected <- struct{}{}:
 		default:
 		}
-	}
+	}, nil)
 
 	// SDP exchange.
 	offer := offerSDP(t, offerer)
