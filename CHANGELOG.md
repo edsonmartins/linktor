@@ -10,6 +10,63 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 Features de operação inspiradas na análise do whatomate + subsistema de entrega
 outbound que as torna funcionais ponta-a-ponta. Tudo com backend, testes e UI.
 
+### Canais — WhatsApp não-oficial (whatsmeow)
+
+Enriquecimento do canal não-oficial (`internal/adapters/whatsapp`) e novo motor
+de chamadas (`internal/voip`), aproveitando código do projeto wacalls-chat.
+
+- **Mensagens interativas native-flow:** botões de resposta rápida e listas de
+  seleção que renderizam no WhatsApp Web multi-device (com o AdditionalNode
+  `<biz>`), fallback automático para texto e parsing das respostas para
+  `selected_id`. `SupportsInteractive=true`.
+- **Unwrap de envelopes no inbound:** desembrulho recursivo de mensagens
+  efêmeras, view-once (v1/v2/v2ext), device-sent, editadas e protocol antes de
+  classificar; fallback de texto para anúncios CTWA (matchedText), live-location
+  e contacts-array; flag de edição.
+- **Edit / revoke / forward** de mensagens. `SupportsForwarding=true`.
+- **Resolução LID↔PN:** senders com identidade `@lid` resolvidos para número de
+  telefone no inbound (cache TTL), com o LID preservado em metadata; avatar com
+  `ExistingID` para pular download inalterado.
+- **Chamadas de voz/vídeo nativas (VoIP):** motor portado (CallManager, codec
+  **mlow**, media/SRTP, signaling, transport) atrás de uma interface
+  `VoipSocket` sobre o whatsmeow; `PlaceCall`/`AcceptCall`/`RejectCall`/`EndCall`,
+  eventos de ciclo de vida via `SetCallHandler` e hook de stream via
+  `SetCallAudioSink`.
+- **Gravação de chamadas em WAV**, ligável por config (`record_calls`,
+  `recordings_dir`): estéreo (esquerda = interlocutor, direita = local) ou mono
+  para escuta; a captura só copia PCM em memória e escreve no fim da ligação, sem
+  interferir na chamada. O evento `ended` carrega `recording_path`.
+- **SQLite pure-Go** (`modernc.org/sqlite`) no store de sessão em vez do driver
+  cgo — o binário compila com `CGO_ENABLED=0`.
+- Dependências: `go.mau.fi/whatsmeow` atualizado (2026-01 → 2026-06) e
+  `github.com/pion/webrtc/v4` adicionado (apenas para o subsistema de VoIP).
+
+### Canais — WhatsApp oficial (ligações via Business Calling API)
+
+Ligações de voz no canal **oficial** da Meta
+([WhatsApp Business Calling API](https://developers.facebook.com/documentation/business-messaging/whatsapp/calling)),
+em novo pacote `internal/whatsapp/officialcalls` acoplado ao adapter oficial
+(`internal/adapters/whatsapp_official`). Diferente do não-oficial, usa **WebRTC
+padrão** (ICE/DTLS/SRTP, OPUS) via `github.com/pion/webrtc/v4`.
+
+- **Sinalização (Graph API):** `POST /{phone_number_id}/calls` com as ações do
+  protocolo — `connect`/`pre_accept`/`accept`/`reject`/`terminate` — carregando
+  `session {sdp_type, sdp}`; habilitação do recurso via `POST /settings`
+  (`EnableCalling`, best-effort no `Connect`).
+- **Webhook `calls`:** `ParseWebhookCalls` + `Gateway` roteiam `event=connect`
+  (SDP offer) e `event=terminate`; fases `ringing` → `connected` → `ended`.
+  Com `auto_answer_calls` o gateway negocia o answer e aceita automaticamente
+  (bot/IVR); senão a chamada fica pendente até `AcceptCall`/`RejectCall`.
+- **Mídia e gravação:** `CallSession` (pion `PeerConnection` + track OPUS)
+  negocia o SDP; com `call_recordings_dir` grava o RTP recebido **direto em
+  Ogg/Opus sem decodificar** (pure-Go), sem interferir na chamada. O evento
+  `ended` carrega `recording_path`.
+- Config do canal oficial: `enable_calls`, `auto_answer_calls`,
+  `call_recordings_dir`.
+- Cobertura de testes na sinalização, parse de webhook e mídia (loopback pion);
+  o caminho ponta-a-ponta contra a Meta exige número com calling habilitado e só
+  se confirma em teste ao vivo.
+
 ### Segurança / Correções (hardening dos conectores Teams/Slack/Mattermost)
 
 - **Teams — exfiltração de token bloqueada:** o `serviceUrl` recebido na Activity

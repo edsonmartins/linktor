@@ -1,8 +1,10 @@
 package whatsapp
 
 import (
+	"strings"
 	"time"
 
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -94,10 +96,51 @@ func (c *Client) handleEvent(evt any) {
 	}
 }
 
+// maxEnvelopeDepth bounds how many nested wrapper messages unwrapEnvelopes will
+// peel, guarding against pathologically nested (or malicious) payloads.
+const maxEnvelopeDepth = 8
+
+// unwrapEnvelopes peels wrapper messages (disappearing/ephemeral, view-once in
+// all its variants, device-sent, and edited) down to the real payload so
+// downstream classification sees the actual image/text/etc. instead of an empty
+// envelope. It also reports whether an edit envelope was unwrapped.
+func unwrapEnvelopes(m *waE2E.Message) (*waE2E.Message, bool) {
+	edited := false
+	for i := 0; m != nil && i < maxEnvelopeDepth; i++ {
+		switch {
+		case m.GetEphemeralMessage().GetMessage() != nil:
+			m = m.GetEphemeralMessage().GetMessage()
+		case m.GetViewOnceMessage().GetMessage() != nil:
+			m = m.GetViewOnceMessage().GetMessage()
+		case m.GetViewOnceMessageV2().GetMessage() != nil:
+			m = m.GetViewOnceMessageV2().GetMessage()
+		case m.GetViewOnceMessageV2Extension().GetMessage() != nil:
+			m = m.GetViewOnceMessageV2Extension().GetMessage()
+		case m.GetDeviceSentMessage().GetMessage() != nil:
+			m = m.GetDeviceSentMessage().GetMessage()
+		case m.GetEditedMessage().GetMessage() != nil:
+			edited = true
+			m = m.GetEditedMessage().GetMessage()
+		case m.GetProtocolMessage().GetEditedMessage() != nil:
+			edited = true
+			m = m.GetProtocolMessage().GetEditedMessage()
+		default:
+			return m, edited
+		}
+	}
+	return m, edited
+}
+
 // convertMessage converts a whatsmeow message event to IncomingMessage
 func convertMessage(evt *events.Message) *IncomingMessage {
 	if evt == nil || evt.Message == nil {
 		return nil
+	}
+
+	// Unwrap envelope messages down to the real payload before classifying.
+	content, edited := unwrapEnvelopes(evt.Message)
+	if content == nil {
+		content = evt.Message
 	}
 
 	msg := &IncomingMessage{
@@ -108,15 +151,26 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 		Timestamp:  evt.Info.Timestamp,
 		IsFromMe:   evt.Info.IsFromMe,
 		IsGroup:    evt.Info.IsGroup,
-		RawMessage: evt.Message,
+		IsEdit:     edited,
+		RawMessage: content,
 	}
 
 	// Extract text content
-	if conv := evt.Message.GetConversation(); conv != "" {
+	if conv := content.GetConversation(); conv != "" {
 		msg.Text = conv
 		msg.MessageType = "text"
-	} else if ext := evt.Message.GetExtendedTextMessage(); ext != nil {
-		msg.Text = ext.GetText()
+	} else if ext := content.GetExtendedTextMessage(); ext != nil {
+		// Extended text also carries Click-to-WhatsApp ad CTAs (matchedText)
+		// and link-preview descriptions — fall back to those when the body is
+		// empty so the ad/link context is not lost.
+		txt := ext.GetText()
+		if strings.TrimSpace(txt) == "" {
+			txt = ext.GetMatchedText()
+		}
+		if strings.TrimSpace(txt) == "" {
+			txt = ext.GetDescription()
+		}
+		msg.Text = txt
 		msg.MessageType = "text"
 
 		// Handle context info (reply, mentions)
@@ -140,7 +194,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 	}
 
 	// Handle image message
-	if img := evt.Message.GetImageMessage(); img != nil {
+	if img := content.GetImageMessage(); img != nil {
 		msg.MessageType = "image"
 		msg.Text = img.GetCaption()
 		msg.Attachments = append(msg.Attachments, Attachment{
@@ -160,7 +214,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 	}
 
 	// Handle video message
-	if video := evt.Message.GetVideoMessage(); video != nil {
+	if video := content.GetVideoMessage(); video != nil {
 		msg.MessageType = "video"
 		msg.Text = video.GetCaption()
 		msg.Attachments = append(msg.Attachments, Attachment{
@@ -181,7 +235,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 	}
 
 	// Handle audio message
-	if audio := evt.Message.GetAudioMessage(); audio != nil {
+	if audio := content.GetAudioMessage(); audio != nil {
 		if audio.GetPTT() {
 			msg.MessageType = "ptt"
 		} else {
@@ -202,7 +256,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 	}
 
 	// Handle document message
-	if doc := evt.Message.GetDocumentMessage(); doc != nil {
+	if doc := content.GetDocumentMessage(); doc != nil {
 		msg.MessageType = "document"
 		msg.Text = doc.GetCaption()
 		msg.Attachments = append(msg.Attachments, Attachment{
@@ -221,7 +275,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 	}
 
 	// Handle sticker message
-	if sticker := evt.Message.GetStickerMessage(); sticker != nil {
+	if sticker := content.GetStickerMessage(); sticker != nil {
 		msg.MessageType = "sticker"
 		msg.Attachments = append(msg.Attachments, Attachment{
 			Type:      "sticker",
@@ -239,7 +293,7 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 	}
 
 	// Handle location message
-	if loc := evt.Message.GetLocationMessage(); loc != nil {
+	if loc := content.GetLocationMessage(); loc != nil {
 		msg.MessageType = "location"
 		msg.Text = loc.GetName()
 		msg.Attachments = append(msg.Attachments, Attachment{
@@ -251,14 +305,34 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 		})
 	}
 
+	// Handle live location message (continuously updated position)
+	if live := content.GetLiveLocationMessage(); live != nil {
+		msg.MessageType = "location"
+		msg.Text = live.GetCaption()
+		msg.Attachments = append(msg.Attachments, Attachment{
+			Type:      "location",
+			Caption:   live.GetCaption(),
+			Latitude:  live.GetDegreesLatitude(),
+			Longitude: live.GetDegreesLongitude(),
+		})
+	}
+
 	// Handle contact message
-	if contact := evt.Message.GetContactMessage(); contact != nil {
+	if contact := content.GetContactMessage(); contact != nil {
 		msg.MessageType = "contact"
 		msg.Text = contact.GetDisplayName()
 	}
 
+	// Handle contacts array (multiple vCards shared at once)
+	if arr := content.GetContactsArrayMessage(); arr != nil {
+		msg.MessageType = "contact"
+		if name := arr.GetDisplayName(); name != "" {
+			msg.Text = name
+		}
+	}
+
 	// Handle reaction message
-	if reaction := evt.Message.GetReactionMessage(); reaction != nil {
+	if reaction := content.GetReactionMessage(); reaction != nil {
 		msg.MessageType = "reaction"
 		msg.Reaction = &Reaction{
 			Emoji:     reaction.GetText(),
@@ -267,6 +341,11 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 			Timestamp: evt.Info.Timestamp,
 		}
 	}
+
+	// Handle interactive replies (native-flow button/list taps, template
+	// buttons). These carry no plain conversation text; the tapped option's id
+	// and label are surfaced via SelectedID/Text.
+	parseInteractiveReply(content, msg)
 
 	return msg
 }

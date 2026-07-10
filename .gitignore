@@ -78,3 +78,7 @@ credentials.json
 
 # References (cloned repos for study)
 references/
+
+# whatsmeow SQLite WAL sidecars from adapter tests
+internal/adapters/whatsapp/storages/*.db-wal
+internal/adapters/whatsapp/storages/*.db-shm

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/msgfy/linktor/internal/whatsapp/officialcalls"
 	"github.com/msgfy/linktor/pkg/plugin"
 )
 
@@ -21,6 +23,10 @@ type Adapter struct {
 	statusHandler    plugin.StatusHandler
 	config           *Config
 	sessions         map[string]*SessionInfo // phone -> session info
+
+	// Calling (WhatsApp Business Calling API) — nil when disabled.
+	callGateway *officialcalls.Gateway
+	callHandler officialcalls.GatewayHandler
 }
 
 // NewAdapter creates a new WhatsApp Official adapter
@@ -96,6 +102,10 @@ func (a *Adapter) Initialize(config map[string]string) error {
 		VerifyToken:   config["verify_token"],
 		WebhookSecret: config["webhook_secret"],
 		APIVersion:    getOrDefault(config, "api_version", DefaultAPIVersion),
+
+		EnableCalls:       config["enable_calls"] == "true",
+		AutoAnswerCalls:   config["auto_answer_calls"] == "true",
+		CallRecordingsDir: config["call_recordings_dir"],
 	}
 
 	// Validate required fields
@@ -135,6 +145,41 @@ func (a *Adapter) Connect(ctx context.Context) error {
 	// Store phone info in connection status metadata
 	_ = phoneInfo // Can be used for logging or status
 
+	// Bring up the calling gateway (WhatsApp Business Calling API) when enabled.
+	if a.config.EnableCalls {
+		signaling, serr := officialcalls.NewClient(officialcalls.Config{
+			APIVersion:    a.config.APIVersion,
+			AccessToken:   a.config.AccessToken,
+			PhoneNumberID: a.config.PhoneNumberID,
+		})
+		if serr != nil {
+			return fmt.Errorf("failed to init calling signaling: %w", serr)
+		}
+		a.callGateway = officialcalls.NewGateway(officialcalls.GatewayConfig{
+			Signaling:  signaling,
+			Session:    officialcalls.SessionConfig{RecordDir: a.config.CallRecordingsDir},
+			AutoAnswer: a.config.AutoAnswerCalls,
+			Handler: func(cctx context.Context, evt officialcalls.GatewayEvent) {
+				a.mu.RLock()
+				h := a.callHandler
+				a.mu.RUnlock()
+				if h != nil {
+					h(cctx, evt)
+				}
+			},
+		})
+		// Best-effort: turn calling on for the number. Done off the adapter lock
+		// and detached from the Connect context so a slow/unreachable Graph API
+		// can't stall messaging or webhook processing (the operator may also
+		// enable calling out-of-band).
+		sig := signaling
+		go func() {
+			if err := sig.EnableCalling(context.WithoutCancel(ctx)); err != nil {
+				slog.Warn("whatsapp official: enable calling failed", "err", err)
+			}
+		}()
+	}
+
 	return nil
 }
 
@@ -143,11 +188,57 @@ func (a *Adapter) Disconnect(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if a.callGateway != nil {
+		a.callGateway.Shutdown()
+		a.callGateway = nil
+	}
+
 	a.client = nil
 	a.webhookProcessor = nil
 	a.SetConnected(false)
 
 	return nil
+}
+
+// SetCallHandler registers the handler for call lifecycle events (ringing /
+// connected / ended). May be called before or after Connect.
+func (a *Adapter) SetCallHandler(handler officialcalls.GatewayHandler) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.callHandler = handler
+}
+
+// AcceptCall answers a ringing inbound call (when auto-answer is off).
+func (a *Adapter) AcceptCall(ctx context.Context, callID string) error {
+	a.mu.RLock()
+	g := a.callGateway
+	a.mu.RUnlock()
+	if g == nil {
+		return fmt.Errorf("calling not enabled")
+	}
+	return g.AcceptCall(ctx, callID)
+}
+
+// RejectCall declines a ringing inbound call.
+func (a *Adapter) RejectCall(ctx context.Context, callID string) error {
+	a.mu.RLock()
+	g := a.callGateway
+	a.mu.RUnlock()
+	if g == nil {
+		return fmt.Errorf("calling not enabled")
+	}
+	return g.RejectCall(ctx, callID)
+}
+
+// EndCall terminates an active call.
+func (a *Adapter) EndCall(ctx context.Context, callID string) error {
+	a.mu.RLock()
+	g := a.callGateway
+	a.mu.RUnlock()
+	if g == nil {
+		return fmt.Errorf("calling not enabled")
+	}
+	return g.EndCall(ctx, callID)
 }
 
 // SendMessage sends a message via WhatsApp
@@ -565,7 +656,17 @@ func (a *Adapter) HandleWebhook(ctx context.Context, body []byte) error {
 	processor := a.webhookProcessor
 	msgHandler := a.messageHandler
 	statusHandler := a.statusHandler
+	gateway := a.callGateway
 	a.mu.RUnlock()
+
+	// Route call events (connect/terminate) to the calling gateway. Independent
+	// of message/status processing and safe on non-call payloads.
+	if gateway != nil {
+		if err := gateway.HandleWebhook(ctx, body); err != nil {
+			// Log and continue; a malformed calls payload must not drop messages.
+			slog.Warn("whatsapp official: calls webhook parse failed", "err", err)
+		}
+	}
 
 	if processor == nil {
 		return fmt.Errorf("webhook processor not initialized")

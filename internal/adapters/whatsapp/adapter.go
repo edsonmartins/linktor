@@ -32,6 +32,12 @@ type Adapter struct {
 	config            *Config
 	stopCh            chan struct{}
 	eventLoopDone     chan struct{}
+
+	// Native calling (VoIP) — isolated from the messaging event loop.
+	callGateway   *CallGateway
+	callHandler   CallHandler
+	callAudioSink PeerAudioSink
+	callRecorder  *CallRecorder
 }
 
 // NewAdapter creates a new WhatsApp unofficial adapter
@@ -55,12 +61,12 @@ func NewAdapter() *Adapter {
 			SupportsMedia:           true,
 			SupportsLocation:        true,
 			SupportsTemplates:       false, // Not available in unofficial API
-			SupportsInteractive:     false, // Limited support
+			SupportsInteractive:     true,  // Native-flow buttons/lists (see interactive.go)
 			SupportsReadReceipts:    true,
 			SupportsTypingIndicator: true,
 			SupportsReactions:       true,
 			SupportsReplies:         true,
-			SupportsForwarding:      false, // Complex to implement
+			SupportsForwarding:      true, // Text forward via metadata is_forwarded (edit.go)
 			MaxMessageLength:        65536,
 			MaxMediaSize:            100 * 1024 * 1024, // 100MB
 			MaxAttachments:          1,
@@ -87,15 +93,23 @@ func (a *Adapter) Initialize(config map[string]string) error {
 	}
 
 	a.config = &Config{
-		ChannelID:    config["channel_id"],
-		DatabasePath: config["database_path"],
-		DeviceName:   config["device_name"],
-		PlatformType: config["platform_type"],
-		LogLevel:     config["log_level"],
+		ChannelID:     config["channel_id"],
+		DatabasePath:  config["database_path"],
+		DeviceName:    config["device_name"],
+		PlatformType:  config["platform_type"],
+		LogLevel:      config["log_level"],
+		RecordCalls:   config["record_calls"] == "true",
+		RecordingsDir: config["recordings_dir"],
 	}
 
 	if a.config.LogLevel == "" {
 		a.config.LogLevel = "WARN"
+	}
+
+	// Config-driven call recording; EnableCallRecording can still toggle it at
+	// runtime.
+	if a.config.RecordCalls {
+		a.callRecorder = NewCallRecorder(a.config.RecordingsDir, 16000)
 	}
 
 	return nil
@@ -130,6 +144,24 @@ func (a *Adapter) Connect(ctx context.Context) error {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 
+	// Bring up the native calling gateway on the live whatsmeow client. The
+	// handler closure reads the adapter's current call handler so SetCallHandler
+	// works whether it is called before or after Connect.
+	if raw := client.GetRawClient(); raw != nil {
+		g := NewCallGateway(raw, nil, func(cctx context.Context, evt CallEvent) {
+			a.mu.RLock()
+			h := a.callHandler
+			a.mu.RUnlock()
+			if h != nil {
+				h(cctx, evt)
+			}
+		})
+		g.AudioSink = a.callAudioSink
+		g.Recorder = a.callRecorder
+		a.callGateway = g
+		raw.AddEventHandler(g.HandleWhatsmeowEvent)
+	}
+
 	// Start event loop
 	go a.eventLoop()
 
@@ -150,6 +182,11 @@ func (a *Adapter) Disconnect(ctx context.Context) error {
 // stop channel is niled after being closed (avoiding a double-close panic) and
 // the client is zeroed even when Close() returns an error.
 func (a *Adapter) teardownLocked() error {
+	if a.callGateway != nil {
+		a.callGateway.Shutdown(context.Background())
+		a.callGateway = nil
+	}
+
 	if a.stopCh != nil {
 		close(a.stopCh)
 		<-a.eventLoopDone
@@ -247,11 +284,13 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 
 	switch msg.ContentType {
 	case plugin.ContentTypeText:
-		// Check for reply
-		if replyTo, ok := msg.Metadata["reply_to_id"]; ok && replyTo != "" {
-			quotedText := msg.Metadata["quoted_text"]
-			resp, err = client.SendTextMessageWithReply(ctx, msg.RecipientID, msg.Content, replyTo, quotedText)
-		} else {
+		switch {
+		case msg.Metadata["is_forwarded"] == "true":
+			// Forward a text body tagged with the "Forwarded" label.
+			resp, err = client.ForwardText(ctx, msg.RecipientID, msg.Content)
+		case msg.Metadata["reply_to_id"] != "":
+			resp, err = client.SendTextMessageWithReply(ctx, msg.RecipientID, msg.Content, msg.Metadata["reply_to_id"], msg.Metadata["quoted_text"])
+		default:
 			resp, err = client.SendTextMessage(ctx, msg.RecipientID, msg.Content)
 		}
 
@@ -351,6 +390,10 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 		address := msg.Metadata["address"]
 		resp, err = client.SendLocationMessage(ctx, msg.RecipientID, lat, lon, name, address)
 
+	case plugin.ContentTypeInteractive:
+		// Content carries the interactive payload as JSON (see InteractivePayload).
+		resp, err = sendInteractive(ctx, client, msg.RecipientID, msg.Content)
+
 	default:
 		return &plugin.SendResult{
 			Success: false,
@@ -385,6 +428,108 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 		Status:     plugin.MessageStatusSent,
 		Timestamp:  resp.Timestamp,
 	}, nil
+}
+
+// SetCallHandler registers the handler for native call lifecycle events. It may
+// be called before or after Connect.
+func (a *Adapter) SetCallHandler(handler CallHandler) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.callHandler = handler
+}
+
+// SetCallAudioSink registers a sink for the remote peer's decoded PCM during
+// calls (recording / speech-to-text). Applies to the active gateway if any.
+func (a *Adapter) SetCallAudioSink(sink PeerAudioSink) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.callAudioSink = sink
+	if a.callGateway != nil {
+		a.callGateway.AudioSink = sink
+	}
+}
+
+// EnableCallRecording turns on per-call WAV recording of the peer's audio,
+// written under dir (default "media/recordings"). The ended CallEvent carries
+// the resulting RecordingPath. Recording never blocks the live call — the audio
+// callback only buffers in memory; the file is written at call teardown.
+func (a *Adapter) EnableCallRecording(dir string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	rec := NewCallRecorder(dir, 16000)
+	a.callRecorder = rec
+	if a.callGateway != nil {
+		a.callGateway.Recorder = rec
+	}
+}
+
+// PlaceCall starts an outgoing native WhatsApp call and returns its call id.
+func (a *Adapter) PlaceCall(ctx context.Context, to string, isVideo bool) (string, error) {
+	a.mu.RLock()
+	g := a.callGateway
+	a.mu.RUnlock()
+	if g == nil {
+		return "", ErrClientNotReady
+	}
+	return g.PlaceCall(ctx, to, isVideo)
+}
+
+// AcceptCall answers a ringing inbound call.
+func (a *Adapter) AcceptCall(ctx context.Context, callID string) error {
+	a.mu.RLock()
+	g := a.callGateway
+	a.mu.RUnlock()
+	if g == nil {
+		return ErrClientNotReady
+	}
+	return g.AcceptCall(ctx, callID)
+}
+
+// RejectCall declines a ringing inbound call.
+func (a *Adapter) RejectCall(ctx context.Context, callID string) error {
+	a.mu.RLock()
+	g := a.callGateway
+	a.mu.RUnlock()
+	if g == nil {
+		return ErrClientNotReady
+	}
+	return g.RejectCall(ctx, callID)
+}
+
+// EndCall hangs up an in-progress call.
+func (a *Adapter) EndCall(ctx context.Context, callID string) error {
+	a.mu.RLock()
+	g := a.callGateway
+	a.mu.RUnlock()
+	if g == nil {
+		return ErrClientNotReady
+	}
+	return g.EndCall(ctx, callID)
+}
+
+// EditMessage edits the text of a message previously sent on this channel.
+func (a *Adapter) EditMessage(ctx context.Context, chat, messageID, newText string) (*SendMessageResponse, error) {
+	a.mu.RLock()
+	client := a.client
+	a.mu.RUnlock()
+
+	if client == nil || !client.IsConnected() {
+		return nil, ErrClientNotReady
+	}
+	return client.EditMessage(ctx, chat, messageID, newText)
+}
+
+// RevokeMessage deletes a message for everyone. Pass an empty sender to revoke
+// your own message; in groups an admin passes the original sender's JID.
+func (a *Adapter) RevokeMessage(ctx context.Context, chat, sender, messageID string) (*SendMessageResponse, error) {
+	a.mu.RLock()
+	client := a.client
+	a.mu.RUnlock()
+
+	if client == nil || !client.IsConnected() {
+		return nil, ErrClientNotReady
+	}
+	return client.RevokeMessage(ctx, chat, sender, messageID)
 }
 
 // SendTypingIndicator sends a typing indicator
@@ -546,6 +691,13 @@ func (a *Adapter) eventLoop() {
 			switch v := evt.(type) {
 			case *IncomingMessage:
 				if msgHandler != nil && !v.IsFromMe {
+					// Resolve @lid senders to their phone-number JID so the
+					// conversation keys on a stable phone identity.
+					if isLID(v.SenderJID) {
+						if pn := client.ResolvePN(ctx, v.SenderJID); pn.User != "" && !isLID(pn) {
+							v.SenderPN = pn
+						}
+					}
 					inbound := convertToInboundMessage(v)
 					// Eagerly download+decrypt inbound media so the encrypted
 					// CDN blob becomes usable bytes for the application.
@@ -594,10 +746,17 @@ func (a *Adapter) eventLoop() {
 
 // convertToInboundMessage converts an IncomingMessage to plugin.InboundMessage
 func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
+	// Prefer the resolved phone number as the stable sender identity; keep the
+	// raw LID in metadata when a resolution happened.
+	senderID := msg.SenderJID.User
+	if msg.SenderPN.User != "" {
+		senderID = msg.SenderPN.User
+	}
+
 	inbound := &plugin.InboundMessage{
 		ID:          uuid.New().String(),
 		ExternalID:  msg.ExternalID,
-		SenderID:    msg.SenderJID.User,
+		SenderID:    senderID,
 		SenderName:  msg.SenderName,
 		Content:     msg.Text,
 		ContentType: plugin.ContentTypeText,
@@ -608,6 +767,19 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 			"is_group":   fmt.Sprintf("%t", msg.IsGroup),
 			"msg_type":   msg.MessageType,
 		},
+	}
+
+	if msg.SenderPN.User != "" {
+		inbound.Metadata["sender_pn"] = msg.SenderPN.String()
+		if isLID(msg.SenderJID) {
+			inbound.Metadata["lid"] = msg.SenderJID.String()
+		}
+	}
+
+	// Flag edits so downstream can update the original message instead of
+	// inserting a duplicate.
+	if msg.IsEdit {
+		inbound.Metadata["edited"] = "true"
 	}
 
 	// Set content type based on message type
@@ -627,6 +799,15 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 	case "sticker":
 		inbound.ContentType = plugin.ContentTypeImage
 		inbound.Metadata["is_sticker"] = "true"
+	case "interactive_reply":
+		// A tapped native-flow button/list or template button. Surface it as
+		// text (the display label) plus the selected option id in metadata so
+		// bots/flows can branch on the id.
+		inbound.ContentType = plugin.ContentTypeText
+		inbound.Metadata["interactive_reply"] = "true"
+		if msg.SelectedID != "" {
+			inbound.Metadata["selected_id"] = msg.SelectedID
+		}
 	}
 
 	// Convert attachments

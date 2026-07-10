@@ -53,6 +53,13 @@ type Config struct {
 
 	// PlatformType identifies the platform (e.g., "chrome", "firefox", "safari")
 	PlatformType string
+
+	// RecordCalls enables per-call WAV recording of native VoIP calls.
+	RecordCalls bool
+
+	// RecordingsDir is where call recordings are written (default
+	// "media/recordings"). Only used when RecordCalls is true.
+	RecordingsDir string
 }
 
 // Validate validates the configuration
@@ -128,6 +135,21 @@ type IncomingMessage struct {
 	Reaction    *Reaction    `json:"reaction,omitempty"`
 	MessageType string       `json:"message_type"`
 	RawMessage  any          `json:"raw_message,omitempty"`
+
+	// SelectedID is set for interactive replies (native-flow button/list or
+	// template button) to the id of the option the user tapped; Text holds its
+	// display text.
+	SelectedID string `json:"selected_id,omitempty"`
+
+	// IsEdit is true when the inbound message is an edit of a previously sent
+	// message (unwrapped from an Edited/Protocol envelope). ExternalID points at
+	// the edited message's id.
+	IsEdit bool `json:"is_edit,omitempty"`
+
+	// SenderPN holds the phone-number JID a hidden-user (@lid) SenderJID was
+	// resolved to, when available. Empty when SenderJID is already a phone JID
+	// or the LID could not be resolved.
+	SenderPN types.JID `json:"sender_pn,omitempty"`
 }
 
 // Attachment represents a media attachment

@@ -34,6 +34,9 @@
 
 | Recurso | O que é |
 |---------|---------|
+| ☎️ **Ligações WhatsApp (oficial)** | WhatsApp Business Calling API: sinalização Graph (connect/accept/reject/terminate + SDP) + mídia WebRTC (pion, OPUS) com **gravação em Ogg/Opus** |
+| 📞 **Chamadas WhatsApp (não-oficial)** | Voz/vídeo nativas via whatsmeow (codec mlow próprio) + **gravação em WAV** ligável por config |
+| 🔘 **Botões & listas no canal não-oficial** | Mensagens interativas native-flow (quick-reply + single-select) que renderizam no WhatsApp Web multi-device |
 | 📣 **Campanhas em massa** | Disparo de templates com entrega assíncrona, progresso ao vivo, retry e DLQ |
 | 🔐 **RBAC granular** | Papéis customizados por tenant (recurso × ação) com cache no Redis |
 | 🎯 **Atribuição + SLA** | Roteamento automático (round-robin/balanceado) + breach de SLA e auto-close |
@@ -99,8 +102,8 @@ msgfy (GitHub org: msgfy)
 
 | Canal | Status | Descrição |
 |-------|--------|-----------|
-| WhatsApp Business API | ✅ Completo | Integração oficial Meta Cloud API + **Coexistence (SMB)** |
-| WhatsApp Unofficial | ✅ Completo | Baileys/WhatsApp Web Multi-device |
+| WhatsApp Business API | ✅ Completo | Integração oficial Meta Cloud API + **Coexistence (SMB)** + **ligações (WhatsApp Business Calling API)** |
+| WhatsApp Unofficial | ✅ Completo | whatsmeow (WhatsApp Web Multi-device) — mídia, interativos native-flow, edit/revoke/forward, resolução LID↔PN e **chamadas de voz/vídeo com gravação** |
 | WebChat | ✅ Completo | Widget embeddable para websites |
 | Telegram | ✅ Completo | Bot API com suporte a mídia |
 | SMS | ✅ Completo | Twilio, Vonage, Plivo |
@@ -180,6 +183,105 @@ Após ativar Coexistence, algumas features do App são desabilitadas:
 - ❌ View Once Media
 - ❌ WhatsApp for Windows/WearOS
 - ✅ WhatsApp Web e Mac funcionam normalmente
+
+### WhatsApp Não-Oficial (whatsmeow)
+
+Além da Cloud API oficial, o Linktor traz um canal **não-oficial** sobre o
+protocolo multi-device do WhatsApp (biblioteca [whatsmeow](https://github.com/tulir/whatsmeow)),
+pareado por **QR code** ou **código de telefone**. O adapter vive em
+`internal/adapters/whatsapp` e o motor de chamadas em `internal/voip`.
+
+#### Mensageria
+
+| Recurso | Descrição |
+|---------|-----------|
+| Mídia | Imagem, vídeo, áudio/PTT, documento, sticker, localização — download+decifra automáticos no inbound (com proteção SSRF no fetch por URL) |
+| **Interativos native-flow** | Botões de resposta rápida e listas de seleção que **renderizam no WhatsApp Web multi-device**, com fallback automático para texto; respostas mapeadas para `selected_id` |
+| **Unwrap de envelopes** | Desembrulho recursivo de mensagens efêmeras, view-once (v1/v2/v2ext), device-sent, editadas e protocol antes de classificar |
+| **Edit / revoke / forward** | Edição, apagar-para-todos e encaminhamento de mensagens |
+| Reactions, reply, presença | Envio de reações, respostas com citação, indicador de digitação e read-receipts |
+| **Resolução LID↔PN** | Contatos com identidade `@lid` (privacidade) são resolvidos para o número de telefone e casam com o histórico, com cache TTL |
+
+#### Chamadas de voz/vídeo (VoIP nativo)
+
+Chamadas nativas do WhatsApp diretamente no canal não-oficial, com implementação
+própria do codec de voz do WhatsApp (**mlow**), SRTP e travessia por relay:
+
+- Iniciar/receber chamadas de **áudio e vídeo** (`PlaceCall` / `AcceptCall` / `RejectCall` / `EndCall`)
+- Eventos de ciclo de vida (`incoming` / `state` / `ended`) via `SetCallHandler`
+- Hook de stream (`SetCallAudioSink`) para processar o áudio do peer **sem interferir na ligação**
+
+#### Gravação de chamadas
+
+Ligável por configuração do canal. A gravação **não interfere na chamada**: o
+callback de áudio apenas copia o PCM em memória; o arquivo é escrito no fim da
+ligação. Grava em **WAV estéreo** (esquerda = interlocutor, direita = local) e
+cai para mono quando a chamada é só de escuta.
+
+| Parâmetro de canal | Valores | Efeito |
+|--------------------|---------|--------|
+| `record_calls` | `"true"` / `"false"` (padrão desligado) | Liga a gravação das chamadas |
+| `recordings_dir` | caminho (padrão `media/recordings`) | Onde os WAVs são gravados |
+
+O evento `ended` carrega o `recording_path` do arquivo gerado.
+
+> **Nota de deploy:** o store de sessão do canal usa SQLite **pure-Go**
+> (`modernc.org/sqlite`, sem cgo) — o binário compila com `CGO_ENABLED=0`.
+
+### Ligações no canal oficial (WhatsApp Business Calling API)
+
+Além do canal não-oficial, o Linktor implementa **ligações de voz no canal
+oficial** da Meta usando a [WhatsApp Business Calling API](https://developers.facebook.com/documentation/business-messaging/whatsapp/calling).
+O pacote vive em `internal/whatsapp/officialcalls` e é acoplado ao adapter
+oficial (`internal/adapters/whatsapp_official`).
+
+Diferente do canal não-oficial (codec mlow próprio + relay), a via oficial usa
+**WebRTC padrão** (ICE/DTLS/SRTP, OPUS) — a sinalização troca SDP pela Graph API
+e a mídia flui direto por [pion/webrtc](https://github.com/pion/webrtc).
+
+#### Sinalização (Graph API)
+
+`POST /{phone_number_id}/calls` com as ações do protocolo — cada uma carregando
+o `session {sdp_type, sdp}` quando aplicável:
+
+| Ação | Método | Efeito |
+|------|--------|--------|
+| `connect` | `Connect` | Inicia chamada de saída (envia SDP offer) |
+| `pre_accept` | `PreAccept` | Pré-aceita para acelerar a conexão de mídia |
+| `accept` | `Accept` | Atende (envia SDP answer) |
+| `reject` | `Reject` | Recusa a chamada |
+| `terminate` | `Terminate` | Encerra a chamada |
+
+O recurso de calling é habilitado por `POST /{phone_number_id}/settings`
+(`EnableCalling`, best-effort no `Connect` do adapter).
+
+#### Webhook e ciclo de vida
+
+O webhook `calls` é parseado por `ParseWebhookCalls`; o `Gateway` roteia:
+
+- `event=connect` → chega o **SDP offer**; com `auto_answer_calls` ligado o
+  gateway negocia o answer e chama `accept` automaticamente (típico de bot/IVR),
+  senão a chamada fica pendente até `AcceptCall` / `RejectCall`
+- `event=terminate` → encerra a mídia e emite o evento com o `recording_path`
+
+Fases expostas ao host via handler: `ringing` → `connected` → `ended`.
+
+#### Mídia e gravação (WebRTC / Ogg-Opus)
+
+O `CallSession` (pion `PeerConnection` + track OPUS local) negocia o SDP e, quando
+`call_recordings_dir` está configurado, grava o RTP recebido **direto em Ogg/Opus
+sem decodificar** (pure-Go, sem interferir na chamada). Áudio de saída é injetado
+por `WriteAudio`.
+
+| Parâmetro de canal | Valores | Efeito |
+|--------------------|---------|--------|
+| `enable_calls` | `"true"` / `"false"` (padrão desligado) | Habilita calling no canal oficial |
+| `auto_answer_calls` | `"true"` / `"false"` (padrão desligado) | Atende automaticamente chamadas de entrada |
+| `call_recordings_dir` | caminho (vazio = sem gravação) | Onde os arquivos Ogg/Opus são gravados |
+
+> **Validação:** a sinalização, o parse de webhook e a mídia WebRTC (loopback
+> pion) têm cobertura de testes. O caminho de ponta-a-ponta contra a Meta exige
+> um número com calling habilitado e só pode ser confirmado em **teste ao vivo**.
 
 ### Core Features
 
