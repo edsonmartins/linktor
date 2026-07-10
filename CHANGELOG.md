@@ -41,6 +41,32 @@ de chamadas (`internal/voip`), aproveitando código do projeto wacalls-chat.
 - Dependências: `go.mau.fi/whatsmeow` atualizado (2026-01 → 2026-06) e
   `github.com/pion/webrtc/v4` adicionado (apenas para o subsistema de VoIP).
 
+### Canais — WhatsApp oficial (ligações via Business Calling API)
+
+Ligações de voz no canal **oficial** da Meta
+([WhatsApp Business Calling API](https://developers.facebook.com/documentation/business-messaging/whatsapp/calling)),
+em novo pacote `internal/whatsapp/officialcalls` acoplado ao adapter oficial
+(`internal/adapters/whatsapp_official`). Diferente do não-oficial, usa **WebRTC
+padrão** (ICE/DTLS/SRTP, OPUS) via `github.com/pion/webrtc/v4`.
+
+- **Sinalização (Graph API):** `POST /{phone_number_id}/calls` com as ações do
+  protocolo — `connect`/`pre_accept`/`accept`/`reject`/`terminate` — carregando
+  `session {sdp_type, sdp}`; habilitação do recurso via `POST /settings`
+  (`EnableCalling`, best-effort no `Connect`).
+- **Webhook `calls`:** `ParseWebhookCalls` + `Gateway` roteiam `event=connect`
+  (SDP offer) e `event=terminate`; fases `ringing` → `connected` → `ended`.
+  Com `auto_answer_calls` o gateway negocia o answer e aceita automaticamente
+  (bot/IVR); senão a chamada fica pendente até `AcceptCall`/`RejectCall`.
+- **Mídia e gravação:** `CallSession` (pion `PeerConnection` + track OPUS)
+  negocia o SDP; com `call_recordings_dir` grava o RTP recebido **direto em
+  Ogg/Opus sem decodificar** (pure-Go), sem interferir na chamada. O evento
+  `ended` carrega `recording_path`.
+- Config do canal oficial: `enable_calls`, `auto_answer_calls`,
+  `call_recordings_dir`.
+- Cobertura de testes na sinalização, parse de webhook e mídia (loopback pion);
+  o caminho ponta-a-ponta contra a Meta exige número com calling habilitado e só
+  se confirma em teste ao vivo.
+
 ### Segurança / Correções (hardening dos conectores Teams/Slack/Mattermost)
 
 - **Teams — exfiltração de token bloqueada:** o `serviceUrl` recebido na Activity
