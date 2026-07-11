@@ -12,7 +12,9 @@ x-logging: &logging
 
 services:
   traefik:
-    image: traefik:v3.2
+    # v3.7+ é necessário p/ o Docker Engine 29 (v3.2 falava API docker 1.24 <
+    # mínimo 1.40 do Engine 29 → não lia labels, nenhum router/cert era criado).
+    image: traefik:v3.7.7
     container_name: linktor-traefik
     <<: [*restart, *logging]
     command:
@@ -146,12 +148,16 @@ services:
       LINKTOR_NATS_URL: nats://nats:4222
       LINKTOR_JWT_SECRET: ${JWT_SECRET}
       LINKTOR_CRYPTO_ENCRYPTION_KEY: ${CRYPTO_ENCRYPTION_KEY}
-      LINKTOR_S3_ENDPOINT: http://minio:9000
-      LINKTOR_S3_ACCESS_KEY: ${MINIO_ROOT_USER}
-      LINKTOR_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      LINKTOR_S3_BUCKET: ${MINIO_BUCKET:-linktor-media}
-      LINKTOR_S3_REGION: us-east-1
-      LINKTOR_S3_USE_SSL: "false"
+      # buildMediaStore() (main.go) lê variáveis MINIO_* CRUAS, não LINKTOR_S3_*.
+      # As presigned URLs (TTL 7d) embutem ESTE host, então precisa ser o host
+      # público (s3.<domínio>) para o cliente baixar a mídia; o minio-go usa o
+      # mesmo endpoint p/ conectar e assinar (uploads fazem hairpin via Traefik).
+      MINIO_ENDPOINT: s3.${ROOT_DOMAIN}
+      MINIO_USE_SSL: "true"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-linktor-media}
+      MINIO_REGION: us-east-1
       BASE_URL: https://api.${ROOT_DOMAIN}
       VRE_UPLOAD_DIR: /app/uploads/vre
     volumes:
@@ -210,6 +216,14 @@ services:
     image: ghcr.io/integrall-tech/linktor-landing:${LANDING_IMAGE_TAG:-latest}
     container_name: linktor-landing
     <<: [*restart, *logging]
+    # A healthcheck embutida na imagem usa `localhost` (IPv6 ::1) mas o nginx só
+    # escuta IPv4 0.0.0.0:8080 → falso "unhealthy", e o Traefik v3.7 exclui
+    # containers unhealthy do roteamento. Sobrescreve com 127.0.0.1.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - linktor-edge
     labels:
