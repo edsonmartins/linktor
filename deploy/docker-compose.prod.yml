@@ -160,6 +160,9 @@ services:
       MINIO_REGION: us-east-1
       BASE_URL: https://api.${ROOT_DOMAIN}
       VRE_UPLOAD_DIR: /app/uploads/vre
+      # Em release mode o CORS nega toda origem cross-site quando não definido
+      # (403 no preflight → "failed to fetch" no admin). Libera admin + apex/www.
+      LINKTOR_CORS_ALLOWED_ORIGINS: https://app.${ROOT_DOMAIN},https://${ROOT_DOMAIN},https://www.${ROOT_DOMAIN}
     volumes:
       - backend_uploads:/app/uploads
       - backend_storages:/app/storages
