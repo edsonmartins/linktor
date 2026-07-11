@@ -163,6 +163,9 @@ services:
       # Em release mode o CORS nega toda origem cross-site quando não definido
       # (403 no preflight → "failed to fetch" no admin). Libera admin + apex/www.
       LINKTOR_CORS_ALLOWED_ORIGINS: https://app.${ROOT_DOMAIN},https://${ROOT_DOMAIN},https://www.${ROOT_DOMAIN}
+      # WS do admin (/api/v1/ws) tem allowlist de origin própria; sem isto só
+      # localhost passa e o realtime falha em app.<domínio>.
+      LINKTOR_WS_ALLOWED_ORIGINS: https://app.${ROOT_DOMAIN},https://${ROOT_DOMAIN},https://www.${ROOT_DOMAIN}
     volumes:
       - backend_uploads:/app/uploads
       - backend_storages:/app/storages
