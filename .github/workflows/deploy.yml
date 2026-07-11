@@ -25,6 +25,29 @@ jobs:
       name: production
       url: https://app.linktor.dev
     steps:
+      # Fail fast with an actionable message when the production environment
+      # secrets are unset. Without this, appleboy/ssh-action dies with the
+      # cryptic "missing server host" and it's not obvious the secret is empty.
+      - name: Check deploy secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          missing=()
+          [ -z "$DEPLOY_HOST" ] && missing+=(DEPLOY_HOST)
+          [ -z "$DEPLOY_USER" ] && missing+=(DEPLOY_USER)
+          [ -z "$DEPLOY_SSH_KEY" ] && missing+=(DEPLOY_SSH_KEY)
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "FATAL: missing required 'production' environment secrets: ${missing[*]}" >&2
+            echo "Set them with, e.g.:" >&2
+            echo "  gh secret set DEPLOY_HOST --env production --body '<vps-host>'" >&2
+            echo "  gh secret set DEPLOY_USER --env production --body '<ssh-user>'" >&2
+            echo "  gh secret set DEPLOY_SSH_KEY --env production < <private-key-file>" >&2
+            exit 1
+          fi
+          echo "All required deploy secrets are present."
+
       - name: Roll stack on VPS
         uses: appleboy/ssh-action@v1.2.0
         with:
