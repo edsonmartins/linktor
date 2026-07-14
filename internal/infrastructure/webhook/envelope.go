@@ -41,6 +41,14 @@ const (
 	TypeMessageDelivered = "message.delivered"
 	TypeMessageRead      = "message.read"
 	TypeMessageFailed    = "message.failed"
+
+	TypeContactCreated = "contact.created"
+
+	TypeConversationCreated   = "conversation.created"
+	TypeConversationAssigned  = "conversation.assigned"
+	TypeConversationResolved  = "conversation.resolved"
+	TypeConversationReopened  = "conversation.reopened"
+	TypeConversationEscalated = "conversation.escalated"
 )
 
 // Envelope is the top-level `linktor-channel-v1` event.
@@ -85,6 +93,29 @@ type MediaPayload struct {
 	Filename string `json:"filename,omitempty"`
 	Size     int64  `json:"size,omitempty"`
 	Caption  string `json:"caption,omitempty"`
+}
+
+// ContactData is the `data` payload for `contact.created`. ChannelID is the
+// channel the contact first appeared on (the delivery is routed to that
+// channel's webhook), so it is always set.
+type ContactData struct {
+	ContactID   string `json:"contactId"`
+	Name        string `json:"name,omitempty"`
+	Phone       string `json:"phone,omitempty"`
+	Email       string `json:"email,omitempty"`
+	ChannelID   string `json:"channelId"`
+	ChannelType string `json:"channelType,omitempty"`
+}
+
+// ConversationData is the `data` payload for the
+// `conversation.{created,assigned,resolved,reopened,escalated}` events.
+type ConversationData struct {
+	ConversationID string `json:"conversationId"`
+	ChannelID      string `json:"channelId"`
+	ContactID      string `json:"contactId"`
+	Status         string `json:"status,omitempty"`
+	AssignedUserID string `json:"assignedUserId,omitempty"`
+	ChannelType    string `json:"channelType,omitempty"`
 }
 
 // StatusData is the `data` payload for `message.{sent,delivered,read,failed}`.

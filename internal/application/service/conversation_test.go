@@ -18,7 +18,7 @@ func setupConversationTest() (*ConversationService, *testutil.MockConversationRe
 	contactRepo.Contacts["contact1"] = &entity.Contact{ID: "contact1", TenantID: "tenant1", Name: "Test"}
 	channelRepo.Channels["channel1"] = &entity.Channel{ID: "channel1", TenantID: "tenant1", Type: entity.ChannelTypeWhatsApp}
 
-	svc := NewConversationService(convRepo, contactRepo, channelRepo)
+	svc := NewConversationService(convRepo, contactRepo, channelRepo, nil)
 	return svc, convRepo
 }
 

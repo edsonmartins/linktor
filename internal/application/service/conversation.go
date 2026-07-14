@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/errors"
 )
 
@@ -42,19 +43,44 @@ type ConversationService struct {
 	conversationRepo repository.ConversationRepository
 	contactRepo      repository.ContactRepository
 	channelRepo      repository.ChannelRepository
+	producer         nats.Publisher
 }
 
-// NewConversationService creates a new conversation service
+// NewConversationService creates a new conversation service. producer may be nil
+// (lifecycle events are simply not published in that case).
 func NewConversationService(
 	conversationRepo repository.ConversationRepository,
 	contactRepo repository.ContactRepository,
 	channelRepo repository.ChannelRepository,
+	producer nats.Publisher,
 ) *ConversationService {
 	return &ConversationService{
 		conversationRepo: conversationRepo,
 		contactRepo:      contactRepo,
 		channelRepo:      channelRepo,
+		producer:         producer,
 	}
+}
+
+// publishLifecycleEvent emits a conversation lifecycle event (assigned/resolved/
+// reopened) so external consumers receive it via the outbound webhook. It is
+// best-effort: a nil producer or publish failure never blocks the operation.
+func (s *ConversationService) publishLifecycleEvent(ctx context.Context, eventType string, conversation *entity.Conversation) {
+	if s.producer == nil || conversation == nil {
+		return
+	}
+	_ = s.producer.PublishEvent(ctx, &nats.Event{
+		Type:     eventType,
+		TenantID: conversation.TenantID,
+		Payload: map[string]interface{}{
+			"conversation_id":  conversation.ID,
+			"channel_id":       conversation.ChannelID,
+			"contact_id":       conversation.ContactID,
+			"status":           string(conversation.Status),
+			"assigned_user_id": conversation.AssignedUserID,
+		},
+		Timestamp: time.Now(),
+	})
 }
 
 // List returns all conversations for a tenant
@@ -230,6 +256,8 @@ func (s *ConversationService) Assign(ctx context.Context, id, userID string) (*e
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to assign conversation")
 	}
 
+	s.publishLifecycleEvent(ctx, nats.EventConversationAssigned, conversation)
+
 	return conversation, nil
 }
 
@@ -261,6 +289,8 @@ func (s *ConversationService) Resolve(ctx context.Context, id string) (*entity.C
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to resolve conversation")
 	}
 
+	s.publishLifecycleEvent(ctx, nats.EventConversationResolved, conversation)
+
 	return conversation, nil
 }
 
@@ -291,6 +321,8 @@ func (s *ConversationService) Reopen(ctx context.Context, id string) (*entity.Co
 	if err := s.conversationRepo.UpdateStatus(ctx, id, entity.ConversationStatusOpen); err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to reopen conversation")
 	}
+
+	s.publishLifecycleEvent(ctx, nats.EventConversationReopened, conversation)
 
 	return conversation, nil
 }

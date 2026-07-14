@@ -103,6 +103,183 @@ func TestDispatcherSkipsChannelWithoutWebhook(t *testing.T) {
 	}
 }
 
+func TestDispatcherEventSubscriptionFilter(t *testing.T) {
+	cases := []struct {
+		name          string
+		webhookEvents string
+		eventType     string
+		payload       map[string]interface{}
+		wantEnqueued  bool
+	}{
+		{
+			name:          "empty list delivers all (received)",
+			webhookEvents: "",
+			eventType:     nats.EventMessageReceived,
+			payload:       map[string]interface{}{"channel_id": "ch-1", "message_id": "m-1"},
+			wantEnqueued:  true,
+		},
+		{
+			name:          "empty list delivers all (read status)",
+			webhookEvents: "",
+			eventType:     nats.EventMessageRead,
+			payload:       map[string]interface{}{"channel_id": "ch-1", "message_id": "m-1", "status": "read"},
+			wantEnqueued:  true,
+		},
+		{
+			name:          "subscribed type is delivered",
+			webhookEvents: "message.received,message.read",
+			eventType:     nats.EventMessageReceived,
+			payload:       map[string]interface{}{"channel_id": "ch-1", "message_id": "m-1"},
+			wantEnqueued:  true,
+		},
+		{
+			name:          "unsubscribed status type is dropped",
+			webhookEvents: "message.received",
+			eventType:     nats.EventMessageRead,
+			payload:       map[string]interface{}{"channel_id": "ch-1", "message_id": "m-1", "status": "read"},
+			wantEnqueued:  false,
+		},
+		{
+			name:          "unsubscribed inbound is dropped",
+			webhookEvents: "message.read,message.delivered",
+			eventType:     nats.EventMessageReceived,
+			payload:       map[string]interface{}{"channel_id": "ch-1", "message_id": "m-1"},
+			wantEnqueued:  false,
+		},
+		{
+			name:          "wildcard delivers everything",
+			webhookEvents: "*",
+			eventType:     nats.EventMessageFailed,
+			payload:       map[string]interface{}{"channel_id": "ch-1", "message_id": "m-1", "status": "failed"},
+			wantEnqueued:  true,
+		},
+		{
+			name:          "whitespace and casing tolerated",
+			webhookEvents: " message.received , message.read ",
+			eventType:     nats.EventMessageRead,
+			payload:       map[string]interface{}{"channel_id": "ch-1", "message_id": "m-1", "status": "read"},
+			wantEnqueued:  true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pub := &recordingPublisher{}
+			ch := newTestChannel()
+			ch.Config = map[string]string{cfgWebhookEvents: tc.webhookEvents}
+			d := NewDispatcher(pub, &fakeChannels{channel: ch})
+
+			err := d.handle(context.Background(), &nats.Event{
+				Type:     tc.eventType,
+				TenantID: "tenant-1",
+				Payload:  tc.payload,
+			})
+			if err != nil {
+				t.Fatalf("handle: %v", err)
+			}
+
+			got := len(pub.deliveries) == 1
+			if got != tc.wantEnqueued {
+				t.Errorf("enqueued=%v, want %v (deliveries=%d)", got, tc.wantEnqueued, len(pub.deliveries))
+			}
+		})
+	}
+}
+
+func TestDispatcherEnqueuesContactCreated(t *testing.T) {
+	pub := &recordingPublisher{}
+	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+
+	err := d.handle(context.Background(), &nats.Event{
+		Type:     nats.EventContactCreated,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"contact_id":   "ct-9",
+			"name":         "Ada",
+			"phone":        "+15550001111",
+			"email":        "ada@example.com",
+			"channel_id":   "ch-1",
+			"channel_type": "whatsapp",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if len(pub.deliveries) != 1 {
+		t.Fatalf("expected 1 delivery, got %d", len(pub.deliveries))
+	}
+
+	var env Envelope
+	if err := json.Unmarshal(pub.deliveries[0].Body, &env); err != nil {
+		t.Fatalf("body not an envelope: %v", err)
+	}
+	if env.Type != TypeContactCreated {
+		t.Errorf("type = %q, want %q", env.Type, TypeContactCreated)
+	}
+	// Deterministic dedup id for a one-shot contact.created.
+	if pub.deliveries[0].ID != "evt_ct-9_contact.created" {
+		t.Errorf("unexpected id %q", pub.deliveries[0].ID)
+	}
+	data, _ := env.Data.(map[string]interface{})
+	if data["contactId"] != "ct-9" || data["channelId"] != "ch-1" || data["email"] != "ada@example.com" {
+		t.Errorf("unexpected contact data: %+v", data)
+	}
+}
+
+func TestDispatcherEnqueuesConversationLifecycle(t *testing.T) {
+	cases := []struct {
+		eventType     string
+		wantType      string
+		deterministic bool
+	}{
+		{nats.EventConversationCreated, TypeConversationCreated, true},
+		{nats.EventConversationAssigned, TypeConversationAssigned, false},
+		{nats.EventConversationResolved, TypeConversationResolved, false},
+		{nats.EventConversationReopened, TypeConversationReopened, false},
+		{nats.EventConversationEscalated, TypeConversationEscalated, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.wantType, func(t *testing.T) {
+			pub := &recordingPublisher{}
+			d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+
+			err := d.handle(context.Background(), &nats.Event{
+				Type:     tc.eventType,
+				TenantID: "tenant-1",
+				Payload: map[string]interface{}{
+					"conversation_id":  "cv-1",
+					"channel_id":       "ch-1",
+					"contact_id":       "ct-1",
+					"status":           "open",
+					"assigned_user_id": "u-1",
+				},
+			})
+			if err != nil {
+				t.Fatalf("handle: %v", err)
+			}
+			if len(pub.deliveries) != 1 {
+				t.Fatalf("expected 1 delivery, got %d", len(pub.deliveries))
+			}
+
+			var env Envelope
+			if err := json.Unmarshal(pub.deliveries[0].Body, &env); err != nil {
+				t.Fatalf("body not an envelope: %v", err)
+			}
+			if env.Type != tc.wantType {
+				t.Errorf("type = %q, want %q", env.Type, tc.wantType)
+			}
+			gotDeterministic := pub.deliveries[0].ID == "evt_cv-1_"+tc.wantType
+			if gotDeterministic != tc.deterministic {
+				t.Errorf("deterministic id = %v, want %v (id=%q)", gotDeterministic, tc.deterministic, pub.deliveries[0].ID)
+			}
+			data, _ := env.Data.(map[string]interface{})
+			if data["conversationId"] != "cv-1" || data["channelId"] != "ch-1" {
+				t.Errorf("unexpected conversation data: %+v", data)
+			}
+		})
+	}
+}
+
 func TestDispatcherRedeliversOnEnqueueFailure(t *testing.T) {
 	pub := &recordingPublisher{err: context.DeadlineExceeded}
 	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})

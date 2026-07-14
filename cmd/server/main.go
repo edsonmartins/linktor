@@ -85,6 +85,7 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/ai/anthropic"
 	"github.com/msgfy/linktor/internal/adapters/ai/ollama"
 	"github.com/msgfy/linktor/internal/adapters/ai/openai"
+	"github.com/msgfy/linktor/internal/adapters/direto"
 	"github.com/msgfy/linktor/internal/adapters/email"
 	"github.com/msgfy/linktor/internal/adapters/facebook"
 	"github.com/msgfy/linktor/internal/adapters/instagram"
@@ -403,6 +404,7 @@ func main() {
 	outboundResolver.Register(teams.NewSenderFactory())
 	outboundResolver.Register(slack.NewSenderFactory())
 	outboundResolver.Register(mattermost.NewSenderFactory())
+	outboundResolver.Register(direto.NewSenderFactory())
 	// Stateful channels deliver through their live plugin adapter (whatsmeow
 	// session / webchat WebSocket hub) but ride the same unified worker.
 	outboundResolver.Register(outbound.NewPluginSenderFactory("webchat", plugin.GetGlobalRegistry()))
@@ -563,7 +565,7 @@ func main() {
 	contactHandler := handlers.NewContactHandler(contactService)
 
 	// Create conversation service and handler
-	conversationService := service.NewConversationService(conversationRepo, contactRepo, channelRepo)
+	conversationService := service.NewConversationService(conversationRepo, contactRepo, channelRepo, producer)
 	conversationHandler := handlers.NewConversationHandler(conversationService, escalateConversationUC)
 
 	// Create message service and handler
@@ -1030,6 +1032,7 @@ func main() {
 		}
 		{
 			webhooks.Any("/whatsapp/:channelId", webhookHandler.WhatsAppWebhook)
+			webhooks.POST("/direto/:channelId", webhookHandler.DiretoWebhook)
 			webhooks.POST("/telegram/:channelId", webhookHandler.TelegramWebhook)
 			webhooks.POST("/teams/:channelId", webhookHandler.TeamsWebhook)
 			// Multi-tenant Teams: one shared Bot Framework messaging endpoint (no

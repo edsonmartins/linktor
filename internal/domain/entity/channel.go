@@ -64,6 +64,7 @@ const (
 	ChannelTypeTeams              ChannelType = "teams"
 	ChannelTypeSlack              ChannelType = "slack"
 	ChannelTypeMattermost         ChannelType = "mattermost"
+	ChannelTypeDireto             ChannelType = "direto"
 )
 
 // ConnectionStatus represents the connection status of a channel

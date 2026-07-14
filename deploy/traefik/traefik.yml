@@ -68,7 +68,9 @@ providers:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: ${ACME_EMAIL}
+      # Traefik NÃO expande ${VAR} no config estático — o email precisa ser
+      # literal (era ${ACME_EMAIL} → invalidContact no Let's Encrypt). Não é segredo.
+      email: edson.martins@integrall.tech
       storage: /letsencrypt/acme.json
       keyType: EC256
       tlsChallenge: {}

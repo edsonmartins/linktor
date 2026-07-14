@@ -78,6 +78,7 @@ export type ChannelType =
   | 'teams'
   | 'slack'
   | 'mattermost'
+  | 'direto'
 
 // Voice Provider Types
 export type VoiceProvider = 'twilio' | 'vonage' | 'amazon_connect' | 'asterisk' | 'freeswitch'

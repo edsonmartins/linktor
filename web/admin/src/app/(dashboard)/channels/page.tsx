@@ -66,6 +66,7 @@ import { VoiceConfig } from './voice-config'
 import { TeamsConfig } from './teams-config'
 import { SlackConfig } from './slack-config'
 import { MattermostConfig } from './mattermost-config'
+import { DiretoConfig } from './direto-config'
 import { CoexistenceStatusBadge } from '@/components/coexistence-status-widget'
 
 /**
@@ -85,6 +86,7 @@ const channelIcons: Record<ChannelType, { color: string; bgColor: string }> = {
   teams: { color: 'text-blue-700', bgColor: 'bg-blue-700/10' },
   slack: { color: 'text-violet-500', bgColor: 'bg-violet-500/10' },
   mattermost: { color: 'text-sky-600', bgColor: 'bg-sky-600/10' },
+  direto: { color: 'text-emerald-500', bgColor: 'bg-emerald-500/10' },
 }
 
 /**
@@ -303,7 +305,7 @@ function ChannelConfigSheet({
 }) {
   if (!channelType) return null
 
-  const iconConfig = channelIcons[channelType]
+  const iconConfig = channelIcons[channelType] || channelIcons.webchat
   const isEditing = !!channel
   const channelLabel = t(`types.${channelType}`)
 
@@ -355,6 +357,8 @@ function ChannelConfigSheet({
         return <SlackConfig {...commonProps} />
       case 'mattermost':
         return <MattermostConfig {...commonProps} />
+      case 'direto':
+        return <DiretoConfig {...commonProps} />
       default:
         return <p>{t('configNotAvailable')}</p>
     }
@@ -560,6 +564,7 @@ export default function ChannelsPage() {
             <AvailableChannelCard type="teams" t={t} onClick={() => handleAddChannel('teams')} />
             <AvailableChannelCard type="slack" t={t} onClick={() => handleAddChannel('slack')} />
             <AvailableChannelCard type="mattermost" t={t} onClick={() => handleAddChannel('mattermost')} />
+            <AvailableChannelCard type="direto" t={t} onClick={() => handleAddChannel('direto')} />
           </div>
         </section>
       </div>
