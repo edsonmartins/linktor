@@ -30,7 +30,7 @@ func setupConversationHandler() (
 	contactRepo := testutil.NewMockContactRepository()
 	channelRepo := testutil.NewMockChannelRepository()
 
-	svc := service.NewConversationService(convRepo, contactRepo, channelRepo)
+	svc := service.NewConversationService(convRepo, contactRepo, channelRepo, nil)
 	handler := NewConversationHandler(svc, nil)
 
 	return handler, convRepo, contactRepo, channelRepo

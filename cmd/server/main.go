@@ -565,7 +565,7 @@ func main() {
 	contactHandler := handlers.NewContactHandler(contactService)
 
 	// Create conversation service and handler
-	conversationService := service.NewConversationService(conversationRepo, contactRepo, channelRepo)
+	conversationService := service.NewConversationService(conversationRepo, contactRepo, channelRepo, producer)
 	conversationHandler := handlers.NewConversationHandler(conversationService, escalateConversationUC)
 
 	// Create message service and handler

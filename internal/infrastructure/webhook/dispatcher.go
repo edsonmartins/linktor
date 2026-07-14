@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,6 +31,29 @@ type DeliveryPublisher interface {
 // Credential key (in channel.Credentials) holding the per-channel HMAC secret
 // used to sign the outbound webhook. The delivery URL is channel.WebhookURL.
 const credWebhookSecret = "webhook_secret"
+
+// cfgWebhookEvents is the channel.Config key holding the comma-separated list of
+// `linktor-channel-v1` event types the channel's outbound webhook is subscribed
+// to (e.g. "message.received,message.read"). An empty/absent value means deliver
+// all events, preserving the original always-deliver behaviour.
+const cfgWebhookEvents = "webhook_events"
+
+// subscribedTo reports whether the channel's outbound webhook should receive
+// eventType. When webhook_events is empty (or "*" is present) every event is
+// delivered; otherwise only the listed types are.
+func subscribedTo(channel *entity.Channel, eventType string) bool {
+	raw := strings.TrimSpace(channel.Config[cfgWebhookEvents])
+	if raw == "" {
+		return true
+	}
+	for _, e := range strings.Split(raw, ",") {
+		e = strings.TrimSpace(e)
+		if e == "*" || e == eventType {
+			return true
+		}
+	}
+	return false
+}
 
 // Dispatcher subscribes to internal message events and enqueues them for durable
 // delivery to each channel's configured external webhook (e.g. DeskLenz) as
@@ -85,6 +109,18 @@ func (d *Dispatcher) handle(ctx context.Context, event *nats.Event) error {
 		return d.dispatchStatus(ctx, event, TypeMessageRead)
 	case nats.EventMessageFailed:
 		return d.dispatchStatus(ctx, event, TypeMessageFailed)
+	case nats.EventContactCreated:
+		return d.dispatchContact(ctx, event, TypeContactCreated)
+	case nats.EventConversationCreated:
+		return d.dispatchConversation(ctx, event, TypeConversationCreated)
+	case nats.EventConversationAssigned:
+		return d.dispatchConversation(ctx, event, TypeConversationAssigned)
+	case nats.EventConversationResolved:
+		return d.dispatchConversation(ctx, event, TypeConversationResolved)
+	case nats.EventConversationReopened:
+		return d.dispatchConversation(ctx, event, TypeConversationReopened)
+	case nats.EventConversationEscalated:
+		return d.dispatchConversation(ctx, event, TypeConversationEscalated)
 	}
 	return nil
 }
@@ -136,6 +172,59 @@ func (d *Dispatcher) dispatchStatus(ctx context.Context, event *nats.Event, even
 	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), eventType), data)
 }
 
+// dispatchContact converts a contact lifecycle event into an outbound webhook.
+// The contact.created event carries the origin channel_id so the delivery routes
+// to that channel's endpoint (contacts are not otherwise bound to one channel).
+func (d *Dispatcher) dispatchContact(ctx context.Context, event *nats.Event, eventType string) error {
+	p := payload(event.Payload)
+
+	channel := d.resolveChannel(ctx, p.str("channel_id"))
+	if channel == nil {
+		return nil
+	}
+
+	data := ContactData{
+		ContactID:   p.str("contact_id"),
+		Name:        p.str("name"),
+		Phone:       p.str("phone"),
+		Email:       p.str("email"),
+		ChannelID:   p.str("channel_id"),
+		ChannelType: channelType(channel, p),
+	}
+
+	// contact.created is one-shot per contact → deterministic dedup key.
+	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("contact_id"), eventType), data)
+}
+
+// dispatchConversation converts a conversation lifecycle event into an outbound
+// webhook. All conversation events already carry channel_id.
+func (d *Dispatcher) dispatchConversation(ctx context.Context, event *nats.Event, eventType string) error {
+	p := payload(event.Payload)
+
+	channel := d.resolveChannel(ctx, p.str("channel_id"))
+	if channel == nil {
+		return nil
+	}
+
+	data := ConversationData{
+		ConversationID: p.str("conversation_id"),
+		ChannelID:      p.str("channel_id"),
+		ContactID:      p.str("contact_id"),
+		Status:         p.str("status"),
+		AssignedUserID: p.str("assigned_user_id"),
+		ChannelType:    channelType(channel, p),
+	}
+
+	// Only creation is one-shot; assign/resolve/reopen/escalate can legitimately
+	// repeat for the same conversation, so those mint a fresh id (no dedup) to
+	// avoid collapsing distinct occurrences at the stream.
+	dedup := ""
+	if eventType == TypeConversationCreated {
+		dedup = dedupKey(p.str("conversation_id"), eventType)
+	}
+	return d.deliver(ctx, channel, eventType, event.TenantID, dedup, data)
+}
+
 // dedupKey builds a stable id for an outbound webhook from the source message id
 // and the event kind. Using it as the NATS WithMsgID dedup key means a redelivery
 // of the same source event collapses to one external POST (instead of generating
@@ -169,6 +258,13 @@ func (d *Dispatcher) resolveChannel(ctx context.Context, channelID string) *enti
 // can sign with a fresh timestamp at send time (keeping retries inside the
 // anti-replay window) without the signing secret ever touching the stream.
 func (d *Dispatcher) deliver(ctx context.Context, channel *entity.Channel, eventType, tenantID, dedup string, data interface{}) error {
+	// Per-channel event subscription filter: skip (ack) events the channel's
+	// outbound webhook is not subscribed to, so unwanted events never reach the
+	// durable stream.
+	if !subscribedTo(channel, eventType) {
+		return nil
+	}
+
 	id := "evt_" + d.newID()
 	if dedup != "" {
 		// Deterministic id so a redelivered source event dedups at the stream.

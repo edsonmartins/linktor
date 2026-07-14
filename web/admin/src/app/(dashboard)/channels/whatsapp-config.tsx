@@ -418,7 +418,7 @@ export function WhatsAppConfig({
             <TabsTrigger value="webhook">{t('webhook')}</TabsTrigger>
             <TabsTrigger value="setup">{t('setupGuide')}</TabsTrigger>
             {isEditing && (
-              <TabsTrigger value="operations">Operations</TabsTrigger>
+              <TabsTrigger value="operations">{t('operations')}</TabsTrigger>
             )}
           </TabsList>
 

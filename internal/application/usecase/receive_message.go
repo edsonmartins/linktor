@@ -254,7 +254,7 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 	// Enqueue the "contact created" event in the SAME transaction as the winning
 	// identity insert: the event is durably queued iff we actually secured this
 	// contact's identity. A caller that loses the race enqueues nothing.
-	contactEvent, err := buildContactCreatedOutboxEvent(inbound.TenantID, contact)
+	contactEvent, err := buildContactCreatedOutboxEvent(inbound.TenantID, inbound.ChannelID, string(inbound.ChannelType), contact)
 	if err != nil {
 		return nil, false, err
 	}
@@ -393,13 +393,15 @@ func newOutboxEvent(eventType, tenantID, aggregateType, aggregateID, idempotency
 	}, nil
 }
 
-func buildContactCreatedOutboxEvent(tenantID string, contact *entity.Contact) (*entity.OutboxEvent, error) {
+func buildContactCreatedOutboxEvent(tenantID, channelID, channelType string, contact *entity.Contact) (*entity.OutboxEvent, error) {
 	return newOutboxEvent(nats.EventContactCreated, tenantID, "contact", contact.ID,
 		"evt-contact-created-"+contact.ID, map[string]interface{}{
-			"contact_id": contact.ID,
-			"name":       contact.Name,
-			"phone":      contact.Phone,
-			"email":      contact.Email,
+			"contact_id":   contact.ID,
+			"name":         contact.Name,
+			"phone":        contact.Phone,
+			"email":        contact.Email,
+			"channel_id":   channelID,
+			"channel_type": channelType,
 		})
 }
 

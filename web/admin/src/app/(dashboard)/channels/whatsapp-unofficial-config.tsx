@@ -8,13 +8,18 @@ import { z } from 'zod'
 import {
   AlertCircle,
   CheckCircle2,
+  Eye,
+  EyeOff,
+  KeyRound,
   Loader2,
   QrCode,
   RefreshCw,
+  Send,
   Smartphone,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   Card,
   CardContent,
@@ -57,15 +62,60 @@ import { api } from '@/lib/api'
 import type { Channel } from '@/types'
 
 /**
+ * Outbound webhook event types (linktor-channel-v1). Order matches the UI list.
+ * Stored in channel.config.webhook_events as a comma-separated string; an empty
+ * list means "deliver all events" (matches the backend default).
+ */
+const WEBHOOK_EVENT_TYPES = [
+  'message.received',
+  'message.sent',
+  'message.delivered',
+  'message.read',
+  'message.failed',
+  'contact.created',
+  'conversation.created',
+  'conversation.assigned',
+  'conversation.resolved',
+  'conversation.reopened',
+  'conversation.escalated',
+] as const
+
+const WEBHOOK_EVENT_LABEL_KEYS: Record<(typeof WEBHOOK_EVENT_TYPES)[number], string> = {
+  'message.received': 'eventMessageReceived',
+  'message.sent': 'eventMessageSent',
+  'message.delivered': 'eventMessageDelivered',
+  'message.read': 'eventMessageRead',
+  'message.failed': 'eventMessageFailed',
+  'contact.created': 'eventContactCreated',
+  'conversation.created': 'eventConversationCreated',
+  'conversation.assigned': 'eventConversationAssigned',
+  'conversation.resolved': 'eventConversationResolved',
+  'conversation.reopened': 'eventConversationReopened',
+  'conversation.escalated': 'eventConversationEscalated',
+}
+
+/**
  * WhatsApp Unofficial Configuration Schema
  */
 const whatsappConfigSchema = z.object({
   name: z.string().min(1, 'Channel name is required'),
   device_name: z.string().optional(),
   phone_number: z.string().optional(),
+  webhook_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
+  webhook_secret: z.string().optional(),
+  webhook_events: z.array(z.string()).optional(),
 })
 
 type WhatsAppConfigForm = z.infer<typeof whatsappConfigSchema>
+
+/** Parse the stored comma-separated webhook_events config into a clean array. */
+function parseWebhookEvents(raw: unknown): string[] {
+  if (typeof raw !== 'string' || raw.trim() === '') return []
+  return raw
+    .split(',')
+    .map((e) => e.trim())
+    .filter((e) => WEBHOOK_EVENT_TYPES.includes(e as (typeof WEBHOOK_EVENT_TYPES)[number]))
+}
 
 interface WhatsAppUnofficialConfigProps {
   channel?: Channel
@@ -92,6 +142,7 @@ export function WhatsAppUnofficialConfig({
   const [qrExpiry, setQrExpiry] = useState<number>(0)
   const [pairCode, setPairCode] = useState<string | null>(null)
   const [deviceInfo, setDeviceInfo] = useState<any>(null)
+  const [showWebhookSecret, setShowWebhookSecret] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
 
   const isEditing = !!channel
@@ -118,6 +169,9 @@ export function WhatsAppUnofficialConfig({
       name: channel?.name || '',
       device_name: (channel?.config?.device_name as string) || 'Linktor',
       phone_number: '',
+      webhook_url: channel?.webhook_url || '',
+      webhook_secret: '',
+      webhook_events: parseWebhookEvents(channel?.config?.webhook_events),
     },
   })
 
@@ -176,8 +230,13 @@ export function WhatsAppUnofficialConfig({
         type: 'whatsapp',
         config: {
           device_name: data.device_name,
+          // Comma-separated list; empty string means "deliver all events".
+          webhook_events: (data.webhook_events || []).join(','),
         },
-        credentials: {},
+        credentials: {
+          ...(data.webhook_secret ? { webhook_secret: data.webhook_secret } : {}),
+        },
+        ...(data.webhook_url ? { webhook_url: data.webhook_url } : {}),
       }
 
       let result: Channel
@@ -377,6 +436,103 @@ export function WhatsAppUnofficialConfig({
                 {t('multiDeviceDesc')}
               </AlertDescription>
             </Alert>
+
+            {/* Outbound webhook (DeskLenz / external consumer) */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Send className="h-4 w-4" />
+                  {t('outboundWebhookSection')}
+                  <Badge variant="outline" className="ml-1">{t('optional')}</Badge>
+                </CardTitle>
+                <CardDescription>{t('outboundWebhookDesc')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="webhook_url"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('consumerUrlLabel')}</FormLabel>
+                      <FormControl>
+                        <Input placeholder={t('consumerUrlPlaceholder')} {...field} />
+                      </FormControl>
+                      <FormDescription>{t('consumerUrlDesc')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="webhook_secret"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('webhookSecretLabel')}</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            type={showWebhookSecret ? 'text' : 'password'}
+                            className="pl-10 pr-10"
+                            placeholder={isEditing ? '••••••••••••••••' : t('webhookSecretPlaceholder')}
+                            {...field}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-0 top-0 h-full"
+                            onClick={() => setShowWebhookSecret(!showWebhookSecret)}
+                          >
+                            {showWebhookSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                      </FormControl>
+                      <FormDescription>{t('webhookSecretDesc')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="webhook_events"
+                  render={({ field }) => {
+                    const selected = field.value || []
+                    const toggle = (eventType: string, on: boolean) => {
+                      if (on) {
+                        field.onChange([...selected.filter((e) => e !== eventType), eventType])
+                      } else {
+                        field.onChange(selected.filter((e) => e !== eventType))
+                      }
+                    }
+                    return (
+                      <FormItem>
+                        <FormLabel>{t('webhookEventsLabel')}</FormLabel>
+                        <div className="space-y-2 rounded-lg border p-3">
+                          {WEBHOOK_EVENT_TYPES.map((eventType) => (
+                            <div
+                              key={eventType}
+                              className="flex items-center justify-between gap-3"
+                            >
+                              <div className="flex flex-col">
+                                <span className="text-sm">{t(WEBHOOK_EVENT_LABEL_KEYS[eventType])}</span>
+                                <code className="text-xs text-muted-foreground font-mono">{eventType}</code>
+                              </div>
+                              <Switch
+                                checked={selected.includes(eventType)}
+                                onCheckedChange={(on) => toggle(eventType, on)}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <FormDescription>{t('webhookEventsDesc')}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )
+                  }}
+                />
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="connection" className="space-y-4 mt-4">
