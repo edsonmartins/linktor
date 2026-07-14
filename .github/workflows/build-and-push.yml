@@ -118,6 +118,22 @@ jobs:
             echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Falha rápida e clara quando o secret não está configurado. Sem isto o
+      # curl envia um X-Deploy-Token vazio e o receiver responde 403 "Hook rules
+      # were not satisfied", que parece um token errado em vez de um secret
+      # ausente.
+      - name: Check DEPLOY_TOKEN secret
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          if [ -z "$DEPLOY_TOKEN" ]; then
+            echo "::error::DEPLOY_TOKEN não configurado no environment 'production'." >&2
+            echo "Defina-o com o mesmo valor de DEPLOY_TOKEN em /opt/linktor-devops/.env:" >&2
+            echo "  gh secret set DEPLOY_TOKEN --env production" >&2
+            exit 1
+          fi
+          echo "DEPLOY_TOKEN presente."
+
       - name: Trigger CD webhook
         run: |
           code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
