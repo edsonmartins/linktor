@@ -9,14 +9,16 @@ import (
 )
 
 // channelActivityLogger adapts the outbound worker's ChannelLogger interface
-// onto the ObservabilityService so channel delivery activity lands in the
-// message_logs store surfaced by the admin observability log viewer.
+// (and inbound/lifecycle call sites) onto the ObservabilityService so channel
+// activity lands in the message_logs store surfaced by the admin observability
+// log viewer. The source field tags entries (channel vs webhook) for filtering.
 //
 // Writes are fire-and-forget on a background context with a short timeout: the
-// send path must never block on (or be aborted by) logging, and the worker's
-// consume context may already be done by the time the insert runs.
+// send/receive path must never block on (or be aborted by) logging, and the
+// worker's consume context may already be done by the time the insert runs.
 type channelActivityLogger struct {
-	svc *service.ObservabilityService
+	svc    *service.ObservabilityService
+	source entity.LogSource
 }
 
 func (l channelActivityLogger) Info(_ context.Context, tenantID, channelID, message string, metadata map[string]string) {
@@ -35,6 +37,10 @@ func (l channelActivityLogger) write(level entity.LogLevel, tenantID, channelID,
 	if l.svc == nil {
 		return
 	}
+	source := l.source
+	if source == "" {
+		source = entity.LogSourceChannel
+	}
 	var chanPtr *string
 	if channelID != "" {
 		chanPtr = &channelID
@@ -48,11 +54,11 @@ func (l channelActivityLogger) write(level entity.LogLevel, tenantID, channelID,
 		defer cancel()
 		switch level {
 		case entity.LogLevelError:
-			_ = l.svc.LogError(ctx, tenantID, chanPtr, entity.LogSourceChannel, message, meta)
+			_ = l.svc.LogError(ctx, tenantID, chanPtr, source, message, meta)
 		case entity.LogLevelWarn:
-			_ = l.svc.LogWarn(ctx, tenantID, chanPtr, entity.LogSourceChannel, message, meta)
+			_ = l.svc.LogWarn(ctx, tenantID, chanPtr, source, message, meta)
 		default:
-			_ = l.svc.LogInfo(ctx, tenantID, chanPtr, entity.LogSourceChannel, message, meta)
+			_ = l.svc.LogInfo(ctx, tenantID, chanPtr, source, message, meta)
 		}
 	}()
 }

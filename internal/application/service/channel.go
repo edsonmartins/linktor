@@ -75,6 +75,10 @@ type ChannelService struct {
 	// subset of channels that passed acceptance so out-of-scope adapters (which
 	// still have open bugs) cannot be activated. See SetEnabledChannelTypes.
 	enabledTypes map[entity.ChannelType]bool
+	// obs records channel connection lifecycle activity (connect/disconnect/
+	// logout/connect-failure) to the observability log store for the admin log
+	// viewer. Optional; nil disables lifecycle logging. See SetObservability.
+	obs *ObservabilityService
 }
 
 // NewChannelService creates a new channel service
@@ -89,6 +93,43 @@ func NewChannelService(repo repository.ChannelRepository, registry *plugin.Regis
 // SetLifecycleHooks configures callbacks for channel lifecycle changes.
 func (s *ChannelService) SetLifecycleHooks(hooks ChannelLifecycleHooks) {
 	s.hooks = hooks
+}
+
+// SetObservability attaches the observability service used to record channel
+// connection lifecycle events (connect, disconnect, logout, connect failures)
+// to the admin log viewer. Optional; if never set, lifecycle logging is off.
+func (s *ChannelService) SetObservability(obs *ObservabilityService) {
+	s.obs = obs
+}
+
+// logLifecycle records a channel connection lifecycle event. Nil-safe: it is a
+// no-op when no observability service is configured. Writes are best-effort and
+// must not affect the connect/disconnect outcome.
+func (s *ChannelService) logLifecycle(ctx context.Context, level entity.LogLevel, tenantID, channelID, message string) {
+	if s.obs == nil {
+		return
+	}
+	var chanPtr *string
+	if channelID != "" {
+		chanPtr = &channelID
+	}
+	switch level {
+	case entity.LogLevelError:
+		_ = s.obs.LogError(ctx, tenantID, chanPtr, entity.LogSourceChannel, message, nil)
+	case entity.LogLevelWarn:
+		_ = s.obs.LogWarn(ctx, tenantID, chanPtr, entity.LogSourceChannel, message, nil)
+	default:
+		_ = s.obs.LogInfo(ctx, tenantID, chanPtr, entity.LogSourceChannel, message, nil)
+	}
+}
+
+// reasonSuffix appends a non-empty connection reason in parentheses for the
+// lifecycle log message, or nothing when the reason is empty.
+func reasonSuffix(reason string) string {
+	if reason == "" {
+		return ""
+	}
+	return " (" + reason + ")"
 }
 
 // SetEnabledChannelTypes restricts which channel types may be created or
@@ -430,6 +471,7 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 			if ok && waAdapter.IsLoggedIn() {
 				logger.Info("WhatsApp channel already connected via registry",
 					zap.String("channel_id", channel.ID))
+				s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "Canal WhatsApp já conectado (sessão ativa)")
 				channel.ConnectionStatus = entity.ConnectionStatusConnected
 				channel.UpdatedAt = time.Now()
 				s.repo.UpdateConnectionStatus(ctx, channel.ID, entity.ConnectionStatusConnected)
@@ -460,6 +502,7 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 		logger.Error("Failed to initialize WhatsApp adapter",
 			zap.String("channel_id", channel.ID),
 			zap.Error(err))
+		s.logLifecycle(ctx, entity.LogLevelError, channel.TenantID, channel.ID, "Falha ao inicializar o adapter do WhatsApp: "+err.Error())
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to initialize WhatsApp adapter")
 	}
 
@@ -472,6 +515,7 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 		logger.Error("Failed to connect WhatsApp adapter",
 			zap.String("channel_id", channel.ID),
 			zap.Error(err))
+		s.logLifecycle(ctx, entity.LogLevelError, channel.TenantID, channel.ID, "Falha ao conectar aos servidores do WhatsApp: "+err.Error())
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to connect WhatsApp adapter")
 	}
 
@@ -487,6 +531,7 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 	if isLoggedIn {
 		logger.Info("WhatsApp channel reconnected with stored session",
 			zap.String("channel_id", channel.ID))
+		s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "Canal WhatsApp reconectado com sessão armazenada")
 		channel.ConnectionStatus = entity.ConnectionStatusConnected
 		channel.UpdatedAt = time.Now()
 		s.repo.UpdateConnectionStatus(ctx, channel.ID, entity.ConnectionStatusConnected)
@@ -511,6 +556,7 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 		logger.Error("Failed to start WhatsApp login",
 			zap.String("channel_id", channel.ID),
 			zap.Error(err))
+		s.logLifecycle(ctx, entity.LogLevelError, channel.TenantID, channel.ID, "Falha ao iniciar o login do WhatsApp: "+err.Error())
 		adapter.Disconnect(bgCtx)
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to start WhatsApp login")
 	}
@@ -521,12 +567,14 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 		if !ok {
 			logger.Error("QR code channel closed unexpectedly",
 				zap.String("channel_id", channel.ID))
+			s.logLifecycle(ctx, entity.LogLevelError, channel.TenantID, channel.ID, "Canal do QR code fechou inesperadamente durante o login")
 			return nil, errors.New(errors.ErrCodeInternal, "QR code channel closed unexpectedly")
 		}
 
 		logger.Info("QR code generated for WhatsApp login",
 			zap.String("channel_id", channel.ID),
 			zap.Time("expires_at", qrEvent.ExpiresAt))
+		s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "QR code gerado — aguardando leitura no aplicativo do WhatsApp")
 
 		// Update channel status to connecting
 		channel.ConnectionStatus = entity.ConnectionStatusConnecting
@@ -556,6 +604,7 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 	case <-time.After(30 * time.Second):
 		logger.Warn("Timeout waiting for WhatsApp QR code",
 			zap.String("channel_id", channel.ID))
+		s.logLifecycle(ctx, entity.LogLevelWarn, channel.TenantID, channel.ID, "Tempo esgotado aguardando o QR code do WhatsApp")
 		adapter.Disconnect(bgCtx)
 		return nil, errors.New(errors.ErrCodeTimeout, "timeout waiting for QR code")
 
@@ -741,10 +790,12 @@ func (s *ChannelService) setupWhatsAppHandlers(adapter *whatsapp.Adapter, channe
 			logger.Info("WhatsApp channel connected",
 				zap.String("channel_id", channel.ID),
 				zap.String("reason", reason))
+			s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "Canal WhatsApp conectado"+reasonSuffix(reason))
 		} else {
 			logger.Warn("WhatsApp channel disconnected",
 				zap.String("channel_id", channel.ID),
 				zap.String("reason", reason))
+			s.logLifecycle(ctx, entity.LogLevelWarn, channel.TenantID, channel.ID, "Canal WhatsApp desconectado"+reasonSuffix(reason))
 		}
 
 		// Update channel connection status in database
