@@ -59,6 +59,11 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
+import {
+  detectPasskeyConnector,
+  runPasskeyAssertion,
+  type PasskeyPublicKey,
+} from '@/lib/passkey-connector'
 import type { Channel } from '@/types'
 
 /**
@@ -123,7 +128,13 @@ interface WhatsAppUnofficialConfigProps {
   onCancel?: () => void
 }
 
-type ConnectionStatus = 'disconnected' | 'connecting' | 'qr_pending' | 'connected' | 'logged_out'
+type ConnectionStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'qr_pending'
+  | 'passkey_pending'
+  | 'connected'
+  | 'logged_out'
 
 /**
  * WhatsApp Unofficial Channel Configuration Component
@@ -143,6 +154,9 @@ export function WhatsAppUnofficialConfig({
   const [pairCode, setPairCode] = useState<string | null>(null)
   const [deviceInfo, setDeviceInfo] = useState<any>(null)
   const [showWebhookSecret, setShowWebhookSecret] = useState(false)
+  const [passkeyChallenge, setPasskeyChallenge] = useState<PasskeyPublicKey | null>(null)
+  const [passkeyBusy, setPasskeyBusy] = useState(false)
+  const [passkeyError, setPasskeyError] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   const isEditing = !!channel
@@ -194,9 +208,12 @@ export function WhatsAppUnofficialConfig({
     }
   }, [qrExpiry])
 
-  // Poll channel status while QR code is showing
+  // Poll channel status while a QR code or a passkey challenge is pending.
   useEffect(() => {
-    if (connectionStatus !== 'qr_pending' || !channel?.id) {
+    if (
+      (connectionStatus !== 'qr_pending' && connectionStatus !== 'passkey_pending') ||
+      !channel?.id
+    ) {
       return
     }
 
@@ -207,6 +224,7 @@ export function WhatsAppUnofficialConfig({
           setConnectionStatus('connected')
           setQrCode(null)
           setPairCode(null)
+          setPasskeyChallenge(null)
           toast({
             title: t('channelConnected'),
             description: t('channelConnectedDesc'),
@@ -270,12 +288,24 @@ export function WhatsAppUnofficialConfig({
     setQrCode(null)
     setPairCode(null)
 
-    try {
-      const response = await api.post<{ channel: Channel; qr_code?: string; expires_in?: number }>(
-        `/channels/${channelId}/connect`
-      )
+    setPasskeyChallenge(null)
+    setPasskeyError(null)
 
-      if (response.qr_code) {
+    try {
+      const response = await api.post<{
+        channel: Channel
+        qr_code?: string
+        expires_in?: number
+        passkey_required?: boolean
+        passkey_challenge?: PasskeyPublicKey
+      }>(`/channels/${channelId}/connect`)
+
+      if (response.passkey_required && response.passkey_challenge) {
+        // Passkey-locked account: no QR. The owner must sign the challenge in
+        // their browser via the Linktor passkey extension.
+        setConnectionStatus('passkey_pending')
+        setPasskeyChallenge(response.passkey_challenge)
+      } else if (response.qr_code) {
         setConnectionStatus('qr_pending')
         setQrCode(response.qr_code)
         setQrExpiry(response.expires_in || 60)
@@ -294,6 +324,35 @@ export function WhatsAppUnofficialConfig({
         description: t('failedToStartQr'),
         variant: 'error',
       })
+    }
+  }
+
+  // Drives the passkey resolution: detect the extension, run the WebAuthn
+  // assertion in the owner's browser, and submit it. On success the status poll
+  // flips the channel to connected.
+  const resolvePasskey = async () => {
+    if (!channel?.id || !passkeyChallenge) return
+    setPasskeyBusy(true)
+    setPasskeyError(null)
+    try {
+      const installed = await detectPasskeyConnector()
+      if (!installed) {
+        setPasskeyError(t('passkeyExtensionMissing'))
+        return
+      }
+      const assertion = await runPasskeyAssertion(passkeyChallenge)
+      // Forward the assertion verbatim; do not re-encode its base64url fields.
+      await api.post(`/channels/${channel.id}/passkey/response`, assertion)
+      setConnectionStatus('connecting')
+      toast({
+        title: t('passkeySubmitted'),
+        description: t('passkeySubmittedDesc'),
+      })
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      setPasskeyError(reason === 'timeout' ? t('passkeyTimeout') : t('passkeyFailed'))
+    } finally {
+      setPasskeyBusy(false)
     }
   }
 
@@ -622,6 +681,41 @@ export function WhatsAppUnofficialConfig({
                           </p>
                         )}
                       </div>
+                    </div>
+                  </div>
+                ) : connectionStatus === 'passkey_pending' ? (
+                  <div className="space-y-4">
+                    {/* Passkey resolution (account is passkey-locked) */}
+                    <div className="flex flex-col items-center space-y-4 text-center">
+                      <div className="rounded-full bg-primary/10 p-4">
+                        <KeyRound className="h-8 w-8 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{t('passkeyRequiredTitle')}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {t('passkeyRequiredDesc')}
+                        </p>
+                      </div>
+                      {passkeyError && (
+                        <Alert variant="destructive" className="text-left">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertDescription>{passkeyError}</AlertDescription>
+                        </Alert>
+                      )}
+                      <Button type="button" onClick={resolvePasskey} disabled={passkeyBusy} className="w-full">
+                        {passkeyBusy ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            {t('passkeyWaiting')}
+                          </>
+                        ) : (
+                          <>
+                            <KeyRound className="mr-2 h-4 w-4" />
+                            {t('passkeyAuthorize')}
+                          </>
+                        )}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">{t('passkeyExtensionHint')}</p>
                     </div>
                   </div>
                 ) : (
