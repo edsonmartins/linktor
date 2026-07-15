@@ -160,6 +160,10 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 
+	// Echo the agent-sent message to other agents on this tenant in real time so
+	// an open conversation updates live for everyone, not just the sender.
+	BroadcastNewMessage(tenantID, conversationID, message)
+
 	RespondCreated(c, message)
 }
 
