@@ -1188,6 +1188,7 @@ func main() {
 				channels.PUT("/:id/enabled", channelHandler.UpdateEnabled)
 				channels.POST("/:id/connect", channelHandler.Connect)
 				channels.POST("/:id/pair", channelHandler.RequestPairCode)
+				channels.POST("/:id/passkey/response", channelHandler.SubmitPasskeyResponse)
 				channels.POST("/:id/disconnect", channelHandler.Disconnect)
 				// WhatsApp Coexistence routes
 				channels.GET("/:id/coexistence-status", waEmbeddedSignupHandler.GetCoexistenceStatus)

@@ -98,12 +98,19 @@ type DeviceInfo struct {
 	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
-// QRCodeEvent represents a QR code event during login
+// QRCodeEvent represents a QR code event during login.
+//
+// When the account is passkey-locked ("Shortcake"), the QR handshake cannot
+// proceed and PasskeyChallenge is set instead of Code: the account owner must
+// sign this WebAuthn challenge in their own browser (via the Linktor passkey
+// extension) and the resulting assertion is submitted back with
+// SubmitPasskeyResponse.
 type QRCodeEvent struct {
-	Code      string    `json:"code"`
-	ImagePath string    `json:"image_path,omitempty"`
-	ImageData []byte    `json:"image_data,omitempty"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Code             string                   `json:"code,omitempty"`
+	ImagePath        string                   `json:"image_path,omitempty"`
+	ImageData        []byte                   `json:"image_data,omitempty"`
+	ExpiresAt        time.Time                `json:"expires_at"`
+	PasskeyChallenge *types.WebAuthnPublicKey `json:"passkey_challenge,omitempty"`
 }
 
 // PairCodeRequest represents a request for phone pairing code
