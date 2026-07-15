@@ -542,7 +542,7 @@ func (a *Adapter) SendTypingIndicator(ctx context.Context, indicator *plugin.Typ
 		return ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(indicator.RecipientID)
+	jid, err := resolveRecipientJID(indicator.RecipientID)
 	if err != nil {
 		jid = types.NewJID(indicator.RecipientID, types.DefaultUserServer)
 	}
@@ -566,7 +566,7 @@ func (a *Adapter) SendReadReceipt(ctx context.Context, receipt *plugin.ReadRecei
 	}
 
 	// RecipientID is the chat/sender JID
-	chatJID, err := types.ParseJID(receipt.RecipientID)
+	chatJID, err := resolveRecipientJID(receipt.RecipientID)
 	if err != nil {
 		chatJID = types.NewJID(receipt.RecipientID, types.DefaultUserServer)
 	}
