@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
 import { Search, Filter, MessageSquare, Plus, RefreshCw } from 'lucide-react'
@@ -110,6 +110,45 @@ export default function ConversationsPage() {
   const activeConversationId = useActiveConversation()
   const setActiveConversation = useUIStore((s) => s.setActiveConversation)
 
+  // Resizable left panel (conversation list). Width is dragged via the splitter,
+  // clamped to a sensible range and persisted so it survives reloads.
+  const LEFT_MIN = 260
+  const LEFT_MAX = 560
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [leftWidth, setLeftWidth] = useState(320)
+  const [isResizing, setIsResizing] = useState(false)
+
+  useEffect(() => {
+    const saved = Number(localStorage.getItem('conversations:leftWidth'))
+    if (saved >= LEFT_MIN && saved <= LEFT_MAX) setLeftWidth(saved)
+  }, [])
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const rootLeft = rootRef.current?.getBoundingClientRect().left ?? 0
+    setIsResizing(true)
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.min(LEFT_MAX, Math.max(LEFT_MIN, ev.clientX - rootLeft))
+      setLeftWidth(next)
+    }
+    const onUp = () => {
+      setIsResizing(false)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      setLeftWidth((w) => {
+        localStorage.setItem('conversations:leftWidth', String(w))
+        return w
+      })
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
+
   // Status filter options with translations
   const statusFilters: { label: string; value: ConversationStatus | 'all' }[] = [
     { label: t('all'), value: 'all' },
@@ -135,9 +174,12 @@ export default function ConversationsPage() {
   const conversations = data?.data ?? []
 
   return (
-    <div className="flex h-full">
+    <div ref={rootRef} className="flex h-full overflow-hidden">
       {/* Conversation List */}
-      <div className="flex w-80 flex-col border-r border-border bg-card">
+      <div
+        className="flex min-h-0 shrink-0 flex-col border-r border-border bg-card"
+        style={{ width: leftWidth }}
+      >
         <Header title={t('title')} />
 
         {/* Search and Filters */}
@@ -197,7 +239,7 @@ export default function ConversationsPage() {
         </div>
 
         {/* Conversation List */}
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="p-2 space-y-1">
             {isLoading ? (
               // Loading skeletons
@@ -232,8 +274,27 @@ export default function ConversationsPage() {
         </ScrollArea>
       </div>
 
+      {/* Splitter */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        onMouseDown={startResize}
+        onDoubleClick={() => {
+          setLeftWidth(320)
+          localStorage.setItem('conversations:leftWidth', '320')
+        }}
+        title={t('resizePanel')}
+        className={cn(
+          'group relative w-1 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/40',
+          isResizing && 'bg-primary/60'
+        )}
+      >
+        {/* Wider invisible hit area for easier grabbing */}
+        <span className="absolute inset-y-0 -left-1.5 -right-1.5" />
+      </div>
+
       {/* Chat View */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {activeConversationId ? (
           <ChatView conversationId={activeConversationId} />
         ) : (

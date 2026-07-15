@@ -908,7 +908,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0">
       <ChatHeader
         conversation={conversation}
         onAssign={() => setAssignDialogOpen(true)}
@@ -955,7 +955,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
         </div>
       )}
 
-      <ScrollArea className="flex-1 bg-background">
+      <ScrollArea className="flex-1 min-h-0 bg-background">
         <div className="p-4 space-y-4">
           {/* Date separator */}
           <div className="flex items-center gap-4">
