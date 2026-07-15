@@ -13,7 +13,7 @@ import {
 import { cn } from '@/lib/utils'
 import { queryKeys } from '@/lib/query'
 import { api } from '@/lib/api'
-import type { LogsResponse, LogLevel, LogSource } from '@/types'
+import type { Channel, LogsResponse, LogLevel, LogSource } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -58,8 +58,14 @@ export function ChannelLogsViewer() {
 
   const [level, setLevel] = useState<LogLevel | ''>('')
   const [source, setSource] = useState<LogSource | ''>('')
+  const [channelId, setChannelId] = useState<string>('')
   const [limit] = useState(50)
   const [offset, setOffset] = useState(0)
+
+  const { data: channels } = useQuery({
+    queryKey: queryKeys.channels.list(),
+    queryFn: () => api.get<Channel[]>('/channels'),
+  })
 
   const queryParams: Record<string, string> = {
     limit: limit.toString(),
@@ -68,6 +74,7 @@ export function ChannelLogsViewer() {
 
   if (level) queryParams.level = level
   if (source) queryParams.source = source
+  if (channelId) queryParams.channel_id = channelId
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.observability.logs(queryParams),
@@ -142,6 +149,26 @@ export function ChannelLogsViewer() {
               <SelectItem value="queue">{t('queue')}</SelectItem>
               <SelectItem value="system">{t('system')}</SelectItem>
               <SelectItem value="webhook">{t('webhook')}</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={channelId || 'all'}
+            onValueChange={(v) => {
+              setChannelId(v === 'all' ? '' : v)
+              setOffset(0)
+            }}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder={t('channel')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('allChannels')}</SelectItem>
+              {channels?.map((channel) => (
+                <SelectItem key={channel.id} value={channel.id}>
+                  {channel.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

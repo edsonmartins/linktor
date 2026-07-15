@@ -1749,6 +1749,7 @@
     "error": "Error",
     "source": "Source",
     "allSources": "All Sources",
+      "allChannels": "All Channels",
     "channel": "Channel",
     "queue": "Queue",
     "system": "System",

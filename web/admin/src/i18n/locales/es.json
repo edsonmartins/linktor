@@ -1756,6 +1756,7 @@
     "error": "Error",
     "source": "Origen",
     "allSources": "Todos los Orígenes",
+    "allChannels": "Todos los Canales",
     "channel": "Canal",
     "queue": "Cola",
     "system": "Sistema",

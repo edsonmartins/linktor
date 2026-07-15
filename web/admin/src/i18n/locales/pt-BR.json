@@ -1754,6 +1754,7 @@
     "error": "Erro",
     "source": "Origem",
     "allSources": "Todas as Origens",
+      "allChannels": "Todos os Canais",
     "channel": "Canal",
     "queue": "Fila",
     "system": "Sistema",
