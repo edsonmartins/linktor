@@ -626,7 +626,7 @@ function BrandConfigInput({
         <div className="flex items-center gap-2">
           <input
             type="color"
-            aria-label={label}
+            aria-label={`${label} picker`}
             value={swatch}
             onChange={(event) => onChange(event.target.value)}
             className="h-9 w-10 shrink-0 cursor-pointer rounded-md border border-border bg-transparent p-1"
