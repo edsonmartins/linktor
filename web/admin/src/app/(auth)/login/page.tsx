@@ -57,10 +57,10 @@ export default function LoginPage() {
           {/* Logo */}
           <div className="mx-auto mb-4">
             <Image
-              src="/images/logo_fundo_escuro.png"
+              src="/images/logo_linktor_texto.png"
               alt="Linktor"
-              width={180}
-              height={50}
+              width={888}
+              height={386}
               className="h-12 w-auto"
               priority
             />
