@@ -229,6 +229,8 @@
     "videoCall": "Chamada de vídeo",
     "contactInfo": "Info do contato",
     "attachFile": "Anexar arquivo",
+    "attachFailed": "Falha ao enviar o anexo",
+    "removeAttachment": "Remover anexo",
     "emoji": "Emoji",
     "history": "Histórico",
     "app": "App",

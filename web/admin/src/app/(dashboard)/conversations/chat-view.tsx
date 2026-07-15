@@ -19,6 +19,10 @@ import {
   WifiOff,
   Smartphone,
   History,
+  X,
+  Loader2,
+  FileText,
+  Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,6 +56,8 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { SimpleTooltip } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { EmojiPicker } from '@/components/emoji-picker'
 import { cn, formatDate, formatRelativeTime } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
@@ -67,6 +73,7 @@ import type {
   Conversation,
   EscalationContext,
   Message,
+  MessageAttachment,
   MessageStatus,
   User as AppUser,
 } from '@/types'
@@ -139,6 +146,38 @@ function MessageSourceBadge({ source, isImported, isOwn }: MessageSourceBadgePro
 }
 
 /**
+ * Renders a single message attachment: an inline preview for images, a
+ * downloadable chip for everything else.
+ */
+function MessageAttachmentView({ attachment }: { attachment: MessageAttachment }) {
+  if (attachment.type === 'image') {
+    return (
+      <a href={attachment.url} target="_blank" rel="noopener noreferrer" className="block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={attachment.url}
+          alt={attachment.filename || 'image'}
+          className="max-h-60 max-w-full rounded-md object-contain"
+        />
+      </a>
+    )
+  }
+
+  return (
+    <a
+      href={attachment.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2 py-1.5 text-xs hover:bg-background/70"
+    >
+      <FileText className="h-4 w-4 shrink-0" />
+      <span className="max-w-[180px] truncate">{attachment.filename || attachment.url}</span>
+      <Download className="ml-auto h-3.5 w-3.5 shrink-0 opacity-70" />
+    </a>
+  )
+}
+
+/**
  * Message Bubble Component
  */
 interface MessageBubbleProps {
@@ -168,11 +207,20 @@ function MessageBubble({ message, isOwn, currentUserID, onReact, isReacting }: M
       <div className={cn('space-y-1', isOwn && 'items-end')}>
         <div
           className={cn(
-            'rounded-lg px-3 py-2',
+            'space-y-2 rounded-lg px-3 py-2',
             isOwn ? 'message-outgoing' : 'message-incoming'
           )}
         >
-          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="space-y-2">
+              {message.attachments.map((attachment) => (
+                <MessageAttachmentView key={attachment.id} attachment={attachment} />
+              ))}
+            </div>
+          )}
+          {message.content && (
+            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          )}
         </div>
         <div className={cn('flex flex-wrap items-center gap-1', isOwn && 'justify-end')}>
           {QUICK_REACTIONS.map((emoji) => (
@@ -597,24 +645,39 @@ function TypingIndicator({ typingUsers }: TypingIndicatorProps) {
 /**
  * Message Composer
  */
+interface UploadedAttachment {
+  url: string
+  type: string
+  filename: string
+  mime_type: string
+  size_bytes: number
+}
+
 interface ComposerProps {
   conversationId: string
-  onSend: (content: string) => void
+  onSend: (content: string, attachments: UploadedAttachment[]) => void
   onTyping: (isTyping: boolean) => void
   isSending: boolean
 }
 
 function Composer({ conversationId, onSend, onTyping, isSending }: ComposerProps) {
   const t = useTranslations('conversations')
+  const { toast } = useToast()
   const [content, setContent] = useState('')
+  const [attachments, setAttachments] = useState<UploadedAttachment[]>([])
+  const [uploading, setUploading] = useState(false)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const canSend = (content.trim().length > 0 || attachments.length > 0) && !isSending && !uploading
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!content.trim() || isSending) return
+    if (!canSend) return
     onTyping(false)
-    onSend(content.trim())
+    onSend(content.trim(), attachments)
     setContent('')
+    setAttachments([])
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -641,15 +704,93 @@ function Composer({ conversationId, onSend, onTyping, isSending }: ComposerProps
     }, 2000)
   }
 
+  const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    setUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        const formData = new FormData()
+        formData.append('file', file)
+        const uploaded = await api.upload<UploadedAttachment>(
+          `/conversations/${conversationId}/attachments`,
+          formData
+        )
+        setAttachments((prev) => [...prev, uploaded])
+      }
+    } catch (error) {
+      toast({
+        title: t('attachFailed'),
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'error',
+      })
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
+  }
+
   return (
     <form
       onSubmit={handleSubmit}
       className="border-t border-border bg-card p-4"
     >
+      {attachments.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {attachments.map((att, index) => (
+            <div
+              key={att.url}
+              className="flex items-center gap-2 rounded-md border border-border bg-secondary/50 px-2 py-1 text-xs"
+            >
+              {att.type === 'image' ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={att.url}
+                  alt={att.filename}
+                  className="h-8 w-8 rounded object-cover"
+                />
+              ) : (
+                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+              <span className="max-w-[140px] truncate">{att.filename}</span>
+              <button
+                type="button"
+                onClick={() => removeAttachment(index)}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label={t('removeAttachment')}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleFiles}
+        />
         <SimpleTooltip content={t('attachFile')}>
-          <Button type="button" variant="ghost" size="icon">
-            <Paperclip className="h-5 w-5" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            aria-label={t('attachFile')}
+          >
+            {uploading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Paperclip className="h-5 w-5" />
+            )}
           </Button>
         </SimpleTooltip>
 
@@ -664,16 +805,30 @@ function Composer({ conversationId, onSend, onTyping, isSending }: ComposerProps
           />
         </div>
 
-        <SimpleTooltip content={t('emoji')}>
-          <Button type="button" variant="ghost" size="icon">
-            <Smile className="h-5 w-5" />
-          </Button>
-        </SimpleTooltip>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t('emoji')}
+            >
+              <Smile className="h-5 w-5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            side="top"
+            align="end"
+            className="w-auto border-0 bg-transparent p-0 shadow-none"
+          >
+            <EmojiPicker onSelect={(emoji) => setContent((c) => c + emoji)} />
+          </PopoverContent>
+        </Popover>
 
         <Button
           type="submit"
           size="icon"
-          disabled={!content.trim() || isSending}
+          disabled={!canSend}
           loading={isSending}
         >
           <Send className="h-5 w-5" />
@@ -749,10 +904,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   // Send message mutation
   const sendMessage = useMutation({
-    mutationFn: (content: string) =>
+    mutationFn: (payload: { content: string; attachments: UploadedAttachment[] }) =>
       api.post<Message>(`/conversations/${conversationId}/messages`, {
-        content,
-        content_type: 'text',
+        content: payload.content,
+        content_type:
+          payload.attachments.length > 0 ? payload.attachments[0].type : 'text',
+        attachments: payload.attachments,
       }),
     onSuccess: () => {
       invalidateConversation()
@@ -1017,7 +1174,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
       <Composer
         conversationId={conversationId}
-        onSend={(content) => sendMessage.mutate(content)}
+        onSend={(content, attachments) => sendMessage.mutate({ content, attachments })}
         onTyping={handleTyping}
         isSending={sendMessage.isPending}
       />

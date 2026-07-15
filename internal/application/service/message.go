@@ -20,6 +20,17 @@ type SendMessageInput struct {
 	ContentType    string
 	Content        string
 	Metadata       map[string]string
+	Attachments    []MessageAttachmentInput
+}
+
+// MessageAttachmentInput describes an already-uploaded attachment to attach to
+// an outgoing message (see AttachmentHandler.Upload for how the URL is produced).
+type MessageAttachmentInput struct {
+	URL       string
+	Type      string
+	Filename  string
+	MimeType  string
+	SizeBytes int64
 }
 
 // MessageService handles message operations
@@ -67,13 +78,34 @@ func (s *MessageService) ListByConversationForTenant(ctx context.Context, tenant
 	return s.ListByConversation(ctx, conversationID, params)
 }
 
+// toOutboundAttachments maps persisted attachments to the NATS outbound shape so
+// channel adapters can deliver the media.
+func toOutboundAttachments(atts []*entity.MessageAttachment) []nats.AttachmentData {
+	if len(atts) == 0 {
+		return nil
+	}
+	out := make([]nats.AttachmentData, 0, len(atts))
+	for _, a := range atts {
+		out = append(out, nats.AttachmentData{
+			Type:         a.Type,
+			URL:          a.URL,
+			Filename:     a.Filename,
+			MimeType:     a.MimeType,
+			SizeBytes:    a.SizeBytes,
+			ThumbnailURL: a.ThumbnailURL,
+			Metadata:     a.Metadata,
+		})
+	}
+	return out
+}
+
 // Send sends a new message
 func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*entity.Message, error) {
 	if input.ConversationID == "" {
 		return nil, errors.Validation("conversation_id is required")
 	}
-	if input.Content == "" {
-		return nil, errors.Validation("content is required")
+	if input.Content == "" && len(input.Attachments) == 0 {
+		return nil, errors.Validation("content or an attachment is required")
 	}
 
 	// Get conversation
@@ -109,17 +141,27 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 		contact.Identities = identities
 	}
 
+	// Default the content type from the first attachment for attachment-only
+	// messages (client may omit it).
+	contentType := input.ContentType
+	if contentType == "" && len(input.Attachments) > 0 {
+		contentType = input.Attachments[0].Type
+	}
+	if contentType == "" {
+		contentType = string(entity.ContentTypeText)
+	}
+
 	now := time.Now()
 	message := &entity.Message{
 		ID:             uuid.New().String(),
 		ConversationID: input.ConversationID,
 		SenderType:     entity.SenderType(input.SenderType),
 		SenderID:       input.SenderID,
-		ContentType:    entity.ContentType(input.ContentType),
+		ContentType:    entity.ContentType(contentType),
 		Content:        input.Content,
 		Metadata:       input.Metadata,
 		Status:         entity.MessageStatusPending,
-		Attachments:    make([]*entity.MessageAttachment, 0),
+		Attachments:    make([]*entity.MessageAttachment, 0, len(input.Attachments)),
 		CreatedAt:      now,
 	}
 
@@ -130,6 +172,25 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 	// Save message to database
 	if err := s.messageRepo.Create(ctx, message); err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to create message")
+	}
+
+	// Persist attachments (best-effort per row; a failure fails the send so the
+	// caller can retry rather than silently dropping media).
+	for _, in := range input.Attachments {
+		att := &entity.MessageAttachment{
+			ID:        uuid.New().String(),
+			MessageID: message.ID,
+			Type:      in.Type,
+			Filename:  in.Filename,
+			MimeType:  in.MimeType,
+			SizeBytes: in.SizeBytes,
+			URL:       in.URL,
+			CreatedAt: now,
+		}
+		if err := s.messageRepo.CreateAttachment(ctx, att); err != nil {
+			return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to save attachment")
+		}
+		message.Attachments = append(message.Attachments, att)
 	}
 
 	// Publish to NATS for channel delivery (if producer is available)
@@ -146,6 +207,7 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 			ContentType:    string(message.ContentType),
 			Content:        message.Content,
 			Metadata:       message.Metadata,
+			Attachments:    toOutboundAttachments(message.Attachments),
 			Timestamp:      now,
 		}
 

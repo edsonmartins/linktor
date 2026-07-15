@@ -229,6 +229,8 @@
     "videoCall": "Video call",
     "contactInfo": "Contact info",
     "attachFile": "Attach file",
+    "attachFailed": "Failed to upload attachment",
+    "removeAttachment": "Remove attachment",
     "emoji": "Emoji",
     "history": "History",
     "app": "App",

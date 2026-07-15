@@ -571,6 +571,7 @@ func main() {
 	// Create message service and handler
 	messageService := service.NewMessageService(messageRepo, conversationRepo, channelRepo, contactRepo, producer)
 	messageHandler := handlers.NewMessageHandler(messageService)
+	attachmentHandler := handlers.NewAttachmentHandler(mediaStore)
 
 	// Create flow handler
 	flowHandler := handlers.NewFlowHandler(flowService)
@@ -1127,6 +1128,10 @@ func main() {
 				conversations.GET("/:id/messages", messageHandler.List)
 				conversations.POST("/:id/messages", messageHandler.Send)
 				conversations.POST("/:id/messages/:messageId/reactions", messageHandler.SendReaction)
+				// Upload media to attach to an outgoing message. Kept off the
+				// /messages/:messageId path so the static segment doesn't collide
+				// with the :messageId wildcard in gin's route tree.
+				conversations.POST("/:id/attachments", attachmentHandler.Upload)
 			}
 
 			// Messages (direct access by ID)

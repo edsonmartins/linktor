@@ -225,11 +225,50 @@ async function requestEnvelope<T>(endpoint: string, config: RequestConfig = {}, 
 }
 
 /**
+ * Multipart upload. The core `request` wrapper always sends JSON, so file
+ * uploads get their own path: FormData with no explicit Content-Type (the
+ * browser sets the multipart boundary). Mirrors the 401 refresh + envelope
+ * unwrapping behaviour of `request`.
+ */
+async function uploadFile<T>(endpoint: string, formData: FormData, isRetry = false): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  })
+
+  if (response.status === 401 && !isRetry) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) return uploadFile<T>(endpoint, formData, true)
+    if (typeof window !== 'undefined') {
+      tokenStorage.clear()
+      window.location.href = '/login'
+    }
+    throw new ApiError(401, 'Unauthorized', { message: 'Session expired' })
+  }
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null)
+    throw new ApiError(response.status, response.statusText, data)
+  }
+
+  const text = await response.text()
+  if (!text) return null as T
+  const json = JSON.parse(text)
+  if (json && typeof json === 'object' && 'success' in json && 'data' in json) {
+    return json.data as T
+  }
+  return json as T
+}
+
+/**
  * HTTP methods
  */
 export const api = {
   get: <T>(endpoint: string, params?: Record<string, string>) =>
     request<T>(endpoint, { method: 'GET', params }),
+
+  upload: <T>(endpoint: string, formData: FormData) => uploadFile<T>(endpoint, formData),
 
   post: <T>(endpoint: string, body?: unknown) =>
     request<T>(endpoint, { method: 'POST', body }),
