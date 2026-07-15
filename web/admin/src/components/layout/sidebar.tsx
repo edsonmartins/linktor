@@ -169,7 +169,12 @@ export function Sidebar() {
       )}
     >
       {/* Header */}
-      <div className="flex h-16 items-center justify-between px-4">
+      <div
+        className={cn(
+          'flex h-16 items-center justify-between',
+          collapsed ? 'px-1' : 'px-4'
+        )}
+      >
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center">
             <Image
@@ -189,7 +194,7 @@ export function Sidebar() {
               alt="Linktor"
               width={1024}
               height={1024}
-              className="h-9 w-9"
+              className="h-12 w-12"
               priority
             />
           </Link>
