@@ -63,8 +63,10 @@ const config: Config = {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        // Maple Mono is the primary typeface. It is monospaced, so keep
+        // mono-metric fallbacks to avoid layout shifts if it fails to load.
+        sans: ['Maple Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+        mono: ['Maple Mono', 'JetBrains Mono', 'ui-monospace', 'monospace'],
       },
       keyframes: {
         'accordion-down': {
