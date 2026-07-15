@@ -867,10 +867,19 @@ export function ChatView({ conversationId }: ChatViewProps) {
     }
   }, [conversationId, subscribe, invalidateConversation])
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when the conversation changes or a message arrives.
+  // Scroll only the ScrollArea viewport — NOT scrollIntoView, which also scrolls
+  // every scrollable ancestor (the dashboard <main>), shifting the whole page up
+  // and leaving a blank gap. Key on stable primitives so it doesn't refire on the
+  // messages array identity churn during refetch.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const viewport = messagesEndRef.current?.closest(
+      '[data-radix-scroll-area-viewport]'
+    ) as HTMLElement | null | undefined
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight
+    }
+  }, [conversationId, messages.length])
 
   if (conversationLoading) {
     return (
