@@ -872,7 +872,12 @@ export function ChatView({ conversationId }: ChatViewProps) {
       api.getEnvelope<Message[]>(`/conversations/${conversationId}/messages`),
   })
 
-  const messages = messagesData?.data || []
+  // The API returns the latest N messages newest-first (created_at desc, id desc)
+  // so pagination fetches the most recent window. Reverse for display so the
+  // thread reads chronologically — oldest at top, newest at the bottom. Reverse
+  // (not a created_at sort) preserves the backend's stable id tiebreaker for
+  // messages sharing a second.
+  const messages = [...(messagesData?.data || [])].reverse()
 
   const { data: users = [] } = useQuery({
     queryKey: queryKeys.users.list({ status: 'active' }),
