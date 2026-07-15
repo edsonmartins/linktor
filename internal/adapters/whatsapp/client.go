@@ -311,7 +311,7 @@ func (c *Client) SendTextMessage(ctx context.Context, to, text string) (*SendMes
 		return nil, ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		// Try to format as phone number
 		jid = types.NewJID(to, types.DefaultUserServer)
@@ -342,7 +342,7 @@ func (c *Client) SendTextMessageWithReply(ctx context.Context, to, text, replyTo
 		return nil, ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}
@@ -380,7 +380,7 @@ func (c *Client) SendImageMessage(ctx context.Context, to string, imageData []by
 		return nil, ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}
@@ -425,7 +425,7 @@ func (c *Client) SendVideoMessage(ctx context.Context, to string, videoData []by
 		return nil, ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}
@@ -469,7 +469,7 @@ func (c *Client) SendAudioMessage(ctx context.Context, to string, audioData []by
 		return nil, ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}
@@ -513,7 +513,7 @@ func (c *Client) SendDocumentMessage(ctx context.Context, to string, docData []b
 		return nil, ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}
@@ -558,7 +558,7 @@ func (c *Client) SendStickerMessage(ctx context.Context, to string, stickerData 
 		return nil, ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}
@@ -602,7 +602,7 @@ func (c *Client) SendLocationMessage(ctx context.Context, to string, lat, lon fl
 		return nil, ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}
@@ -637,7 +637,7 @@ func (c *Client) SendReaction(ctx context.Context, to, messageID, emoji string) 
 		return ErrClientNotReady
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}

@@ -124,7 +124,7 @@ func (g *CallGateway) PlaceCall(ctx context.Context, to string, isVideo bool) (s
 	if g.client == nil {
 		return "", ErrClientNotReady
 	}
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}

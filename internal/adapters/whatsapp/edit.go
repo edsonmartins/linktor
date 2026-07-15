@@ -27,7 +27,7 @@ func (c *Client) EditMessage(ctx context.Context, chat, messageID, newText strin
 		return nil, fmt.Errorf("edit: messageID and newText are required")
 	}
 
-	chatJID, err := types.ParseJID(chat)
+	chatJID, err := resolveRecipientJID(chat)
 	if err != nil {
 		chatJID = types.NewJID(chat, types.DefaultUserServer)
 	}
@@ -56,14 +56,14 @@ func (c *Client) RevokeMessage(ctx context.Context, chat, sender, messageID stri
 		return nil, fmt.Errorf("revoke: messageID is required")
 	}
 
-	chatJID, err := types.ParseJID(chat)
+	chatJID, err := resolveRecipientJID(chat)
 	if err != nil {
 		chatJID = types.NewJID(chat, types.DefaultUserServer)
 	}
 
 	var senderJID types.JID
 	if sender != "" {
-		if senderJID, err = types.ParseJID(sender); err != nil {
+		if senderJID, err = resolveRecipientJID(sender); err != nil {
 			senderJID = types.NewJID(sender, types.DefaultUserServer)
 		}
 	}
@@ -91,7 +91,7 @@ func (c *Client) ForwardText(ctx context.Context, to, text string) (*SendMessage
 		return nil, fmt.Errorf("forward: text is required")
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}

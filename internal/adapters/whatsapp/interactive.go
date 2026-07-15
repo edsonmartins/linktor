@@ -83,7 +83,7 @@ func (c *Client) SendInteractiveButtons(ctx context.Context, to, body, footer st
 		return nil, fmt.Errorf("interactive buttons: body and at least one button are required")
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}
@@ -134,7 +134,7 @@ func (c *Client) SendInteractiveList(ctx context.Context, to, body, footer, butt
 		return nil, fmt.Errorf("interactive list: body and at least one section are required")
 	}
 
-	jid, err := types.ParseJID(to)
+	jid, err := resolveRecipientJID(to)
 	if err != nil {
 		jid = types.NewJID(to, types.DefaultUserServer)
 	}
