@@ -173,10 +173,10 @@ export function Sidebar() {
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center">
             <Image
-              src="/images/logo_fundo_escuro.png"
+              src="/images/logo_linktor_texto.png"
               alt="Linktor"
-              width={150}
-              height={40}
+              width={888}
+              height={386}
               className="h-10 w-auto"
               priority
             />
@@ -185,10 +185,10 @@ export function Sidebar() {
         {collapsed && (
           <Link href="/dashboard" className="mx-auto">
             <Image
-              src="/images/logo_single.png"
+              src="/images/logo_linktor_single.png"
               alt="Linktor"
-              width={36}
-              height={36}
+              width={1024}
+              height={1024}
               className="h-9 w-9"
               priority
             />
