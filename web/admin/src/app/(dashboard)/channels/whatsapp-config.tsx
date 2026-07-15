@@ -409,7 +409,7 @@ export function WhatsAppConfig({
           <TabsList className={`grid w-full ${isEditing ? 'grid-cols-5' : 'grid-cols-4'}`}>
             <TabsTrigger value="embedded" className="flex items-center gap-1.5">
               <Zap className="h-3.5 w-3.5" />
-              {t('embeddedSignup')}
+              {t('embeddedSignupTab')}
             </TabsTrigger>
             <TabsTrigger value="credentials" className="flex items-center gap-1.5">
               <Shield className="h-3.5 w-3.5" />
