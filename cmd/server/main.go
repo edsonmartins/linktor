@@ -852,6 +852,12 @@ func main() {
 			metrics.RecordInbound(msg.ChannelType, metrics.ResultProcessed, start)
 			// Execute resolves and writes the authoritative tenant onto msg.
 			inboundLogger.Info(ctx, msg.TenantID, msg.ChannelID, "Mensagem recebida do canal", inboundMeta)
+			// Push the new message to agents on this tenant so an open conversation
+			// updates live. Without this the admin WebSocket only carried presence/
+			// typing and inbound messages appeared only after a manual refetch.
+			if out != nil && out.Message != nil {
+				handlers.BroadcastNewMessage(msg.TenantID, out.Message.ConversationID, out.Message)
+			}
 			maybeTriggerBot(ctx, botRepo, producer, out)
 			return nil
 		}); err != nil {
