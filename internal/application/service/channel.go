@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -52,6 +53,12 @@ type ConnectResult struct {
 	QRCode    string          `json:"qr_code,omitempty"`
 	ExpiresIn int             `json:"expires_in,omitempty"`
 	PairCode  string          `json:"pair_code,omitempty"`
+	// PasskeyRequired is true when the WhatsApp account is passkey-locked
+	// ("Shortcake") and cannot be linked by QR: the account owner must sign
+	// PasskeyChallenge in their browser (Linktor passkey extension) and the
+	// assertion is submitted via SubmitPasskeyResponse.
+	PasskeyRequired  bool            `json:"passkey_required,omitempty"`
+	PasskeyChallenge json.RawMessage `json:"passkey_challenge,omitempty"`
 }
 
 // ChannelLifecycleHooks lets composition roots react to channel lifecycle changes
@@ -571,6 +578,34 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 			return nil, errors.New(errors.ErrCodeInternal, "QR code channel closed unexpectedly")
 		}
 
+		// Passkey-locked account ("Shortcake"): there is no QR to show. Surface the
+		// WebAuthn challenge so the owner can sign it in their browser (Linktor
+		// passkey extension); the assertion comes back via SubmitPasskeyResponse.
+		if qrEvent.PasskeyChallenge != nil {
+			challengeJSON, err := json.Marshal(qrEvent.PasskeyChallenge)
+			if err != nil {
+				adapter.Disconnect(bgCtx)
+				return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal passkey challenge")
+			}
+			logger.Info("WhatsApp account requires passkey linking",
+				zap.String("channel_id", channel.ID))
+			s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "Conta exige passkey — aguardando assinatura do dono no navegador")
+
+			channel.ConnectionStatus = entity.ConnectionStatusConnecting
+			channel.UpdatedAt = time.Now()
+			s.repo.UpdateConnectionStatus(ctx, channel.ID, entity.ConnectionStatusConnecting)
+			if s.registry != nil {
+				s.registry.RegisterChannelAdapter(channel.ID, adapter)
+			}
+			go s.monitorWhatsAppLoginStatus(channel.ID, adapter, qrChan)
+
+			return &ConnectResult{
+				Channel:          channel,
+				PasskeyRequired:  true,
+				PasskeyChallenge: challengeJSON,
+			}, nil
+		}
+
 		logger.Info("QR code generated for WhatsApp login",
 			zap.String("channel_id", channel.ID),
 			zap.Time("expires_at", qrEvent.ExpiresAt))
@@ -615,6 +650,38 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 		// Just return the error for this request
 		return nil, ctx.Err()
 	}
+}
+
+// SubmitPasskeyResponse completes passkey-based linking for a WhatsApp channel.
+// It forwards the WebAuthn assertion (the owner signed the challenge from
+// ConnectResult.PasskeyChallenge in their browser via the Linktor passkey
+// extension) to the live whatsmeow session registered for this channel. On
+// success the normal connection handler flips the channel to connected.
+func (s *ChannelService) SubmitPasskeyResponse(ctx context.Context, tenantID, channelID string, assertion []byte) error {
+	channel, err := s.repo.FindByID(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	if channel == nil || channel.TenantID != tenantID {
+		return errors.New(errors.ErrCodeNotFound, "channel not found")
+	}
+	if s.registry == nil {
+		return errors.New(errors.ErrCodeInternal, "channel registry not configured")
+	}
+	pluginAdapter, err := s.registry.GetAdapterByChannelID(channelID)
+	if err != nil || pluginAdapter == nil {
+		return errors.New(errors.ErrCodeConflict, "no live WhatsApp session for this channel; start the connection again")
+	}
+	waAdapter, ok := pluginAdapter.(*whatsapp.Adapter)
+	if !ok {
+		return errors.New(errors.ErrCodeConflict, "channel is not a WhatsApp session")
+	}
+	if err := waAdapter.SubmitPasskeyResponse(ctx, assertion); err != nil {
+		s.logLifecycle(ctx, entity.LogLevelError, channel.TenantID, channel.ID, "Falha ao enviar a assinatura de passkey: "+err.Error())
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to submit passkey response")
+	}
+	s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "Assinatura de passkey enviada — concluindo o vínculo")
+	return nil
 }
 
 // monitorWhatsAppLoginStatus monitors the QR channel for login success

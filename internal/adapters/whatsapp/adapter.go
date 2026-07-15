@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -216,6 +217,27 @@ func (a *Adapter) Login(ctx context.Context) (<-chan QRCodeEvent, error) {
 	}
 
 	return client.Login(ctx)
+}
+
+// SubmitPasskeyResponse completes passkey-based device linking by forwarding the
+// WebAuthn assertion (the account owner signed the challenge in their browser
+// via the Linktor passkey extension) to WhatsApp. assertionJSON is the verbatim
+// output of the browser's credential.toJSON() — its base64url fields must not be
+// re-encoded, so it is unmarshaled straight into the whatsmeow type here.
+func (a *Adapter) SubmitPasskeyResponse(ctx context.Context, assertionJSON []byte) error {
+	a.mu.RLock()
+	client := a.client
+	a.mu.RUnlock()
+
+	if client == nil {
+		return ErrClientNotReady
+	}
+
+	var resp types.WebAuthnResponse
+	if err := json.Unmarshal(assertionJSON, &resp); err != nil {
+		return fmt.Errorf("invalid passkey assertion: %w", err)
+	}
+	return client.SubmitPasskeyResponse(ctx, &resp)
 }
 
 // LoginWithPairCode initiates phone number pairing

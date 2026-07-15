@@ -435,6 +435,58 @@ func (h *ChannelHandler) Connect(c *gin.Context) {
 	RespondSuccess(c, result)
 }
 
+// maxPasskeyAssertionBytes caps the WebAuthn assertion body. A real assertion is
+// a few hundred bytes to a couple KB; this is a generous safety limit.
+const maxPasskeyAssertionBytes = 64 << 10
+
+// SubmitPasskeyResponse godoc
+// @Summary      Submit a WhatsApp passkey assertion
+// @Description  Completes passkey-locked WhatsApp linking with the WebAuthn assertion produced by the account owner's browser
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Success      202 {object} Response
+// @Failure      400 {object} Response
+// @Failure      409 {object} Response
+// @Router       /channels/{id}/passkey/response [post]
+func (h *ChannelHandler) SubmitPasskeyResponse(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		RespondValidationError(c, "Channel ID is required", nil)
+		return
+	}
+
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	// Read the assertion verbatim. It must not be re-encoded on the way to
+	// whatsmeow (its base64url fields would break the server's verification).
+	assertion, err := c.GetRawData()
+	if err != nil {
+		RespondValidationError(c, "Could not read the passkey assertion", nil)
+		return
+	}
+	if len(assertion) == 0 {
+		RespondValidationError(c, "A passkey assertion is required", nil)
+		return
+	}
+	if len(assertion) > maxPasskeyAssertionBytes {
+		RespondValidationError(c, "Passkey assertion is too large", nil)
+		return
+	}
+
+	if err := h.channelService.SubmitPasskeyResponse(c.Request.Context(), tenantID, id, assertion); err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	RespondSuccess(c, gin.H{"status": "accepted"})
+}
+
 // Disconnect godoc
 // @Summary      Disconnect channel
 // @Description  Disconnect a channel to stop receiving messages

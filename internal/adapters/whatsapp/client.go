@@ -164,10 +164,24 @@ func (c *Client) Login(ctx context.Context) (<-chan QRCodeEvent, error) {
 
 		for evt := range qrChan {
 			switch evt.Event {
-			case "code":
+			case whatsmeow.QRChannelEventCode:
 				c.qrCh <- QRCodeEvent{
 					Code:      evt.Code,
 					ExpiresAt: time.Now().Add(evt.Timeout),
+				}
+			case whatsmeow.QRChannelEventPasskeyRequest:
+				// Passkey-locked ("Shortcake") account: the QR flow can't proceed.
+				// Surface the WebAuthn challenge so the owner can sign it in their
+				// browser; the assertion comes back via SubmitPasskeyResponse.
+				if evt.PasskeyRequest != nil && evt.PasskeyRequest.PublicKey != nil {
+					c.qrCh <- QRCodeEvent{PasskeyChallenge: evt.PasskeyRequest.PublicKey}
+				}
+			case whatsmeow.QRChannelEventPasskeyResponse:
+				// SkipHandoffUX == false: whatsmeow did NOT auto-confirm. The code is
+				// informational ("check your phone"); confirm so the flow proceeds to
+				// the owner's on-device approval.
+				if err := c.client.SendPasskeyConfirmation(ctx); err != nil {
+					c.logger.Warnf("failed to send passkey confirmation: %v", err)
 				}
 			case "success":
 				c.mu.Lock()
@@ -179,6 +193,8 @@ func (c *Client) Login(ctx context.Context) (<-chan QRCodeEvent, error) {
 				c.state = DeviceStateDisconnected
 				c.mu.Unlock()
 				return
+			case whatsmeow.QRChannelEventError:
+				c.logger.Warnf("whatsapp pairing error: %v", evt.Error)
 			}
 		}
 	}()
@@ -189,6 +205,20 @@ func (c *Client) Login(ctx context.Context) (<-chan QRCodeEvent, error) {
 	}
 
 	return c.qrCh, nil
+}
+
+// SubmitPasskeyResponse forwards a WebAuthn assertion (produced by the account
+// owner's authenticator, relayed via the Linktor passkey extension) to WhatsApp
+// to complete passkey-based device linking. whatsmeow then auto-routes the
+// continuation; the confirmation is handled in the QR-channel loop above.
+func (c *Client) SubmitPasskeyResponse(ctx context.Context, assertion *types.WebAuthnResponse) error {
+	c.mu.RLock()
+	cli := c.client
+	c.mu.RUnlock()
+	if cli == nil {
+		return ErrClientNotReady
+	}
+	return cli.SendPasskeyResponse(ctx, assertion)
 }
 
 // LoginWithPairCode initiates phone number pairing
