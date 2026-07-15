@@ -154,7 +154,7 @@ func (r *MessageRepository) FindByID(ctx context.Context, id string) (*entity.Me
 		       metadata, status, external_id, error_message, sent_at, delivered_at,
 		       read_at, created_at, reactions
 		FROM messages
-		WHEREid = $1
+		WHERE id = $1
 	`
 
 	message, err := r.scanMessage(r.db.Pool.QueryRow(ctx, query, id))
@@ -182,7 +182,7 @@ func (r *MessageRepository) FindByExternalID(ctx context.Context, externalID str
 		       metadata, status, external_id, error_message, sent_at, delivered_at,
 		       read_at, created_at, reactions
 		FROM messages
-		WHEREexternal_id = $1
+		WHERE external_id = $1
 	`
 
 	message, err := r.scanMessage(r.db.Pool.QueryRow(ctx, query, externalID))
@@ -217,7 +217,7 @@ func (r *MessageRepository) FindByConversation(ctx context.Context, conversation
 		       metadata, status, external_id, error_message, sent_at, delivered_at,
 		       read_at, created_at, reactions
 		FROM messages
-		WHEREconversation_id = $1
+		WHERE conversation_id = $1
 		ORDER BY %s %s, id %s
 		LIMIT $2 OFFSET $3
 	`, sanitizeColumn(params.SortBy, "created_at"), dir, dir)
