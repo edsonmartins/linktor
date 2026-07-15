@@ -283,7 +283,8 @@ test.describe('VRE Page', () => {
     await expect(page.getByLabel('Brand name')).toHaveValue('Linktor Demo')
 
     await page.getByLabel('Brand name').fill('Linktor Labs')
-    await page.getByLabel('Primary color').fill('#112233')
+    // exact: the color swatch is labelled "Primary color picker"; target only the hex text input.
+    await page.getByLabel('Primary color', { exact: true }).fill('#112233')
     await page.getByRole('button', { name: 'Save brand config' }).click()
     await page.getByRole('button', { name: 'Invalidate cache' }).click()
 
