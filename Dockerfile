@@ -14,7 +14,9 @@ FROM alpine:3.22
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates chromium tzdata wget
+# VRE renders SVG natively via resvg (WASM, embedded fonts) — no headless
+# browser needed, so chromium is intentionally not installed.
+RUN apk add --no-cache ca-certificates tzdata wget
 
 # Run as a non-root user. The upload/session dirs are created up front and
 # owned by linktor so that the named volumes mounted there (see
