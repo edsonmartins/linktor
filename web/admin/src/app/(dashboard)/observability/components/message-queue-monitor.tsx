@@ -18,6 +18,7 @@ import type { QueueStats, StreamInfo, ResetConsumerRequest } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
 import { toastSuccess, toastError } from '@/hooks/use-toast'
 import {
@@ -64,8 +65,8 @@ function StreamCard({ stream, t, tCommon }: { stream: StreamInfo; t: (key: strin
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
+    <Card className="flex h-[420px] flex-col">
+      <CardHeader className="shrink-0 pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
             <Server className="h-4 w-4 text-primary" />
@@ -79,9 +80,9 @@ function StreamCard({ stream, t, tCommon }: { stream: StreamInfo; t: (key: strin
           <p className="text-sm text-muted-foreground">{stream.description}</p>
         )}
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex min-h-0 flex-1 flex-col space-y-4">
         {/* Stream Stats */}
-        <div className="grid grid-cols-3 gap-4 text-sm">
+        <div className="grid shrink-0 grid-cols-3 gap-4 text-sm">
           <div>
             <p className="text-muted-foreground">{t('size')}</p>
             <p className="font-mono font-medium">{formatBytes(stream.bytes)}</p>
@@ -98,11 +99,12 @@ function StreamCard({ stream, t, tCommon }: { stream: StreamInfo; t: (key: strin
 
         {/* Consumers */}
         {consumers.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm font-medium flex items-center gap-2">
+          <div className="flex min-h-0 flex-1 flex-col space-y-2">
+            <p className="shrink-0 text-sm font-medium flex items-center gap-2">
               <Users className="h-4 w-4" />
               {t('consumers')} ({consumers.length})
             </p>
+            <ScrollArea className="min-h-0 flex-1 pr-3">
             <div className="space-y-2">
               {consumers.map((consumer) => (
                 <div
@@ -155,11 +157,12 @@ function StreamCard({ stream, t, tCommon }: { stream: StreamInfo; t: (key: strin
                 </div>
               ))}
             </div>
+            </ScrollArea>
           </div>
         )}
 
         {consumers.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-2">
+          <p className="flex-1 text-sm text-muted-foreground text-center py-2">
             {t('noActiveConsumers')}
           </p>
         )}
