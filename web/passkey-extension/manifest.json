@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Linktor Passkey Connector",
+  "version": "0.1.0",
+  "description": "Autoriza o vínculo de um canal WhatsApp (não-oficial) do Linktor assinando o desafio de passkey na sua própria sessão do web.whatsapp.com. Não lê nem move sua sessão do WhatsApp.",
+  "permissions": ["scripting", "tabs", "activeTab", "storage"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://*.linktor.dev/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.linktor.dev/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Linktor Passkey Connector"
+  }
+}
