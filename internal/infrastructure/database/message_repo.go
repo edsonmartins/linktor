@@ -241,7 +241,80 @@ func (r *MessageRepository) FindByConversation(ctx context.Context, conversation
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate messages")
 	}
 
+	// Load attachments for the whole page in one round trip. Without this the
+	// chat list came back with empty Attachments, so image/file messages
+	// rendered as nothing (FindByID loads them, but the list query didn't).
+	if err := r.attachAttachments(ctx, messages); err != nil {
+		return nil, 0, err
+	}
+
 	return messages, total, nil
+}
+
+// attachAttachments loads attachments for every message in one query (ANY($1))
+// and assigns them, avoiding an N+1 per-message lookup.
+func (r *MessageRepository) attachAttachments(ctx context.Context, messages []*entity.Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	ids := make([]string, len(messages))
+	byID := make(map[string]*entity.Message, len(messages))
+	for i, m := range messages {
+		ids[i] = m.ID
+		byID[m.ID] = m
+	}
+
+	query := `
+		SELECT id, message_id, type, filename, mime_type, size_bytes,
+		       url, thumbnail_url, metadata, created_at
+		FROM message_attachments
+		WHERE message_id = ANY($1)
+		ORDER BY created_at
+	`
+
+	rows, err := r.db.Pool.Query(ctx, query, ids)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to query attachments")
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var a entity.MessageAttachment
+		var metadata []byte
+		var filename, mimeType, thumbnailURL *string
+
+		if err := rows.Scan(
+			&a.ID, &a.MessageID, &a.Type, &filename, &mimeType,
+			&a.SizeBytes, &a.URL, &thumbnailURL, &metadata, &a.CreatedAt,
+		); err != nil {
+			return errors.Wrap(err, errors.ErrCodeInternal, "failed to scan attachment")
+		}
+
+		if filename != nil {
+			a.Filename = *filename
+		}
+		if mimeType != nil {
+			a.MimeType = *mimeType
+		}
+		if thumbnailURL != nil {
+			a.ThumbnailURL = *thumbnailURL
+		}
+		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
+			a.Metadata = make(map[string]string)
+		}
+
+		if m := byID[a.MessageID]; m != nil {
+			att := a
+			m.Attachments = append(m.Attachments, &att)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate attachments")
+	}
+
+	return nil
 }
 
 // Update updates a message
