@@ -148,6 +148,8 @@
     "noMessagesYet": "No messages yet",
     "selectConversation": "Select a conversation",
     "resizePanel": "Drag to resize (double-click to reset)",
+    "today": "Today",
+    "yesterday": "Yesterday",
     "selectConversationDescription": "Choose a conversation from the list to start chatting",
     "adjustFilters": "Start a new conversation or adjust filters",
     "resolveConversation": "Resolve conversation",

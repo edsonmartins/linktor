@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { Fragment, useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -52,7 +52,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { SimpleTooltip } from '@/components/ui/tooltip'
-import { cn, formatDate, formatRelativeTime } from '@/lib/utils'
+import { cn, formatRelativeTime } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { useUser } from '@/stores/auth-store'
@@ -717,7 +717,37 @@ export function ChatView({ conversationId }: ChatViewProps) {
       api.getEnvelope<Message[]>(`/conversations/${conversationId}/messages`),
   })
 
-  const messages = messagesData?.data || []
+  // Render messages oldest→newest (newest at the bottom, matching the auto
+  // scroll-to-bottom) with a deterministic id tiebreaker for same-second
+  // messages, mirroring the backend order. The API may return newest-first, so
+  // we sort here rather than rely on the transport order.
+  const sortedMessages = [...(messagesData?.data || [])].sort((a, b) => {
+    const ta = new Date(a.created_at).getTime()
+    const tb = new Date(b.created_at).getTime()
+    if (ta !== tb) return ta - tb
+    return a.id.localeCompare(b.id)
+  })
+
+  // Local-day key + human label for the per-day date separators. Grouping is by
+  // the viewer's local calendar day so a message at 23:45Z shows under the right
+  // day for a UTC-3 user (not the UTC day).
+  const dayKeyOf = (iso: string) => {
+    const d = new Date(iso)
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+  }
+  const labelForDay = (iso: string) => {
+    const now = new Date()
+    const yesterday = new Date()
+    yesterday.setDate(now.getDate() - 1)
+    const key = dayKeyOf(iso)
+    if (key === dayKeyOf(now.toISOString())) return t('today')
+    if (key === dayKeyOf(yesterday.toISOString())) return t('yesterday')
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(new Date(iso))
+  }
 
   const { data: users = [] } = useQuery({
     queryKey: queryKeys.users.list({ status: 'active' }),
@@ -957,15 +987,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
       <ScrollArea className="flex-1 min-h-0 bg-background">
         <div className="p-4 space-y-4">
-          {/* Date separator */}
-          <div className="flex items-center gap-4">
-            <Separator className="flex-1" />
-            <span className="text-xs text-muted-foreground">
-              {formatDate(conversation.created_at)}
-            </span>
-            <Separator className="flex-1" />
-          </div>
-
           {messagesLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
               <div
@@ -978,20 +999,36 @@ export function ChatView({ conversationId }: ChatViewProps) {
                 />
               </div>
             ))
-          ) : messages.length > 0 ? (
-            messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                isOwn={
-                  message.sender_type === 'user' &&
-                  message.sender_id === user?.id
-                }
-                currentUserID={user?.id}
-                onReact={(messageID, emoji) => reactToMessage.mutate({ messageID, emoji })}
-                isReacting={reactToMessage.isPending}
-              />
-            ))
+          ) : sortedMessages.length > 0 ? (
+            sortedMessages.map((message, i) => {
+              // A date separator precedes the first message of each local day.
+              const showDaySeparator =
+                i === 0 ||
+                dayKeyOf(sortedMessages[i - 1].created_at) !== dayKeyOf(message.created_at)
+              return (
+                <Fragment key={message.id}>
+                  {showDaySeparator && (
+                    <div className="flex items-center gap-4">
+                      <Separator className="flex-1" />
+                      <span className="text-xs text-muted-foreground">
+                        {labelForDay(message.created_at)}
+                      </span>
+                      <Separator className="flex-1" />
+                    </div>
+                  )}
+                  <MessageBubble
+                    message={message}
+                    isOwn={
+                      message.sender_type === 'user' &&
+                      message.sender_id === user?.id
+                    }
+                    currentUserID={user?.id}
+                    onReact={(messageID, emoji) => reactToMessage.mutate({ messageID, emoji })}
+                    isReacting={reactToMessage.isPending}
+                  />
+                </Fragment>
+              )
+            })
           ) : (
             <div className="py-8 text-center text-muted-foreground">
               <p className="text-sm">{t('noMessagesYet')}</p>

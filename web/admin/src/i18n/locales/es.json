@@ -147,6 +147,8 @@
     "noMessagesYet": "Aún sin mensajes",
     "selectConversation": "Seleccione una conversación",
     "resizePanel": "Arrastra para redimensionar (doble clic para restablecer)",
+    "today": "Hoy",
+    "yesterday": "Ayer",
     "selectConversationDescription": "Elija una conversación de la lista para comenzar a chatear",
     "adjustFilters": "Inicie una nueva conversación o ajuste los filtros",
     "resolveConversation": "Resolver conversación",
