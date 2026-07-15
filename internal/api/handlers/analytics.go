@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -68,6 +69,7 @@ func (h *AnalyticsHandler) GetOverview(c *gin.Context) {
 
 	overview, err := h.analyticsService.GetOverview(c.Request.Context(), tenantID, period, startDate, endDate)
 	if err != nil {
+		slog.Error("analytics: get overview failed", "tenant", tenantID, "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get overview analytics"})
 		return
 	}
@@ -95,6 +97,7 @@ func (h *AnalyticsHandler) GetConversations(c *gin.Context) {
 
 	conversations, err := h.analyticsService.GetConversationsByDay(c.Request.Context(), tenantID, startDate, endDate)
 	if err != nil {
+		slog.Error("analytics: get conversations failed", "tenant", tenantID, "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get conversation analytics"})
 		return
 	}
@@ -122,6 +125,7 @@ func (h *AnalyticsHandler) GetFlows(c *gin.Context) {
 
 	flows, err := h.analyticsService.GetFlowAnalytics(c.Request.Context(), tenantID, startDate, endDate)
 	if err != nil {
+		slog.Error("analytics: get flows failed", "tenant", tenantID, "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get flow analytics"})
 		return
 	}
@@ -149,6 +153,7 @@ func (h *AnalyticsHandler) GetEscalations(c *gin.Context) {
 
 	escalations, err := h.analyticsService.GetEscalationsByReason(c.Request.Context(), tenantID, startDate, endDate)
 	if err != nil {
+		slog.Error("analytics: get escalations failed", "tenant", tenantID, "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get escalation analytics"})
 		return
 	}
@@ -176,6 +181,7 @@ func (h *AnalyticsHandler) GetChannels(c *gin.Context) {
 
 	channels, err := h.analyticsService.GetChannelAnalytics(c.Request.Context(), tenantID, startDate, endDate)
 	if err != nil {
+		slog.Error("analytics: get channels failed", "tenant", tenantID, "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get channel analytics"})
 		return
 	}

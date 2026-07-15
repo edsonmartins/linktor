@@ -168,10 +168,10 @@ func (r *AnalyticsRepository) GetFlowAnalytics(ctx context.Context, filter entit
 			COUNT(DISTINCT cc.id) FILTER (WHERE cc.metadata->>'flow_completed' = 'true' AND (cc.current_flow_id = f.id OR cc.metadata->>'triggered_flow_id' = f.id::text)) as times_completed,
 			COALESCE(AVG((cc.metadata->>'flow_steps')::int) FILTER (WHERE cc.current_flow_id = f.id), 0) as avg_steps
 		FROM flows f
-		LEFT JOIN conversation_contexts cc ON cc.tenant_id = f.tenant_id
-		LEFT JOIN conversations c ON c.id = cc.conversation_id
+		LEFT JOIN conversations c ON c.tenant_id = f.tenant_id
+		  AND c.created_at >= $2 AND c.created_at < $3
+		LEFT JOIN conversation_contexts cc ON cc.conversation_id = c.id
 		WHERE f.tenant_id = $1
-		  AND (c.created_at IS NULL OR (c.created_at >= $2 AND c.created_at < $3))
 		GROUP BY f.id, f.name
 		ORDER BY times_triggered DESC
 	`
