@@ -524,36 +524,42 @@ export default function VREPage() {
                   />
                   <BrandConfigInput
                     id="brand-primary-color"
+                    type="color"
                     label={t('primaryColor')}
                     value={brandConfig.primary_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, primary_color: value }))}
                   />
                   <BrandConfigInput
                     id="brand-secondary-color"
+                    type="color"
                     label={t('secondaryColor')}
                     value={brandConfig.secondary_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, secondary_color: value }))}
                   />
                   <BrandConfigInput
                     id="brand-accent-color"
+                    type="color"
                     label={t('accentColor')}
                     value={brandConfig.accent_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, accent_color: value }))}
                   />
                   <BrandConfigInput
                     id="brand-background"
+                    type="color"
                     label={t('background')}
                     value={brandConfig.background}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, background: value }))}
                   />
                   <BrandConfigInput
                     id="brand-text-color"
+                    type="color"
                     label={t('textColor')}
                     value={brandConfig.text_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, text_color: value }))}
                   />
                   <BrandConfigInput
                     id="brand-muted-color"
+                    type="color"
                     label={t('mutedColor')}
                     value={brandConfig.muted_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, muted_color: value }))}
@@ -600,18 +606,57 @@ function BrandConfigInput({
   label,
   value,
   onChange,
+  type = 'text',
 }: {
   id: string
   label: string
   value: string
   onChange: (value: string) => void
+  type?: 'text' | 'color'
 }) {
+  if (type === 'color') {
+    // A native color swatch (for point-and-click) beside the hex text input (so
+    // exact brand values can still be typed/pasted). The swatch needs a valid
+    // #rrggbb; fall back to black for the picker while keeping whatever the user
+    // typed in the text field.
+    const swatch = /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#000000'
+    return (
+      <div className="space-y-2">
+        <Label htmlFor={id}>{label}</Label>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            aria-label={label}
+            value={swatch}
+            onChange={(event) => onChange(event.target.value)}
+            className="h-9 w-10 shrink-0 cursor-pointer rounded-md border border-border bg-transparent p-1"
+          />
+          <Input
+            id={id}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="font-mono"
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>
       <Input id={id} value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   )
+}
+
+// The backend serializes RenderTime as a Go time.Duration, i.e. an integer of
+// nanoseconds — despite the render_time_ms field name. Convert to a readable
+// unit (ms, or s when large).
+function formatRenderTime(nanoseconds: number): string {
+  const ms = (nanoseconds ?? 0) / 1_000_000
+  if (ms < 1000) return `${Math.round(ms)} ms`
+  return `${(ms / 1000).toFixed(2)} s`
 }
 
 function ResultCard({
@@ -624,8 +669,13 @@ function ResultCard({
   testId?: string
 }) {
   const t = useTranslations('vre')
+  // The backend already returns image_base64 as a full data URL
+  // (data:image/...;base64,...). Guard against re-prefixing it, which produced a
+  // broken image. Fall back to building the data URL if a bare base64 ever comes.
   const imageSrc = result?.image_base64
-    ? `data:image/${result.format};base64,${result.image_base64}`
+    ? result.image_base64.startsWith('data:')
+      ? result.image_base64
+      : `data:image/${result.format};base64,${result.image_base64}`
     : result?.image_url
 
   return (
@@ -668,7 +718,7 @@ function ResultCard({
               <span className="text-muted-foreground">{t('fieldBytes')}</span> {result.size_bytes}
             </div>
             <div>
-              <span className="text-muted-foreground">{t('fieldRenderTime')}</span> {String(result.render_time_ms)}
+              <span className="text-muted-foreground">{t('fieldRenderTime')}</span> {formatRenderTime(result.render_time_ms)}
             </div>
           </div>
           {result.caption && (
