@@ -23,6 +23,17 @@ type StatusPublisher interface {
 	PublishStatusUpdate(ctx context.Context, status *nats.StatusUpdate) error
 }
 
+// ChannelLogger records channel-level delivery activity for the admin
+// observability log viewer. It is intentionally decoupled from the application
+// layer: implementations (wired at composition time) persist the entries. A nil
+// logger disables channel logging. Calls must be non-blocking/cheap; the worker
+// does not depend on their outcome.
+type ChannelLogger interface {
+	Info(ctx context.Context, tenantID, channelID, message string, metadata map[string]string)
+	Warn(ctx context.Context, tenantID, channelID, message string, metadata map[string]string)
+	Error(ctx context.Context, tenantID, channelID, message string, metadata map[string]string)
+}
+
 // Worker consumes outbound messages from NATS and delivers them via the Sender
 // resolved for each message's channel. It is channel-agnostic: every supported
 // channel type flows through the same delivery, retry, and status path.
@@ -36,6 +47,34 @@ type Worker struct {
 	resolver     *Resolver
 	campaignRepo repository.CampaignRepository // optional; nil disables campaign tracking
 	limiter      *channelLimiter
+	logs         ChannelLogger // optional; nil disables channel activity logging
+}
+
+// SetChannelLogger attaches a ChannelLogger that records delivery activity to
+// the observability log store. Optional; if never set, channel logging is off.
+func (w *Worker) SetChannelLogger(l ChannelLogger) { w.logs = l }
+
+// logActivity forwards a channel log entry when a logger is configured. Nil-safe
+// so callers need no guard.
+func (w *Worker) logActivity(ctx context.Context, level entity.LogLevel, raw *nats.OutboundMessage, msg *Message, message string) {
+	if w.logs == nil {
+		return
+	}
+	meta := map[string]string{
+		"message_id":   raw.ID,
+		"channel_type": raw.ChannelType,
+	}
+	if msg != nil && msg.To != "" {
+		meta["to"] = msg.To
+	}
+	switch level {
+	case entity.LogLevelError:
+		w.logs.Error(ctx, raw.TenantID, raw.ChannelID, message, meta)
+	case entity.LogLevelWarn:
+		w.logs.Warn(ctx, raw.TenantID, raw.ChannelID, message, meta)
+	default:
+		w.logs.Info(ctx, raw.TenantID, raw.ChannelID, message, meta)
+	}
 }
 
 // NewWorker creates a delivery worker. campaignRepo may be nil.
@@ -80,6 +119,7 @@ func (w *Worker) handle(ctx context.Context, raw *nats.OutboundMessage) error {
 		// No sender / bad credentials is not retryable.
 		metrics.RecordOutbound(raw.ChannelType, metrics.ResultFailed, start)
 		w.recordFailure(ctx, raw, msg, err.Error())
+		w.logActivity(ctx, entity.LogLevelError, raw, msg, "Envio falhou: canal sem remetente configurado — "+err.Error())
 		logger.Error("outbound: cannot resolve sender for channel " + msg.ChannelID + ": " + err.Error())
 		return nil
 	}
@@ -95,17 +135,24 @@ func (w *Worker) handle(ctx context.Context, raw *nats.OutboundMessage) error {
 		if IsPermanent(err) {
 			metrics.RecordOutbound(raw.ChannelType, metrics.ResultFailed, start)
 			w.recordFailure(ctx, raw, msg, err.Error())
+			w.logActivity(ctx, entity.LogLevelError, raw, msg, "Envio falhou (permanente): "+err.Error())
 			logger.Error("outbound: permanent send failure for " + msg.ID + ": " + err.Error())
 			return nil // ack: do not retry a permanent failure
 		}
 		// Transient failures are retried by NATS; they are not counted as a
 		// terminal outcome to avoid inflating the failure counter on each retry.
+		w.logActivity(ctx, entity.LogLevelWarn, raw, msg, "Envio falhou (temporário, será reenviado): "+err.Error())
 		logger.Warn("outbound: transient send failure for " + msg.ID + ", will retry: " + err.Error())
 		return err // nak -> retry
 	}
 
 	metrics.RecordOutbound(raw.ChannelType, metrics.ResultSent, start)
 	w.recordSuccess(ctx, raw, msg, receipt)
+	// Log deliveries for conversation messages only; campaign bulk sends would
+	// otherwise flood the channel log.
+	if msg.CampaignRecipientID == "" {
+		w.logActivity(ctx, entity.LogLevelInfo, raw, msg, "Mensagem entregue ao canal")
+	}
 	return nil
 }
 
