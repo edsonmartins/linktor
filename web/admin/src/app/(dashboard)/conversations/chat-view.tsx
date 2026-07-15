@@ -52,6 +52,8 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { SimpleTooltip } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { EmojiPicker } from '@/components/emoji-picker'
 import { cn, formatDate, formatRelativeTime } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
@@ -664,11 +666,25 @@ function Composer({ conversationId, onSend, onTyping, isSending }: ComposerProps
           />
         </div>
 
-        <SimpleTooltip content={t('emoji')}>
-          <Button type="button" variant="ghost" size="icon">
-            <Smile className="h-5 w-5" />
-          </Button>
-        </SimpleTooltip>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t('emoji')}
+            >
+              <Smile className="h-5 w-5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            side="top"
+            align="end"
+            className="w-auto border-0 bg-transparent p-0 shadow-none"
+          >
+            <EmojiPicker onSelect={(emoji) => setContent((c) => c + emoji)} />
+          </PopoverContent>
+        </Popover>
 
         <Button
           type="submit"
