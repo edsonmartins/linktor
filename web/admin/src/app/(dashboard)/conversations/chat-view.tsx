@@ -897,10 +897,22 @@ export function ChatView({ conversationId }: ChatViewProps) {
     }
   }, [conversationId, subscribe, invalidateConversation])
 
-  // Scroll to bottom when messages change
+  // Scroll to the newest message when the thread changes. Scroll the messages
+  // viewport DIRECTLY (not scrollIntoView, which walks up to the nearest
+  // scrollable ancestor and — before the layout was contained — scrolled the
+  // whole page, pushing the header off-screen and leaving a blank gap below the
+  // composer). Setting the Radix ScrollArea viewport's scrollTop keeps the
+  // scroll strictly inside the message list.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const end = messagesEndRef.current
+    if (!end) return
+    const viewport = end.closest('[data-radix-scroll-area-viewport]') as HTMLElement | null
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight
+    } else {
+      end.scrollIntoView({ block: 'nearest' })
+    }
+  }, [conversationId, sortedMessages.length])
 
   if (conversationLoading) {
     return (
