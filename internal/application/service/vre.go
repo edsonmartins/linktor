@@ -19,7 +19,7 @@ import (
 
 // VREService provides visual response engine functionality
 type VREService struct {
-	renderer    *vre.ChromeRenderer
+	renderer    *vre.SVGRenderer
 	registry    *vre.TemplateRegistry
 	captionGen  *vre.CaptionGenerator
 	cache       *redis.Client
@@ -60,7 +60,7 @@ func NewVREService(cfg *VREServiceConfig, redisClient *redis.Client) (*VREServic
 	rendererCfg.DefaultWidth = cfg.DefaultWidth
 	rendererCfg.DefaultQuality = cfg.DefaultQuality
 
-	renderer, err := vre.NewChromeRenderer(rendererCfg)
+	renderer, err := vre.NewSVGRenderer(rendererCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create renderer: %w", err)
 	}
