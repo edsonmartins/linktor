@@ -228,6 +228,8 @@
     "videoCall": "Videollamada",
     "contactInfo": "Info del contacto",
     "attachFile": "Adjuntar archivo",
+    "attachFailed": "Error al subir el adjunto",
+    "removeAttachment": "Quitar adjunto",
     "emoji": "Emoji",
     "history": "Historial",
     "app": "App",

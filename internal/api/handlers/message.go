@@ -20,9 +20,20 @@ func NewMessageHandler(messageService *service.MessageService) *MessageHandler {
 
 // SendMessageRequest represents a send message request
 type SendMessageRequest struct {
-	ContentType string            `json:"content_type" binding:"required"`
-	Content     string            `json:"content" binding:"required"`
-	Metadata    map[string]string `json:"metadata"`
+	ContentType string                 `json:"content_type"`
+	Content     string                 `json:"content"`
+	Metadata    map[string]string      `json:"metadata"`
+	Attachments []MessageAttachmentReq `json:"attachments"`
+}
+
+// MessageAttachmentReq is an already-uploaded attachment referenced when sending
+// a message (see AttachmentHandler.Upload).
+type MessageAttachmentReq struct {
+	URL       string `json:"url" binding:"required"`
+	Type      string `json:"type"`
+	Filename  string `json:"filename"`
+	MimeType  string `json:"mime_type"`
+	SizeBytes int64  `json:"size_bytes"`
 }
 
 // SendReactionRequest represents a send reaction request
@@ -121,6 +132,17 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 
+	attachments := make([]service.MessageAttachmentInput, 0, len(req.Attachments))
+	for _, a := range req.Attachments {
+		attachments = append(attachments, service.MessageAttachmentInput{
+			URL:       a.URL,
+			Type:      a.Type,
+			Filename:  a.Filename,
+			MimeType:  a.MimeType,
+			SizeBytes: a.SizeBytes,
+		})
+	}
+
 	input := &service.SendMessageInput{
 		TenantID:       tenantID,
 		ConversationID: conversationID,
@@ -129,6 +151,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		ContentType:    req.ContentType,
 		Content:        req.Content,
 		Metadata:       req.Metadata,
+		Attachments:    attachments,
 	}
 
 	message, err := h.messageService.Send(c.Request.Context(), input)
