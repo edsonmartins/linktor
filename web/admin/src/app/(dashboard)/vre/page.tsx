@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useTranslations } from 'next-intl'
 import {
   ImageIcon,
   RefreshCw,
@@ -68,6 +69,7 @@ type VREBrandConfig = {
 const DEFAULT_TEMPLATE = 'menu_opcoes'
 
 export default function VREPage() {
+  const t = useTranslations('vre')
   const { toast } = useToast()
   const [selectedTemplate, setSelectedTemplate] = useState(DEFAULT_TEMPLATE)
   const [channelId, setChannelId] = useState<string>('')
@@ -132,14 +134,14 @@ export default function VREPage() {
     onSuccess: (response) => {
       setPreviewResult(response)
       toast({
-        title: 'Preview ready',
+        title: t('toastPreviewReady'),
         description: `${response.width}x${response.height} ${response.format}`,
       })
     },
     onError: (error) => {
       toast({
-        title: 'Preview failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        title: t('toastPreviewFailed'),
+        description: error instanceof Error ? error.message : t('unknownError'),
         variant: 'error',
       })
     },
@@ -151,14 +153,14 @@ export default function VREPage() {
     onSuccess: (response) => {
       setRenderResult(response)
       toast({
-        title: 'Render complete',
+        title: t('toastRenderComplete'),
         description: `${response.width}x${response.height} ${response.format}`,
       })
     },
     onError: (error) => {
       toast({
-        title: 'Render failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        title: t('toastRenderFailed'),
+        description: error instanceof Error ? error.message : t('unknownError'),
         variant: 'error',
       })
     },
@@ -170,14 +172,14 @@ export default function VREPage() {
     onSuccess: (response) => {
       setRenderResult(response)
       toast({
-        title: response.delivered ? 'Sent' : 'Rendered without delivery',
-        description: response.caption || 'VRE response processed',
+        title: response.delivered ? t('toastSent') : t('toastRenderedNoDelivery'),
+        description: response.caption || t('toastResponseProcessed'),
       })
     },
     onError: (error) => {
       toast({
-        title: 'Send failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        title: t('toastSendFailed'),
+        description: error instanceof Error ? error.message : t('unknownError'),
         variant: 'error',
       })
     },
@@ -187,14 +189,14 @@ export default function VREPage() {
     mutationFn: (payload: VREBrandConfig) => api.put<VREBrandConfig>('/vre/config', payload),
     onSuccess: () => {
       toast({
-        title: 'Brand config saved',
-        description: brandConfig.name || 'VRE branding updated',
+        title: t('toastBrandSaved'),
+        description: brandConfig.name || t('toastBrandUpdated'),
       })
     },
     onError: (error) => {
       toast({
-        title: 'Failed to save brand config',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        title: t('toastBrandSaveFailed'),
+        description: error instanceof Error ? error.message : t('unknownError'),
         variant: 'error',
       })
     },
@@ -204,14 +206,14 @@ export default function VREPage() {
     mutationFn: () => api.delete<{ message: string }>('/vre/cache'),
     onSuccess: (response) => {
       toast({
-        title: 'Cache invalidated',
+        title: t('toastCacheInvalidated'),
         description: response.message,
       })
     },
     onError: (error) => {
       toast({
-        title: 'Failed to invalidate cache',
-        description: error instanceof Error ? error.message : 'Unknown error',
+        title: t('toastCacheInvalidateFailed'),
+        description: error instanceof Error ? error.message : t('unknownError'),
         variant: 'error',
       })
     },
@@ -244,8 +246,8 @@ export default function VREPage() {
       renderMutation.mutate(buildRenderPayload())
     } catch (error) {
       toast({
-        title: 'Invalid render data',
-        description: error instanceof Error ? error.message : 'JSON parse error',
+        title: t('toastInvalidData'),
+        description: error instanceof Error ? error.message : t('toastJsonParseError'),
         variant: 'error',
       })
     }
@@ -254,8 +256,8 @@ export default function VREPage() {
   const runRenderAndSend = () => {
     if (!sendTo) {
       toast({
-        title: 'Recipient required',
-        description: 'Fill send_to before sending',
+        title: t('toastRecipientRequired'),
+        description: t('toastFillSendTo'),
         variant: 'error',
       })
       return
@@ -268,8 +270,8 @@ export default function VREPage() {
       })
     } catch (error) {
       toast({
-        title: 'Invalid render data',
-        description: error instanceof Error ? error.message : 'JSON parse error',
+        title: t('toastInvalidData'),
+        description: error instanceof Error ? error.message : t('toastJsonParseError'),
         variant: 'error',
       })
     }
@@ -286,19 +288,19 @@ export default function VREPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4" />
-                  Runtime
+                  {t('runtimeTitle')}
                 </CardTitle>
                 <CardDescription>
-                  Preview templates, render payloads, and send visual responses through a real channel.
+                  {t('runtimeDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="vre-template">Template</Label>
+                    <Label htmlFor="vre-template">{t('template')}</Label>
                     <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
                       <SelectTrigger id="vre-template">
-                        <SelectValue placeholder="Select a template" />
+                        <SelectValue placeholder={t('selectTemplate')} />
                       </SelectTrigger>
                       <SelectContent>
                         {(templatesData?.templates ?? []).map((template) => (
@@ -311,10 +313,10 @@ export default function VREPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="vre-channel">Channel</Label>
+                    <Label htmlFor="vre-channel">{t('channel')}</Label>
                     <Select value={channelId} onValueChange={setChannelId}>
                       <SelectTrigger id="vre-channel">
-                        <SelectValue placeholder="Select a channel" />
+                        <SelectValue placeholder={t('selectChannel')} />
                       </SelectTrigger>
                       <SelectContent>
                         {channels.map((channel) => (
@@ -329,7 +331,7 @@ export default function VREPage() {
 
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <Label htmlFor="vre-format">Format</Label>
+                    <Label htmlFor="vre-format">{t('format')}</Label>
                     <Select value={format} onValueChange={(value) => setFormat(value as VREOutputFormat)}>
                       <SelectTrigger id="vre-format">
                         <SelectValue />
@@ -343,28 +345,28 @@ export default function VREPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="vre-caption">Caption</Label>
+                    <Label htmlFor="vre-caption">{t('caption')}</Label>
                     <Input
                       id="vre-caption"
                       value={caption}
                       onChange={(event) => setCaption(event.target.value)}
-                      placeholder="Optional caption"
+                      placeholder={t('optionalCaption')}
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="vre-follow-up">Follow-up text</Label>
+                    <Label htmlFor="vre-follow-up">{t('followUpText')}</Label>
                     <Input
                       id="vre-follow-up"
                       value={followUpText}
                       onChange={(event) => setFollowUpText(event.target.value)}
-                      placeholder="Optional follow-up text"
+                      placeholder={t('optionalFollowUp')}
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="vre-data">Render data (JSON)</Label>
+                  <Label htmlFor="vre-data">{t('renderData')}</Label>
                   <Textarea
                     id="vre-data"
                     value={dataJson}
@@ -375,7 +377,7 @@ export default function VREPage() {
 
                 <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
                   <div className="space-y-2">
-                    <Label htmlFor="vre-send-to">Send to</Label>
+                    <Label htmlFor="vre-send-to">{t('sendTo')}</Label>
                     <Input
                       id="vre-send-to"
                       value={sendTo}
@@ -396,7 +398,7 @@ export default function VREPage() {
                       ) : (
                         <ImageIcon className="mr-2 h-4 w-4" />
                       )}
-                      Preview
+                      {t('preview')}
                     </Button>
                   </div>
 
@@ -412,7 +414,7 @@ export default function VREPage() {
                       ) : (
                         <Sparkles className="mr-2 h-4 w-4" />
                       )}
-                      Render
+                      {t('render')}
                     </Button>
                   </div>
 
@@ -427,7 +429,7 @@ export default function VREPage() {
                       ) : (
                         <Send className="mr-2 h-4 w-4" />
                       )}
-                      Render and send
+                      {t('renderAndSend')}
                     </Button>
                   </div>
                 </div>
@@ -436,15 +438,15 @@ export default function VREPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Preview and output</CardTitle>
+                <CardTitle>{t('previewOutputTitle')}</CardTitle>
                 <CardDescription>
-                  Latest preview and render result from the VRE runtime.
+                  {t('previewOutputDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <ResultCard title="Template preview" result={previewResult} testId="vre-preview-result" />
-                  <ResultCard title="Latest render" result={renderResult} testId="vre-render-result" />
+                  <ResultCard title={t('templatePreview')} result={previewResult} testId="vre-preview-result" />
+                  <ResultCard title={t('latestRender')} result={renderResult} testId="vre-render-result" />
                 </div>
               </CardContent>
             </Card>
@@ -453,9 +455,9 @@ export default function VREPage() {
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Templates and cache</CardTitle>
+                <CardTitle>{t('templatesCacheTitle')}</CardTitle>
                 <CardDescription>
-                  Inspect the available templates and refresh runtime state.
+                  {t('templatesCacheDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -479,7 +481,7 @@ export default function VREPage() {
                     ) : (
                       <RefreshCw className="mr-2 h-4 w-4" />
                     )}
-                    Refresh templates
+                    {t('refreshTemplates')}
                   </Button>
 
                   <Button
@@ -493,7 +495,7 @@ export default function VREPage() {
                     ) : (
                       <Trash2 className="mr-2 h-4 w-4" />
                     )}
-                    Invalidate cache
+                    {t('invalidateCache')}
                   </Button>
                 </div>
               </CardContent>
@@ -501,70 +503,70 @@ export default function VREPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Brand config</CardTitle>
+                <CardTitle>{t('brandConfigTitle')}</CardTitle>
                 <CardDescription>
-                  Edit the tenant branding used by VRE templates.
+                  {t('brandConfigDesc')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
                   <BrandConfigInput
                     id="brand-name"
-                    label="Brand name"
+                    label={t('brandName')}
                     value={brandConfig.name}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, name: value }))}
                   />
                   <BrandConfigInput
                     id="brand-logo-url"
-                    label="Logo URL"
+                    label={t('logoUrl')}
                     value={brandConfig.logo_url ?? ''}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, logo_url: value }))}
                   />
                   <BrandConfigInput
                     id="brand-primary-color"
-                    label="Primary color"
+                    label={t('primaryColor')}
                     value={brandConfig.primary_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, primary_color: value }))}
                   />
                   <BrandConfigInput
                     id="brand-secondary-color"
-                    label="Secondary color"
+                    label={t('secondaryColor')}
                     value={brandConfig.secondary_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, secondary_color: value }))}
                   />
                   <BrandConfigInput
                     id="brand-accent-color"
-                    label="Accent color"
+                    label={t('accentColor')}
                     value={brandConfig.accent_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, accent_color: value }))}
                   />
                   <BrandConfigInput
                     id="brand-background"
-                    label="Background"
+                    label={t('background')}
                     value={brandConfig.background}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, background: value }))}
                   />
                   <BrandConfigInput
                     id="brand-text-color"
-                    label="Text color"
+                    label={t('textColor')}
                     value={brandConfig.text_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, text_color: value }))}
                   />
                   <BrandConfigInput
                     id="brand-muted-color"
-                    label="Muted color"
+                    label={t('mutedColor')}
                     value={brandConfig.muted_color}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, muted_color: value }))}
                   />
                   <BrandConfigInput
                     id="brand-font-family"
-                    label="Font family"
+                    label={t('fontFamily')}
                     value={brandConfig.font_family}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, font_family: value }))}
                   />
                   <BrandConfigInput
                     id="brand-border-radius"
-                    label="Border radius"
+                    label={t('borderRadius')}
                     value={brandConfig.border_radius}
                     onChange={(value) => setBrandConfig((current) => ({ ...current, border_radius: value }))}
                   />
@@ -582,7 +584,7 @@ export default function VREPage() {
                   ) : (
                     <Save className="mr-2 h-4 w-4" />
                   )}
-                  Save brand config
+                  {t('saveBrandConfig')}
                 </Button>
               </CardContent>
             </Card>
@@ -621,6 +623,7 @@ function ResultCard({
   result: VRERenderResponse | null
   testId?: string
 }) {
+  const t = useTranslations('vre')
   const imageSrc = result?.image_base64
     ? `data:image/${result.format};base64,${result.image_base64}`
     : result?.image_url
@@ -631,8 +634,8 @@ function ResultCard({
         <h3 className="font-medium">{title}</h3>
         {result && (
           <div className="flex gap-2">
-            {result.cache_hit && <Badge variant="outline">cache hit</Badge>}
-            {result.delivered && <Badge variant="default">delivered</Badge>}
+            {result.cache_hit && <Badge variant="outline">{t('cacheHit')}</Badge>}
+            {result.delivered && <Badge variant="default">{t('delivered')}</Badge>}
           </div>
         )}
       </div>
@@ -640,9 +643,9 @@ function ResultCard({
       {!result ? (
         <Alert>
           <ImageIcon className="h-4 w-4" />
-          <AlertTitle>No output yet</AlertTitle>
+          <AlertTitle>{t('noOutputYet')}</AlertTitle>
           <AlertDescription>
-            Run preview or render to inspect the generated asset.
+            {t('noOutputDesc')}
           </AlertDescription>
         </Alert>
       ) : (
@@ -656,26 +659,26 @@ function ResultCard({
           )}
           <div className="grid gap-2 text-sm md:grid-cols-2">
             <div>
-              <span className="text-muted-foreground">Format:</span> {result.format}
+              <span className="text-muted-foreground">{t('fieldFormat')}</span> {result.format}
             </div>
             <div>
-              <span className="text-muted-foreground">Size:</span> {result.width}x{result.height}
+              <span className="text-muted-foreground">{t('fieldSize')}</span> {result.width}x{result.height}
             </div>
             <div>
-              <span className="text-muted-foreground">Bytes:</span> {result.size_bytes}
+              <span className="text-muted-foreground">{t('fieldBytes')}</span> {result.size_bytes}
             </div>
             <div>
-              <span className="text-muted-foreground">Render time:</span> {String(result.render_time_ms)}
+              <span className="text-muted-foreground">{t('fieldRenderTime')}</span> {String(result.render_time_ms)}
             </div>
           </div>
           {result.caption && (
             <p className="text-sm">
-              <span className="text-muted-foreground">Caption:</span> {result.caption}
+              <span className="text-muted-foreground">{t('fieldCaption')}</span> {result.caption}
             </p>
           )}
           {result.follow_up_text && (
             <p className="text-sm">
-              <span className="text-muted-foreground">Follow-up:</span> {result.follow_up_text}
+              <span className="text-muted-foreground">{t('fieldFollowUp')}</span> {result.follow_up_text}
             </p>
           )}
         </div>
