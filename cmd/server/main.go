@@ -414,6 +414,10 @@ func main() {
 	if consumer != nil && producer != nil {
 		// 80 msg/s/channel ~ WhatsApp Cloud API default throughput tier.
 		outboundWorker = outbound.NewWorker(consumer, producer, outboundResolver, campaignRepo, 80)
+		// Record delivery activity (sends, transient/permanent failures) to the
+		// observability log store so the admin channel-log viewer shows why a
+		// message did or did not reach the channel.
+		outboundWorker.SetChannelLogger(channelActivityLogger{svc: observabilityService})
 	}
 
 	// Enable automatic conversation routing on inbound messages.
