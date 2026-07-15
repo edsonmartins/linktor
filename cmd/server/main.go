@@ -417,7 +417,7 @@ func main() {
 		// Record delivery activity (sends, transient/permanent failures) to the
 		// observability log store so the admin channel-log viewer shows why a
 		// message did or did not reach the channel.
-		outboundWorker.SetChannelLogger(channelActivityLogger{svc: observabilityService})
+		outboundWorker.SetChannelLogger(channelActivityLogger{svc: observabilityService, source: entity.LogSourceChannel})
 	}
 
 	// Enable automatic conversation routing on inbound messages.
@@ -582,6 +582,9 @@ func main() {
 
 	// Create channel service and handler
 	channelService := service.NewChannelService(channelRepo, plugin.GetGlobalRegistry(), producer)
+	// Record channel connection lifecycle (connect/disconnect/logout/failures)
+	// to the observability log store for the admin channel-log viewer.
+	channelService.SetObservability(observabilityService)
 	// Optional allowlist of channel types this deployment may create/connect.
 	// LINKTOR_ENABLED_CHANNEL_TYPES="whatsapp_official,telegram,..." restricts to
 	// the channels that passed homologation; unset means all types are allowed.
@@ -819,8 +822,10 @@ func main() {
 		// delivery, validation, forbidden, not-found) are acked — retrying them is
 		// pointless and would pollute the DLQ and fire an alert on every duplicate
 		// webhook. Only genuinely transient errors are returned to trigger a NAK.
+		inboundLogger := channelActivityLogger{svc: observabilityService, source: entity.LogSourceWebhook}
 		if err := consumer.SubscribeAllInbound(ctx, func(ctx context.Context, msg *nats.InboundMessage) error {
 			start := time.Now()
+			inboundMeta := map[string]string{"channel_type": string(msg.ChannelType)}
 			out, err := receiveMessageUC.Execute(ctx, msg)
 			if err != nil {
 				if !isRetryableInboundError(err) {
@@ -832,13 +837,21 @@ func main() {
 						result = metrics.ResultDuplicate
 					}
 					metrics.RecordInbound(msg.ChannelType, result, start)
+					if result == metrics.ResultDuplicate {
+						inboundLogger.Info(ctx, msg.TenantID, msg.ChannelID, "Webhook duplicado ignorado", inboundMeta)
+					} else {
+						inboundLogger.Warn(ctx, msg.TenantID, msg.ChannelID, "Webhook recebido descartado (não recuperável): "+err.Error(), inboundMeta)
+					}
 					logger.Warn("inbound message dropped (non-retryable): " + err.Error())
 					return nil // ack: do not retry
 				}
 				metrics.RecordInbound(msg.ChannelType, metrics.ResultFailed, start)
+				inboundLogger.Warn(ctx, msg.TenantID, msg.ChannelID, "Falha temporária ao processar webhook (será reprocessado): "+err.Error(), inboundMeta)
 				return err
 			}
 			metrics.RecordInbound(msg.ChannelType, metrics.ResultProcessed, start)
+			// Execute resolves and writes the authoritative tenant onto msg.
+			inboundLogger.Info(ctx, msg.TenantID, msg.ChannelID, "Mensagem recebida do canal", inboundMeta)
 			maybeTriggerBot(ctx, botRepo, producer, out)
 			return nil
 		}); err != nil {
