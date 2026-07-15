@@ -28,7 +28,7 @@ require (
 	github.com/swaggo/gin-swagger v1.6.0
 	github.com/swaggo/swag v1.16.4
 	github.com/twilio/twilio-go v1.30.0
-	go.mau.fi/whatsmeow v0.0.0-20260622185415-5f04eac6dbbb
+	go.mau.fi/whatsmeow v0.0.0-20260713112832-d8960d9575d2
 	go.uber.org/zap v1.26.0
 	golang.org/x/crypto v0.53.0
 	golang.org/x/image v0.44.0
