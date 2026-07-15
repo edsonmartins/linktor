@@ -172,7 +172,7 @@ export function Sidebar() {
       <div
         className={cn(
           'flex h-16 items-center justify-between',
-          collapsed ? 'px-1' : 'px-4'
+          collapsed ? 'px-0' : 'px-4'
         )}
       >
         {!collapsed && (
@@ -194,7 +194,7 @@ export function Sidebar() {
               alt="Linktor"
               width={1024}
               height={1024}
-              className="h-12 w-12"
+              className="h-16 w-16"
               priority
             />
           </Link>
