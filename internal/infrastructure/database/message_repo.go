@@ -29,6 +29,11 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal metadata")
 	}
 
+	reactions, err := marshalReactions(message.Reactions)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal reactions")
+	}
+
 	// ON CONFLICT drops a redelivered inbound message atomically (see the
 	// uq_messages_conversation_external_id partial index). The predicate must
 	// match the index exactly for arbiter inference; outbound rows insert a NULL
@@ -37,8 +42,8 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 		INSERT INTO messages (
 			id, conversation_id, sender_type, sender_id, content_type, content,
 			metadata, status, external_id, error_message, sent_at, delivered_at,
-			read_at, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			read_at, created_at, reactions
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (conversation_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
 	`
 
@@ -62,6 +67,7 @@ func (r *MessageRepository) Create(ctx context.Context, message *entity.Message)
 		message.DeliveredAt,
 		message.ReadAt,
 		message.CreatedAt,
+		reactions,
 	)
 
 	if err != nil {
@@ -82,8 +88,8 @@ const insertMessageQuery = `
 	INSERT INTO messages (
 		id, conversation_id, sender_type, sender_id, content_type, content,
 		metadata, status, external_id, error_message, sent_at, delivered_at,
-		read_at, created_at
-	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		read_at, created_at, reactions
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	ON CONFLICT (conversation_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
 `
 
@@ -97,6 +103,11 @@ func (r *MessageRepository) CreateWithOutboxEvent(ctx context.Context, message *
 	metadata, err := json.Marshal(message.Metadata)
 	if err != nil {
 		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal metadata")
+	}
+
+	reactions, err := marshalReactions(message.Reactions)
+	if err != nil {
+		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal reactions")
 	}
 
 	tx, err := r.db.Pool.Begin(ctx)
@@ -114,7 +125,7 @@ func (r *MessageRepository) CreateWithOutboxEvent(ctx context.Context, message *
 		message.ID, message.ConversationID, string(message.SenderType), senderID,
 		string(message.ContentType), message.Content, metadata, string(message.Status),
 		nullString(message.ExternalID), nullString(message.ErrorMessage),
-		message.SentAt, message.DeliveredAt, message.ReadAt, message.CreatedAt,
+		message.SentAt, message.DeliveredAt, message.ReadAt, message.CreatedAt, reactions,
 	)
 	if err != nil {
 		return false, errors.Wrap(err, errors.ErrCodeInternal, "failed to create message")
@@ -141,7 +152,7 @@ func (r *MessageRepository) FindByID(ctx context.Context, id string) (*entity.Me
 	query := `
 		SELECT id, conversation_id, sender_type, sender_id, content_type, content,
 		       metadata, status, external_id, error_message, sent_at, delivered_at,
-		       read_at, created_at
+		       read_at, created_at, reactions
 		FROM messages
 		WHERE id = $1
 	`
@@ -169,7 +180,7 @@ func (r *MessageRepository) FindByExternalID(ctx context.Context, externalID str
 	query := `
 		SELECT id, conversation_id, sender_type, sender_id, content_type, content,
 		       metadata, status, external_id, error_message, sent_at, delivered_at,
-		       read_at, created_at
+		       read_at, created_at, reactions
 		FROM messages
 		WHERE external_id = $1
 	`
@@ -204,7 +215,7 @@ func (r *MessageRepository) FindByConversation(ctx context.Context, conversation
 	query := fmt.Sprintf(`
 		SELECT id, conversation_id, sender_type, sender_id, content_type, content,
 		       metadata, status, external_id, error_message, sent_at, delivered_at,
-		       read_at, created_at
+		       read_at, created_at, reactions
 		FROM messages
 		WHERE conversation_id = $1
 		ORDER BY %s %s, id %s
@@ -240,6 +251,11 @@ func (r *MessageRepository) Update(ctx context.Context, message *entity.Message)
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal metadata")
 	}
 
+	reactions, err := marshalReactions(message.Reactions)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to marshal reactions")
+	}
+
 	query := `
 		UPDATE messages SET
 			content_type = $1,
@@ -250,8 +266,9 @@ func (r *MessageRepository) Update(ctx context.Context, message *entity.Message)
 			error_message = $6,
 			sent_at = $7,
 			delivered_at = $8,
-			read_at = $9
-		WHERE id = $10
+			read_at = $9,
+			reactions = $10
+		WHERE id = $11
 	`
 
 	result, err := r.db.Pool.Exec(ctx, query,
@@ -264,6 +281,7 @@ func (r *MessageRepository) Update(ctx context.Context, message *entity.Message)
 		message.SentAt,
 		message.DeliveredAt,
 		message.ReadAt,
+		reactions,
 		message.ID,
 	)
 
@@ -512,13 +530,13 @@ func (r *MessageRepository) FindAttachmentsByMessage(ctx context.Context, messag
 func (r *MessageRepository) scanMessage(row pgx.Row) (*entity.Message, error) {
 	var m entity.Message
 	var senderID, externalID, errorMessage *string
-	var metadata []byte
+	var metadata, reactions []byte
 	var senderType, contentType, status string
 
 	err := row.Scan(
 		&m.ID, &m.ConversationID, &senderType, &senderID, &contentType, &m.Content,
 		&metadata, &status, &externalID, &errorMessage, &m.SentAt, &m.DeliveredAt,
-		&m.ReadAt, &m.CreatedAt,
+		&m.ReadAt, &m.CreatedAt, &reactions,
 	)
 	if err != nil {
 		return nil, err
@@ -542,6 +560,10 @@ func (r *MessageRepository) scanMessage(row pgx.Row) (*entity.Message, error) {
 		m.Metadata = make(map[string]string)
 	}
 
+	if err := json.Unmarshal(reactions, &m.Reactions); err != nil {
+		m.Reactions = nil
+	}
+
 	return &m, nil
 }
 
@@ -549,13 +571,13 @@ func (r *MessageRepository) scanMessage(row pgx.Row) (*entity.Message, error) {
 func (r *MessageRepository) scanMessageFromRows(rows pgx.Rows) (*entity.Message, error) {
 	var m entity.Message
 	var senderID, externalID, errorMessage *string
-	var metadata []byte
+	var metadata, reactions []byte
 	var senderType, contentType, status string
 
 	err := rows.Scan(
 		&m.ID, &m.ConversationID, &senderType, &senderID, &contentType, &m.Content,
 		&metadata, &status, &externalID, &errorMessage, &m.SentAt, &m.DeliveredAt,
-		&m.ReadAt, &m.CreatedAt,
+		&m.ReadAt, &m.CreatedAt, &reactions,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan message")
@@ -579,10 +601,24 @@ func (r *MessageRepository) scanMessageFromRows(rows pgx.Rows) (*entity.Message,
 		m.Metadata = make(map[string]string)
 	}
 
+	if err := json.Unmarshal(reactions, &m.Reactions); err != nil {
+		m.Reactions = nil
+	}
+
 	return &m, nil
 }
 
 // Helper functions
+
+// marshalReactions serializes a message's reactions into a JSONB payload. A nil
+// slice is stored as an empty JSON array ("[]") so the column's NOT NULL
+// DEFAULT '[]' contract holds and reads never see a SQL NULL.
+func marshalReactions(reactions []entity.Reaction) ([]byte, error) {
+	if reactions == nil {
+		reactions = []entity.Reaction{}
+	}
+	return json.Marshal(reactions)
+}
 
 func nullString(s string) *string {
 	if s == "" {

@@ -217,6 +217,17 @@ func (s *MessageService) SendReaction(ctx context.Context, conversationID, messa
 		return errors.New(errors.ErrCodeConversationNotFound, "conversation not found")
 	}
 
+	// Persist the reaction so the UI reflects it after refetch. An empty emoji
+	// removes the sender's existing reaction; otherwise it is added/replaced.
+	if emoji == "" {
+		message.RemoveReaction(senderID)
+	} else {
+		message.AddReaction(senderID, emoji)
+	}
+	if err := s.messageRepo.Update(ctx, message); err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to persist reaction")
+	}
+
 	// Publish reaction event to NATS for the adapter to send
 	if s.producer != nil {
 		event := &nats.Event{
