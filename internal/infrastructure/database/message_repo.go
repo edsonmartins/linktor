@@ -194,16 +194,22 @@ func (r *MessageRepository) FindByConversation(ctx context.Context, conversation
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to count messages")
 	}
 
-	// Get messages
+	// Get messages. The `id` tiebreaker is essential: inbound messages inherit
+	// the provider timestamp at second precision, so several messages sent in the
+	// same second share an identical created_at. Without a deterministic secondary
+	// key Postgres returns tied rows in an arbitrary order that can change between
+	// refetches — which made the same message jump around the thread on every
+	// realtime refetch. Ordering by id (same direction) makes the order stable.
+	dir := sanitizeDirection(params.SortDir)
 	query := fmt.Sprintf(`
 		SELECT id, conversation_id, sender_type, sender_id, content_type, content,
 		       metadata, status, external_id, error_message, sent_at, delivered_at,
 		       read_at, created_at
 		FROM messages
 		WHERE conversation_id = $1
-		ORDER BY %s %s
+		ORDER BY %s %s, id %s
 		LIMIT $2 OFFSET $3
-	`, sanitizeColumn(params.SortBy, "created_at"), sanitizeDirection(params.SortDir))
+	`, sanitizeColumn(params.SortBy, "created_at"), dir, dir)
 
 	rows, err := r.db.Pool.Query(ctx, query, conversationID, params.Limit(), params.Offset())
 	if err != nil {
