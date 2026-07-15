@@ -7,9 +7,8 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'Linktor Admin',
   description: 'Linktor - Multichannel Messaging Platform Admin Panel',
-  icons: {
-    icon: '/favicon.ico',
-  },
+  // Favicon/apple-icon are provided by the App Router file convention
+  // (src/app/icon.png + src/app/apple-icon.png), so no manual icons entry.
 }
 
 export default async function RootLayout({
