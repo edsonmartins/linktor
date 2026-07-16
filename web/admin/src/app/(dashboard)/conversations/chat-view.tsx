@@ -146,8 +146,8 @@ function MessageSourceBadge({ source, isImported, isOwn }: MessageSourceBadgePro
 }
 
 /**
- * Renders a single message attachment: an inline preview for images, a
- * downloadable chip for everything else.
+ * Renders a single message attachment: an inline preview for images, an inline
+ * player for video/audio, and a downloadable chip for everything else.
  */
 function MessageAttachmentView({ attachment }: { attachment: MessageAttachment }) {
   if (attachment.type === 'image') {
@@ -161,6 +161,21 @@ function MessageAttachmentView({ attachment }: { attachment: MessageAttachment }
         />
       </a>
     )
+  }
+
+  if (attachment.type === 'video') {
+    return (
+      <video
+        src={attachment.url}
+        controls
+        preload="metadata"
+        className="max-h-60 max-w-full rounded-md"
+      />
+    )
+  }
+
+  if (attachment.type === 'audio') {
+    return <audio src={attachment.url} controls preload="metadata" className="max-w-full" />
   }
 
   return (
