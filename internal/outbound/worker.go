@@ -60,9 +60,12 @@ func (w *Worker) logActivity(ctx context.Context, level entity.LogLevel, raw *na
 	if w.logs == nil {
 		return
 	}
+	// Routing facts only — never the message body. "to" is the destination
+	// contact; the origin is this channel.
 	meta := map[string]string{
 		"message_id":   raw.ID,
 		"channel_type": raw.ChannelType,
+		"direction":    "outbound",
 	}
 	if msg != nil && msg.To != "" {
 		meta["to"] = msg.To
