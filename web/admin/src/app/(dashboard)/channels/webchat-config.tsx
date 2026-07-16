@@ -34,11 +34,13 @@ import type { Channel } from '@/types'
 const webchatConfigSchema = z.object({
   name: z.string().min(1, 'Channel name is required'),
   // Appearance
+  widget_title: z.string().optional(),
   primary_color: z.string(),
   text_color: z.string(),
   position: z.enum(['bottom-right', 'bottom-left']),
   // Messages
   welcome_message: z.string().optional(),
+  offline_message: z.string().optional(),
   placeholder_text: z.string().optional(),
   // Behavior
   auto_open: z.boolean(),
@@ -94,10 +96,17 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
     resolver: zodResolver(webchatConfigSchema),
     defaultValues: {
       name: channel?.name || '',
-      primary_color: (channel?.config?.primary_color as string) || '#6366f1',
+      widget_title: (channel?.config?.widget_title as string) || '',
+      // Read the canonical `widget_color` (what the backend/widget consume),
+      // falling back to the legacy `primary_color` key for older channels.
+      primary_color:
+        (channel?.config?.widget_color as string) ||
+        (channel?.config?.primary_color as string) ||
+        '#6366f1',
       text_color: (channel?.config?.text_color as string) || '#ffffff',
       position: (channel?.config?.position as 'bottom-right' | 'bottom-left') || 'bottom-right',
       welcome_message: (channel?.config?.welcome_message as string) || '',
+      offline_message: (channel?.config?.offline_message as string) || '',
       placeholder_text: (channel?.config?.placeholder_text as string) || 'Type a message...',
       auto_open: toBoolean(channel?.config?.auto_open, false),
       auto_open_delay: toNumber(channel?.config?.auto_open_delay, 3),
@@ -109,6 +118,8 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
   const primaryColor = watch('primary_color')
   const position = watch('position')
   const autoOpen = watch('auto_open')
+  const widgetTitle = watch('widget_title')
+  const placeholderText = watch('placeholder_text')
 
   const onSubmit = async (data: WebchatConfigForm) => {
     setIsSubmitting(true)
@@ -118,10 +129,15 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
         name: data.name,
         type: 'webchat',
         config: {
-          primary_color: data.primary_color,
+          // Canonical keys consumed by the backend adapter (ParseConfig) and
+          // delivered to the widget via GET /webchat/:id/config.
+          widget_title: data.widget_title || '',
+          widget_color: data.primary_color,
+          welcome_message: data.welcome_message || '',
+          offline_message: data.offline_message || '',
+          // Client-side widget options, carried into the embed snippet.
           text_color: data.text_color,
           position: data.position,
-          welcome_message: data.welcome_message || '',
           placeholder_text: data.placeholder_text || '',
           auto_open: String(data.auto_open),
           auto_open_delay: String(data.auto_open_delay),
@@ -161,13 +177,26 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
   // Canonical widget embed snippet. The loader is served from the API origin at
   // /widget/v1/linktor.js and both the script src and baseUrl point there — the
   // widget appends /api/v1/... and /ws/... itself, so baseUrl carries no suffix.
-  const buildEmbedCode = (channelId: string) => `<script>
+  // The init options mirror the configured appearance/behavior so the snippet is
+  // self-contained (JSON.stringify keeps values safely quoted).
+  const buildEmbedCode = (channelId: string) => {
+    const opts: string[] = [
+      `channelId: ${JSON.stringify(channelId)}`,
+      `baseUrl: ${JSON.stringify(WEBHOOK_BASE_URL)}`,
+      `position: ${JSON.stringify(position === 'bottom-left' ? 'left' : 'right')}`,
+    ]
+    if (autoOpen) opts.push('autoOpen: true')
+    if (widgetTitle) opts.push(`title: ${JSON.stringify(widgetTitle)}`)
+    if (primaryColor) opts.push(`primaryColor: ${JSON.stringify(primaryColor)}`)
+    if (placeholderText) opts.push(`labels: { inputPlaceholder: ${JSON.stringify(placeholderText)} }`)
+    return `<script>
   (function(l,i,n,k,t,o,r){l['LinktorObject']=t;l[t]=l[t]||function(){
     (l[t].q=l[t].q||[]).push(arguments)};o=i.createElement(n);
     r=i.getElementsByTagName(n)[0];o.async=1;o.src=k;r.parentNode.insertBefore(o,r);
   })(window,document,'script','${WEBHOOK_BASE_URL}/widget/v1/linktor.js','linktor');
-  linktor('init', { channelId: '${channelId}', baseUrl: '${WEBHOOK_BASE_URL}' });
+  linktor('init', { ${opts.join(', ')} });
 </script>`
+  }
 
   const copyEmbedCode = () => {
     navigator.clipboard.writeText(buildEmbedCode(channel?.id || '{CHANNEL_ID}'))
@@ -209,6 +238,15 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
               <CardDescription>{t('customizeWidget')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="widget_title">{t('widgetTitle')}</Label>
+                <Input
+                  id="widget_title"
+                  placeholder={t('widgetTitlePlaceholder')}
+                  {...register('widget_title')}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="primary_color">{t('primaryColor')}</Label>
@@ -267,6 +305,15 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
                   id="welcome_message"
                   placeholder={t('welcomeMessagePlaceholder')}
                   {...register('welcome_message')}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="offline_message">{t('offlineMessage')}</Label>
+                <Textarea
+                  id="offline_message"
+                  placeholder={t('offlineMessagePlaceholder')}
+                  {...register('offline_message')}
                 />
               </div>
 
@@ -393,6 +440,25 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
               <p className="text-sm text-muted-foreground">
                 {t('embedCodePlacement', { tag: '</body>' })}
               </p>
+
+              <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
+                <p className="text-sm font-medium">{t('embedFrameworks')}</p>
+                <p className="text-sm text-muted-foreground">{t('embedFrameworksDesc')}</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <code className="text-xs bg-background rounded px-1.5 py-0.5 border">@linktor/react-webchat</code>
+                  <code className="text-xs bg-background rounded px-1.5 py-0.5 border">@linktor/vue-webchat</code>
+                  <code className="text-xs bg-background rounded px-1.5 py-0.5 border">@linktor/angular-webchat</code>
+                </div>
+                <a
+                  href="https://github.com/edsonmartins/linktor-webchat-sdk/tree/main/examples"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline pt-1"
+                >
+                  <Code className="h-3.5 w-3.5" />
+                  {t('embedViewExamples')}
+                </a>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
