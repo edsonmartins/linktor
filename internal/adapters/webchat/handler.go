@@ -371,7 +371,10 @@ func (h *Handler) GetWidgetConfig(c *gin.Context) {
 		return
 	}
 
-	config := h.adapter.GetConfig()
+	// Render this channel's own settings, falling back to defaults for any
+	// unset key. Previously this returned the adapter's global config, so every
+	// channel showed identical widget branding.
+	config := ParseConfig(channel.Config)
 
 	c.JSON(http.StatusOK, gin.H{
 		"channel_id":        channel.ID,

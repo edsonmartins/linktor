@@ -83,7 +83,17 @@ func (a *Adapter) Initialize(config map[string]string) error {
 	}
 
 	// Parse configuration
-	a.config = &Config{
+	a.config = ParseConfig(config)
+
+	return nil
+}
+
+// ParseConfig builds a widget Config from a raw channel config map, applying
+// the same defaults used at initialization. It is exported so per-channel
+// endpoints (e.g. GetWidgetConfig) can render a specific channel's settings
+// instead of the adapter's global defaults.
+func ParseConfig(config map[string]string) *Config {
+	return &Config{
 		WidgetTitle:      getOrDefault(config, "widget_title", "Chat with us"),
 		WidgetColor:      getOrDefault(config, "widget_color", "#007bff"),
 		WelcomeMessage:   getOrDefault(config, "welcome_message", "Hello! How can we help you today?"),
@@ -93,8 +103,6 @@ func (a *Adapter) Initialize(config map[string]string) error {
 		RequireEmail:     config["require_email"] == "true",
 		RequireName:      config["require_name"] == "true",
 	}
-
-	return nil
 }
 
 // Connect starts the WebSocket hub
