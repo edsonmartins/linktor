@@ -829,7 +829,7 @@ func main() {
 			inboundMeta := map[string]string{"channel_type": string(msg.ChannelType)}
 			// Re-host any inline (base64) media to the object store so the chat
 			// gets a real <img src> instead of an empty URL (broken image).
-			rehostInboundMedia(ctx, mediaStore, msg)
+			rehostInboundMedia(ctx, mediaStore, channelRepo, msg)
 			out, err := receiveMessageUC.Execute(ctx, msg)
 			if err != nil {
 				if !isRetryableInboundError(err) {
