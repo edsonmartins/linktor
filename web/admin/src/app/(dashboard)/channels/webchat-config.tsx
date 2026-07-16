@@ -11,7 +11,8 @@ import {
   Loader2,
   Code,
   Palette,
-  MessageSquare,
+  X,
+  Send,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -120,6 +121,8 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
   const autoOpen = watch('auto_open')
   const widgetTitle = watch('widget_title')
   const placeholderText = watch('placeholder_text')
+  const textColor = watch('text_color')
+  const welcomeMessage = watch('welcome_message')
 
   const onSubmit = async (data: WebchatConfigForm) => {
     setIsSubmitting(true)
@@ -334,15 +337,44 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
               <CardTitle className="text-base">{t('preview')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="relative h-64 bg-muted rounded-lg overflow-hidden">
+              <div className="relative h-80 bg-muted rounded-lg overflow-hidden">
+                {/* Live widget preview — reflects the configured color, title,
+                    welcome message and input placeholder. */}
                 <div
-                  className={`absolute bottom-4 ${position === 'bottom-right' ? 'right-4' : 'left-4'}`}
+                  className={`absolute bottom-4 flex w-[280px] max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-xl bg-white shadow-xl ${
+                    position === 'bottom-right' ? 'right-4' : 'left-4'
+                  }`}
+                  style={{ height: '272px' }}
                 >
                   <div
-                    className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg cursor-pointer"
-                    style={{ backgroundColor: primaryColor }}
+                    className="flex items-center justify-between px-4 py-3"
+                    style={{ backgroundColor: primaryColor, color: textColor }}
                   >
-                    <MessageSquare className="h-6 w-6 text-white" />
+                    <div>
+                      <div className="text-sm font-semibold leading-tight">
+                        {widgetTitle || 'Chat'}
+                      </div>
+                      <div className="text-[11px] opacity-90">Online</div>
+                    </div>
+                    <X className="h-4 w-4 shrink-0" />
+                  </div>
+
+                  <div className="flex-1 space-y-2 overflow-hidden bg-white p-3">
+                    <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-xs text-foreground">
+                      {welcomeMessage || t('welcomeMessagePlaceholder')}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 border-t p-2">
+                    <div className="flex-1 truncate rounded-full border px-3 py-1.5 text-xs text-muted-foreground">
+                      {placeholderText || t('inputPlaceholderDefault')}
+                    </div>
+                    <div
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      <Send className="h-3.5 w-3.5 text-white" />
+                    </div>
                   </div>
                 </div>
               </div>
