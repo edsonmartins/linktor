@@ -826,7 +826,7 @@ func main() {
 		inboundLogger := channelActivityLogger{svc: observabilityService, source: entity.LogSourceWebhook}
 		if err := consumer.SubscribeAllInbound(ctx, func(ctx context.Context, msg *nats.InboundMessage) error {
 			start := time.Now()
-			inboundMeta := map[string]string{"channel_type": string(msg.ChannelType)}
+			inboundMeta := inboundLogMeta(msg)
 			// Re-host any inline (base64) media to the object store so the chat
 			// gets a real <img src> instead of an empty URL (broken image).
 			rehostInboundMedia(ctx, mediaStore, channelRepo, msg)
