@@ -78,8 +78,6 @@ import type {
   User as AppUser,
 } from '@/types'
 
-const QUICK_REACTIONS = ['👍', '❤️', '👀']
-
 /**
  * Message Status Icon
  */
@@ -183,14 +181,9 @@ function MessageAttachmentView({ attachment }: { attachment: MessageAttachment }
 interface MessageBubbleProps {
   message: Message
   isOwn: boolean
-  currentUserID?: string
-  onReact: (messageID: string, emoji: string) => void
-  isReacting: boolean
 }
 
-function MessageBubble({ message, isOwn, currentUserID, onReact, isReacting }: MessageBubbleProps) {
-  const ownReaction = message.reactions?.find((reaction) => reaction.user_id === currentUserID)?.emoji
-
+function MessageBubble({ message, isOwn }: MessageBubbleProps) {
   return (
     <div
       className={cn(
@@ -204,10 +197,10 @@ function MessageBubble({ message, isOwn, currentUserID, onReact, isReacting }: M
           size="sm"
         />
       )}
-      <div className={cn('space-y-1', isOwn && 'items-end')}>
+      <div className={cn('space-y-0.5', isOwn && 'items-end')}>
         <div
           className={cn(
-            'space-y-2 rounded-lg px-3 py-2',
+            'space-y-2 rounded-lg px-3 py-1.5',
             isOwn ? 'message-outgoing' : 'message-incoming'
           )}
         >
@@ -221,24 +214,6 @@ function MessageBubble({ message, isOwn, currentUserID, onReact, isReacting }: M
           {message.content && (
             <p className="text-sm whitespace-pre-wrap">{message.content}</p>
           )}
-        </div>
-        <div className={cn('flex flex-wrap items-center gap-1', isOwn && 'justify-end')}>
-          {QUICK_REACTIONS.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              className={cn(
-                'rounded-full border px-2 py-0.5 text-xs transition-colors',
-                ownReaction === emoji
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-secondary'
-              )}
-              disabled={isReacting}
-              onClick={() => onReact(message.id, ownReaction === emoji ? '' : emoji)}
-            >
-              {emoji}
-            </button>
-          ))}
         </div>
         {message.reactions && message.reactions.length > 0 && (
           <div className={cn('flex flex-wrap items-center gap-1', isOwn && 'justify-end')}>
@@ -970,17 +945,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
     },
   })
 
-  const reactToMessage = useMutation({
-    mutationFn: ({ messageID, emoji }: { messageID: string; emoji: string }) =>
-      api.post(`/conversations/${conversationId}/messages/${messageID}/reactions`, { emoji }),
-    onSuccess: () => {
-      invalidateConversation()
-    },
-    onError: (error: Error) => {
-      toast({ title: 'Failed to update reaction', description: error.message, variant: 'error' })
-    },
-  })
-
   // Handle typing indicator
   const handleTyping = useCallback(
     (isTyping: boolean) => {
@@ -1127,7 +1091,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
       )}
 
       <ScrollArea className="flex-1 min-h-0 bg-background">
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-1">
           {/* Date separator */}
           <div className="flex items-center gap-4">
             <Separator className="flex-1" />
@@ -1158,9 +1122,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
                   message.sender_type === 'user' &&
                   message.sender_id === user?.id
                 }
-                currentUserID={user?.id}
-                onReact={(messageID, emoji) => reactToMessage.mutate({ messageID, emoji })}
-                isReacting={reactToMessage.isPending}
               />
             ))
           ) : (
