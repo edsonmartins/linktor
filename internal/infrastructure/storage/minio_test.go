@@ -19,6 +19,7 @@ func TestNewMinIOClient_InvalidEndpoint(t *testing.T) {
 		"test-bucket",
 		"us-east-1",
 		false,
+		"",
 	)
 	assert.Error(t, err)
 }

@@ -3,6 +3,7 @@ package mattermost
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -136,6 +137,11 @@ func (f *fakeStore) Upload(_ context.Context, key string, data []byte, contentTy
 func (f *fakeStore) Delete(_ context.Context, _ string) error { return nil }
 func (f *fakeStore) GetURL(_ context.Context, key string) (string, error) {
 	return "https://store.example/" + key, nil
+}
+
+func (f *fakeStore) Open(_ context.Context, key string) (io.ReadCloser, string, int64, error) {
+	body := "obj:" + key
+	return io.NopCloser(strings.NewReader(body)), "application/octet-stream", int64(len(body)), nil
 }
 
 func TestIngestFilesRehostsToStore(t *testing.T) {

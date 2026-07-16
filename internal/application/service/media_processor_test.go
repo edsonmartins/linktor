@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -35,6 +36,11 @@ func (m *mockStorage) Delete(_ context.Context, _ string) error {
 
 func (m *mockStorage) GetURL(_ context.Context, key string) (string, error) {
 	return "https://cdn.example.com/" + key, nil
+}
+
+func (m *mockStorage) Open(_ context.Context, key string) (io.ReadCloser, string, int64, error) {
+	body := "data:" + key
+	return io.NopCloser(strings.NewReader(body)), "application/octet-stream", int64(len(body)), nil
 }
 
 func TestNewMediaProcessor(t *testing.T) {

@@ -576,6 +576,7 @@ func main() {
 	messageService := service.NewMessageService(messageRepo, conversationRepo, channelRepo, contactRepo, producer)
 	messageHandler := handlers.NewMessageHandler(messageService)
 	attachmentHandler := handlers.NewAttachmentHandler(mediaStore)
+	mediaHandler := handlers.NewMediaHandler(mediaStore)
 
 	// Create flow handler
 	flowHandler := handlers.NewFlowHandler(flowService)
@@ -1044,6 +1045,10 @@ func main() {
 
 		// WebChat widget config (no auth required)
 		api.GET("/webchat/:channelId/config", webchatHandler.GetWidgetConfig)
+
+		// Media proxy (no session): streams stored attachments by opaque key so
+		// message URLs stay stable and never expire (vs presigned S3 links).
+		api.GET("/media/*key", mediaHandler.Serve)
 
 		// Webhook routes (auth via signature verification)
 		webhooks := api.Group("/webhooks")
@@ -1910,6 +1915,7 @@ func buildMediaStore() storageLib.Client {
 			bucket,
 			os.Getenv("MINIO_REGION"),
 			os.Getenv("MINIO_USE_SSL") == "true",
+			mediaPublicBaseURL(),
 		)
 		if err != nil {
 			logger.Warn("Inbound media store: MinIO init failed, falling back: " + err.Error())
