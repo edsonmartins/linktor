@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"mime"
+	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -12,6 +13,18 @@ import (
 	"github.com/msgfy/linktor/internal/infrastructure/storage"
 	"github.com/msgfy/linktor/pkg/logger"
 )
+
+// mediaPublicBaseURL is the public origin the backend is reachable at (e.g.
+// "https://api.linktor.dev"), used to build stable media-proxy URLs. Prefers an
+// explicit MEDIA_PUBLIC_BASE_URL, then the existing BASE_URL (already set to the
+// public API origin in deploys). When empty the store falls back to presigned
+// S3 URLs.
+func mediaPublicBaseURL() string {
+	if v := strings.TrimRight(os.Getenv("MEDIA_PUBLIC_BASE_URL"), "/"); v != "" {
+		return v
+	}
+	return strings.TrimRight(os.Getenv("BASE_URL"), "/")
+}
 
 // rehostInboundMedia turns inbound attachments that carry their bytes inline as
 // base64 (metadata["data"]) into a browser-usable object-store URL.

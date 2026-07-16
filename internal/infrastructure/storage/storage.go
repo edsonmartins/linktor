@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
+	"mime"
 	"os"
 	"path/filepath"
 
@@ -17,6 +19,10 @@ type Client interface {
 	Delete(ctx context.Context, key string) error
 	// GetURL returns the public URL for a given key
 	GetURL(ctx context.Context, key string) (string, error)
+	// Open opens the object for reading, returning its content type and size.
+	// The caller must Close the returned reader. Used by the media proxy so a
+	// stored URL can be served without a (expiring) presigned link.
+	Open(ctx context.Context, key string) (io.ReadCloser, string, int64, error)
 }
 
 // LocalClient stores files on the local filesystem and returns a URL
@@ -68,4 +74,22 @@ func (c *LocalClient) Delete(ctx context.Context, key string) error {
 // GetURL returns the public URL for a given key
 func (c *LocalClient) GetURL(ctx context.Context, key string) (string, error) {
 	return fmt.Sprintf("%s/%s", c.baseURL, key), nil
+}
+
+// Open opens a stored file for reading.
+func (c *LocalClient) Open(ctx context.Context, key string) (io.ReadCloser, string, int64, error) {
+	f, err := os.Open(filepath.Join(c.uploadDir, key))
+	if err != nil {
+		return nil, "", 0, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, "", 0, err
+	}
+	contentType := mime.TypeByExtension(filepath.Ext(key))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return f, contentType, info.Size(), nil
 }
