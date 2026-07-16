@@ -976,6 +976,17 @@ func (h *WebhookHandler) processWhatsAppMessage(ctx context.Context, channel *en
 		metadata["original_type"] = msg.Type
 	}
 
+	// WhatsApp Cloud API delivers media as an opaque media_id, not a fetchable
+	// URL. Resolve+download each with the channel token and re-host to the media
+	// store so the chat can render it (mirrors the Teams/Slack re-host path).
+	for i := range attachments {
+		if mid := attachments[i].Metadata["media_id"]; mid != "" {
+			if url, ok := h.rehostWhatsAppMedia(ctx, channel, mid, attachments[i].MimeType); ok {
+				attachments[i].URL = url
+			}
+		}
+	}
+
 	// Handle reply-to context
 	if msg.Context != nil && msg.Context.ID != "" {
 		metadata["reply_to_id"] = msg.Context.ID
@@ -1354,6 +1365,49 @@ func (h *WebhookHandler) rehostTeamsAttachment(ctx context.Context, channel *ent
 	}
 
 	url, err := h.mediaStore.Upload(dlCtx, inboundMediaKey(teams.ChannelType, channel.ID, att.Name), data, ctype)
+	if err != nil {
+		return "", false
+	}
+	return url, true
+}
+
+// rehostWhatsAppMedia resolves a WhatsApp Cloud API media_id to its temporary
+// Graph URL, downloads the bytes with the channel access token, and stores them
+// in the media store, returning a durable public URL. Best effort: returns
+// ("", false) when no store/token is configured or any step fails, so the
+// caller keeps the original (unusable) media_id reference.
+func (h *WebhookHandler) rehostWhatsAppMedia(ctx context.Context, channel *entity.Channel, mediaID, mimeType string) (string, bool) {
+	if h.mediaStore == nil || mediaID == "" {
+		return "", false
+	}
+	token := channel.Credentials["access_token"]
+	if token == "" {
+		token = channel.Config["access_token"]
+	}
+	if token == "" {
+		return "", false
+	}
+
+	dlCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	client := whatsappofficial.NewClient(&whatsappofficial.Config{AccessToken: token})
+	info, err := client.GetMediaInfo(dlCtx, mediaID)
+	if err != nil || info == nil || info.URL == "" {
+		return "", false
+	}
+	data, ctype, err := client.DownloadMedia(dlCtx, info.URL)
+	if err != nil {
+		return "", false
+	}
+	if ctype == "" {
+		ctype = mimeType
+	}
+	if ctype == "" {
+		ctype = info.MimeType
+	}
+
+	url, err := h.mediaStore.Upload(dlCtx, inboundMediaKey(string(channel.Type), channel.ID, mediaID), data, ctype)
 	if err != nil {
 		return "", false
 	}
@@ -1966,13 +2020,26 @@ func (h *WebhookHandler) processEmailMessage(ctx context.Context, channel *entit
 			}
 		}
 
-		attachments = append(attachments, nats.AttachmentData{
+		ad := nats.AttachmentData{
 			Type:      attType,
 			URL:       att.URL,
 			Filename:  att.Filename,
 			MimeType:  att.ContentType,
 			SizeBytes: att.Size,
-		})
+		}
+		// Inbound mail carries the file inline (no URL). Hand the bytes to the
+		// generic re-host step as base64 so it gets a durable object-store URL;
+		// without this the attachment reaches the chat with an empty URL.
+		if ad.URL == "" && len(att.Content) > 0 {
+			ad.Metadata = map[string]string{
+				"data":          base64.StdEncoding.EncodeToString(att.Content),
+				"data_encoding": "base64",
+			}
+			if ad.SizeBytes == 0 {
+				ad.SizeBytes = int64(len(att.Content))
+			}
+		}
+		attachments = append(attachments, ad)
 	}
 
 	// Build metadata
