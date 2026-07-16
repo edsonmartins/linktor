@@ -28,7 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
-import { api } from '@/lib/api'
+import { api, WEBHOOK_BASE_URL } from '@/lib/api'
 import type { Channel } from '@/types'
 
 const webchatConfigSchema = z.object({
@@ -158,18 +158,19 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
     }
   }
 
-  const copyEmbedCode = () => {
-    const channelId = channel?.id || '{CHANNEL_ID}'
-    const embedCode = `<script>
-  (function(w, d, s, o, f, js, fjs) {
-    w['LinktorWidget'] = o;
-    w[o] = w[o] || function() { (w[o].q = w[o].q || []).push(arguments) };
-    js = d.createElement(s); fjs = d.getElementsByTagName(s)[0];
-    js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'linktor', '${typeof window !== 'undefined' ? window.location.origin : ''}/widget/linktor.js'));
-  linktor('init', { channelId: '${channelId}' });
+  // Canonical widget embed snippet. The loader is served from the API origin at
+  // /widget/v1/linktor.js and both the script src and baseUrl point there — the
+  // widget appends /api/v1/... and /ws/... itself, so baseUrl carries no suffix.
+  const buildEmbedCode = (channelId: string) => `<script>
+  (function(l,i,n,k,t,o,r){l['LinktorObject']=t;l[t]=l[t]||function(){
+    (l[t].q=l[t].q||[]).push(arguments)};o=i.createElement(n);
+    r=i.getElementsByTagName(n)[0];o.async=1;o.src=k;r.parentNode.insertBefore(o,r);
+  })(window,document,'script','${WEBHOOK_BASE_URL}/widget/v1/linktor.js','linktor');
+  linktor('init', { channelId: '${channelId}', baseUrl: '${WEBHOOK_BASE_URL}' });
 </script>`
-    navigator.clipboard.writeText(embedCode)
+
+  const copyEmbedCode = () => {
+    navigator.clipboard.writeText(buildEmbedCode(channel?.id || '{CHANNEL_ID}'))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -376,15 +377,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
             <CardContent className="space-y-4">
               <div className="relative">
                 <pre className="bg-muted p-4 rounded-lg text-xs overflow-x-auto">
-                  <code>{`<script>
-  (function(w, d, s, o, f, js, fjs) {
-    w['LinktorWidget'] = o;
-    w[o] = w[o] || function() { (w[o].q = w[o].q || []).push(arguments) };
-    js = d.createElement(s); fjs = d.getElementsByTagName(s)[0];
-    js.id = o; js.src = f; js.async = 1; fjs.parentNode.insertBefore(js, fjs);
-  }(window, document, 'script', 'linktor', '/widget/linktor.js'));
-  linktor('init', { channelId: '${channel?.id || '{CHANNEL_ID}'}' });
-</script>`}</code>
+                  <code>{buildEmbedCode(channel?.id || '{CHANNEL_ID}')}</code>
                 </pre>
                 <Button
                   type="button"
