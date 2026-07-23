@@ -25,6 +25,10 @@ type cachedSender struct {
 type Resolver struct {
 	channelRepo repository.ChannelRepository
 	factories   map[string]Factory // channelType -> factory
+	// sandboxAllowlist gates delivery on sandbox channels (INV-017). Set at
+	// composition time via SetSandboxAllowlist. When nil, resolving a sandbox
+	// channel FAILS (closed) rather than returning an unguarded sender.
+	sandboxAllowlist AllowlistChecker
 
 	mu    sync.Mutex
 	cache map[string]cachedSender // channelID -> sender
@@ -45,6 +49,12 @@ func NewResolver(channelRepo repository.ChannelRepository) *Resolver {
 // at composition time.
 func (r *Resolver) Register(f Factory) {
 	r.factories[f.ChannelType()] = f
+}
+
+// SetSandboxAllowlist wires the allowlist checker consulted by the sandbox
+// delivery guard. Call once at composition time, before any send.
+func (r *Resolver) SetSandboxAllowlist(c AllowlistChecker) {
+	r.sandboxAllowlist = c
 }
 
 // Supports reports whether a channel type has a registered factory.
@@ -94,6 +104,21 @@ func (r *Resolver) For(ctx context.Context, channelID string) (Sender, error) {
 	sender, err := factory.New(creds)
 	if err != nil {
 		return nil, err
+	}
+
+	// Sandbox channels are wrapped in the delivery guard (INV-017). The guard
+	// holds a REFERENCE to the allowlist checker and queries it on every send,
+	// so caching the wrapped sender below never caches allowlist state — an
+	// allowlist edit takes effect on the next send, not after the cache TTL.
+	// Environment itself is immutable, so a cached guard can never be stale
+	// about which environment the channel is in.
+	if channel.IsSandbox() {
+		if r.sandboxAllowlist == nil {
+			// Fail closed: an unguarded sandbox sender must never exist.
+			return nil, errors.New(errors.ErrCodeInternal,
+				"sandbox channel has no allowlist checker configured; refusing to build sender")
+		}
+		sender = newSandboxGuard(sender, r.sandboxAllowlist, channel.TenantID, channelID, string(channel.Type))
 	}
 
 	r.mu.Lock()

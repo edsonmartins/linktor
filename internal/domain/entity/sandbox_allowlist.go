@@ -42,3 +42,14 @@ func NormalizeE164(raw string) (string, bool) {
 	}
 	return "+" + s, true
 }
+
+// MaskRecipient redacts a recipient identifier for logs, metrics and error
+// messages, keeping only a short prefix and the last two characters. Full
+// recipient numbers must never appear in any observable output (INV-002).
+func MaskRecipient(raw string) string {
+	s := strings.TrimSpace(raw)
+	if len(s) <= 5 {
+		return "****"
+	}
+	return s[:3] + strings.Repeat("*", len(s)-5) + s[len(s)-2:]
+}

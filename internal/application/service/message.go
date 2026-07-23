@@ -40,6 +40,40 @@ type MessageService struct {
 	channelRepo      repository.ChannelRepository
 	contactRepo      repository.ContactRepository
 	producer         nats.Publisher
+	// sandboxAllowlist enables the synchronous sandbox recipient check in Send.
+	// Optional (nil skips the fail-fast; the outbound guard still blocks).
+	sandboxAllowlist repository.SandboxAllowlistRepository
+}
+
+// SetSandboxAllowlist wires the allowlist used for the synchronous sandbox
+// recipient check in Send. Call at composition time.
+func (s *MessageService) SetSandboxAllowlist(repo repository.SandboxAllowlistRepository) {
+	s.sandboxAllowlist = repo
+}
+
+// checkSandboxRecipient rejects a send on a sandbox channel when the resolved
+// recipient is not in the tenant's allowlist, mirroring the authoritative
+// outbound guard so the API caller gets an immediate, explicit error. It fails
+// closed on any uncertainty (no checker wired, non-phone recipient, lookup
+// error) — never by letting the send through.
+func (s *MessageService) checkSandboxRecipient(ctx context.Context, channel *entity.Channel, contact *entity.Contact) error {
+	if s.sandboxAllowlist == nil {
+		return errors.New(errors.ErrCodeInternal,
+			"sandbox channel has no allowlist checker configured; refusing to send")
+	}
+	recipientID := findRecipientForChannel(contact, string(channel.Type))
+	recipient, ok := entity.NormalizeE164(recipientID)
+	if !ok {
+		return errors.Validation("sandbox channel: recipient " + entity.MaskRecipient(recipientID) + " is not a valid E.164 number")
+	}
+	allowed, err := s.sandboxAllowlist.IsAllowed(ctx, channel.TenantID, channel.ID, recipient)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "sandbox allowlist check failed; send withheld")
+	}
+	if !allowed {
+		return errors.Validation("sandbox channel: recipient " + entity.MaskRecipient(recipient) + " is not in the tenant's sandbox allowlist")
+	}
+	return nil
 }
 
 // NewMessageService creates a new message service
@@ -139,6 +173,16 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 	identities, idErr := s.contactRepo.FindIdentitiesByContact(ctx, contact.ID)
 	if idErr == nil {
 		contact.Identities = identities
+	}
+
+	// Sandbox fail-fast (UX only): give the API caller a synchronous error
+	// instead of an async "failed" status. The authoritative guard lives in the
+	// outbound delivery funnel (outbound.sandboxGuard) and still runs for every
+	// path — this check must never be the only barrier.
+	if channel.IsSandbox() {
+		if err := s.checkSandboxRecipient(ctx, channel, contact); err != nil {
+			return nil, err
+		}
 	}
 
 	// Default the content type from the first attachment for attachment-only

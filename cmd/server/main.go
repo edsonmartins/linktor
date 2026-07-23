@@ -396,6 +396,10 @@ func main() {
 	// (decrypted) credentials, driven by a NATS-backed worker. This is what
 	// actually delivers send_message and campaign messages over the Cloud API.
 	outboundResolver := outbound.NewResolver(channelRepo)
+	// Sandbox delivery guard (INV-017): every sandbox channel's sender is
+	// wrapped to consult the recipient allowlist at send time. Without this
+	// wiring the resolver fails closed for sandbox channels.
+	outboundResolver.SetSandboxAllowlist(sandboxAllowlistRepo)
 	outboundResolver.Register(whatsappofficial.NewSenderFactory())
 	outboundResolver.Register(telegram.NewSenderFactory())
 	outboundResolver.Register(sms.NewSenderFactory())
@@ -576,6 +580,9 @@ func main() {
 
 	// Create message service and handler
 	messageService := service.NewMessageService(messageRepo, conversationRepo, channelRepo, contactRepo, producer)
+	// Synchronous sandbox recipient check (UX): the API rejects immediately;
+	// the authoritative guard remains in the outbound delivery funnel.
+	messageService.SetSandboxAllowlist(sandboxAllowlistRepo)
 	messageHandler := handlers.NewMessageHandler(messageService)
 	attachmentHandler := handlers.NewAttachmentHandler(mediaStore)
 	mediaHandler := handlers.NewMediaHandler(mediaStore)
