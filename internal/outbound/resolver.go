@@ -29,6 +29,9 @@ type Resolver struct {
 	// composition time via SetSandboxAllowlist. When nil, resolving a sandbox
 	// channel FAILS (closed) rather than returning an unguarded sender.
 	sandboxAllowlist AllowlistChecker
+	// policies are delivery-policy decorators (INV-015) applied to every built
+	// sender in registration order, inside the sandbox guard.
+	policies []PolicyDecorator
 
 	mu    sync.Mutex
 	cache map[string]cachedSender // channelID -> sender
@@ -55,6 +58,11 @@ func (r *Resolver) Register(f Factory) {
 // delivery guard. Call once at composition time, before any send.
 func (r *Resolver) SetSandboxAllowlist(c AllowlistChecker) {
 	r.sandboxAllowlist = c
+}
+
+// AddPolicy registers a delivery-policy decorator. Call at composition time.
+func (r *Resolver) AddPolicy(d PolicyDecorator) {
+	r.policies = append(r.policies, d)
 }
 
 // Supports reports whether a channel type has a registered factory.
@@ -104,6 +112,12 @@ func (r *Resolver) For(ctx context.Context, channelID string) (Sender, error) {
 	sender, err := factory.New(creds)
 	if err != nil {
 		return nil, err
+	}
+
+	// Delivery policies (INV-015) wrap first so the sandbox guard below stays
+	// outermost: security screening always precedes policy evaluation.
+	for _, decorate := range r.policies {
+		sender = decorate(channel, sender)
 	}
 
 	// Sandbox channels are wrapped in the delivery guard (INV-017). The guard

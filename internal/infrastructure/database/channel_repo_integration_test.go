@@ -374,3 +374,43 @@ func TestConversationEnvironment_RoundTrip(t *testing.T) {
 		t.Fatalf("legacy environment = %q, want production", legacy.Environment)
 	}
 }
+
+// TestMessageRepository_LastInboundAt covers the durable source of the 24h
+// window policy: only contact messages count, and no history returns nil.
+func TestMessageRepository_LastInboundAt(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewPostgresDB(testDBConfig(t))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+	if err := db.RunMigrations(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	repo := NewMessageRepository(db)
+	convID := seedConversation(t, ctx, db)
+
+	last, err := repo.LastInboundAt(ctx, convID)
+	if err != nil {
+		t.Fatalf("LastInboundAt: %v", err)
+	}
+	if last != nil {
+		t.Fatalf("expected nil for a conversation with no inbound, got %v", last)
+	}
+
+	inboundAt := time.Now().Add(-2 * time.Hour).Truncate(time.Millisecond)
+	insertMessage(t, ctx, repo, convID, entity.SenderTypeContact, entity.MessageStatusDelivered, inboundAt)
+	insertMessage(t, ctx, repo, convID, entity.SenderTypeUser, entity.MessageStatusSent, time.Now())
+
+	last, err = repo.LastInboundAt(ctx, convID)
+	if err != nil {
+		t.Fatalf("LastInboundAt: %v", err)
+	}
+	if last == nil {
+		t.Fatal("expected inbound timestamp, got nil")
+	}
+	if !last.Equal(inboundAt) {
+		t.Fatalf("last inbound = %v, want %v (agent message must not count)", last, inboundAt)
+	}
+}

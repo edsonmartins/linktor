@@ -208,6 +208,7 @@ func translate(raw *nats.OutboundMessage) *Message {
 		ID:                  raw.ID,
 		TenantID:            raw.TenantID,
 		ChannelID:           raw.ChannelID,
+		ConversationID:      raw.ConversationID,
 		To:                  raw.RecipientID,
 		CampaignID:          meta["campaign_id"],
 		CampaignRecipientID: meta["campaign_recipient_id"],

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 )
@@ -24,6 +25,12 @@ type MessageRepository interface {
 
 	// FindByConversation finds messages for a conversation with pagination
 	FindByConversation(ctx context.Context, conversationID string, params *ListParams) ([]*entity.Message, int64, error)
+
+	// LastInboundAt returns when the contact last messaged in the conversation
+	// (max created_at with sender_type=contact), or nil if they never did. It
+	// is the durable source of truth for the WhatsApp 24h customer-service
+	// window (INV-015).
+	LastInboundAt(ctx context.Context, conversationID string) (*time.Time, error)
 
 	// Update updates a message
 	Update(ctx context.Context, message *entity.Message) error

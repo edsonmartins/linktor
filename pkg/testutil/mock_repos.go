@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
@@ -520,6 +521,22 @@ func (m *MockMessageRepository) FindByExternalID(ctx context.Context, externalID
 		}
 	}
 	return nil, fmt.Errorf("message not found by external ID: %s", externalID)
+}
+
+func (m *MockMessageRepository) LastInboundAt(ctx context.Context, conversationID string) (*time.Time, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
+	var last *time.Time
+	for _, msg := range m.Messages {
+		if msg.ConversationID == conversationID && msg.SenderType == entity.SenderTypeContact {
+			t := msg.CreatedAt
+			if last == nil || t.After(*last) {
+				last = &t
+			}
+		}
+	}
+	return last, nil
 }
 
 func (m *MockMessageRepository) FindByConversation(ctx context.Context, conversationID string, params *repository.ListParams) ([]*entity.Message, int64, error) {

@@ -197,6 +197,20 @@ func (r *MessageRepository) FindByExternalID(ctx context.Context, externalID str
 }
 
 // FindByConversation finds messages for a conversation with pagination
+// LastInboundAt returns when the contact last messaged in the conversation, or
+// nil if they never did. Durable source for the 24h-window policy (INV-015).
+func (r *MessageRepository) LastInboundAt(ctx context.Context, conversationID string) (*time.Time, error) {
+	var last *time.Time
+	err := r.db.Pool.QueryRow(ctx,
+		`SELECT MAX(created_at) FROM messages WHERE conversation_id = $1 AND sender_type = $2`,
+		conversationID, string(entity.SenderTypeContact),
+	).Scan(&last)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to query last inbound message time")
+	}
+	return last, nil
+}
+
 func (r *MessageRepository) FindByConversation(ctx context.Context, conversationID string, params *repository.ListParams) ([]*entity.Message, int64, error) {
 	// Count total
 	countQuery := `SELECT COUNT(*) FROM messages WHERE conversation_id = $1`

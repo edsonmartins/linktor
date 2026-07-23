@@ -400,6 +400,12 @@ func main() {
 	// wrapped to consult the recipient allowlist at send time. Without this
 	// wiring the resolver fails closed for sandbox channels.
 	outboundResolver.SetSandboxAllowlist(sandboxAllowlistRepo)
+	// WhatsApp 24h customer-service window (INV-015). Two-stage rollout via
+	// LINKTOR_WA_WINDOW_ENFORCEMENT: off | dry_run (default: observe-only, no
+	// behavior change) | enforce (block before the Meta call). Reverting
+	// enforce → dry_run is a config change, no deploy.
+	outboundResolver.AddPolicy(outbound.NewSessionWindowPolicy(
+		outbound.ParsePolicyMode(os.Getenv("LINKTOR_WA_WINDOW_ENFORCEMENT")), messageRepo))
 	outboundResolver.Register(whatsappofficial.NewSenderFactory())
 	outboundResolver.Register(telegram.NewSenderFactory())
 	outboundResolver.Register(sms.NewSenderFactory())
