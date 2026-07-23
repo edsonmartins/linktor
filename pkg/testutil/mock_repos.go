@@ -6,6 +6,7 @@ import (
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/pkg/errors"
 )
 
 // ============================================================================
@@ -812,4 +813,81 @@ func (m *MockChannelRepository) FindCoexistenceChannels(ctx context.Context) ([]
 		}
 	}
 	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// MockSandboxAllowlistRepository
+// ---------------------------------------------------------------------------
+
+// MockSandboxAllowlistRepository is a mock implementation of
+// repository.SandboxAllowlistRepository. IsAllowedCalls counts allowlist
+// consultations so tests can assert the delivery guard queries at send time
+// instead of capturing/caching a result.
+type MockSandboxAllowlistRepository struct {
+	Entries        map[string]*entity.SandboxAllowlistEntry
+	ReturnError    error
+	IsAllowedCalls int
+}
+
+// NewMockSandboxAllowlistRepository creates a new MockSandboxAllowlistRepository.
+func NewMockSandboxAllowlistRepository() *MockSandboxAllowlistRepository {
+	return &MockSandboxAllowlistRepository{Entries: make(map[string]*entity.SandboxAllowlistEntry)}
+}
+
+func (m *MockSandboxAllowlistRepository) Create(ctx context.Context, entry *entity.SandboxAllowlistEntry) error {
+	if m.ReturnError != nil {
+		return m.ReturnError
+	}
+	m.Entries[entry.ID] = entry
+	return nil
+}
+
+func (m *MockSandboxAllowlistRepository) FindByID(ctx context.Context, tenantID, id string) (*entity.SandboxAllowlistEntry, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
+	entry, ok := m.Entries[id]
+	if !ok || entry.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "sandbox allowlist entry not found")
+	}
+	return entry, nil
+}
+
+func (m *MockSandboxAllowlistRepository) FindByTenant(ctx context.Context, tenantID string) ([]*entity.SandboxAllowlistEntry, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
+	var result []*entity.SandboxAllowlistEntry
+	for _, e := range m.Entries {
+		if e.TenantID == tenantID {
+			result = append(result, e)
+		}
+	}
+	return result, nil
+}
+
+func (m *MockSandboxAllowlistRepository) Delete(ctx context.Context, tenantID, id string) error {
+	if m.ReturnError != nil {
+		return m.ReturnError
+	}
+	entry, ok := m.Entries[id]
+	if !ok || entry.TenantID != tenantID {
+		return errors.New(errors.ErrCodeNotFound, "sandbox allowlist entry not found")
+	}
+	delete(m.Entries, id)
+	return nil
+}
+
+func (m *MockSandboxAllowlistRepository) IsAllowed(ctx context.Context, tenantID, channelID, recipient string) (bool, error) {
+	m.IsAllowedCalls++
+	if m.ReturnError != nil {
+		return false, m.ReturnError
+	}
+	for _, e := range m.Entries {
+		if e.TenantID == tenantID && e.Recipient == recipient &&
+			(e.ChannelID == "" || e.ChannelID == channelID) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

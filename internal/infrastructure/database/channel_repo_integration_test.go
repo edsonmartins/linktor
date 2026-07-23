@@ -182,3 +182,127 @@ func TestChannelEnvironment_PreexistingRowsAreProduction(t *testing.T) {
 		t.Fatalf("environment = %q, want production", got.Environment)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Sandbox allowlist repository
+// ---------------------------------------------------------------------------
+
+func TestSandboxAllowlistRepository(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewPostgresDB(testDBConfig(t))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+	if err := db.RunMigrations(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	repo := NewSandboxAllowlistRepository(db)
+	channelRepo := NewChannelRepository(db, nil)
+	tenantA := seedTenant(t, ctx, db)
+	tenantB := seedTenant(t, ctx, db)
+
+	sandboxCh := newTestChannel(tenantA, entity.ChannelEnvironmentSandbox)
+	if err := channelRepo.Create(ctx, sandboxCh); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	otherCh := newTestChannel(tenantA, entity.ChannelEnvironmentSandbox)
+	if err := channelRepo.Create(ctx, otherCh); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+
+	tenantWide := &entity.SandboxAllowlistEntry{
+		ID: uuid.New().String(), TenantID: tenantA,
+		Recipient: "+5544999999999", CreatedAt: time.Now(),
+	}
+	if err := repo.Create(ctx, tenantWide); err != nil {
+		t.Fatalf("create tenant-wide entry: %v", err)
+	}
+	channelScoped := &entity.SandboxAllowlistEntry{
+		ID: uuid.New().String(), TenantID: tenantA, ChannelID: sandboxCh.ID,
+		Recipient: "+5544888888888", CreatedAt: time.Now(),
+	}
+	if err := repo.Create(ctx, channelScoped); err != nil {
+		t.Fatalf("create channel-scoped entry: %v", err)
+	}
+
+	t.Run("duplicate tenant-wide entry conflicts", func(t *testing.T) {
+		dup := &entity.SandboxAllowlistEntry{
+			ID: uuid.New().String(), TenantID: tenantA,
+			Recipient: "+5544999999999", CreatedAt: time.Now(),
+		}
+		err := repo.Create(ctx, dup)
+		if err == nil {
+			t.Fatal("duplicate entry accepted, want conflict")
+		}
+	})
+
+	t.Run("IsAllowed tenant-wide entry covers every channel", func(t *testing.T) {
+		for _, chID := range []string{sandboxCh.ID, otherCh.ID} {
+			allowed, err := repo.IsAllowed(ctx, tenantA, chID, "+5544999999999")
+			if err != nil {
+				t.Fatalf("IsAllowed: %v", err)
+			}
+			if !allowed {
+				t.Fatalf("tenant-wide recipient not allowed on channel %s", chID)
+			}
+		}
+	})
+
+	t.Run("IsAllowed channel-scoped entry covers only its channel", func(t *testing.T) {
+		allowed, err := repo.IsAllowed(ctx, tenantA, sandboxCh.ID, "+5544888888888")
+		if err != nil {
+			t.Fatalf("IsAllowed: %v", err)
+		}
+		if !allowed {
+			t.Fatal("channel-scoped recipient not allowed on its own channel")
+		}
+		allowed, err = repo.IsAllowed(ctx, tenantA, otherCh.ID, "+5544888888888")
+		if err != nil {
+			t.Fatalf("IsAllowed: %v", err)
+		}
+		if allowed {
+			t.Fatal("channel-scoped recipient must not be allowed on another channel")
+		}
+	})
+
+	t.Run("IsAllowed is tenant-scoped", func(t *testing.T) {
+		allowed, err := repo.IsAllowed(ctx, tenantB, sandboxCh.ID, "+5544999999999")
+		if err != nil {
+			t.Fatalf("IsAllowed: %v", err)
+		}
+		if allowed {
+			t.Fatal("another tenant's entry must never authorize a recipient")
+		}
+	})
+
+	t.Run("cross-tenant read and delete are rejected", func(t *testing.T) {
+		if _, err := repo.FindByID(ctx, tenantB, tenantWide.ID); err == nil {
+			t.Fatal("cross-tenant FindByID succeeded, want not-found")
+		}
+		if err := repo.Delete(ctx, tenantB, tenantWide.ID); err == nil {
+			t.Fatal("cross-tenant Delete succeeded, want not-found")
+		}
+		entries, err := repo.FindByTenant(ctx, tenantA)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("entries = %d, want 2 (cross-tenant delete must not remove)", len(entries))
+		}
+	})
+
+	t.Run("delete removes and takes effect on next IsAllowed", func(t *testing.T) {
+		if err := repo.Delete(ctx, tenantA, tenantWide.ID); err != nil {
+			t.Fatalf("delete: %v", err)
+		}
+		allowed, err := repo.IsAllowed(ctx, tenantA, sandboxCh.ID, "+5544999999999")
+		if err != nil {
+			t.Fatalf("IsAllowed: %v", err)
+		}
+		if allowed {
+			t.Fatal("removed recipient still allowed")
+		}
+	})
+}

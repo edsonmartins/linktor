@@ -218,6 +218,7 @@ func main() {
 	roleRepo := database.NewRoleRepository(db)
 	tenantSettingsRepo := database.NewTenantSettingsRepository(db)
 	campaignRepo := database.NewCampaignRepository(db)
+	sandboxAllowlistRepo := database.NewSandboxAllowlistRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
@@ -383,6 +384,7 @@ func main() {
 	assignmentRepo := database.NewAssignmentRepository(db)
 	slaRepo := database.NewSLARepository(db)
 	auditService := service.NewAuditService(auditLogRepo)
+	sandboxAllowlistService := service.NewSandboxAllowlistService(sandboxAllowlistRepo, channelRepo)
 	cannedService := service.NewCannedResponseService(cannedRepo)
 	roleService := service.NewRoleService(roleRepo, redisClient)
 	settingsService := service.NewSettingsService(tenantSettingsRepo)
@@ -622,6 +624,7 @@ func main() {
 
 	// whatomate-inspired handlers
 	auditHandler := handlers.NewAuditHandler(auditService)
+	sandboxAllowlistHandler := handlers.NewSandboxAllowlistHandler(sandboxAllowlistService, auditService)
 	cannedHandler := handlers.NewCannedResponseHandler(cannedService, auditService)
 	roleHandler := handlers.NewRoleHandler(roleService, auditService)
 	settingsHandler := handlers.NewSettingsHandler(settingsService, assignmentService, auditService)
@@ -1486,6 +1489,17 @@ func main() {
 			audit.Use(authMiddleware.RequireRole("admin", "owner"))
 			{
 				audit.GET("", auditHandler.List)
+			}
+
+			// Sandbox recipient allowlist (INV-017). Admin only: the allowlist
+			// is the security boundary keeping synthetic traffic away from real
+			// recipients, so editing it is a privileged operation.
+			sandboxAllowlist := protected.Group("/sandbox/allowlist")
+			sandboxAllowlist.Use(authMiddleware.RequireRole("admin", "owner"))
+			{
+				sandboxAllowlist.GET("", sandboxAllowlistHandler.List)
+				sandboxAllowlist.POST("", sandboxAllowlistHandler.Add)
+				sandboxAllowlist.DELETE("/:id", sandboxAllowlistHandler.Remove)
 			}
 
 			// Bulk campaigns
