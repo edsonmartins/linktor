@@ -277,7 +277,6 @@ CREATE TABLE IF NOT EXISTS channels (
     name VARCHAR(255) NOT NULL,
     type VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'inactive',
-    environment VARCHAR(20) NOT NULL DEFAULT 'production',
     credentials JSONB DEFAULT '{}',
     config JSONB DEFAULT '{}',
     webhook_url VARCHAR(500),
