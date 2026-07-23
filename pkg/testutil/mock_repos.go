@@ -623,6 +623,9 @@ func (m *MockMessageRepository) FindAttachmentsByMessage(ctx context.Context, me
 type MockChannelRepository struct {
 	Channels    map[string]*entity.Channel
 	ReturnError error
+	// UpdateCalls counts Update invocations so tests can assert a rejected
+	// operation never reached the repository.
+	UpdateCalls int
 }
 
 // NewMockChannelRepository creates a new MockChannelRepository
@@ -717,6 +720,7 @@ func (m *MockChannelRepository) FindActiveByTenant(ctx context.Context, tenantID
 }
 
 func (m *MockChannelRepository) Update(ctx context.Context, channel *entity.Channel) error {
+	m.UpdateCalls++
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}

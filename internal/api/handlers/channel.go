@@ -37,9 +37,13 @@ func NewChannelHandler(channelService *service.ChannelService, producer nats.Pub
 
 // CreateChannelRequest represents a create channel request
 type CreateChannelRequest struct {
-	Type        string            `json:"type" binding:"required"`
-	Name        string            `json:"name" binding:"required"`
-	Identifier  string            `json:"identifier"`
+	Type       string `json:"type" binding:"required"`
+	Name       string `json:"name" binding:"required"`
+	Identifier string `json:"identifier"`
+	// Environment is "production" (default when omitted) or "sandbox" and is
+	// immutable after creation. Sandbox channels additionally require
+	// credentials["credential_environment"]="sandbox" (see ChannelService).
+	Environment string            `json:"environment"`
 	Config      map[string]string `json:"config"`
 	Credentials map[string]string `json:"credentials"`
 	// WebhookURL is the external consumer endpoint (e.g. DeskLenz) Linktor
@@ -111,6 +115,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		Type:        req.Type,
 		Name:        req.Name,
 		Identifier:  req.Identifier,
+		Environment: req.Environment,
 		Config:      req.Config,
 		Credentials: req.Credentials,
 		WebhookURL:  req.WebhookURL,
@@ -343,6 +348,11 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		Config:      req.Config,
 		Credentials: req.Credentials,
 		WebhookURL:  &req.WebhookURL,
+	}
+	if req.Environment != "" {
+		// Passed through so the service can reject an environment change
+		// explicitly (immutable after creation) instead of ignoring it.
+		input.Environment = &req.Environment
 	}
 
 	channel, err := h.channelService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
