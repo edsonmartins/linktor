@@ -123,8 +123,8 @@ func TestChannel_MarshalJSON_RedactsSecrets(t *testing.T) {
 	ch.Config["access_token"] = "EAAG-super-secret"
 	ch.Config["app_secret"] = "app-secret-value"
 	ch.Config["widget_secret"] = "widget-secret-value"
-	ch.Config["phone_number_id"] = "123456"   // non-secret, must stay
-	ch.Config["empty_secret_token"] = ""       // empty sensitive-ish key stays as-is
+	ch.Config["phone_number_id"] = "123456" // non-secret, must stay
+	ch.Config["empty_secret_token"] = ""    // empty sensitive-ish key stays as-is
 	ch.Credentials["api_key"] = "must-not-leak"
 
 	raw, err := json.Marshal(ch)
@@ -142,4 +142,39 @@ func TestChannel_MarshalJSON_RedactsSecrets(t *testing.T) {
 
 	// The in-memory struct is untouched (redaction happens on a copy).
 	assert.Equal(t, "EAAG-super-secret", ch.Config["access_token"])
+}
+
+func TestNewChannel_DefaultsToProductionEnvironment(t *testing.T) {
+	ch := NewChannel("tenant1", ChannelTypeWhatsApp, "My Channel", "+5511999999999")
+	assert.Equal(t, ChannelEnvironmentProduction, ch.Environment)
+	assert.False(t, ch.IsSandbox())
+}
+
+func TestParseChannelEnvironment(t *testing.T) {
+	tests := []struct {
+		input string
+		want  ChannelEnvironment
+		ok    bool
+	}{
+		{"", ChannelEnvironmentProduction, true},
+		{"production", ChannelEnvironmentProduction, true},
+		{"sandbox", ChannelEnvironmentSandbox, true},
+		{"staging", "", false},
+		{"SANDBOX", "", false},
+		{"prod", "", false},
+	}
+	for _, tt := range tests {
+		got, ok := ParseChannelEnvironment(tt.input)
+		assert.Equal(t, tt.ok, ok, "input %q", tt.input)
+		assert.Equal(t, tt.want, got, "input %q", tt.input)
+	}
+}
+
+func TestChannel_IsSandbox(t *testing.T) {
+	ch := NewChannel("tenant1", ChannelTypeWhatsAppOfficial, "Sandbox", "+5511999999999")
+	ch.Environment = ChannelEnvironmentSandbox
+	assert.True(t, ch.IsSandbox())
+
+	// Zero-value / legacy struct without environment is production.
+	assert.False(t, (&Channel{}).IsSandbox())
 }

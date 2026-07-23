@@ -67,6 +67,33 @@ const (
 	ChannelTypeDireto             ChannelType = "direto"
 )
 
+// ChannelEnvironment tells whether a channel instance carries real customer
+// traffic or synthetic homologation traffic. It is a policy attribute consulted
+// by enforcement points (sandbox delivery guard, retention, export blocking);
+// it never participates in send routing, which stays keyed by channel ID.
+// The value is immutable after creation: every guarantee derived from it
+// (allowlist, marking, purge) assumes a channel cannot switch environments.
+type ChannelEnvironment string
+
+const (
+	ChannelEnvironmentProduction ChannelEnvironment = "production"
+	ChannelEnvironmentSandbox    ChannelEnvironment = "sandbox"
+)
+
+// ParseChannelEnvironment validates and normalizes an environment value.
+// Empty input means the caller did not choose, which defaults to production so
+// existing channels and callers keep their behavior.
+func ParseChannelEnvironment(v string) (ChannelEnvironment, bool) {
+	switch ChannelEnvironment(v) {
+	case "":
+		return ChannelEnvironmentProduction, true
+	case ChannelEnvironmentProduction, ChannelEnvironmentSandbox:
+		return ChannelEnvironment(v), true
+	default:
+		return "", false
+	}
+}
+
 // ConnectionStatus represents the connection status of a channel
 type ConnectionStatus string
 
@@ -103,18 +130,19 @@ const (
 
 // Channel represents a communication channel
 type Channel struct {
-	ID               string            `json:"id"`
-	TenantID         string            `json:"tenant_id"`
-	Type             ChannelType       `json:"type"`
-	Name             string            `json:"name"`
-	Identifier       string            `json:"identifier,omitempty"`
-	Enabled          bool              `json:"enabled"`           // Whether channel is enabled in system
-	ConnectionStatus ConnectionStatus  `json:"connection_status"` // Connection state (connected/disconnected/etc)
-	Config           map[string]string `json:"config,omitempty"`
-	Credentials      map[string]string `json:"-"` // Never expose credentials
-	WebhookURL       string            `json:"webhook_url,omitempty"`
-	CreatedAt        time.Time         `json:"created_at"`
-	UpdatedAt        time.Time         `json:"updated_at"`
+	ID               string             `json:"id"`
+	TenantID         string             `json:"tenant_id"`
+	Type             ChannelType        `json:"type"`
+	Name             string             `json:"name"`
+	Identifier       string             `json:"identifier,omitempty"`
+	Enabled          bool               `json:"enabled"`           // Whether channel is enabled in system
+	ConnectionStatus ConnectionStatus   `json:"connection_status"` // Connection state (connected/disconnected/etc)
+	Environment      ChannelEnvironment `json:"environment"`       // Immutable after creation; see ChannelEnvironment
+	Config           map[string]string  `json:"config,omitempty"`
+	Credentials      map[string]string  `json:"-"` // Never expose credentials
+	WebhookURL       string             `json:"webhook_url,omitempty"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
 
 	// WhatsApp Coexistence fields
 	IsCoexistence     bool              `json:"is_coexistence,omitempty"`     // Whether channel uses Business App + Cloud API
@@ -163,6 +191,7 @@ func NewChannel(tenantID string, channelType ChannelType, name, identifier strin
 		Identifier:       identifier,
 		Enabled:          true,                         // Enabled by default
 		ConnectionStatus: ConnectionStatusDisconnected, // Start disconnected
+		Environment:      ChannelEnvironmentProduction,
 		Config:           make(map[string]string),
 		Credentials:      make(map[string]string),
 		CreatedAt:        now,
@@ -173,6 +202,12 @@ func NewChannel(tenantID string, channelType ChannelType, name, identifier strin
 // IsEnabled returns true if the channel is enabled
 func (c *Channel) IsEnabled() bool {
 	return c.Enabled
+}
+
+// IsSandbox returns true if the channel carries synthetic homologation traffic.
+// A missing environment (legacy row or zero-value struct) is production.
+func (c *Channel) IsSandbox() bool {
+	return c.Environment == ChannelEnvironmentSandbox
 }
 
 // IsConnected returns true if the channel is connected
