@@ -245,6 +245,7 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 			TenantID:       conversation.TenantID,
 			ChannelID:      conversation.ChannelID,
 			ChannelType:    string(channel.Type),
+			Environment:    string(channel.Environment),
 			ConversationID: conversation.ID,
 			ContactID:      contact.ID,
 			RecipientID:    recipientID,

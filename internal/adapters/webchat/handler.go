@@ -335,13 +335,20 @@ func (h *Handler) getOrCreateConversation(ctx context.Context, tenantID, channel
 		return conversation, nil
 	}
 
-	// Create new conversation
+	// Create new conversation, denormalizing the channel environment at birth
+	// (INV-018). Best-effort lookup: an unmarked row reads as production, which
+	// only matters if webchat ever gains sandbox semantics.
+	environment := entity.ChannelEnvironmentProduction
+	if ch, chErr := h.channelRepo.FindByID(ctx, channelID); chErr == nil {
+		environment = ch.Environment
+	}
 	now := time.Now()
 	conversation = &entity.Conversation{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
 		ChannelID:   channelID,
 		ContactID:   contactID,
+		Environment: environment,
 		Status:      entity.ConversationStatusOpen,
 		Priority:    entity.ConversationPriorityNormal,
 		UnreadCount: 0,

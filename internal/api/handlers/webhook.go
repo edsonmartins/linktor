@@ -64,6 +64,15 @@ func (h *WebhookHandler) publishInbound(ctx context.Context, inbound *nats.Inbou
 	if h.producer == nil {
 		return fmt.Errorf("message queue unavailable")
 	}
+	// Stamp the channel environment on the envelope (INV-018) at this single
+	// choke point instead of at every provider handler. Best-effort: on lookup
+	// failure the field stays empty and downstream still derives the
+	// authoritative value from the channel (ReceiveMessageUseCase re-resolves it).
+	if inbound.Environment == "" && inbound.ChannelID != "" && h.channelRepo != nil {
+		if ch, err := h.channelRepo.FindByID(ctx, inbound.ChannelID); err == nil {
+			inbound.Environment = string(ch.Environment)
+		}
+	}
 	return h.producer.PublishInbound(ctx, inbound)
 }
 

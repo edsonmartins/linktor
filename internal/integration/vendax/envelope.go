@@ -13,6 +13,11 @@ type LinktorEnvelope struct {
 	MessageType    string `json:"messageType"`
 	Content        string `json:"content"`
 	IdempotencyKey string `json:"idempotencyKey"`
+	// Environment ("production"|"sandbox") marca origem sintética (INV-018).
+	// Campo ADITIVO ao contrato — precisa entrar no DTO Java do Core antes do
+	// freeze do plano de integração (status PROPOSTA em 2026-07-23); ausência
+	// significa production para consumidores antigos.
+	Environment string `json:"environment,omitempty"`
 }
 
 // LinktorOutbound é o envelope que o Core publica em tenant.{id}.core.outbound e o bridge consome
@@ -55,6 +60,7 @@ func buildInboundEnvelope(ev messageReceivedEvent, vendorID, customerID string) 
 		MessageType:    coreMessageType(entity.ContentType(p.ContentType)), // ADR-010
 		Content:        content,
 		IdempotencyKey: p.MessageID,
+		Environment:    p.Environment,
 	}
 }
 
@@ -70,6 +76,7 @@ type messageReceivedPayload struct {
 	ExternalID     string       `json:"external_id"`
 	SenderID       string       `json:"sender_id"`
 	SenderName     string       `json:"sender_name"`
+	Environment    string       `json:"environment"`
 	Attachments    []attachment `json:"attachments"`
 }
 

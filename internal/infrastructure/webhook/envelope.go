@@ -53,11 +53,15 @@ const (
 
 // Envelope is the top-level `linktor-channel-v1` event.
 type Envelope struct {
-	ID        string      `json:"id"`
-	Type      string      `json:"type"`
-	Timestamp time.Time   `json:"timestamp"` // RFC3339
-	TenantID  string      `json:"tenantId"`
-	Data      interface{} `json:"data"`
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	Timestamp time.Time `json:"timestamp"` // RFC3339
+	TenantID  string    `json:"tenantId"`
+	// Environment is the channel's environment ("production"|"sandbox").
+	// Additive, backward-compatible field (INV-018): consumers that predate it
+	// keep parsing; absence means production.
+	Environment string      `json:"environment,omitempty"`
+	Data        interface{} `json:"data"`
 }
 
 // InboundData is the `data` payload for `message.received`.

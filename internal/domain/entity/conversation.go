@@ -48,10 +48,15 @@ func (p ConversationPriority) IsValid() bool {
 
 // Conversation represents a conversation thread
 type Conversation struct {
-	ID             string               `json:"id"`
-	TenantID       string               `json:"tenant_id"`
-	ContactID      string               `json:"contact_id"`
-	ChannelID      string               `json:"channel_id"`
+	ID        string `json:"id"`
+	TenantID  string `json:"tenant_id"`
+	ContactID string `json:"contact_id"`
+	ChannelID string `json:"channel_id"`
+	// Environment is denormalized from the channel at creation (INV-018): a
+	// conversation is born bound to one channel and the channel's environment
+	// is immutable, so this never drifts. It makes sandbox purge and export
+	// blocking indexable without joining through channels on every query.
+	Environment    ChannelEnvironment   `json:"environment"`
 	AssignedUserID *string              `json:"assigned_user_id,omitempty"`
 	Status         ConversationStatus   `json:"status"`
 	Priority       ConversationPriority `json:"priority"`

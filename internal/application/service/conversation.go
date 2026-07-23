@@ -151,17 +151,18 @@ func (s *ConversationService) Create(ctx context.Context, input *CreateConversat
 
 	now := time.Now()
 	conversation := &entity.Conversation{
-		ID:        uuid.New().String(),
-		TenantID:  input.TenantID,
-		ContactID: input.ContactID,
-		ChannelID: input.ChannelID,
-		Status:    entity.ConversationStatusOpen,
-		Priority:  priority,
-		Subject:   input.Subject,
-		Tags:      input.Tags,
-		Metadata:  make(map[string]string),
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          uuid.New().String(),
+		TenantID:    input.TenantID,
+		ContactID:   input.ContactID,
+		ChannelID:   input.ChannelID,
+		Environment: channel.Environment, // denormalized at birth (INV-018)
+		Status:      entity.ConversationStatusOpen,
+		Priority:    priority,
+		Subject:     input.Subject,
+		Tags:        input.Tags,
+		Metadata:    make(map[string]string),
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	if err := s.conversationRepo.Create(ctx, conversation); err != nil {

@@ -306,3 +306,71 @@ func TestSandboxAllowlistRepository(t *testing.T) {
 		}
 	})
 }
+
+// TestConversationEnvironment_RoundTrip guards INV-018's persistence leg: the
+// denormalized environment must survive create → read against a real database
+// (same column-not-persisted failure mode as WP1).
+func TestConversationEnvironment_RoundTrip(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewPostgresDB(testDBConfig(t))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+	if err := db.RunMigrations(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	channelRepo := NewChannelRepository(db, nil)
+	convRepo := NewConversationRepository(db)
+	tenantID := seedTenant(t, ctx, db)
+
+	ch := newTestChannel(tenantID, entity.ChannelEnvironmentSandbox)
+	if err := channelRepo.Create(ctx, ch); err != nil {
+		t.Fatalf("create channel: %v", err)
+	}
+	contactID := uuid.New().String()
+	if _, err := db.Pool.Exec(ctx,
+		`INSERT INTO contacts (id, tenant_id, name) VALUES ($1, $2, $3)`,
+		contactID, tenantID, "contact"); err != nil {
+		t.Fatalf("seed contact: %v", err)
+	}
+
+	conv := &entity.Conversation{
+		ID:          uuid.New().String(),
+		TenantID:    tenantID,
+		ChannelID:   ch.ID,
+		ContactID:   contactID,
+		Environment: entity.ChannelEnvironmentSandbox,
+		Status:      entity.ConversationStatusOpen,
+		Priority:    entity.ConversationPriorityNormal,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	got, err := convRepo.FindByID(ctx, conv.ID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if got.Environment != entity.ChannelEnvironmentSandbox {
+		t.Fatalf("environment = %q, want sandbox", got.Environment)
+	}
+
+	// Legacy row (raw insert without environment) reads back as production.
+	legacyID := uuid.New().String()
+	if _, err := db.Pool.Exec(ctx,
+		`INSERT INTO conversations (id, tenant_id, channel_id, contact_id) VALUES ($1, $2, $3, $4)`,
+		legacyID, tenantID, ch.ID, contactID); err != nil {
+		t.Fatalf("raw insert: %v", err)
+	}
+	legacy, err := convRepo.FindByID(ctx, legacyID)
+	if err != nil {
+		t.Fatalf("find legacy: %v", err)
+	}
+	if legacy.Environment != entity.ChannelEnvironmentProduction {
+		t.Fatalf("legacy environment = %q, want production", legacy.Environment)
+	}
+}

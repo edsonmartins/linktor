@@ -42,34 +42,40 @@ func (p *Producer) ensureReady() error {
 
 // InboundMessage represents a message received from an external channel
 type InboundMessage struct {
-	ID             string            `json:"id"`
-	TenantID       string            `json:"tenant_id"`
-	ChannelID      string            `json:"channel_id"`
-	ChannelType    string            `json:"channel_type"`
-	ContactID      string            `json:"contact_id,omitempty"`
-	ConversationID string            `json:"conversation_id,omitempty"`
-	ExternalID     string            `json:"external_id"`
-	ContentType    string            `json:"content_type"`
-	Content        string            `json:"content"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
-	Attachments    []AttachmentData  `json:"attachments,omitempty"`
-	Timestamp      time.Time         `json:"timestamp"`
+	ID             string `json:"id"`
+	TenantID       string `json:"tenant_id"`
+	ChannelID      string `json:"channel_id"`
+	ChannelType    string `json:"channel_type"`
+	ContactID      string `json:"contact_id,omitempty"`
+	ConversationID string `json:"conversation_id,omitempty"`
+	ExternalID     string `json:"external_id"`
+	ContentType    string `json:"content_type"`
+	Content        string `json:"content"`
+	// Environment mirrors the channel's environment ("production"|"sandbox",
+	// INV-018). Informational for consumers; empty means production (legacy
+	// producers). The authoritative value is always the channel's.
+	Environment string            `json:"environment,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	Attachments []AttachmentData  `json:"attachments,omitempty"`
+	Timestamp   time.Time         `json:"timestamp"`
 }
 
 // OutboundMessage represents a message to be sent to an external channel
 type OutboundMessage struct {
-	ID             string            `json:"id"`
-	TenantID       string            `json:"tenant_id"`
-	ChannelID      string            `json:"channel_id"`
-	ChannelType    string            `json:"channel_type"`
-	ConversationID string            `json:"conversation_id"`
-	ContactID      string            `json:"contact_id"`
-	RecipientID    string            `json:"recipient_id"` // External identifier (phone, email, etc.)
-	ContentType    string            `json:"content_type"`
-	Content        string            `json:"content"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
-	Attachments    []AttachmentData  `json:"attachments,omitempty"`
-	Timestamp      time.Time         `json:"timestamp"`
+	ID             string `json:"id"`
+	TenantID       string `json:"tenant_id"`
+	ChannelID      string `json:"channel_id"`
+	ChannelType    string `json:"channel_type"`
+	ConversationID string `json:"conversation_id"`
+	ContactID      string `json:"contact_id"`
+	RecipientID    string `json:"recipient_id"` // External identifier (phone, email, etc.)
+	// Environment mirrors the channel's environment (INV-018); see InboundMessage.
+	Environment string            `json:"environment,omitempty"`
+	ContentType string            `json:"content_type"`
+	Content     string            `json:"content"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	Attachments []AttachmentData  `json:"attachments,omitempty"`
+	Timestamp   time.Time         `json:"timestamp"`
 }
 
 // StatusUpdate represents a message status update

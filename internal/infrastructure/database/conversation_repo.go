@@ -34,8 +34,8 @@ func (r *ConversationRepository) Create(ctx context.Context, conversation *entit
 		INSERT INTO conversations (
 			id, tenant_id, channel_id, contact_id, assignee_id, status, priority,
 			subject, unread_count, first_reply_at, resolved_at, created_at, updated_at,
-			tags, metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			tags, metadata, environment
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 
 	_, err = r.db.Pool.Exec(ctx, query,
@@ -54,6 +54,7 @@ func (r *ConversationRepository) Create(ctx context.Context, conversation *entit
 		conversation.UpdatedAt,
 		pq.Array(conversation.Tags),
 		metadata,
+		string(normalizeChannelEnvironment(string(conversation.Environment))),
 	)
 
 	if err != nil {
@@ -82,13 +83,14 @@ func (r *ConversationRepository) CreateWithOutboxEvent(ctx context.Context, conv
 		INSERT INTO conversations (
 			id, tenant_id, channel_id, contact_id, assignee_id, status, priority,
 			subject, unread_count, first_reply_at, resolved_at, created_at, updated_at,
-			tags, metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+			tags, metadata, environment
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 		conversation.ID, conversation.TenantID, conversation.ChannelID, conversation.ContactID,
 		conversation.AssignedUserID, string(conversation.Status), string(conversation.Priority),
 		nullString(conversation.Subject), conversation.UnreadCount, conversation.FirstReplyAt,
 		conversation.ResolvedAt, conversation.CreatedAt, conversation.UpdatedAt,
 		pq.Array(conversation.Tags), metadata,
+		string(normalizeChannelEnvironment(string(conversation.Environment))),
 	); err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to create conversation")
 	}
@@ -109,7 +111,7 @@ func (r *ConversationRepository) FindByID(ctx context.Context, id string) (*enti
 		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
 		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
 		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
-		       c.tags, c.metadata
+		       c.tags, c.metadata, c.environment
 		FROM conversations c
 		WHERE c.id = $1
 	`
@@ -151,7 +153,7 @@ func (r *ConversationRepository) FindOpenByContactAndChannel(ctx context.Context
 		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
 		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
 		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
-		       c.tags, c.metadata
+		       c.tags, c.metadata, c.environment
 		FROM conversations c
 		WHERE c.contact_id = $1 AND c.channel_id = $2 AND c.status IN ('open', 'pending')
 		ORDER BY c.created_at DESC
@@ -356,7 +358,7 @@ func (r *ConversationRepository) findWithFilter(ctx context.Context, whereClause
 		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
 		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
 		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
-		       c.tags, c.metadata
+		       c.tags, c.metadata, c.environment
 		FROM conversations c
 		WHERE %s
 		ORDER BY %s %s
@@ -390,7 +392,7 @@ func (r *ConversationRepository) findWithFilter(ctx context.Context, whereClause
 func (r *ConversationRepository) scanConversation(row pgx.Row) (*entity.Conversation, error) {
 	var c entity.Conversation
 	var assigneeID, subject *string
-	var status, priority string
+	var status, priority, environment string
 	var tags []string
 	var metadata []byte
 
@@ -398,7 +400,7 @@ func (r *ConversationRepository) scanConversation(row pgx.Row) (*entity.Conversa
 		&c.ID, &c.TenantID, &c.ChannelID, &c.ContactID, &assigneeID, &status, &priority,
 		&subject, &c.UnreadCount, &c.FirstReplyAt, &c.ResolvedAt, &c.CreatedAt, &c.UpdatedAt,
 		&c.LastMessageAt,
-		&tags, &metadata,
+		&tags, &metadata, &environment,
 	)
 	if err != nil {
 		return nil, err
@@ -406,6 +408,7 @@ func (r *ConversationRepository) scanConversation(row pgx.Row) (*entity.Conversa
 
 	c.Status = entity.ConversationStatus(status)
 	c.Priority = entity.ConversationPriority(priority)
+	c.Environment = normalizeChannelEnvironment(environment)
 	c.AssignedUserID = assigneeID
 
 	if subject != nil {
@@ -421,7 +424,7 @@ func (r *ConversationRepository) scanConversation(row pgx.Row) (*entity.Conversa
 func (r *ConversationRepository) scanConversationFromRows(rows pgx.Rows) (*entity.Conversation, error) {
 	var c entity.Conversation
 	var assigneeID, subject *string
-	var status, priority string
+	var status, priority, environment string
 	var tags []string
 	var metadata []byte
 
@@ -429,7 +432,7 @@ func (r *ConversationRepository) scanConversationFromRows(rows pgx.Rows) (*entit
 		&c.ID, &c.TenantID, &c.ChannelID, &c.ContactID, &assigneeID, &status, &priority,
 		&subject, &c.UnreadCount, &c.FirstReplyAt, &c.ResolvedAt, &c.CreatedAt, &c.UpdatedAt,
 		&c.LastMessageAt,
-		&tags, &metadata,
+		&tags, &metadata, &environment,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan conversation")
@@ -437,6 +440,7 @@ func (r *ConversationRepository) scanConversationFromRows(rows pgx.Rows) (*entit
 
 	c.Status = entity.ConversationStatus(status)
 	c.Priority = entity.ConversationPriority(priority)
+	c.Environment = normalizeChannelEnvironment(environment)
 	c.AssignedUserID = assigneeID
 
 	if subject != nil {

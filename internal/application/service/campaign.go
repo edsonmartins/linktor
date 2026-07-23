@@ -311,6 +311,7 @@ func (s *CampaignService) enqueue(campaign *entity.Campaign) {
 				TenantID:    campaign.TenantID,
 				ChannelID:   campaign.ChannelID,
 				ChannelType: string(channel.Type),
+				Environment: string(channel.Environment),
 				RecipientID: rec.Phone,
 				ContentType: "template",
 				Metadata:    s.templateMetadata(campaign, rec),
