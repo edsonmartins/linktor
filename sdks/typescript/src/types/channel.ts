@@ -1,128 +1,103 @@
 /**
- * Channel types
+ * Channel types — modeled on the backend wire contract (snake_case).
+ * Credentials are write-only and never present on a response.
  */
 
-import type { ChannelType, PaginationParams, Timestamps } from './common';
+import type { ChannelType, PaginationParams } from './common';
 
-export interface Channel extends Timestamps {
+/** Live connection state (wire field `connection_status`), distinct from `enabled`. */
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+/** WhatsApp Business App + Cloud API coexistence state. */
+export type CoexistenceStatus =
+  | 'inactive'
+  | 'pending'
+  | 'active'
+  | 'warning'
+  | 'disconnected';
+
+/**
+ * Channel `config` is a flat string map on the wire (e.g.
+ * `{ phone_number_id: "...", waba_id: "..." }`). Secret values are redacted to
+ * `"__redacted__"` in responses.
+ */
+export type ChannelConfig = Record<string, string>;
+
+export interface Channel {
   id: string;
-  tenantId: string;
-  name: string;
+  tenant_id: string;
   type: ChannelType;
-  status: ChannelStatus;
-  config: ChannelConfig;
-  webhookUrl?: string;
-  metadata?: Record<string, unknown>;
-}
-
-export type ChannelStatus = 'active' | 'inactive' | 'connecting' | 'error';
-
-export type ChannelConfig =
-  | WhatsAppConfig
-  | TelegramConfig
-  | FacebookConfig
-  | InstagramConfig
-  | WebchatConfig
-  | SMSConfig
-  | EmailConfig
-  | RCSConfig;
-
-export interface WhatsAppConfig {
-  type: 'whatsapp';
-  phoneNumberId: string;
-  businessAccountId: string;
-  accessToken: string;
-  verifyToken: string;
-  appSecret?: string;
-}
-
-export interface TelegramConfig {
-  type: 'telegram';
-  botToken: string;
-  botUsername?: string;
-  webhookSecret?: string;
-}
-
-export interface FacebookConfig {
-  type: 'facebook';
-  pageId: string;
-  pageAccessToken: string;
-  appSecret?: string;
-  pageName?: string;
-  pageProfilePicture?: string;
-}
-
-export interface InstagramConfig {
-  type: 'instagram';
-  instagramId: string;
-  pageAccessToken: string;
-  appSecret?: string;
-  username?: string;
-  profilePicture?: string;
-}
-
-export interface WebchatConfig {
-  type: 'webchat';
-  widgetId: string;
-  allowedOrigins?: string[];
-  theme?: WebchatTheme;
-}
-
-export interface WebchatTheme {
-  primaryColor?: string;
-  headerText?: string;
-  welcomeMessage?: string;
-  position?: 'left' | 'right';
-}
-
-export interface SMSConfig {
-  type: 'sms';
-  provider: 'twilio';
-  accountSid: string;
-  authToken: string;
-  phoneNumber: string;
-}
-
-export interface EmailConfig {
-  type: 'email';
-  provider: 'smtp' | 'sendgrid' | 'mailgun' | 'ses' | 'postmark';
-  fromEmail: string;
-  fromName?: string;
-  // Provider-specific config
-  smtpHost?: string;
-  smtpPort?: number;
-  smtpUsername?: string;
-  smtpPassword?: string;
-  apiKey?: string;
-  domain?: string;
-  region?: string;
-}
-
-export interface RCSConfig {
-  type: 'rcs';
-  provider: 'zenvia' | 'infobip' | 'pontaltech';
-  agentId: string;
-  apiKey: string;
-  brandName?: string;
+  name: string;
+  identifier?: string;
+  /** System-level enable flag (distinct from connection_status). */
+  enabled: boolean;
+  connection_status: ConnectionStatus;
+  config?: ChannelConfig;
+  webhook_url?: string;
+  created_at: string;
+  updated_at: string;
+  // WhatsApp coexistence
+  is_coexistence?: boolean;
+  waba_id?: string;
+  last_echo_at?: string;
+  coexistence_status?: CoexistenceStatus;
+  message_template_namespace?: string;
 }
 
 // Request types
+
+/**
+ * `config` holds non-secret settings (phone_number_id, waba_id, ...).
+ * `credentials` holds secrets (access_token, bot_token, ...) — stored encrypted,
+ * never returned. `webhook_url` is the external endpoint Linktor delivers signed
+ * inbound/status events to.
+ */
 export interface CreateChannelInput {
   name: string;
   type: ChannelType;
-  config: ChannelConfig;
-  metadata?: Record<string, unknown>;
+  identifier?: string;
+  config?: Record<string, string>;
+  credentials?: Record<string, string>;
+  webhook_url?: string;
 }
 
+/**
+ * Update reuses the create body shape. `credentials`, when present, replace the
+ * stored secrets; omit it (or send the redacted placeholder) to keep them.
+ */
 export interface UpdateChannelInput {
   name?: string;
-  config?: Partial<ChannelConfig>;
-  metadata?: Record<string, unknown>;
+  identifier?: string;
+  config?: Record<string, string>;
+  credentials?: Record<string, string>;
+  webhook_url?: string;
+}
+
+/**
+ * Result of connecting a channel. For WhatsApp Web-style linking, `qr_code`
+ * carries the payload to render and `expires_in` its lifetime in seconds — call
+ * `connect` again to refresh an expired code. `pair_code` is the phone-linking
+ * code. When `passkey_required` is true the account is passkey-locked and must
+ * be linked by signing `passkey_challenge` (submit via the passkey endpoint),
+ * not by QR.
+ */
+export interface ConnectResult {
+  channel: Channel;
+  qr_code?: string;
+  expires_in?: number;
+  pair_code?: string;
+  passkey_required?: boolean;
+  passkey_challenge?: unknown;
+}
+
+/** Body for requesting a WhatsApp pairing code. */
+export interface PairCodeInput {
+  phone_number: string;
 }
 
 export interface ListChannelsParams extends PaginationParams {
   type?: ChannelType;
-  status?: ChannelStatus;
+  status?: ConnectionStatus;
   search?: string;
 }
 
