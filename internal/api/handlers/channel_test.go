@@ -339,6 +339,32 @@ func TestChannelUpdate_Success(t *testing.T) {
 	}
 }
 
+func TestChannelUpdate_PartialNameOnly(t *testing.T) {
+	handler, repo, _ := setupChannelHandler()
+	seedChannel(repo, "ch-1", "tenant-1", "Old Name", entity.ChannelTypeTelegram)
+
+	// A partial update carrying only `name` — no `type`, no `identifier`. This
+	// must succeed (type is not required on update) and must NOT wipe the
+	// untouched identifier.
+	body := []byte(`{"name":"Renamed"}`)
+
+	c, w := newChannelAuthContext(http.MethodPut, "/channels/ch-1", body)
+	c.Params = gin.Params{{Key: "id", Value: "ch-1"}}
+
+	handler.Update(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for partial update, got %d; body: %s", w.Code, w.Body.String())
+	}
+	ch := repo.Channels["ch-1"]
+	if ch.Name != "Renamed" {
+		t.Fatalf("expected name=Renamed, got %s", ch.Name)
+	}
+	if ch.Identifier != "+5511999999999" {
+		t.Fatalf("partial update wiped identifier: got %q", ch.Identifier)
+	}
+}
+
 func TestChannelUpdate_NotFound(t *testing.T) {
 	handler, _, _ := setupChannelHandler()
 
