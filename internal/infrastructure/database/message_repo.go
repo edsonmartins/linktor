@@ -414,6 +414,28 @@ const sqlMessageStatusRank = `CASE status
 	ELSE 0 END`
 
 // UpdateStatus updates only the message status, advancing it monotonically.
+// MarkFailedWithBlockedReason marks a message failed and records the
+// machine-readable guard-block reason in metadata.blocked_by, so the console
+// can distinguish a local delivery-guard block from a provider rejection
+// without parsing the error text. "failed" is always writable (a delivery
+// failure is never lost). blockedReason must be non-empty.
+func (r *MessageRepository) MarkFailedWithBlockedReason(ctx context.Context, id, errorMessage, blockedReason string) error {
+	result, err := r.db.Pool.Exec(ctx,
+		`UPDATE messages
+		 SET status = 'failed',
+		     error_message = $2,
+		     metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{blocked_by}', to_jsonb($3::text), true)
+		 WHERE id = $1`,
+		id, errorMessage, blockedReason)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to mark message blocked")
+	}
+	if result.RowsAffected() == 0 {
+		return errors.New(errors.ErrCodeMessageNotFound, "message not found")
+	}
+	return nil
+}
+
 func (r *MessageRepository) UpdateStatus(ctx context.Context, id string, status entity.MessageStatus, errorMessage string) error {
 	now := time.Now()
 

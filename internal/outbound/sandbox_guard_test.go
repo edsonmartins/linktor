@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/testutil"
 )
@@ -259,8 +260,43 @@ func TestWorker_ConversationSendOnSandboxIsBlockedNoisily(t *testing.T) {
 	if !strings.Contains(pub.updates[0].ErrorMessage, "sandbox guard") {
 		t.Fatalf("failure reason must be identifiable as a sandbox-guard block: %q", pub.updates[0].ErrorMessage)
 	}
+	// Machine-readable reason for the timeline (WP-K): the console reads this
+	// instead of parsing the error text.
+	if pub.updates[0].BlockedReason != metrics.BlockReasonAllowlist {
+		t.Fatalf("BlockedReason = %q, want %q", pub.updates[0].BlockedReason, metrics.BlockReasonAllowlist)
+	}
 	if strings.Contains(pub.updates[0].ErrorMessage, "5511888887777") {
 		t.Fatalf("status update leaks the full recipient: %q", pub.updates[0].ErrorMessage)
+	}
+}
+
+func TestWorker_ProviderFailureHasNoBlockedReason(t *testing.T) {
+	// A provider rejection (not a guard block) must NOT carry a BlockedReason,
+	// so the console can tell it apart from a local block.
+	repo := testutil.NewMockChannelRepository()
+	seedResolverChannel(t, repo, "sandbox-ch", entity.ChannelEnvironmentProduction)
+	failing := senderFunc(func(context.Context, *Message) (*Receipt, error) {
+		return nil, Permanentf("provider 400: invalid recipient")
+	})
+	r := NewResolver(repo)
+	r.Register(factoryFunc{t: "whatsapp_official", s: failing})
+	r.SetSandboxAllowlist(newFakeChecker())
+	pub := &captureStatusPublisher{}
+	w := NewWorker(nil, pub, r, testutil.NewMockCampaignRepository(), 0)
+
+	raw := &nats.OutboundMessage{
+		ID: "mp", TenantID: "t1", ChannelID: "sandbox-ch",
+		ChannelType: "whatsapp_official", RecipientID: "+5511888887777",
+		ContentType: "text", Content: "hi",
+	}
+	if err := w.handle(context.Background(), raw); err != nil {
+		t.Fatalf("permanent failure must ack, got %v", err)
+	}
+	if len(pub.updates) != 1 || pub.updates[0].Status != "failed" {
+		t.Fatalf("expected one failed update, got %+v", pub.updates)
+	}
+	if pub.updates[0].BlockedReason != "" {
+		t.Fatalf("provider failure must not carry BlockedReason, got %q", pub.updates[0].BlockedReason)
 	}
 }
 

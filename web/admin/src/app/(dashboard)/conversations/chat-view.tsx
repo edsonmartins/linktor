@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { EnvironmentBadge, SandboxConversationBanner } from '@/components/environment-badge'
+import { MessageFailureDetail } from '@/components/message-failure-detail'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
@@ -254,6 +255,9 @@ function MessageBubble({ message, isOwn }: MessageBubbleProps) {
           <span>{formatRelativeTime(message.created_at)}</span>
           {isOwn && <MessageStatusIcon status={message.status} />}
         </div>
+        {/* WP-K: on failure, distinguish local guard block from provider
+            rejection with an actionable reason. */}
+        {isOwn && <MessageFailureDetail message={message} />}
       </div>
     </div>
   )

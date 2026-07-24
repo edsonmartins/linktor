@@ -1882,7 +1882,15 @@ func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.Messag
 		}
 	}
 
-	if err := messageRepo.UpdateStatus(ctx, messageID, toMessageStatus(status.Status), status.ErrorMessage); err != nil {
+	// A guard block records the machine-readable reason on the message
+	// (metadata.blocked_by) so the console distinguishes a local block from a
+	// provider rejection; a plain failure/other status uses the normal path.
+	if status.Status == "failed" && status.BlockedReason != "" {
+		if err := messageRepo.MarkFailedWithBlockedReason(ctx, messageID, status.ErrorMessage, status.BlockedReason); err != nil {
+			logger.Warn("Ignoring status update for unknown message id: " + messageID)
+			return nil
+		}
+	} else if err := messageRepo.UpdateStatus(ctx, messageID, toMessageStatus(status.Status), status.ErrorMessage); err != nil {
 		logger.Warn("Ignoring status update for unknown message id: " + messageID)
 		return nil
 	}

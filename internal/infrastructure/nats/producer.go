@@ -80,12 +80,18 @@ type OutboundMessage struct {
 
 // StatusUpdate represents a message status update
 type StatusUpdate struct {
-	MessageID    string    `json:"message_id"`
-	ExternalID   string    `json:"external_id,omitempty"`
-	ChannelType  string    `json:"channel_type"`
-	Status       string    `json:"status"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	Timestamp    time.Time `json:"timestamp"`
+	MessageID    string `json:"message_id"`
+	ExternalID   string `json:"external_id,omitempty"`
+	ChannelType  string `json:"channel_type"`
+	Status       string `json:"status"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	// BlockedReason, when set, is the machine-readable reason a delivery guard
+	// stopped the send locally (allowlist, window_24h, template_rejected) — as
+	// opposed to a provider rejection. Persisted into the message so the console
+	// can tell a local block from a remote failure without parsing the error
+	// text (INV-014: no client-side inference). Empty for provider failures.
+	BlockedReason string    `json:"blocked_reason,omitempty"`
+	Timestamp     time.Time `json:"timestamp"`
 }
 
 // AttachmentData represents attachment information

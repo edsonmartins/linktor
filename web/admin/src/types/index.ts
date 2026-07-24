@@ -155,6 +155,11 @@ export interface Message {
   metadata: Record<string, unknown>
   status: MessageStatus
   external_id?: string
+  // error_message holds the failure detail (provider rejection text OR the
+  // masked guard-block reason). metadata.blocked_by, when present, is the
+  // machine-readable guard reason distinguishing a LOCAL block from a provider
+  // failure (WP-K) — set by the backend, never inferred client-side.
+  error_message?: string
   attachments?: MessageAttachment[]
   created_at: string
   updated_at: string

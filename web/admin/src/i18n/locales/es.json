@@ -2135,5 +2135,17 @@
     "removed": "Destinatario eliminado",
     "removedDesc": "{recipient} ya no recibe en canales sandbox.",
     "scopedTo": "Canal: {channel}"
+  },
+  "messageFailure": {
+    "title": "Fallo de envío",
+    "localBlock": "Bloqueado localmente por Linktor",
+    "remoteFailure": "Rechazado por el proveedor",
+    "reasonAllowlist": "El destinatario no está en la allowlist de sandbox de este tenant. Agréguelo en Allowlist de Prueba para permitir el envío.",
+    "reasonWindow24h": "Fuera de la ventana de 24h de WhatsApp: envíe una plantilla aprobada para reabrir la conversación.",
+    "reasonTemplateRejected": "La plantilla usada está rechazada/pausada en Meta y no puede enviarse.",
+    "reasonInvalidRecipient": "El destinatario no es un número E.164 válido.",
+    "reasonUnsupported": "Este tipo de canal sandbox aún no tiene semántica de entrega definida.",
+    "reasonUnknown": "Bloqueo local (motivo: {reason}).",
+    "technicalDetail": "Detalle técnico"
   }
 }

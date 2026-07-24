@@ -485,3 +485,55 @@ func TestConversationEnvironmentFilter(t *testing.T) {
 		t.Fatalf("production filter: %d conversations, want 2", n)
 	}
 }
+
+// TestMarkFailedWithBlockedReason verifies the guard-block reason lands in
+// metadata.blocked_by (WP-K), distinguishable from a plain provider failure.
+func TestMarkFailedWithBlockedReason(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewPostgresDB(testDBConfig(t))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+	if err := db.RunMigrations(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	repo := NewMessageRepository(db)
+	convID := seedConversation(t, ctx, db)
+	msg := insertMessage(t, ctx, repo, convID, entity.SenderTypeUser, entity.MessageStatusPending, time.Now())
+
+	if err := repo.MarkFailedWithBlockedReason(ctx, msg.ID,
+		"sandbox guard: recipient +55*******99 is not in the tenant's sandbox allowlist",
+		"allowlist"); err != nil {
+		t.Fatalf("mark blocked: %v", err)
+	}
+
+	got, err := repo.FindByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if got.Status != entity.MessageStatusFailed {
+		t.Fatalf("status = %q, want failed", got.Status)
+	}
+	if got.Metadata["blocked_by"] != "allowlist" {
+		t.Fatalf("metadata.blocked_by = %q, want allowlist", got.Metadata["blocked_by"])
+	}
+	// Pre-existing metadata keys survive the jsonb_set merge.
+	msg2 := &entity.Message{
+		ID: uuid.New().String(), ConversationID: convID, SenderType: entity.SenderTypeUser,
+		ContentType: entity.ContentTypeText, Content: "x",
+		Metadata: map[string]string{"existing": "kept"}, Status: entity.MessageStatusPending,
+		CreatedAt: time.Now(),
+	}
+	if err := repo.Create(ctx, msg2); err != nil {
+		t.Fatalf("create msg2: %v", err)
+	}
+	if err := repo.MarkFailedWithBlockedReason(ctx, msg2.ID, "err", "window_24h"); err != nil {
+		t.Fatalf("mark msg2: %v", err)
+	}
+	got2, _ := repo.FindByID(ctx, msg2.ID)
+	if got2.Metadata["existing"] != "kept" || got2.Metadata["blocked_by"] != "window_24h" {
+		t.Fatalf("metadata merge lost keys: %+v", got2.Metadata)
+	}
+}
