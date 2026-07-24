@@ -90,17 +90,24 @@ func (r *CartRepository) GetByCustomer(ctx context.Context, orgID, customerPhone
 	return cart, nil
 }
 
+// NOTE (INV-001): the id-only cart methods below (GetByID, Delete,
+// MarkAsAbandoned, RecoverCart, DeleteCartItem) are NOT organization-scoped —
+// they match a cart by id alone. Carts have no HTTP surface today and these
+// have no callers, so this is latent debt, not an active IDOR. Any future
+// handler that exposes a cart by id MUST add organization_id scoping (thread
+// orgID into these methods) before wiring, or it reopens tenant isolation.
+// Update is already scoped via cart.OrganizationID below.
 func (r *CartRepository) Update(ctx context.Context, cart *entity.Cart) error {
 	cart.UpdatedAt = time.Now()
 	query := `
 		UPDATE carts SET
 			subtotal = $1, currency = $2, updated_at = $3, expires_at = $4,
 			abandoned = $5, abandoned_at = $6, recovered_at = $7
-		WHERE id = $8
+		WHERE id = $8 AND organization_id = $9
 	`
 	res, err := r.db.Pool.Exec(ctx, query,
 		cart.Subtotal, cart.Currency, cart.UpdatedAt, cart.ExpiresAt,
-		cart.Abandoned, cart.AbandonedAt, cart.RecoveredAt, cart.ID,
+		cart.Abandoned, cart.AbandonedAt, cart.RecoveredAt, cart.ID, cart.OrganizationID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update cart: %w", err)

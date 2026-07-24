@@ -245,10 +245,15 @@ func (s *HistoryImportService) importConversations(ctx context.Context, importJo
 }
 
 // GetImportProgress returns the progress of an import job
-func (s *HistoryImportService) GetImportProgress(ctx context.Context, importID string) (*ImportProgress, error) {
+func (s *HistoryImportService) GetImportProgress(ctx context.Context, importID, tenantID string) (*ImportProgress, error) {
 	importJob, err := s.importRepo.FindByID(ctx, importID)
 	if err != nil {
 		return nil, err
+	}
+	// Tenant isolation (INV-001): the job carries its owner; never reveal
+	// another tenant's import. not-found so existence does not leak.
+	if importJob.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "import not found")
 	}
 
 	progress := &ImportProgress{
@@ -275,13 +280,26 @@ func (s *HistoryImportService) GetImportProgress(ctx context.Context, importID s
 	return progress, nil
 }
 
-// ListImports returns all imports for a channel
-func (s *HistoryImportService) ListImports(ctx context.Context, channelID string) ([]*entity.HistoryImport, error) {
+// ListImports returns all imports for a channel owned by the tenant. Validating
+// the channel's tenant first (INV-001) keeps one tenant from listing another's
+// import jobs by guessing a channel id.
+func (s *HistoryImportService) ListImports(ctx context.Context, channelID, tenantID string) ([]*entity.HistoryImport, error) {
+	channel, err := s.channelRepo.FindByID(ctx, channelID)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "channel not found")
+	}
+	if channel == nil || channel.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "channel not found")
+	}
 	return s.importRepo.FindByChannelID(ctx, channelID)
 }
 
-// CancelImport cancels a running import job
-func (s *HistoryImportService) CancelImport(ctx context.Context, importID string) error {
+// CancelImport cancels a running import job owned by the tenant.
+func (s *HistoryImportService) CancelImport(ctx context.Context, importID, tenantID string) error {
+	// Tenant isolation (INV-001): confirm ownership before touching the job.
+	if job, err := s.importRepo.FindByID(ctx, importID); err != nil || job == nil || job.TenantID != tenantID {
+		return errors.New(errors.ErrCodeNotFound, "import not found or not running")
+	}
 	s.mu.Lock()
 	cancel, ok := s.runningImports[importID]
 	if ok {
