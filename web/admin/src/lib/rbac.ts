@@ -27,6 +27,7 @@ export const ADMIN_ONLY_ROUTES = [
   '/roles',
   '/audit-logs',
   '/observability',
+  '/sandbox-allowlist',
 ] as const
 
 export function isAdminOnlyRoute(pathname: string): boolean {

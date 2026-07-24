@@ -156,7 +156,8 @@
     "cannedResponses": "Quick Replies",
     "roles": "Roles",
     "operations": "Operations",
-    "audit": "Audit Log"
+    "audit": "Audit Log",
+    "sandboxAllowlist": "Test Allowlist"
   },
   "auth": {
     "login": "Login",
@@ -2105,5 +2106,34 @@
     "testPhoneIdsHint": "Comma-separated list of Meta test phone_number_ids. The channel's phone_number_id must be in this list.",
     "credentialDeclarationRequired": "The test-credential declaration is required for a sandbox channel",
     "testPhoneIdsRequired": "The test phone_number_ids list is required for a sandbox channel"
+  },
+  "sandboxAllowlist": {
+    "title": "Recipient allowlist (sandbox)",
+    "subtitle": "Numbers allowed to receive messages from this tenant's sandbox channels. Admin-only.",
+    "securityNote": "This is the only effective barrier against synthetic traffic reaching a real recipient. Removal takes effect on the next send — no cache to expire.",
+    "add": "Add recipient",
+    "recipient": "Recipient (E.164)",
+    "recipientPlaceholder": "+1 555 123 4567",
+    "recipientHint": "Any common format; it will be normalized to E.164 (+CC...).",
+    "channelScope": "Scope",
+    "channelScopeAll": "All of the tenant's sandbox channels",
+    "note": "Note (optional)",
+    "notePlaceholder": "e.g. homologation operator number",
+    "addedBy": "Added by",
+    "addedAt": "Added at",
+    "actions": "Actions",
+    "remove": "Remove",
+    "removeTitle": "Remove from allowlist?",
+    "removeConfirm": "Blocking for {recipient} takes effect on the NEXT send, immediately — no cache wait. Sandbox sends to this number will start failing loudly.",
+    "removeAction": "Remove now",
+    "cancel": "Cancel",
+    "empty": "No recipients in the allowlist.",
+    "emptyHint": "With no allowlist configured, EVERY sandbox send is blocked. Add at least one recipient to homologate.",
+    "loadError": "Failed to load the allowlist.",
+    "added": "Recipient added",
+    "addedDesc": "{recipient} authorized on sandbox channels.",
+    "removed": "Recipient removed",
+    "removedDesc": "{recipient} no longer receives on sandbox channels.",
+    "scopedTo": "Channel: {channel}"
   }
 }

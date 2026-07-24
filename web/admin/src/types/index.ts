@@ -1034,3 +1034,15 @@ export interface AuditLog {
   user_agent?: string
   created_at: string
 }
+
+// Sandbox recipient allowlist entry (INV-017). recipient is always the
+// backend-normalized E.164 form.
+export interface SandboxAllowlistEntry {
+  id: string
+  tenant_id: string
+  channel_id?: string
+  recipient: string
+  note?: string
+  created_by?: string
+  created_at: string
+}

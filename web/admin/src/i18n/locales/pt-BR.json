@@ -156,7 +156,8 @@
     "cannedResponses": "Respostas Rápidas",
     "roles": "Papéis",
     "operations": "Operações",
-    "audit": "Auditoria"
+    "audit": "Auditoria",
+    "sandboxAllowlist": "Allowlist de Teste"
   },
   "auth": {
     "login": "Entrar",
@@ -2110,5 +2111,34 @@
     "testPhoneIdsHint": "Lista separada por vírgula dos phone_number_ids de teste da Meta. O phone_number_id do canal precisa constar desta lista.",
     "credentialDeclarationRequired": "A declaração de credencial de teste é obrigatória para canal sandbox",
     "testPhoneIdsRequired": "A lista de phone_number_ids de teste é obrigatória para canal sandbox"
+  },
+  "sandboxAllowlist": {
+    "title": "Allowlist de destinatários (sandbox)",
+    "subtitle": "Números autorizados a receber mensagens dos canais sandbox deste tenant. Só administradores editam.",
+    "securityNote": "Esta é a única barreira efetiva contra tráfego sintético alcançar um destinatário real. A remoção vale a partir do próximo envio — não há cache a expirar.",
+    "add": "Adicionar destinatário",
+    "recipient": "Destinatário (E.164)",
+    "recipientPlaceholder": "+55 44 99999-9999",
+    "recipientHint": "Qualquer formato comum; será normalizado para E.164 (+DDI...).",
+    "channelScope": "Escopo",
+    "channelScopeAll": "Todos os canais sandbox do tenant",
+    "note": "Observação (opcional)",
+    "notePlaceholder": "ex.: número do operador de homologação",
+    "addedBy": "Adicionado por",
+    "addedAt": "Adicionado em",
+    "actions": "Ações",
+    "remove": "Remover",
+    "removeTitle": "Remover da allowlist?",
+    "removeConfirm": "O bloqueio para {recipient} vale a partir do PRÓXIMO envio, imediatamente — não espera cache. Envios sandbox para este número passarão a falhar de forma ruidosa.",
+    "removeAction": "Remover agora",
+    "cancel": "Cancelar",
+    "empty": "Nenhum destinatário na allowlist.",
+    "emptyHint": "Sem allowlist configurada, TODO envio sandbox é bloqueado. Adicione ao menos um destinatário para homologar.",
+    "loadError": "Falha ao carregar a allowlist.",
+    "added": "Destinatário adicionado",
+    "addedDesc": "{recipient} autorizado nos canais sandbox.",
+    "removed": "Destinatário removido",
+    "removedDesc": "{recipient} não recebe mais em canais sandbox.",
+    "scopedTo": "Canal: {channel}"
   }
 }
