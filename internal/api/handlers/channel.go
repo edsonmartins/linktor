@@ -74,6 +74,31 @@ type CreateChannelRequest struct {
 	WebhookURL string `json:"webhook_url"`
 }
 
+// UpdateChannelRequest represents a partial channel update. Every field is a
+// pointer/map so an omitted field is left untouched (nil), rather than being
+// overwritten with a zero value. Unlike create, `type`/`name` are NOT required —
+// a caller may send just the fields it wants to change (e.g. only `name`, or
+// only `credentials`). A channel's type is immutable and is ignored here.
+type UpdateChannelRequest struct {
+	Name       *string `json:"name"`
+	Identifier *string `json:"identifier"`
+	// Environment is included only so the service can explicitly reject an
+	// attempt to change it (it is immutable after creation). nil = not touched.
+	Environment *string           `json:"environment"`
+	Config      map[string]string `json:"config"`
+	Credentials map[string]string `json:"credentials"`
+	WebhookURL  *string           `json:"webhook_url"`
+}
+
+// derefOr returns *p when non-nil, otherwise def. Used to feed the non-secret
+// audit trail from a partial update whose fields are optional pointers.
+func derefOr(p *string, def string) string {
+	if p != nil {
+		return *p
+	}
+	return def
+}
+
 type TestChannelRequest struct {
 	Type        string            `json:"type"`
 	Config      map[string]string `json:"config"`
@@ -353,7 +378,7 @@ func withDisplayConfig(channel *entity.Channel) *entity.Channel {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path string true "Channel ID"
-// @Param        request body CreateChannelRequest true "Channel update data"
+// @Param        request body UpdateChannelRequest true "Channel update data (partial)"
 // @Success      200 {object} Response{data=entity.Channel}
 // @Failure      400 {object} Response
 // @Failure      401 {object} Response
@@ -366,7 +391,7 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		return
 	}
 
-	var req CreateChannelRequest
+	var req UpdateChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondValidationError(c, "Invalid request body", nil)
 		return
@@ -377,23 +402,24 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Only fields present in the request are forwarded; a nil pointer means
+	// "leave unchanged" (the service treats nil the same way).
 	input := &service.UpdateChannelInput{
-		Name:        &req.Name,
-		Identifier:  &req.Identifier,
+		Name:        req.Name,
+		Identifier:  req.Identifier,
 		Config:      req.Config,
 		Credentials: req.Credentials,
-		WebhookURL:  &req.WebhookURL,
+		WebhookURL:  req.WebhookURL,
 	}
-	if req.Environment != "" {
-		// Passed through so the service can reject an environment change
-		// explicitly (immutable after creation) instead of ignoring it.
-		input.Environment = &req.Environment
-	}
+	// Passed through (nil = untouched) so the service can reject an environment
+	// change explicitly (immutable after creation) instead of ignoring it.
+	input.Environment = req.Environment
 
 	channel, err := h.channelService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
 		if service.IsEnvironmentBindingError(err) {
-			changes := channelAuditChanges(req.Type, req.Environment, req.Config, req.Credentials)
+			// type is immutable on update, so it is not part of the request.
+			changes := channelAuditChanges("", derefOr(req.Environment, ""), req.Config, req.Credentials)
 			changes["rejection_reason"] = err.Error()
 			h.audit.Record(c.Request.Context(), tenantID, CurrentActor(c),
 				"channel.update_rejected", "channel", id, changes)
@@ -405,14 +431,14 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 	// Delta of the audit-relevant fields the request actually carried; secrets
 	// never enter the trail (INV-002).
 	delta := channelAuditChanges(string(channel.Type), string(channel.Environment), channel.Config, req.Credentials)
-	if req.Name != "" {
-		delta["name"] = req.Name
+	if req.Name != nil && *req.Name != "" {
+		delta["name"] = *req.Name
 	}
-	if req.Identifier != "" {
-		delta["identifier"] = req.Identifier
+	if req.Identifier != nil && *req.Identifier != "" {
+		delta["identifier"] = *req.Identifier
 	}
-	if req.WebhookURL != "" {
-		delta["webhook_url"] = req.WebhookURL
+	if req.WebhookURL != nil && *req.WebhookURL != "" {
+		delta["webhook_url"] = *req.WebhookURL
 	}
 	h.audit.Record(c.Request.Context(), tenantID, CurrentActor(c),
 		"channel.update", "channel", channel.ID, delta)

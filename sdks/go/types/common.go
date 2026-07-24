@@ -54,14 +54,21 @@ const (
 type ChannelType string
 
 const (
-	ChannelTypeWhatsApp  ChannelType = "whatsapp"
-	ChannelTypeTelegram  ChannelType = "telegram"
-	ChannelTypeFacebook  ChannelType = "facebook"
-	ChannelTypeInstagram ChannelType = "instagram"
-	ChannelTypeWebchat   ChannelType = "webchat"
-	ChannelTypeSMS       ChannelType = "sms"
-	ChannelTypeEmail     ChannelType = "email"
-	ChannelTypeRCS       ChannelType = "rcs"
+	ChannelTypeWhatsApp           ChannelType = "whatsapp"
+	ChannelTypeWhatsAppOfficial   ChannelType = "whatsapp_official"
+	ChannelTypeWhatsAppUnofficial ChannelType = "whatsapp_unofficial"
+	ChannelTypeTelegram           ChannelType = "telegram"
+	ChannelTypeFacebook           ChannelType = "facebook"
+	ChannelTypeInstagram          ChannelType = "instagram"
+	ChannelTypeWebchat            ChannelType = "webchat"
+	ChannelTypeSMS                ChannelType = "sms"
+	ChannelTypeEmail              ChannelType = "email"
+	ChannelTypeRCS                ChannelType = "rcs"
+	ChannelTypeVoice              ChannelType = "voice"
+	ChannelTypeTeams              ChannelType = "teams"
+	ChannelTypeSlack              ChannelType = "slack"
+	ChannelTypeMattermost         ChannelType = "mattermost"
+	ChannelTypeDireto             ChannelType = "direto"
 )
 
 // ContentType type

@@ -87,7 +87,12 @@ pub struct Channel {
 /// passkey-locked and must be linked by signing `passkey_challenge`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectResult {
-    pub channel: Channel,
+    /// The channel, when the response carries one. The backend serializes
+    /// `"channel"` with no omitempty, so a nil value arrives as `null` (e.g. some
+    /// pair/passkey responses) — model it as optional so that never fails to
+    /// deserialize.
+    #[serde(default)]
+    pub channel: Option<Channel>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qr_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -208,10 +213,21 @@ mod tests {
         assert_eq!(result.pair_code, None);
         assert_eq!(result.passkey_required, None);
         assert_eq!(result.passkey_challenge, None);
-        assert_eq!(result.channel.id, "ch_1");
-        assert_eq!(result.channel.channel_type, ChannelType::WhatsappUnofficial);
-        assert_eq!(result.channel.connection_status, ConnectionStatus::Connecting);
-        assert!(result.channel.enabled);
+        let channel = result.channel.expect("channel present");
+        assert_eq!(channel.id, "ch_1");
+        assert_eq!(channel.channel_type, ChannelType::WhatsappUnofficial);
+        assert_eq!(channel.connection_status, ConnectionStatus::Connecting);
+        assert!(channel.enabled);
+    }
+
+    #[test]
+    fn connect_result_tolerates_null_channel() {
+        // The backend emits `"channel"` with no omitempty, so a nil pointer
+        // arrives as null (e.g. some pair responses). It must not fail to parse.
+        let json = r#"{ "channel": null, "pair_code": "ABCD-1234" }"#;
+        let result: ConnectResult = serde_json::from_str(json).expect("should deserialize");
+        assert!(result.channel.is_none());
+        assert_eq!(result.pair_code.as_deref(), Some("ABCD-1234"));
     }
 
     #[test]

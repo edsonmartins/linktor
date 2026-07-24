@@ -450,16 +450,15 @@ function AppearanceSettings({ t }: { t: ReturnType<typeof useTranslations<'setti
 /**
  * API Keys Settings Section
  */
-// Scope vocabulary the backend enforces (resource:action). Kept in sync with
-// internal/api/middleware/scopes.go. "*" (full access) is offered as a switch.
+// Scopes the backend ACTUALLY enforces today (resource:action), kept in sync
+// with the RequireScope wiring in cmd/server/main.go. Only enforced scopes are
+// offered so a granular key never implies a restriction that isn't applied — the
+// contacts:* / conversations:* vocabulary exists in scopes.go but is not yet
+// gated on those routes, so it is intentionally omitted here until it is.
 const API_KEY_SCOPES = [
   'channels:read',
   'channels:write',
   'messages:send',
-  'contacts:read',
-  'contacts:write',
-  'conversations:read',
-  'conversations:write',
 ] as const
 
 function ApiKeysSettings({ t }: { t: ReturnType<typeof useTranslations<'settings'>> }) {

@@ -1178,12 +1178,15 @@ func main() {
 				conversations.POST("/:id/escalate", conversationHandler.Escalate)
 				// Messages within a conversation
 				conversations.GET("/:id/messages", messageHandler.List)
+				// Outbound message actions all require the messages:send scope for
+				// API-key callers: sending a message, reacting to one, and uploading
+				// media to attach to an outgoing message.
 				conversations.POST("/:id/messages", authMiddleware.RequireScope(middleware.ScopeMessagesSend), messageHandler.Send)
-				conversations.POST("/:id/messages/:messageId/reactions", messageHandler.SendReaction)
+				conversations.POST("/:id/messages/:messageId/reactions", authMiddleware.RequireScope(middleware.ScopeMessagesSend), messageHandler.SendReaction)
 				// Upload media to attach to an outgoing message. Kept off the
 				// /messages/:messageId path so the static segment doesn't collide
 				// with the :messageId wildcard in gin's route tree.
-				conversations.POST("/:id/attachments", attachmentHandler.Upload)
+				conversations.POST("/:id/attachments", authMiddleware.RequireScope(middleware.ScopeMessagesSend), attachmentHandler.Upload)
 			}
 
 			// Messages (direct access by ID)

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/linktor/linktor-go/types"
@@ -377,11 +378,40 @@ type ChannelsResource struct {
 	client *Client
 }
 
-// List lists channels
-func (r *ChannelsResource) List(ctx context.Context, params *types.ListChannelsParams) (*types.PaginatedResponse[types.Channel], error) {
-	var result types.PaginatedResponse[types.Channel]
-	err := r.client.get(ctx, "/channels", &result)
-	return &result, err
+// List lists channels. The backend returns a plain array under "data" (channels
+// are not paginated), so this returns []Channel — consistent with the other
+// SDKs. Filters in params are sent as query string.
+func (r *ChannelsResource) List(ctx context.Context, params *types.ListChannelsParams) ([]types.Channel, error) {
+	path := "/channels"
+	if params != nil {
+		q := url.Values{}
+		if params.Type != "" {
+			q.Set("type", string(params.Type))
+		}
+		if params.Status != "" {
+			q.Set("status", string(params.Status))
+		}
+		if params.Search != "" {
+			q.Set("search", params.Search)
+		}
+		if params.Limit > 0 {
+			q.Set("limit", strconv.Itoa(params.Limit))
+		}
+		if params.Offset > 0 {
+			q.Set("offset", strconv.Itoa(params.Offset))
+		}
+		if params.Cursor != "" {
+			q.Set("cursor", params.Cursor)
+		}
+		if enc := q.Encode(); enc != "" {
+			path += "?" + enc
+		}
+	}
+	var env struct {
+		Data []types.Channel `json:"data"`
+	}
+	err := r.client.get(ctx, path, &env)
+	return env.Data, err
 }
 
 // Get gets a channel
