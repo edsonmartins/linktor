@@ -195,7 +195,8 @@ func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) 
 	if !ok {
 		return nil, errors.New(errors.ErrCodeValidation,
 			fmt.Sprintf("invalid channel environment %q (must be %q or %q)",
-				input.Environment, entity.ChannelEnvironmentProduction, entity.ChannelEnvironmentSandbox))
+				input.Environment, entity.ChannelEnvironmentProduction, entity.ChannelEnvironmentSandbox)).
+			WithDetails(environmentBindingDetails)
 	}
 	if err := validateChannelEnvironmentBinding(environment, entity.ChannelType(input.Type), input.Config, input.Credentials); err != nil {
 		return nil, err
@@ -312,7 +313,8 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 	if input.Environment != nil && *input.Environment != "" &&
 		*input.Environment != string(channel.Environment) {
 		return nil, errors.New(errors.ErrCodeValidation,
-			fmt.Sprintf("channel environment is immutable (channel is %q)", channel.Environment))
+			fmt.Sprintf("channel environment is immutable (channel is %q)", channel.Environment)).
+			WithDetails(environmentBindingDetails)
 	}
 
 	if input.Name != nil {

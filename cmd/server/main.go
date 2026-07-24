@@ -619,7 +619,7 @@ func main() {
 		channelService.SetEnabledChannelTypes(enabled)
 		logger.Info(fmt.Sprintf("channel type allowlist enabled: %v", enabled))
 	}
-	channelHandler := handlers.NewChannelHandler(channelService, producer)
+	channelHandler := handlers.NewChannelHandler(channelService, producer, auditService)
 
 	// Create tenant service and handler
 	tenantService := service.NewTenantService(tenantRepo, userRepo, channelRepo, contactRepo)
