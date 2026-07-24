@@ -450,23 +450,45 @@ function AppearanceSettings({ t }: { t: ReturnType<typeof useTranslations<'setti
 /**
  * API Keys Settings Section
  */
+// Scope vocabulary the backend enforces (resource:action). Kept in sync with
+// internal/api/middleware/scopes.go. "*" (full access) is offered as a switch.
+const API_KEY_SCOPES = [
+  'channels:read',
+  'channels:write',
+  'messages:send',
+  'contacts:read',
+  'contacts:write',
+  'conversations:read',
+  'conversations:write',
+] as const
+
 function ApiKeysSettings({ t }: { t: ReturnType<typeof useTranslations<'settings'>> }) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<CreatedAPIKey | null>(null)
+  const [keyName, setKeyName] = useState('')
+  const [fullAccess, setFullAccess] = useState(true)
+  const [selectedScopes, setSelectedScopes] = useState<string[]>([])
 
   const { data: apiKeys = [], isLoading } = useQuery({
     queryKey: queryKeys.apiKeys.list(),
     queryFn: () => api.get<APIKeyRecord[]>('/api-keys'),
   })
 
+  const toggleScope = (scope: string) => {
+    setSelectedScopes((prev) =>
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
+    )
+  }
+
   const createMutation = useMutation({
-    mutationFn: () => api.post<CreatedAPIKey>('/api-keys', {
-      name: `Admin API Key ${new Date().toLocaleString()}`,
-      scopes: ['*'],
-    }),
+    mutationFn: (payload: { name: string; scopes: string[] }) =>
+      api.post<CreatedAPIKey>('/api-keys', payload),
     onSuccess: (createdKey) => {
       setNewlyCreatedKey(createdKey)
+      setKeyName('')
+      setFullAccess(true)
+      setSelectedScopes([])
       queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all })
       toast({ title: t('apiKeyGenerated'), description: t('apiKeyGeneratedDesc') })
     },
@@ -474,6 +496,15 @@ function ApiKeysSettings({ t }: { t: ReturnType<typeof useTranslations<'settings
       toast({ title: t('apiKeyGenerateFailed'), variant: 'error' })
     },
   })
+
+  const handleGenerate = () => {
+    const scopes = fullAccess ? ['*'] : selectedScopes
+    const name = keyName.trim() || `API Key ${new Date().toLocaleString()}`
+    createMutation.mutate({ name, scopes })
+  }
+
+  const generateDisabled =
+    createMutation.isPending || (!fullAccess && selectedScopes.length === 0)
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api-keys/${id}`),
@@ -500,12 +531,61 @@ function ApiKeysSettings({ t }: { t: ReturnType<typeof useTranslations<'settings
 
       <Separator />
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{t('apiKeysAllowAccess')}</p>
-        <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
-          {createMutation.isPending ? t('generating') : t('generateNewKey')}
-        </Button>
-      </div>
+      <Card>
+        <CardContent className="space-y-4 py-4">
+          <p className="text-sm text-muted-foreground">{t('apiKeysAllowAccess')}</p>
+
+          <div className="space-y-2">
+            <Label htmlFor="api-key-name">{t('keyNameLabel')}</Label>
+            <Input
+              id="api-key-name"
+              value={keyName}
+              onChange={(e) => setKeyName(e.target.value)}
+              placeholder={t('keyNamePlaceholder')}
+            />
+          </div>
+
+          <div className="space-y-3">
+            <Label>{t('permissionsLabel')}</Label>
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{t('fullAccessLabel')}</p>
+                <p className="text-xs text-muted-foreground">{t('fullAccessDesc')}</p>
+              </div>
+              <Switch checked={fullAccess} onCheckedChange={setFullAccess} />
+            </div>
+
+            {!fullAccess && (
+              <div className="space-y-2 rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">{t('selectScopesHint')}</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {API_KEY_SCOPES.map((scope) => (
+                    <label
+                      key={scope}
+                      className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+                    >
+                      <span className="font-mono text-xs">{scope}</span>
+                      <Switch
+                        checked={selectedScopes.includes(scope)}
+                        onCheckedChange={() => toggleScope(scope)}
+                      />
+                    </label>
+                  ))}
+                </div>
+                {selectedScopes.length === 0 && (
+                  <p className="text-xs text-destructive">{t('selectAtLeastOneScope')}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end">
+            <Button onClick={handleGenerate} disabled={generateDisabled}>
+              {createMutation.isPending ? t('generating') : t('generateNewKey')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {newlyCreatedKey && (
         <Card>
