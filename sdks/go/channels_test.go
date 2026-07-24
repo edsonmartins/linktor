@@ -24,7 +24,7 @@ func TestChannelsConnectReturnsQR(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"success":true,"data":{
-			"channel":{"id":"ch1","name":"wa","type":"whatsapp","status":"connecting"},
+			"channel":{"id":"ch1","name":"wa","type":"whatsapp","connection_status":"connecting"},
 			"qr_code":"QR-PAYLOAD-123","expires_in":60}}`)
 	}))
 	defer srv.Close()
@@ -42,6 +42,9 @@ func TestChannelsConnectReturnsQR(t *testing.T) {
 	}
 	if res.Channel == nil || res.Channel.ID != "ch1" {
 		t.Errorf("Channel not populated: %+v", res.Channel)
+	}
+	if res.Channel != nil && res.Channel.ConnectionStatus != types.ConnectionStatusConnecting {
+		t.Errorf("ConnectionStatus = %q, want connecting", res.Channel.ConnectionStatus)
 	}
 }
 
