@@ -1157,7 +1157,7 @@ func main() {
 				conversations.POST("/:id/escalate", conversationHandler.Escalate)
 				// Messages within a conversation
 				conversations.GET("/:id/messages", messageHandler.List)
-				conversations.POST("/:id/messages", messageHandler.Send)
+				conversations.POST("/:id/messages", authMiddleware.RequireScope(middleware.ScopeMessagesSend), messageHandler.Send)
 				conversations.POST("/:id/messages/:messageId/reactions", messageHandler.SendReaction)
 				// Upload media to attach to an outgoing message. Kept off the
 				// /messages/:messageId path so the static segment doesn't collide
@@ -1184,6 +1184,10 @@ func main() {
 			// Channels
 			channels := protected.Group("/channels")
 			channels.Use(auditMw.Record())
+			// API-key scope gate (no-op for human/JWT callers): GET needs
+			// channels:read, mutations need channels:write. Applied at the group
+			// so every channel route — present and future — is covered.
+			channels.Use(authMiddleware.RequireScopeByMethod(middleware.ScopeChannelsRead, middleware.ScopeChannelsWrite))
 			{
 				channels.GET("", channelHandler.List)
 				channels.POST("", channelHandler.Create)
