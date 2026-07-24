@@ -164,11 +164,15 @@ func (s *UserService) Delete(ctx context.Context, id, tenantID string) error {
 	return nil
 }
 
-// DeleteForTenant deletes a user only if it belongs to the tenant.
+// DeleteForTenant deletes a user only if it belongs to the tenant. The repo
+// Delete is scoped by the REQUEST tenantID (not the loaded row's own tenant):
+// feeding back user.TenantID would make the SQL guard tautological, defeating
+// the defense-in-depth — if GetByTenantAndID ever returned a wrong-tenant row,
+// the guard must still refuse. Consistent with BotService.DeleteForTenant.
 func (s *UserService) DeleteForTenant(ctx context.Context, tenantID, id string) error {
 	user, err := s.GetByTenantAndID(ctx, tenantID, id)
 	if err != nil {
 		return err
 	}
-	return s.Delete(ctx, user.ID, user.TenantID)
+	return s.Delete(ctx, user.ID, tenantID)
 }

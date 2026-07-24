@@ -62,9 +62,9 @@ func (r *CartRepository) Create(ctx context.Context, cart *entity.Cart) error {
 	return nil
 }
 
-func (r *CartRepository) GetByID(ctx context.Context, cartID string) (*entity.Cart, error) {
-	query := cartSelectColumns + ` FROM carts WHERE id = $1`
-	cart, err := scanCart(r.db.Pool.QueryRow(ctx, query, cartID))
+func (r *CartRepository) GetByID(ctx context.Context, orgID, cartID string) (*entity.Cart, error) {
+	query := cartSelectColumns + ` FROM carts WHERE id = $1 AND organization_id = $2`
+	cart, err := scanCart(r.db.Pool.QueryRow(ctx, query, cartID, orgID))
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, fmt.Errorf("cart not found: %s", cartID)
@@ -90,13 +90,10 @@ func (r *CartRepository) GetByCustomer(ctx context.Context, orgID, customerPhone
 	return cart, nil
 }
 
-// NOTE (INV-001): the id-only cart methods below (GetByID, Delete,
-// MarkAsAbandoned, RecoverCart, DeleteCartItem) are NOT organization-scoped —
-// they match a cart by id alone. Carts have no HTTP surface today and these
-// have no callers, so this is latent debt, not an active IDOR. Any future
-// handler that exposes a cart by id MUST add organization_id scoping (thread
-// orgID into these methods) before wiring, or it reopens tenant isolation.
-// Update is already scoped via cart.OrganizationID below.
+// The cart mutation/lookup methods are organization-scoped (INV-001): a cart
+// is matched by id AND organization_id, so a future handler exposing a cart by
+// id cannot reach another tenant's cart. Update scopes via cart.OrganizationID;
+// the id-based methods take orgID explicitly.
 func (r *CartRepository) Update(ctx context.Context, cart *entity.Cart) error {
 	cart.UpdatedAt = time.Now()
 	query := `
@@ -118,8 +115,8 @@ func (r *CartRepository) Update(ctx context.Context, cart *entity.Cart) error {
 	return nil
 }
 
-func (r *CartRepository) Delete(ctx context.Context, cartID string) error {
-	res, err := r.db.Pool.Exec(ctx, `DELETE FROM carts WHERE id = $1`, cartID)
+func (r *CartRepository) Delete(ctx context.Context, orgID, cartID string) error {
+	res, err := r.db.Pool.Exec(ctx, `DELETE FROM carts WHERE id = $1 AND organization_id = $2`, cartID, orgID)
 	if err != nil {
 		return fmt.Errorf("failed to delete cart: %w", err)
 	}
@@ -203,8 +200,11 @@ func (r *CartRepository) UpdateCartItem(ctx context.Context, item *entity.CartIt
 	return nil
 }
 
-func (r *CartRepository) DeleteCartItem(ctx context.Context, cartID, itemID string) error {
-	res, err := r.db.Pool.Exec(ctx, `DELETE FROM cart_items WHERE id = $1 AND cart_id = $2`, itemID, cartID)
+func (r *CartRepository) DeleteCartItem(ctx context.Context, orgID, cartID, itemID string) error {
+	res, err := r.db.Pool.Exec(ctx,
+		`DELETE FROM cart_items WHERE id = $1 AND cart_id = $2
+		 AND cart_id IN (SELECT id FROM carts WHERE organization_id = $3)`,
+		itemID, cartID, orgID)
 	if err != nil {
 		return fmt.Errorf("failed to delete cart item: %w", err)
 	}
@@ -257,11 +257,11 @@ func (r *CartRepository) GetAbandonedCarts(ctx context.Context, orgID string, th
 	return result, total, nil
 }
 
-func (r *CartRepository) MarkAsAbandoned(ctx context.Context, cartID string) error {
+func (r *CartRepository) MarkAsAbandoned(ctx context.Context, orgID, cartID string) error {
 	now := time.Now()
 	res, err := r.db.Pool.Exec(ctx,
-		`UPDATE carts SET abandoned = TRUE, abandoned_at = $1, updated_at = $1 WHERE id = $2`,
-		now, cartID)
+		`UPDATE carts SET abandoned = TRUE, abandoned_at = $1, updated_at = $1 WHERE id = $2 AND organization_id = $3`,
+		now, cartID, orgID)
 	if err != nil {
 		return fmt.Errorf("failed to mark cart as abandoned: %w", err)
 	}
@@ -271,11 +271,11 @@ func (r *CartRepository) MarkAsAbandoned(ctx context.Context, cartID string) err
 	return nil
 }
 
-func (r *CartRepository) RecoverCart(ctx context.Context, cartID string) error {
+func (r *CartRepository) RecoverCart(ctx context.Context, orgID, cartID string) error {
 	now := time.Now()
 	res, err := r.db.Pool.Exec(ctx,
-		`UPDATE carts SET abandoned = FALSE, recovered_at = $1, updated_at = $1 WHERE id = $2`,
-		now, cartID)
+		`UPDATE carts SET abandoned = FALSE, recovered_at = $1, updated_at = $1 WHERE id = $2 AND organization_id = $3`,
+		now, cartID, orgID)
 	if err != nil {
 		return fmt.Errorf("failed to recover cart: %w", err)
 	}
