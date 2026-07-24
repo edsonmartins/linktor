@@ -123,3 +123,46 @@ groups:
         annotations:
           summary: "HTTP p99 latency above 1s"
           description: "p99 request latency has exceeded 1s for 10m."
+
+  # Sandbox/policy guards (INV-015/017/024). Thresholds mirror the dry-run
+  # exit criteria in docs/sandbox-channel-operacao.md — an anomaly here BLOCKS
+  # flipping enforcement on.
+  - name: linktor.guards
+    rules:
+      # lookup_error fail-open means infrastructure is blinding the policy:
+      # enforcement is effectively OFF even if configured on. The exit criteria
+      # forbid the dry_run→enforce flip while this fires.
+      - alert: LinktorGuardFailOpenSystematic
+        expr: sum by (policy) (increase(linktor_outbound_guard_fail_open_total{cause="lookup_error"}[1h])) > 0
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Delivery policy failing open (lookup_error) for over 1h"
+          description: "Policy {{ $labels.policy }} could not evaluate sends for >1h (lookup errors). The policy is blind: sends pass unevaluated. Investigate the data source before trusting or enabling enforcement."
+
+      # Would-block rate above the exit-criteria ceiling: legitimate flow may be
+      # outside the 24h window; investigate before enforcing.
+      - alert: LinktorGuardDryRunBlockRateHigh
+        expr: |
+          sum(increase(linktor_outbound_guard_blocked_total{mode="dry_run",reason="window_24h"}[1d]))
+            /
+          clamp_min(sum(increase(linktor_outbound_messages_total{channel_type="whatsapp_official"}[1d])), 1)
+          > 0.05
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dry-run would-block rate above 5%"
+          description: "More than 5% of whatsapp_official sends would be blocked by the 24h-window policy (approximate denominator includes template sends). Investigate before flipping enforcement."
+
+      # Sandbox delivery guard blocking in production paths is expected noise in
+      # homologation, but a sustained surge may mean a misconfigured allowlist.
+      - alert: LinktorSandboxBlockSurge
+        expr: sum(increase(linktor_outbound_guard_blocked_total{reason="allowlist",mode="enforce"}[1h])) > 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sandbox allowlist blocking heavily"
+          description: "{{ $value }} sends blocked by the sandbox allowlist in 1h. Likely a tenant homologating against an empty/incomplete allowlist — check the tenant's sandbox allowlist before it becomes a support ticket."

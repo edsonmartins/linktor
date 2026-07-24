@@ -1,0 +1,13 @@
+# Grafana datasource provisioning: points at the Prometheus that scrapes the
+# LINKTOR /metrics endpoint (see ../../../prometheus.yml). Adjust the URL for
+# your deployment; the uid is referenced by the provisioned dashboards.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: linktor-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
