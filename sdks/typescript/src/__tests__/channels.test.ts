@@ -36,8 +36,8 @@ describe('ChannelsResource', () => {
     const res = await new ChannelsResource(http).connect('ch1');
     expect(res.qr_code).toBe('QR-PAYLOAD-123');
     expect(res.expires_in).toBe(60);
-    expect(res.channel.id).toBe('ch1');
-    expect(res.channel.connection_status).toBe('connecting');
+    expect(res.channel?.id).toBe('ch1');
+    expect(res.channel?.connection_status).toBe('connecting');
   });
 
   it('create sends credentials and returns the channel', async () => {

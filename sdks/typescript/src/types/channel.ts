@@ -82,7 +82,8 @@ export interface UpdateChannelInput {
  * not by QR.
  */
 export interface ConnectResult {
-  channel: Channel;
+  /** Present when the response carries a channel; the wire may send null. */
+  channel?: Channel;
   qr_code?: string;
   expires_in?: number;
   pair_code?: string;
