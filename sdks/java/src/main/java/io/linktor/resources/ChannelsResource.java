@@ -2,13 +2,11 @@ package io.linktor.resources;
 
 import com.google.gson.reflect.TypeToken;
 import io.linktor.types.Channel;
-import io.linktor.types.Common;
 import io.linktor.utils.HttpClient;
 import io.linktor.utils.LinktorException;
 
 import java.lang.reflect.Type;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
 public class ChannelsResource {
     private final HttpClient http;
@@ -18,82 +16,62 @@ public class ChannelsResource {
     }
 
     /**
-     * List channels with optional filters
+     * List all channels. The backend returns a plain array (no pagination).
      */
-    public Common.PaginatedResponse<Channel.ChannelModel> list(Channel.ListChannelsParams params) throws LinktorException {
-        Map<String, String> queryParams = new HashMap<>();
-        if (params != null) {
-            if (params.getType() != null) queryParams.put("type", params.getType().name().toLowerCase());
-            if (params.getStatus() != null) queryParams.put("status", params.getStatus().name().toLowerCase());
-            if (params.getSearch() != null) queryParams.put("search", params.getSearch());
-            if (params.getLimit() != null) queryParams.put("limit", params.getLimit().toString());
-            if (params.getPage() != null) queryParams.put("page", params.getPage().toString());
-        }
-
-        Type responseType = new TypeToken<Common.PaginatedResponse<Channel.ChannelModel>>(){}.getType();
-        return http.get("/channels", queryParams, responseType);
+    public List<Channel.ChannelModel> list() throws LinktorException {
+        Type responseType = new TypeToken<List<Channel.ChannelModel>>(){}.getType();
+        return http.get("/channels", responseType);
     }
 
     /**
-     * List all channels (no filters)
-     */
-    public Common.PaginatedResponse<Channel.ChannelModel> list() throws LinktorException {
-        return list(null);
-    }
-
-    /**
-     * Get a channel by ID
+     * Get a channel by ID.
      */
     public Channel.ChannelModel get(String channelId) throws LinktorException {
         return http.get("/channels/" + channelId, Channel.ChannelModel.class);
     }
 
     /**
-     * Create a new channel
+     * Create a new channel. Secrets are passed via {@code input.credentials}.
      */
     public Channel.ChannelModel create(Channel.CreateChannelInput input) throws LinktorException {
         return http.post("/channels", input, Channel.ChannelModel.class);
     }
 
     /**
-     * Update a channel
+     * Update a channel (PUT; reuses the create body shape).
      */
     public Channel.ChannelModel update(String channelId, Channel.UpdateChannelInput input) throws LinktorException {
-        return http.patch("/channels/" + channelId, input, Channel.ChannelModel.class);
+        return http.put("/channels/" + channelId, input, Channel.ChannelModel.class);
     }
 
     /**
-     * Delete a channel
+     * Delete a channel (204 No Content).
      */
     public void delete(String channelId) throws LinktorException {
         http.delete("/channels/" + channelId);
     }
 
     /**
-     * Connect a channel
+     * Connect a channel. Returns a {@link Channel.ConnectResult} which may carry a
+     * {@code qrCode} to render (WhatsApp Web linking) plus its {@code expiresIn}.
      */
-    public Channel.ChannelModel connect(String channelId) throws LinktorException {
-        return http.post("/channels/" + channelId + "/connect", null, Channel.ChannelModel.class);
+    public Channel.ConnectResult connect(String channelId) throws LinktorException {
+        return http.post("/channels/" + channelId + "/connect", null, Channel.ConnectResult.class);
     }
 
     /**
-     * Disconnect a channel
+     * Request a phone-number pairing code for a channel. Returns a
+     * {@link Channel.ConnectResult} carrying the {@code pairCode}.
+     */
+    public Channel.ConnectResult requestPairCode(String channelId, String phoneNumber) throws LinktorException {
+        Channel.PairChannelInput body = new Channel.PairChannelInput(phoneNumber);
+        return http.post("/channels/" + channelId + "/pair", body, Channel.ConnectResult.class);
+    }
+
+    /**
+     * Disconnect a channel. Returns the updated channel.
      */
     public Channel.ChannelModel disconnect(String channelId) throws LinktorException {
         return http.post("/channels/" + channelId + "/disconnect", null, Channel.ChannelModel.class);
-    }
-
-    /**
-     * Get channel status
-     */
-    public Channel.ChannelStatusResponse getStatus(String channelId) throws LinktorException {
-        return http.get("/channels/" + channelId + "/status", Channel.ChannelStatusResponse.class);
-    }
-
-    /**
-     * Test channel connection
-     */
-    public Channel.ChannelStatusResponse test(String channelId) throws LinktorException {
-        return http.post("/channels/" + channelId + "/test", null, Channel.ChannelStatusResponse.class);
     }
 }
