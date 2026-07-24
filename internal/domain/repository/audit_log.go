@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 )
@@ -12,6 +13,12 @@ type AuditLogFilters struct {
 	Action       string
 	ResourceType string
 	ResourceID   string
+	// Actor matches actor_email/actor_name/actor_id (case-insensitive
+	// substring) so a human can filter by who acted without knowing the UUID.
+	Actor string
+	// StartTime/EndTime bound created_at (inclusive). Zero value = unbounded.
+	StartTime time.Time
+	EndTime   time.Time
 }
 
 // AuditLogRepository defines persistence for the audit trail.

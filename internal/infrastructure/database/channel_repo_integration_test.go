@@ -537,3 +537,57 @@ func TestMarkFailedWithBlockedReason(t *testing.T) {
 		t.Fatalf("metadata merge lost keys: %+v", got2.Metadata)
 	}
 }
+
+// TestAuditLogFilters covers the WP-L additions: actor (substring across
+// email/name/id) and period (created_at range).
+func TestAuditLogFilters(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewPostgresDB(testDBConfig(t))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+	if err := db.RunMigrations(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	repo := NewAuditLogRepository(db)
+	tenantID := seedTenant(t, ctx, db)
+
+	insert := func(actorEmail, action string, at time.Time) {
+		if _, err := db.Pool.Exec(ctx,
+			`INSERT INTO audit_logs (id, tenant_id, actor_id, actor_email, action, created_at)
+			 VALUES ($1, $2, $3, $4, $5, $6)`,
+			uuid.New().String(), tenantID, uuid.New().String(), actorEmail, action, at); err != nil {
+			t.Fatalf("insert audit: %v", err)
+		}
+	}
+	now := time.Now().UTC()
+	insert("alice@acme.com", "channel.create", now.Add(-48*time.Hour))
+	insert("bob@acme.com", "channel.update", now.Add(-1*time.Hour))
+	insert("alice@acme.com", "sandbox_allowlist.add", now.Add(-30*time.Minute))
+
+	count := func(f *repository.AuditLogFilters) int64 {
+		_, total, err := repo.FindByTenant(ctx, tenantID, f, nil)
+		if err != nil {
+			t.Fatalf("find: %v", err)
+		}
+		return total
+	}
+
+	if got := count(&repository.AuditLogFilters{Actor: "alice"}); got != 2 {
+		t.Fatalf("actor=alice: %d, want 2", got)
+	}
+	if got := count(&repository.AuditLogFilters{Action: "channel.create"}); got != 1 {
+		t.Fatalf("action filter: %d, want 1", got)
+	}
+	if got := count(&repository.AuditLogFilters{StartTime: now.Add(-2 * time.Hour)}); got != 2 {
+		t.Fatalf("start filter: %d, want 2", got)
+	}
+	if got := count(&repository.AuditLogFilters{
+		Actor:     "alice",
+		StartTime: now.Add(-2 * time.Hour),
+	}); got != 1 {
+		t.Fatalf("actor+period: %d, want 1", got)
+	}
+}

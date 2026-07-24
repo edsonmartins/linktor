@@ -2081,7 +2081,12 @@
     "filterResource": "Filtrar por recurso",
     "all": "Todos",
     "prev": "Anterior",
-    "next": "Siguiente"
+    "next": "Siguiente",
+    "filterActor": "Filtrar por autor",
+    "filterStart": "Desde (fecha)",
+    "filterEnd": "Hasta (fecha)",
+    "details": "Detalles",
+    "clearFilters": "Limpiar filtros"
   },
   "environment": {
     "sandbox": "Sandbox",

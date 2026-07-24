@@ -2081,7 +2081,12 @@
     "filterResource": "Filter by resource",
     "all": "All",
     "prev": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "filterActor": "Filter by actor",
+    "filterStart": "From (date)",
+    "filterEnd": "To (date)",
+    "details": "Details",
+    "clearFilters": "Clear filters"
   },
   "environment": {
     "sandbox": "Sandbox",
