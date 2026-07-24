@@ -22,6 +22,10 @@ type LinktorEnvelope struct {
 	// o Core o grava para correlacionar reações de canal à mensagem interna. Antes era
 	// descartado (só ia o IdempotencyKey = id interno do Linktor).
 	ChannelMessageId string `json:"channelMessageId,omitempty"`
+	// TargetIdempotencyKey: para messageType="reaction" inbound (RFC-010 Fatia 2). O bridge
+	// resolve a mensagem-alvo pelo id do canal e passa a chave que o Core já conhece (a
+	// idempotencyKey do envio/recebimento), evitando gravar channel_message_id no outbound.
+	TargetIdempotencyKey string `json:"targetIdempotencyKey,omitempty"`
 }
 
 // LinktorOutbound é o envelope que o Core publica em tenant.{id}.core.outbound e o bridge consome
@@ -86,6 +90,10 @@ type messageReceivedPayload struct {
 	SenderName     string       `json:"sender_name"`
 	Environment    string       `json:"environment"`
 	Attachments    []attachment `json:"attachments"`
+	// Reação de canal (RFC-010 Fatia 2): quando IsReaction=="true", Content é o emoji e
+	// ReactionMessageID é o id no provedor da mensagem-alvo (a que o cliente reagiu).
+	IsReaction        string `json:"is_reaction"`
+	ReactionMessageID string `json:"reaction_message_id"`
 }
 
 // attachment é um anexo de mídia do evento message.received (subconjunto usado pelo bridge).

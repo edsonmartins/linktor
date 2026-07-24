@@ -53,6 +53,27 @@ func TestBuildInboundEnvelope(t *testing.T) {
 	}
 }
 
+// TestInboundReactionPayload prova que o payload de message.received expõe a reação do cliente
+// (is_reaction/reaction_message_id) para o bridge montar a reação inbound (RFC-010 Fatia 2).
+func TestInboundReactionPayload(t *testing.T) {
+	raw := `{"type":"message.received","tenant_id":"acme","payload":{
+		"message_id":"m-rx","channel_type":"whatsapp","content_type":"text","content":"👍",
+		"external_id":"wamid.RX","is_reaction":"true","reaction_message_id":"wamid.TARGET"}}`
+	var ev messageReceivedEvent
+	if err := json.Unmarshal([]byte(raw), &ev); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if ev.Payload.IsReaction != "true" {
+		t.Errorf("IsReaction = %q, quero true", ev.Payload.IsReaction)
+	}
+	if ev.Payload.ReactionMessageID != "wamid.TARGET" {
+		t.Errorf("ReactionMessageID = %q, quero o id do canal da msg alvo", ev.Payload.ReactionMessageID)
+	}
+	if ev.Payload.Content != "👍" {
+		t.Errorf("Content(emoji) = %q", ev.Payload.Content)
+	}
+}
+
 // TestOutboundReactionUnmarshal prova que o envelope de saída de reação (RFC-010) carrega o alvo.
 func TestOutboundReactionUnmarshal(t *testing.T) {
 	raw := `{"tenantId":"acme","vendorId":"vendor-42","customerId":"+55","channel":"WHATSAPP",

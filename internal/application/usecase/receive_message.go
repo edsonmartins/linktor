@@ -354,6 +354,12 @@ func (uc *ReceiveMessageUseCase) buildMessageReceivedOutboxEvent(tenantID string
 	if atts := attachmentsPayload(message.Attachments); len(atts) > 0 {
 		payload["attachments"] = atts
 	}
+	// Reação de canal (RFC-010): propaga o alvo/emoji ao consumidor (o bridge VendaX monta a
+	// reação inbound). Sem isto a reação chega como texto solto (emoji) sem alvo.
+	if message.Metadata["is_reaction"] == "true" {
+		payload["is_reaction"] = "true"
+		payload["reaction_message_id"] = message.Metadata["reaction_message_id"]
+	}
 
 	return newOutboxEvent(nats.EventMessageReceived, tenantID, "message", message.ID,
 		"evt-message-received-"+message.ID, payload)
