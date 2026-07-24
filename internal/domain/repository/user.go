@@ -27,7 +27,7 @@ type UserRepository interface {
 	Update(ctx context.Context, user *entity.User) error
 
 	// Delete deletes a user
-	Delete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id, tenantID string) error
 
 	// CountByTenant counts users for a tenant
 	CountByTenant(ctx context.Context, tenantID string) (int64, error)

@@ -182,7 +182,7 @@ func TestUserService_Delete(t *testing.T) {
 
 	userRepo.Users["user-1"] = &entity.User{ID: "user-1", TenantID: "tenant-1"}
 
-	err := svc.Delete(context.Background(), "user-1")
+	err := svc.Delete(context.Background(), "user-1", "tenant-1")
 	require.NoError(t, err)
 	assert.Empty(t, userRepo.Users)
 }
@@ -190,7 +190,7 @@ func TestUserService_Delete(t *testing.T) {
 func TestUserService_Delete_NotFound(t *testing.T) {
 	svc, _, _ := setupUserService()
 
-	err := svc.Delete(context.Background(), "nonexistent")
+	err := svc.Delete(context.Background(), "nonexistent", "tenant-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "User not found")
 }

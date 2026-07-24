@@ -26,20 +26,20 @@ type BotRepository interface {
 	// Update updates a bot
 	Update(ctx context.Context, bot *entity.Bot) error
 
-	// UpdateStatus updates only the bot status
-	UpdateStatus(ctx context.Context, id string, status entity.BotStatus) error
+	// UpdateStatus updates only the bot status (tenant-scoped, INV-001)
+	UpdateStatus(ctx context.Context, id, tenantID string, status entity.BotStatus) error
 
-	// Delete deletes a bot
-	Delete(ctx context.Context, id string) error
+	// Delete deletes a bot (tenant-scoped, INV-001)
+	Delete(ctx context.Context, id, tenantID string) error
 
 	// CountByTenant counts bots for a tenant
 	CountByTenant(ctx context.Context, tenantID string) (int64, error)
 
-	// AssignChannel assigns a channel to a bot
-	AssignChannel(ctx context.Context, botID, channelID string) error
+	// AssignChannel assigns a channel to a bot (tenant-scoped, INV-001)
+	AssignChannel(ctx context.Context, botID, tenantID, channelID string) error
 
-	// UnassignChannel removes a channel from a bot
-	UnassignChannel(ctx context.Context, botID, channelID string) error
+	// UnassignChannel removes a channel from a bot (tenant-scoped, INV-001)
+	UnassignChannel(ctx context.Context, botID, tenantID, channelID string) error
 }
 
 // ConversationContextRepository defines the interface for conversation context persistence

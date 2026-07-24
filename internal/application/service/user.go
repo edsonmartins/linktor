@@ -150,14 +150,14 @@ func (s *UserService) UpdateForTenant(ctx context.Context, tenantID, id string, 
 	return s.Update(ctx, user.ID, input)
 }
 
-// Delete deletes a user
-func (s *UserService) Delete(ctx context.Context, id string) error {
+// Delete deletes a user (tenant-scoped at the repo layer, INV-001)
+func (s *UserService) Delete(ctx context.Context, id, tenantID string) error {
 	_, err := s.userRepo.FindByID(ctx, id)
 	if err != nil {
 		return errors.New(errors.ErrCodeUserNotFound, "User not found")
 	}
 
-	if err := s.userRepo.Delete(ctx, id); err != nil {
+	if err := s.userRepo.Delete(ctx, id, tenantID); err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "Failed to delete user")
 	}
 
@@ -170,5 +170,5 @@ func (s *UserService) DeleteForTenant(ctx context.Context, tenantID, id string) 
 	if err != nil {
 		return err
 	}
-	return s.Delete(ctx, user.ID)
+	return s.Delete(ctx, user.ID, user.TenantID)
 }
