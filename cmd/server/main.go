@@ -406,6 +406,11 @@ func main() {
 	// enforce → dry_run is a config change, no deploy.
 	outboundResolver.AddPolicy(outbound.NewSessionWindowPolicy(
 		outbound.ParsePolicyMode(os.Getenv("LINKTOR_WA_WINDOW_ENFORCEMENT")), messageRepo))
+	// Template status gate (INV-015): blocks sends of templates whose synced
+	// status is known-unusable (rejected/paused/...). Same rollout contract via
+	// LINKTOR_WA_TEMPLATE_ENFORCEMENT: off | dry_run (default) | enforce.
+	outboundResolver.AddPolicy(outbound.NewTemplateStatusPolicy(
+		outbound.ParsePolicyMode(os.Getenv("LINKTOR_WA_TEMPLATE_ENFORCEMENT")), templateRepo))
 	outboundResolver.Register(whatsappofficial.NewSenderFactory())
 	outboundResolver.Register(telegram.NewSenderFactory())
 	outboundResolver.Register(sms.NewSenderFactory())
