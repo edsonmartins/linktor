@@ -101,6 +101,11 @@ func (b *Bridge) handleMessageReceived(ctx context.Context, data []byte) error {
 		return nil
 	}
 
+	// Reação de canal do cliente (RFC-010 Fatia 2): caminho próprio, não é mensagem de conteúdo.
+	if p.IsReaction == "true" {
+		return b.publishInboundReaction(ctx, ev, vendorID)
+	}
+
 	env := buildInboundEnvelope(ev, vendorID, b.resolveCustomerID(ctx, p.ContactID, p.ChannelType))
 	payload, err := json.Marshal(env)
 	if err != nil {
@@ -109,6 +114,50 @@ func (b *Bridge) handleMessageReceived(ctx context.Context, data []byte) error {
 	// core publish -> o dispatcher core do Core (CoreNatsSubscriptions) recebe.
 	if err := b.nats.Conn().Publish(coreInboundSubject(ev.TenantID), payload); err != nil {
 		return fmt.Errorf("publish inbound: %w", err)
+	}
+	return nil
+}
+
+// publishInboundReaction traduz uma reação do cliente em envelope de reação para o Core. Resolve a
+// mensagem-alvo pelo id do canal (reaction_message_id → external id) e envia a chave que o Core já
+// conhece (idempotencyKey do envio, ou o id interno para msg do cliente) — assim o Core correlaciona
+// sem precisar guardar channel_message_id das mensagens de saída (RFC-010 Fatia 2, sem L-C).
+func (b *Bridge) publishInboundReaction(ctx context.Context, ev messageReceivedEvent, vendorID string) error {
+	p := ev.Payload
+	if p.ReactionMessageID == "" {
+		logger.Warn("bridge inbound: reação sem reaction_message_id; ignorando")
+		return nil
+	}
+	target, err := b.messageRepo.FindByExternalID(ctx, p.ReactionMessageID)
+	if err != nil {
+		return fmt.Errorf("alvo da reação por external id %s: %w", p.ReactionMessageID, err)
+	}
+	if target == nil {
+		logger.Warn("bridge inbound: alvo da reação não encontrado (externalId=" + p.ReactionMessageID + ")")
+		return nil
+	}
+	targetKey := target.Metadata["idempotency_key"] // msg do vendedor enviada via Core
+	if targetKey == "" {
+		targetKey = target.ID // msg do cliente: no Core, idempotencyKey = message.ID do Linktor
+	}
+
+	env := LinktorEnvelope{
+		TenantID:             ev.TenantID,
+		VendorID:             vendorID,
+		CustomerID:           b.resolveCustomerID(ctx, p.ContactID, p.ChannelType),
+		Channel:              coreChannelType(p.ChannelType),
+		MessageType:          "reaction",
+		Content:              p.Content, // emoji (vazio = remoção)
+		IdempotencyKey:       p.MessageID,
+		Environment:          p.Environment,
+		TargetIdempotencyKey: targetKey,
+	}
+	payload, err := json.Marshal(env)
+	if err != nil {
+		return fmt.Errorf("marshal envelope reação: %w", err)
+	}
+	if err := b.nats.Conn().Publish(coreInboundSubject(ev.TenantID), payload); err != nil {
+		return fmt.Errorf("publish reação inbound: %w", err)
 	}
 	return nil
 }

@@ -1,0 +1,198 @@
+{
+  "__comment": "Guardas de entrega do LINKTOR (INV-015/017/024). Serve à decisão de saída do dry-run (docs/sandbox-channel-operacao.md): 14 dias E >=500 envios; esperado <=2%; anomalias que IMPEDEM a virada: taxa >5%, fail-open lookup_error sustentado >1h, fail-open total >0,5%. Sem label de tenant (INV-021) — granularidade por tenant sai de message_logs. Editado no repositório, não na UI.",
+  "uid": "linktor-guards",
+  "title": "LINKTOR — Guardas de entrega (sandbox e políticas)",
+  "tags": ["linktor", "guards", "sandbox"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": { "from": "now-14d", "to": "now" },
+  "annotations": { "list": [] },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Bloqueios de guarda (linktor_outbound_guard_blocked_total)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Bloqueios efetivos (enforce) por motivo",
+      "description": "Envios bloqueados antes da chamada ao provider. reason=allowlist é a guarda sandbox (INV-017, fail-closed); window_24h e template_rejected são políticas de provider (INV-015) e só aparecem aqui com enforcement ativo.",
+      "id": 2,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "linktor-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (increase(linktor_outbound_guard_blocked_total{mode=\"enforce\"}[$__rate_interval]))",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Dry-run: o que SERIA bloqueado, por motivo",
+      "description": "Base da decisão de virada dry_run→enforce. Janela mínima: 14 dias E >=500 envios free-form avaliados. Esperado: window_24h <=2% dos free-form; template_rejected ~0.",
+      "id": 3,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "linktor-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (increase(linktor_outbound_guard_blocked_total{mode=\"dry_run\"}[$__rate_interval]))",
+          "legendFormat": "{{reason}} (dry-run)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Would-block window_24h — total 14d",
+      "description": "Total de free-form que seriam bloqueados pela janela de 24h no período de observação.",
+      "id": 4,
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "linktor-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(linktor_outbound_guard_blocked_total{mode=\"dry_run\",reason=\"window_24h\"}[14d]))" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Taxa would-block aproximada (14d)",
+      "description": "ANOMALIA que impede a virada: >5% (vermelho). Esperado: <=2% (verde). ATENÇÃO: denominador aproximado — linktor_outbound_messages_total{whatsapp_official} inclui templates; o denominador exato (free-form) sai da consulta SQL do critério de saída (docs/sandbox-channel-operacao.md).",
+      "id": 5,
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "linktor-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.02 }, { "color": "red", "value": 0.05 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(linktor_outbound_guard_blocked_total{mode=\"dry_run\",reason=\"window_24h\"}[14d])) / clamp_min(sum(increase(linktor_outbound_messages_total{channel_type=\"whatsapp_official\"}[14d])), 1)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Bloqueios allowlist (sandbox) — 24h",
+      "description": "Guarda de segurança da allowlist (sempre enforce). Surto sustentado = tenant homologando contra allowlist vazia/incompleta (alerta LinktorSandboxBlockSurge).",
+      "id": 6,
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "linktor-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 50 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(linktor_outbound_guard_blocked_total{reason=\"allowlist\"}[1d]))" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Envios outbound whatsapp_official — 14d (denominador aprox.)",
+      "description": "Referência para as taxas. >=500 é o piso do critério de saída (o piso exato é de free-form avaliados; ver SQL na nota de operação).",
+      "id": 7,
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "linktor-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 500 } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        { "refId": "A", "expr": "sum(increase(linktor_outbound_messages_total{channel_type=\"whatsapp_official\"}[14d]))" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Fail-open das políticas (linktor_outbound_guard_fail_open_total — INV-024)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 8,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Fail-open — cause=lookup_error (INFRA CEGANDO A POLÍTICA)",
+      "description": "A série que indica que o enforcement está desligado DE FATO, mesmo configurado: a política deixou envios passarem porque a fonte de dados falhou. Qualquer valor sustentado por >1h é anomalia que IMPEDE a virada (alerta LinktorGuardFailOpenSystematic). NÃO some com status_unknown — a separação por causa é o ponto do painel.",
+      "id": 9,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "linktor-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60 },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] },
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (policy) (increase(linktor_outbound_guard_fail_open_total{cause=\"lookup_error\"}[$__rate_interval]))",
+          "legendFormat": "{{policy}} — lookup_error"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Fail-open — cause=status_unknown (aguardando sincronização)",
+      "description": "Template sem registro local (ainda não sincronizado da Meta). Auto-corrige com o sync; volume residual é esperado. Vira preocupação se crescer junto de envios de template novos sem nunca cair.",
+      "id": 10,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "linktor-prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40 }, "color": { "mode": "fixed", "fixedColor": "yellow" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (policy) (increase(linktor_outbound_guard_fail_open_total{cause=\"status_unknown\"}[$__rate_interval]))",
+          "legendFormat": "{{policy}} — status_unknown"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Taxa de fail-open (14d, aprox.)",
+      "description": "ANOMALIA que impede a virada: >0,5% das avaliações (vermelho). Denominador aproximado (total outbound whatsapp_official).",
+      "id": 11,
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "linktor-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.005 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(linktor_outbound_guard_fail_open_total[14d])) / clamp_min(sum(increase(linktor_outbound_messages_total{channel_type=\"whatsapp_official\"}[14d])), 1)"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Critério de saída do dry-run (WP-C)",
+      "id": 12,
+      "gridPos": { "h": 5, "w": 18, "x": 6, "y": 23 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Virada dry_run → enforce** (`docs/sandbox-channel-operacao.md`):\n\n- Janela mínima: **14 dias E ≥500 envios free-form avaliados** (o que ocorrer por último)\n- Esperado: would-block `window_24h` **≤2%**; `template_rejected` ≈ 0\n- **Impedem a virada:** taxa >5% · fail-open `lookup_error` sustentado >1h · fail-open total >0,5%\n- Virada e rollback por configuração (`LINKTOR_WA_WINDOW_ENFORCEMENT` / `LINKTOR_WA_TEMPLATE_ENFORCEMENT`)\n- A virada promove INV-015 a `IMPOSTO` — exige atualização do CONSTITUTION (G-002)\n\n_Sem label de tenant (INV-021): granularidade por tenant sai de `message_logs` no console._"
+      }
+    }
+  ]
+}

@@ -28,6 +28,12 @@ func NewChannelRepository(db *PostgresDB, enc *crypto.Encryptor) *ChannelReposit
 
 // Create creates a new channel
 func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel) error {
+	environment, ok := entity.ParseChannelEnvironment(string(channel.Environment))
+	if !ok {
+		return errors.New(errors.ErrCodeValidation, "invalid channel environment: "+string(channel.Environment))
+	}
+	channel.Environment = environment
+
 	encCreds, encConfig, err := r.encryptChannelSecrets(channel)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to encrypt channel secrets")
@@ -46,9 +52,10 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 	query := `
 		INSERT INTO channels (
 			id, tenant_id, name, type, enabled, connection_status, credentials, config,
-			webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+			webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`
 
 	_, err = r.db.Pool.Exec(ctx, query,
@@ -61,10 +68,13 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 		credentials,
 		config,
 		nullString(channel.WebhookURL),
+		string(channel.Environment),
 		channel.IsCoexistence,
 		nullString(channel.WABAID),
 		channel.LastEchoAt,
 		normalizeCoexistenceStatus(channel.CoexistenceStatus),
+		nullString(channel.Identifier),
+		nullString(channel.MessageTemplateNamespace),
 		channel.CreatedAt,
 		channel.UpdatedAt,
 	)
@@ -80,7 +90,8 @@ func (r *ChannelRepository) Create(ctx context.Context, channel *entity.Channel)
 func (r *ChannelRepository) FindByID(ctx context.Context, id string) (*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE id = $1
@@ -114,7 +125,8 @@ func (r *ChannelRepository) FindByTenant(ctx context.Context, tenantID string, p
 	// Get channels
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1
@@ -144,7 +156,8 @@ func (r *ChannelRepository) FindByTenant(ctx context.Context, tenantID string, p
 func (r *ChannelRepository) FindByType(ctx context.Context, tenantID string, channelType entity.ChannelType) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1 AND type = $2
@@ -175,7 +188,8 @@ func (r *ChannelRepository) FindByType(ctx context.Context, tenantID string, cha
 func (r *ChannelRepository) FindAllByType(ctx context.Context, channelType entity.ChannelType) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE type = $1
@@ -204,7 +218,8 @@ func (r *ChannelRepository) FindAllByType(ctx context.Context, channelType entit
 func (r *ChannelRepository) FindEnabledByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1 AND enabled = true
@@ -233,7 +248,8 @@ func (r *ChannelRepository) FindEnabledByTenant(ctx context.Context, tenantID st
 func (r *ChannelRepository) FindActiveByTenant(ctx context.Context, tenantID string) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE tenant_id = $1 AND enabled = true AND connection_status = 'connected'
@@ -258,7 +274,10 @@ func (r *ChannelRepository) FindActiveByTenant(ctx context.Context, tenantID str
 	return channels, nil
 }
 
-// Update updates a channel
+// Update updates a channel. The environment column is deliberately absent from
+// the SET list: a channel's environment is immutable after creation, so leaving
+// it out makes the guarantee structural here regardless of what the caller put
+// in the struct. ChannelService additionally rejects such updates explicitly.
 func (r *ChannelRepository) Update(ctx context.Context, channel *entity.Channel) error {
 	channel.UpdatedAt = time.Now()
 
@@ -289,8 +308,10 @@ func (r *ChannelRepository) Update(ctx context.Context, channel *entity.Channel)
 			waba_id = $8,
 			last_echo_at = $9,
 			coexistence_status = $10,
-			updated_at = $11
-		WHERE id = $12
+			identifier = $11,
+			message_template_namespace = $12,
+			updated_at = $13
+		WHERE id = $14
 	`
 
 	result, err := r.db.Pool.Exec(ctx, query,
@@ -304,6 +325,8 @@ func (r *ChannelRepository) Update(ctx context.Context, channel *entity.Channel)
 		nullString(channel.WABAID),
 		channel.LastEchoAt,
 		normalizeCoexistenceStatus(channel.CoexistenceStatus),
+		nullString(channel.Identifier),
+		nullString(channel.MessageTemplateNamespace),
 		channel.UpdatedAt,
 		channel.ID,
 	)
@@ -402,7 +425,8 @@ func (r *ChannelRepository) FindByTypes(ctx context.Context, types []entity.Chan
 
 	query := fmt.Sprintf(`
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE type IN (%s)
@@ -432,7 +456,8 @@ func (r *ChannelRepository) FindByTypes(ctx context.Context, types []entity.Chan
 func (r *ChannelRepository) FindByConfigValue(ctx context.Context, key, value string) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE config->>$1 = $2
@@ -461,7 +486,8 @@ func (r *ChannelRepository) FindByConfigValue(ctx context.Context, key, value st
 func (r *ChannelRepository) FindWhatsAppByPhoneNumberID(ctx context.Context, phoneNumberID string) (*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE (type = 'whatsapp' OR type = 'whatsapp_official')
@@ -484,21 +510,29 @@ func (r *ChannelRepository) FindWhatsAppByPhoneNumberID(ctx context.Context, pho
 
 func (r *ChannelRepository) scanChannel(row pgx.Row) (*entity.Channel, error) {
 	var c entity.Channel
-	var channelType, connectionStatus string
+	var channelType, connectionStatus, environment string
 	var credentials, config []byte
-	var webhookURL, wabaID, coexistenceStatus *string
+	var webhookURL, wabaID, coexistenceStatus, identifier, templateNamespace *string
 
 	err := row.Scan(
 		&c.ID, &c.TenantID, &c.Name, &channelType, &c.Enabled, &connectionStatus,
-		&credentials, &config, &webhookURL, &c.IsCoexistence, &wabaID,
-		&c.LastEchoAt, &coexistenceStatus, &c.CreatedAt, &c.UpdatedAt,
+		&credentials, &config, &webhookURL, &environment, &c.IsCoexistence, &wabaID,
+		&c.LastEchoAt, &coexistenceStatus, &identifier, &templateNamespace,
+		&c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	if identifier != nil {
+		c.Identifier = *identifier
+	}
+	if templateNamespace != nil {
+		c.MessageTemplateNamespace = *templateNamespace
+	}
 
 	c.Type = entity.ChannelType(channelType)
 	c.ConnectionStatus = entity.ConnectionStatus(connectionStatus)
+	c.Environment = normalizeChannelEnvironment(environment)
 
 	if webhookURL != nil {
 		c.WebhookURL = *webhookURL
@@ -530,21 +564,29 @@ func (r *ChannelRepository) scanChannel(row pgx.Row) (*entity.Channel, error) {
 
 func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel, error) {
 	var c entity.Channel
-	var channelType, connectionStatus string
+	var channelType, connectionStatus, environment string
 	var credentials, config []byte
-	var webhookURL, wabaID, coexistenceStatus *string
+	var webhookURL, wabaID, coexistenceStatus, identifier, templateNamespace *string
 
 	err := rows.Scan(
 		&c.ID, &c.TenantID, &c.Name, &channelType, &c.Enabled, &connectionStatus,
-		&credentials, &config, &webhookURL, &c.IsCoexistence, &wabaID,
-		&c.LastEchoAt, &coexistenceStatus, &c.CreatedAt, &c.UpdatedAt,
+		&credentials, &config, &webhookURL, &environment, &c.IsCoexistence, &wabaID,
+		&c.LastEchoAt, &coexistenceStatus, &identifier, &templateNamespace,
+		&c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan channel")
 	}
+	if identifier != nil {
+		c.Identifier = *identifier
+	}
+	if templateNamespace != nil {
+		c.MessageTemplateNamespace = *templateNamespace
+	}
 
 	c.Type = entity.ChannelType(channelType)
 	c.ConnectionStatus = entity.ConnectionStatus(connectionStatus)
+	c.Environment = normalizeChannelEnvironment(environment)
 
 	if webhookURL != nil {
 		c.WebhookURL = *webhookURL
@@ -574,6 +616,19 @@ func (r *ChannelRepository) scanChannelFromRows(rows pgx.Rows) (*entity.Channel,
 	return &c, nil
 }
 
+// normalizeChannelEnvironment maps a stored environment to the entity value.
+// Empty means a row read before the migration ran, which is necessarily
+// production: no sandbox channel can predate the column. Unknown values cannot
+// be written (Create validates), so they can only mean manual tampering; they
+// also map to production because inventing a sandbox state here would silently
+// re-scope which guards apply.
+func normalizeChannelEnvironment(v string) entity.ChannelEnvironment {
+	if env, ok := entity.ParseChannelEnvironment(v); ok {
+		return env
+	}
+	return entity.ChannelEnvironmentProduction
+}
+
 func normalizeCoexistenceStatus(status entity.CoexistenceStatus) string {
 	if status == "" {
 		return string(entity.CoexistenceStatusInactive)
@@ -585,7 +640,8 @@ func normalizeCoexistenceStatus(status entity.CoexistenceStatus) string {
 func (r *ChannelRepository) FindCoexistenceChannels(ctx context.Context) ([]*entity.Channel, error) {
 	query := `
 		SELECT id, tenant_id, name, type, enabled, connection_status, credentials, config,
-		       webhook_url, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       webhook_url, environment, is_coexistence, waba_id, last_echo_at, coexistence_status,
+		       identifier, message_template_namespace,
 		       created_at, updated_at
 		FROM channels
 		WHERE is_coexistence = true

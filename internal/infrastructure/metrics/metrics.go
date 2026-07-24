@@ -156,6 +156,57 @@ const (
 	ResultSent      = "sent"
 )
 
+// Guard-block reason label values (bounded set — never derive from input).
+const (
+	BlockReasonAllowlist          = "allowlist"
+	BlockReasonInvalidRecipient   = "invalid_recipient"
+	BlockReasonUnsupportedSandbox = "unsupported_channel_type"
+	BlockReasonWindow24h          = "window_24h"
+	BlockReasonTemplateRejected   = "template_rejected"
+)
+
+// GuardBlocked counts sends blocked (or, in dry-run, that would be blocked) by
+// a delivery policy guard, by channel type, reason and mode (enforce|dry_run).
+// No tenant label by design (see the cardinality note at the top of this file);
+// per-tenant visibility comes from message_logs.
+var GuardBlocked = promauto.NewCounterVec(prometheus.CounterOpts{
+	Namespace: namespace,
+	Subsystem: "outbound",
+	Name:      "guard_blocked_total",
+	Help:      "Sends blocked by delivery policy guards, by channel type, reason and mode.",
+}, []string{"channel_type", "reason", "mode"})
+
+// RecordGuardBlocked records a policy-guard block. mode is "enforce" when the
+// send was actually stopped and "dry_run" when it was only observed.
+func RecordGuardBlocked(channelType, reason, mode string) {
+	GuardBlocked.WithLabelValues(normalizeChannel(channelType), reason, mode).Inc()
+}
+
+// Fail-open cause label values (bounded set — never derive from input).
+const (
+	FailOpenCauseLookupError   = "lookup_error"   // the data source errored
+	FailOpenCauseStatusUnknown = "status_unknown" // no local record to evaluate (e.g. template never synced)
+)
+
+// GuardFailOpen counts policy evaluations that could NOT be performed and let
+// the send through (INV-024). Deliberately separate from GuardBlocked: a
+// systematic lookup failure silently disables enforcement, and without this
+// signal the dashboard would show a drop in blocks — indistinguishable from an
+// improvement. No tenant label (INV-021).
+var GuardFailOpen = promauto.NewCounterVec(prometheus.CounterOpts{
+	Namespace: namespace,
+	Subsystem: "outbound",
+	Name:      "guard_fail_open_total",
+	Help:      "Policy evaluations that failed open (send allowed without evaluation), by channel type, policy, cause and mode.",
+}, []string{"channel_type", "policy", "cause", "mode"})
+
+// RecordGuardFailOpen records a policy evaluation that failed open. policy is
+// the BlockReason* value of the policy that could not evaluate; cause is a
+// FailOpenCause* value; mode is the policy's configured mode (dry_run|enforce).
+func RecordGuardFailOpen(channelType, policy, cause, mode string) {
+	GuardFailOpen.WithLabelValues(normalizeChannel(channelType), policy, cause, mode).Inc()
+}
+
 // RecordInbound records an inbound message outcome and its processing latency.
 func RecordInbound(channelType, result string, started time.Time) {
 	channelType = normalizeChannel(channelType)

@@ -68,6 +68,7 @@ import { SlackConfig } from './slack-config'
 import { MattermostConfig } from './mattermost-config'
 import { DiretoConfig } from './direto-config'
 import { CoexistenceStatusBadge } from '@/components/coexistence-status-widget'
+import { EnvironmentBadge } from '@/components/environment-badge'
 
 /**
  * Channel type icon config
@@ -174,7 +175,11 @@ function ChannelCard({
               <MessageSquare className="h-6 w-6" />
             </div>
             <div>
-              <CardTitle className="text-base">{channel.name}</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">{channel.name}</CardTitle>
+                {/* Marcação de ambiente (INV-018): valor vem da API. */}
+                <EnvironmentBadge environment={channel.environment} className="text-[10px] px-1.5 py-0" />
+              </div>
               <CardDescription className="text-xs">
                 {t(`descriptions.${channel.type}`)}
               </CardDescription>

@@ -35,7 +35,10 @@ type ConversationFilters struct {
 	AssignedTo string
 	ChannelID  string
 	ContactID  string
-	Tags       []string
+	// Environment filters by the denormalized channel environment
+	// ("production" | "sandbox", INV-018). Empty means no filter (all).
+	Environment string
+	Tags        []string
 }
 
 // ConversationService handles conversation operations
@@ -104,6 +107,17 @@ func (s *ConversationService) List(ctx context.Context, tenantID string, filters
 		if filters.ContactID != "" {
 			params.Filters["contact_id"] = filters.ContactID
 		}
+		if filters.Environment != "" {
+			// Validate at the edge so an arbitrary value never reaches the
+			// query as a filter key (it is parameterized anyway, but an
+			// invalid environment should read as a caller mistake, not as
+			// "no results").
+			if env, ok := entity.ParseChannelEnvironment(filters.Environment); ok {
+				params.Filters["environment"] = string(env)
+			} else {
+				return nil, 0, errors.Validation("invalid environment filter: " + filters.Environment)
+			}
+		}
 	}
 
 	return s.conversationRepo.FindByTenant(ctx, tenantID, params)
@@ -151,17 +165,18 @@ func (s *ConversationService) Create(ctx context.Context, input *CreateConversat
 
 	now := time.Now()
 	conversation := &entity.Conversation{
-		ID:        uuid.New().String(),
-		TenantID:  input.TenantID,
-		ContactID: input.ContactID,
-		ChannelID: input.ChannelID,
-		Status:    entity.ConversationStatusOpen,
-		Priority:  priority,
-		Subject:   input.Subject,
-		Tags:      input.Tags,
-		Metadata:  make(map[string]string),
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          uuid.New().String(),
+		TenantID:    input.TenantID,
+		ContactID:   input.ContactID,
+		ChannelID:   input.ChannelID,
+		Environment: channel.Environment, // denormalized at birth (INV-018)
+		Status:      entity.ConversationStatusOpen,
+		Priority:    priority,
+		Subject:     input.Subject,
+		Tags:        input.Tags,
+		Metadata:    make(map[string]string),
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	if err := s.conversationRepo.Create(ctx, conversation); err != nil {

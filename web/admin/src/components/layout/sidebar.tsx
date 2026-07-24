@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   ScrollText,
+  FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -132,6 +133,12 @@ const navItems = [
     labelKey: 'audit',
     href: '/audit-logs',
     icon: ScrollText,
+    adminOnly: true,
+  },
+  {
+    labelKey: 'sandboxAllowlist',
+    href: '/sandbox-allowlist',
+    icon: FlaskConical,
     adminOnly: true,
   },
 ]

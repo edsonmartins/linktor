@@ -275,7 +275,10 @@ func (d *Dispatcher) deliver(ctx context.Context, channel *entity.Channel, event
 		Type:      eventType,
 		Timestamp: d.now().UTC(),
 		TenantID:  tenantID,
-		Data:      data,
+		// The channel is already resolved here, making this the single point
+		// where every outbound webhook event gets its environment marking.
+		Environment: string(channel.Environment),
+		Data:        data,
 	}
 
 	body, err := MarshalEnvelope(env)

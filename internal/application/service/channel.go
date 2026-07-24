@@ -33,6 +33,7 @@ type CreateChannelInput struct {
 	Type        string
 	Name        string
 	Identifier  string
+	Environment string // "" defaults to production; immutable after creation
 	Config      map[string]string
 	Credentials map[string]string
 	WebhookURL  string
@@ -40,8 +41,12 @@ type CreateChannelInput struct {
 
 // UpdateChannelInput represents input for updating a channel
 type UpdateChannelInput struct {
-	Name        *string
-	Identifier  *string
+	Name       *string
+	Identifier *string
+	// Environment is accepted only so a mismatching value can be rejected
+	// explicitly instead of silently ignored: a channel's environment is
+	// immutable after creation. nil or the current value is a no-op.
+	Environment *string
 	Config      map[string]string
 	Credentials map[string]string
 	WebhookURL  *string
@@ -186,6 +191,16 @@ func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) 
 	if err := s.checkChannelTypeEnabled(entity.ChannelType(input.Type)); err != nil {
 		return nil, err
 	}
+	environment, ok := entity.ParseChannelEnvironment(input.Environment)
+	if !ok {
+		return nil, errors.New(errors.ErrCodeValidation,
+			fmt.Sprintf("invalid channel environment %q (must be %q or %q)",
+				input.Environment, entity.ChannelEnvironmentProduction, entity.ChannelEnvironmentSandbox)).
+			WithDetails(environmentBindingDetails)
+	}
+	if err := validateChannelEnvironmentBinding(environment, entity.ChannelType(input.Type), input.Config, input.Credentials); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	channel := &entity.Channel{
 		ID:               uuid.New().String(),
@@ -195,6 +210,7 @@ func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) 
 		Identifier:       input.Identifier,
 		Enabled:          true, // Enabled by default
 		ConnectionStatus: entity.ConnectionStatusDisconnected,
+		Environment:      environment,
 		Config:           input.Config,
 		Credentials:      input.Credentials,
 		WebhookURL:       input.WebhookURL,
@@ -291,6 +307,16 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 		return nil, err
 	}
 
+	// Environment is immutable after creation (INV-016). A request carrying a
+	// different value is rejected loudly rather than silently ignored; the
+	// repository additionally omits the column from its UPDATE as a backstop.
+	if input.Environment != nil && *input.Environment != "" &&
+		*input.Environment != string(channel.Environment) {
+		return nil, errors.New(errors.ErrCodeValidation,
+			fmt.Sprintf("channel environment is immutable (channel is %q)", channel.Environment)).
+			WithDetails(environmentBindingDetails)
+	}
+
 	if input.Name != nil {
 		channel.Name = *input.Name
 	}
@@ -336,6 +362,15 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 	if input.WebhookURL != nil {
 		channel.WebhookURL = *input.WebhookURL
 	}
+
+	// Re-validate the environment/credential binding over the post-merge state
+	// so an update cannot cross environments (e.g. swapping a sandbox channel's
+	// phone_number_id to a production number, or attaching sandbox-declared
+	// credentials to a production channel).
+	if err := validateChannelEnvironmentBinding(channel.Environment, channel.Type, channel.Config, channel.Credentials); err != nil {
+		return nil, err
+	}
+
 	channel.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(ctx, channel); err != nil {

@@ -25,21 +25,48 @@ import (
 type ChannelHandler struct {
 	channelService *service.ChannelService
 	producer       nats.Publisher
+	audit          *service.AuditService
 }
 
 // NewChannelHandler creates a new channel handler
-func NewChannelHandler(channelService *service.ChannelService, producer nats.Publisher) *ChannelHandler {
+func NewChannelHandler(channelService *service.ChannelService, producer nats.Publisher, audit *service.AuditService) *ChannelHandler {
 	return &ChannelHandler{
 		channelService: channelService,
 		producer:       producer,
+		audit:          audit,
 	}
+}
+
+// channelAuditChanges collects the audit-relevant, NON-SECRET declarations of
+// a channel request (INV-023): environment defines the sandbox boundary,
+// credential_environment is the declared credential binding (a declaration,
+// not a credential value) and phone_number_id is deliberately non-secret
+// config. Credential VALUES never enter the trail (INV-002).
+func channelAuditChanges(channelType, environment string, config, credentials map[string]string) map[string]interface{} {
+	changes := map[string]interface{}{
+		"type":        channelType,
+		"environment": environment,
+	}
+	if v := credentials[service.CredentialEnvironmentKey]; v != "" {
+		changes["credential_environment"] = v
+	}
+	if channelType == string(entity.ChannelTypeWhatsAppOfficial) {
+		if v := config["phone_number_id"]; v != "" {
+			changes["phone_number_id"] = v
+		}
+	}
+	return changes
 }
 
 // CreateChannelRequest represents a create channel request
 type CreateChannelRequest struct {
-	Type        string            `json:"type" binding:"required"`
-	Name        string            `json:"name" binding:"required"`
-	Identifier  string            `json:"identifier"`
+	Type       string `json:"type" binding:"required"`
+	Name       string `json:"name" binding:"required"`
+	Identifier string `json:"identifier"`
+	// Environment is "production" (default when omitted) or "sandbox" and is
+	// immutable after creation. Sandbox channels additionally require
+	// credentials["credential_environment"]="sandbox" (see ChannelService).
+	Environment string            `json:"environment"`
 	Config      map[string]string `json:"config"`
 	Credentials map[string]string `json:"credentials"`
 	// WebhookURL is the external consumer endpoint (e.g. DeskLenz) Linktor
@@ -111,6 +138,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		Type:        req.Type,
 		Name:        req.Name,
 		Identifier:  req.Identifier,
+		Environment: req.Environment,
 		Config:      req.Config,
 		Credentials: req.Credentials,
 		WebhookURL:  req.WebhookURL,
@@ -118,10 +146,22 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 
 	channel, err := h.channelService.Create(c.Request.Context(), input)
 	if err != nil {
+		// Rejections from the environment/credential binding validation are a
+		// security signal (attempt to cross environments) and low-volume, so
+		// they get a trail entry; ordinary validation noise does not.
+		if service.IsEnvironmentBindingError(err) {
+			changes := channelAuditChanges(req.Type, req.Environment, req.Config, req.Credentials)
+			changes["rejection_reason"] = err.Error()
+			h.audit.Record(c.Request.Context(), tenantID, CurrentActor(c),
+				"channel.create_rejected", "channel", "", changes)
+		}
 		RespondError(c, err)
 		return
 	}
 
+	h.audit.Record(c.Request.Context(), tenantID, CurrentActor(c),
+		"channel.create", "channel", channel.ID,
+		channelAuditChanges(string(channel.Type), string(channel.Environment), channel.Config, req.Credentials))
 	RespondCreated(c, channel)
 }
 
@@ -344,13 +384,38 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		Credentials: req.Credentials,
 		WebhookURL:  &req.WebhookURL,
 	}
+	if req.Environment != "" {
+		// Passed through so the service can reject an environment change
+		// explicitly (immutable after creation) instead of ignoring it.
+		input.Environment = &req.Environment
+	}
 
 	channel, err := h.channelService.UpdateForTenant(c.Request.Context(), tenantID, id, input)
 	if err != nil {
+		if service.IsEnvironmentBindingError(err) {
+			changes := channelAuditChanges(req.Type, req.Environment, req.Config, req.Credentials)
+			changes["rejection_reason"] = err.Error()
+			h.audit.Record(c.Request.Context(), tenantID, CurrentActor(c),
+				"channel.update_rejected", "channel", id, changes)
+		}
 		RespondError(c, err)
 		return
 	}
 
+	// Delta of the audit-relevant fields the request actually carried; secrets
+	// never enter the trail (INV-002).
+	delta := channelAuditChanges(string(channel.Type), string(channel.Environment), channel.Config, req.Credentials)
+	if req.Name != "" {
+		delta["name"] = req.Name
+	}
+	if req.Identifier != "" {
+		delta["identifier"] = req.Identifier
+	}
+	if req.WebhookURL != "" {
+		delta["webhook_url"] = req.WebhookURL
+	}
+	h.audit.Record(c.Request.Context(), tenantID, CurrentActor(c),
+		"channel.update", "channel", channel.ID, delta)
 	RespondSuccess(c, channel)
 }
 

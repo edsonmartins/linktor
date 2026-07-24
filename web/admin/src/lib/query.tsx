@@ -288,6 +288,10 @@ export const queryKeys = {
     list: (filters: Record<string, unknown>) =>
       [...queryKeys.audit.all, 'list', filters] as const,
   },
+  sandboxAllowlist: {
+    all: ['sandbox-allowlist'] as const,
+    list: () => [...queryKeys.sandboxAllowlist.all, 'list'] as const,
+  },
 }
 
 export { getQueryClient }

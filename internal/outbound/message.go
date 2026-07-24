@@ -91,8 +91,12 @@ type Message struct {
 	ID        string // internal message ID (for status correlation)
 	TenantID  string
 	ChannelID string
-	To        string // recipient address (phone, etc.)
-	Content   Content
+	// ConversationID links the send to its conversation ("" for sends without
+	// one, e.g. campaigns). The 24h-window policy uses it to look up the last
+	// inbound message.
+	ConversationID string
+	To             string // recipient address (phone, etc.)
+	Content        Content
 
 	// CampaignRecipientID, when set, links this delivery to a campaign recipient
 	// so the worker can update its status after a real send.

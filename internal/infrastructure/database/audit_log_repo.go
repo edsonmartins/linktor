@@ -88,6 +88,21 @@ func (r *AuditLogRepository) FindByTenant(ctx context.Context, tenantID string, 
 		args = append(args, filters.ResourceID)
 		idx++
 	}
+	if filters.Actor != "" {
+		where += " AND (actor_email ILIKE $" + itoa(idx) + " OR actor_name ILIKE $" + itoa(idx) + " OR actor_id::text = $" + itoa(idx+1) + ")"
+		args = append(args, "%"+filters.Actor+"%", filters.Actor)
+		idx += 2
+	}
+	if !filters.StartTime.IsZero() {
+		where += " AND created_at >= $" + itoa(idx)
+		args = append(args, filters.StartTime)
+		idx++
+	}
+	if !filters.EndTime.IsZero() {
+		where += " AND created_at <= $" + itoa(idx)
+		args = append(args, filters.EndTime)
+		idx++
+	}
 
 	var total int64
 	if err := r.db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM audit_logs "+where, args...).Scan(&total); err != nil {

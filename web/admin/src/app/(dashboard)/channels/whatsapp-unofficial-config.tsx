@@ -37,6 +37,14 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { EnvironmentBadge } from '@/components/environment-badge'
+import {
   Alert,
   AlertDescription,
   AlertTitle,
@@ -102,14 +110,27 @@ const WEBHOOK_EVENT_LABEL_KEYS: Record<(typeof WEBHOOK_EVENT_TYPES)[number], str
 /**
  * WhatsApp Unofficial Configuration Schema
  */
-const whatsappConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
-  device_name: z.string().optional(),
-  phone_number: z.string().optional(),
-  webhook_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
-  webhook_secret: z.string().optional(),
-  webhook_events: z.array(z.string()).optional(),
-})
+const whatsappConfigSchema = z
+  .object({
+    name: z.string().min(1, 'Channel name is required'),
+    device_name: z.string().optional(),
+    phone_number: z.string().optional(),
+    webhook_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
+    webhook_secret: z.string().optional(),
+    webhook_events: z.array(z.string()).optional(),
+    // Environment (INV-016): selectable at creation only; immutable afterwards.
+    environment: z.enum(['production', 'sandbox']),
+    credential_is_sandbox: z.boolean(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.environment === 'sandbox' && !data.credential_is_sandbox) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credential_is_sandbox'],
+        message: 'The test-credential declaration is required for a sandbox channel',
+      })
+    }
+  })
 
 type WhatsAppConfigForm = z.infer<typeof whatsappConfigSchema>
 
@@ -145,6 +166,7 @@ export function WhatsAppUnofficialConfig({
   onCancel,
 }: WhatsAppUnofficialConfigProps) {
   const t = useTranslations('channels.config')
+  const tEnv = useTranslations('environment')
   const tCommon = useTranslations('common')
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -186,8 +208,12 @@ export function WhatsAppUnofficialConfig({
       webhook_url: channel?.webhook_url || '',
       webhook_secret: '',
       webhook_events: parseWebhookEvents(channel?.config?.webhook_events),
+      environment: channel?.environment === 'sandbox' ? 'sandbox' : 'production',
+      credential_is_sandbox: channel?.environment === 'sandbox',
     },
   })
+  const watchEnvironment = form.watch('environment')
+  const isSandbox = isEditing ? channel?.environment === 'sandbox' : watchEnvironment === 'sandbox'
 
   // Cleanup on unmount
   useEffect(() => {
@@ -246,6 +272,8 @@ export function WhatsAppUnofficialConfig({
       const payload = {
         name: data.name,
         type: 'whatsapp',
+        // environment só na criação: imutável após criado (INV-016).
+        ...(isEditing ? {} : { environment: data.environment }),
         config: {
           device_name: data.device_name,
           // Comma-separated list; empty string means "deliver all events".
@@ -253,6 +281,7 @@ export function WhatsAppUnofficialConfig({
         },
         credentials: {
           ...(data.webhook_secret ? { webhook_secret: data.webhook_secret } : {}),
+          ...(isSandbox ? { credential_environment: 'sandbox' } : {}),
         },
         ...(data.webhook_url ? { webhook_url: data.webhook_url } : {}),
       }
@@ -469,6 +498,72 @@ export function WhatsAppUnofficialConfig({
                 </FormItem>
               )}
             />
+
+            {/* Ambiente do canal (INV-016): selecionável na criação, somente
+                leitura na edição com a razão visível. */}
+            {isEditing ? (
+              <FormItem>
+                <FormLabel>{tEnv('formLabel')}</FormLabel>
+                <div className="flex items-center gap-2">
+                  <EnvironmentBadge environment={channel?.environment} showProduction />
+                </div>
+                <FormDescription>{tEnv('immutableReason')}</FormDescription>
+              </FormItem>
+            ) : (
+              <FormField
+                control={form.control}
+                name="environment"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{tEnv('formLabel')}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="production">{tEnv('formProduction')}</SelectItem>
+                        <SelectItem value="sandbox">{tEnv('formSandbox')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>{tEnv('formDefaultHint')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {isSandbox && (
+              <div className="space-y-4 rounded-md border border-yellow-500/40 bg-yellow-500/5 p-4">
+                <p className="text-sm font-medium">{tEnv('sandboxSection')}</p>
+                <FormField
+                  control={form.control}
+                  name="credential_is_sandbox"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center gap-2">
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            disabled={isEditing}
+                            aria-label={tEnv('credentialDeclaration')}
+                          />
+                        </FormControl>
+                        <FormLabel className="!mt-0">{tEnv('credentialDeclaration')}</FormLabel>
+                      </div>
+                      <FormDescription>
+                        {isEditing
+                          ? tEnv('credentialDeclarationStored')
+                          : tEnv('credentialDeclarationHint')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             {/* Device Name */}
             <FormField

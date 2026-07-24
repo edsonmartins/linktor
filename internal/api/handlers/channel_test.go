@@ -22,7 +22,7 @@ func setupChannelHandler() (*ChannelHandler, *testutil.MockChannelRepository, *t
 	repo := testutil.NewMockChannelRepository()
 	producer := testutil.NewMockProducer()
 	svc := service.NewChannelService(repo, nil, producer)
-	handler := NewChannelHandler(svc, producer)
+	handler := NewChannelHandler(svc, producer, service.NewAuditService(nil))
 	return handler, repo, producer
 }
 

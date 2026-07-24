@@ -42,3 +42,33 @@ Point a Prometheus at a running app (the compose network name `linktor` and port
 ```sh
 prometheus --config.file=deploy/monitoring/prometheus.yml
 ```
+
+## Grafana (provisionado)
+
+Dashboards são **versionados no repositório** e provisionados por arquivo — a UI
+não é fonte de verdade (`allowUiUpdates: false`). Estrutura:
+
+- `grafana/provisioning/datasources/prometheus.yml` — datasource `linktor-prometheus`
+  (ajuste a URL do Prometheus para o seu deployment).
+- `grafana/provisioning/dashboards/provider.yml` — carrega todo JSON de
+  `grafana/dashboards/` na pasta "LINKTOR".
+- `grafana/dashboards/linktor-guards.json` — guardas de entrega (sandbox e
+  políticas de provider): bloqueios por motivo/modo, dry-run (base do critério
+  de saída em `docs/sandbox-channel-operacao.md`) e fail-open **segregado por
+  causa** (`lookup_error` = infraestrutura cegando a política — a série que diz
+  que o enforcement está desligado de fato; `status_unknown` = aguardando sync,
+  auto-corrige). Limiares do critério de saída aparecem como thresholds e no
+  painel de texto. Sem label de tenant (INV-021).
+
+Subir localmente:
+
+```bash
+docker run -d --name linktor-grafana -p 3000:3000 \
+  -v "$PWD/deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning" \
+  -v "$PWD/deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards" \
+  grafana/grafana:latest
+```
+
+Alertas correlatos em `alerts.yml`, grupo `linktor.guards`
+(`LinktorGuardFailOpenSystematic`, `LinktorGuardDryRunBlockRateHigh`,
+`LinktorSandboxBlockSurge`). Valide com `promtool check rules alerts.yml`.

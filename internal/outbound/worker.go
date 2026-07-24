@@ -61,14 +61,15 @@ func (w *Worker) logActivity(ctx context.Context, level entity.LogLevel, raw *na
 		return
 	}
 	// Routing facts only — never the message body. "to" is the destination
-	// contact; the origin is this channel.
+	// contact, masked (INV-002): the prefix+suffix is enough for an operator
+	// to correlate with the conversation without exposing the full number.
 	meta := map[string]string{
 		"message_id":   raw.ID,
 		"channel_type": raw.ChannelType,
 		"direction":    "outbound",
 	}
 	if msg != nil && msg.To != "" {
-		meta["to"] = msg.To
+		meta["to"] = entity.MaskRecipient(msg.To)
 	}
 	switch level {
 	case entity.LogLevelError:
@@ -78,6 +79,22 @@ func (w *Worker) logActivity(ctx context.Context, level entity.LogLevel, raw *na
 	default:
 		w.logs.Info(ctx, raw.TenantID, raw.ChannelID, message, meta)
 	}
+}
+
+// logBlocked records a guard/policy block in the channel log with the
+// machine-readable reason in metadata (blocked_by) and, per INV-002, the
+// destination already masked by the guard's error message.
+func (w *Worker) logBlocked(ctx context.Context, raw *nats.OutboundMessage, msg *Message, reason, detail string) {
+	if w.logs == nil {
+		return
+	}
+	meta := map[string]string{
+		"message_id":   raw.ID,
+		"channel_type": raw.ChannelType,
+		"direction":    "outbound",
+		"blocked_by":   reason,
+	}
+	w.logs.Error(ctx, raw.TenantID, raw.ChannelID, "Envio bloqueado por guarda ("+reason+"): "+detail, meta)
 }
 
 // NewWorker creates a delivery worker. campaignRepo may be nil.
@@ -121,7 +138,7 @@ func (w *Worker) handle(ctx context.Context, raw *nats.OutboundMessage) error {
 	if err != nil {
 		// No sender / bad credentials is not retryable.
 		metrics.RecordOutbound(raw.ChannelType, metrics.ResultFailed, start)
-		w.recordFailure(ctx, raw, msg, err.Error())
+		w.recordFailure(ctx, raw, msg, err.Error(), "")
 		w.logActivity(ctx, entity.LogLevelError, raw, msg, "Envio falhou: canal sem remetente configurado — "+err.Error())
 		logger.Error("outbound: cannot resolve sender for channel " + msg.ChannelID + ": " + err.Error())
 		return nil
@@ -137,8 +154,16 @@ func (w *Worker) handle(ctx context.Context, raw *nats.OutboundMessage) error {
 	if err != nil {
 		if IsPermanent(err) {
 			metrics.RecordOutbound(raw.ChannelType, metrics.ResultFailed, start)
-			w.recordFailure(ctx, raw, msg, err.Error())
-			w.logActivity(ctx, entity.LogLevelError, raw, msg, "Envio falhou (permanente): "+err.Error())
+			// Guard blocks get a distinct log message + blocked_by metadata so
+			// an operator can tell a policy/sandbox block from a provider
+			// failure straight from the log viewer AND on the message timeline.
+			reason, blocked := BlockedReason(err)
+			w.recordFailure(ctx, raw, msg, err.Error(), reason)
+			if blocked {
+				w.logBlocked(ctx, raw, msg, reason, err.Error())
+			} else {
+				w.logActivity(ctx, entity.LogLevelError, raw, msg, "Envio falhou (permanente): "+err.Error())
+			}
 			logger.Error("outbound: permanent send failure for " + msg.ID + ": " + err.Error())
 			return nil // ack: do not retry a permanent failure
 		}
@@ -169,30 +194,31 @@ func (w *Worker) recordSuccess(ctx context.Context, raw *nats.OutboundMessage, m
 		return
 	}
 	// Conversation message: feed the message status pipeline.
-	w.publishStatus(ctx, raw, "sent", "", receipt.ProviderMessageID)
+	w.publishStatus(ctx, raw, "sent", "", receipt.ProviderMessageID, "")
 }
 
-func (w *Worker) recordFailure(ctx context.Context, raw *nats.OutboundMessage, msg *Message, reason string) {
+func (w *Worker) recordFailure(ctx context.Context, raw *nats.OutboundMessage, msg *Message, reason, blockedReason string) {
 	if msg.CampaignRecipientID != "" {
 		if w.campaignRepo != nil {
 			_ = w.campaignRepo.UpdateRecipientStatus(ctx, msg.CampaignRecipientID, entity.RecipientFailed, "", reason)
 		}
 		return
 	}
-	w.publishStatus(ctx, raw, "failed", reason, "")
+	w.publishStatus(ctx, raw, "failed", reason, "", blockedReason)
 }
 
-func (w *Worker) publishStatus(ctx context.Context, raw *nats.OutboundMessage, status, errMsg, providerID string) {
+func (w *Worker) publishStatus(ctx context.Context, raw *nats.OutboundMessage, status, errMsg, providerID, blockedReason string) {
 	if w.publisher == nil {
 		return
 	}
 	_ = w.publisher.PublishStatusUpdate(ctx, &nats.StatusUpdate{
-		MessageID:    raw.ID,
-		ExternalID:   providerID,
-		ChannelType:  raw.ChannelType,
-		Status:       status,
-		ErrorMessage: errMsg,
-		Timestamp:    time.Now(),
+		MessageID:     raw.ID,
+		ExternalID:    providerID,
+		ChannelType:   raw.ChannelType,
+		Status:        status,
+		ErrorMessage:  errMsg,
+		BlockedReason: blockedReason,
+		Timestamp:     time.Now(),
 	})
 }
 
@@ -208,6 +234,7 @@ func translate(raw *nats.OutboundMessage) *Message {
 		ID:                  raw.ID,
 		TenantID:            raw.TenantID,
 		ChannelID:           raw.ChannelID,
+		ConversationID:      raw.ConversationID,
 		To:                  raw.RecipientID,
 		CampaignID:          meta["campaign_id"],
 		CampaignRecipientID: meta["campaign_recipient_id"],

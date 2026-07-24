@@ -46,6 +46,11 @@ export interface TenantLimits {
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error'
 export type CoexistenceStatus = 'inactive' | 'active' | 'warning' | 'disconnected'
 
+// Environment of a channel/conversation (INV-018). Always provided by the
+// backend — never inferred client-side. Absent/undefined means production
+// (legacy rows).
+export type ChannelEnvironment = 'production' | 'sandbox'
+
 export interface Channel {
   id: string
   tenant_id: string
@@ -53,6 +58,7 @@ export interface Channel {
   type: ChannelType
   enabled: boolean
   connection_status: ConnectionStatus
+  environment?: ChannelEnvironment
   config: Record<string, unknown>
   webhook_url?: string
   created_at: string
@@ -114,6 +120,7 @@ export interface Conversation {
   channel_id: string
   contact_id: string
   assigned_user_id?: string
+  environment?: ChannelEnvironment
   status: ConversationStatus
   priority: 'low' | 'medium' | 'high' | 'urgent'
   subject?: string
@@ -148,6 +155,11 @@ export interface Message {
   metadata: Record<string, unknown>
   status: MessageStatus
   external_id?: string
+  // error_message holds the failure detail (provider rejection text OR the
+  // masked guard-block reason). metadata.blocked_by, when present, is the
+  // machine-readable guard reason distinguishing a LOCAL block from a provider
+  // failure (WP-K) — set by the backend, never inferred client-side.
+  error_message?: string
   attachments?: MessageAttachment[]
   created_at: string
   updated_at: string
@@ -1025,5 +1037,17 @@ export interface AuditLog {
   changes?: Record<string, unknown>
   ip_address?: string
   user_agent?: string
+  created_at: string
+}
+
+// Sandbox recipient allowlist entry (INV-017). recipient is always the
+// backend-normalized E.164 form.
+export interface SandboxAllowlistEntry {
+  id: string
+  tenant_id: string
+  channel_id?: string
+  recipient: string
+  note?: string
+  created_by?: string
   created_at: string
 }

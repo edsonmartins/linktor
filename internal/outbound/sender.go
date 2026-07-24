@@ -51,3 +51,31 @@ func IsPermanent(err error) bool {
 	var p *PermanentError
 	return errors.As(err, &p)
 }
+
+// GuardBlockedError marks a send stopped by a delivery guard/policy (sandbox
+// allowlist, 24h window, template status) rather than failed by the provider.
+// It lets the worker label the block distinctly in message_logs so an operator
+// can tell "guard blocked" from "provider failed" without reading code. Reason
+// values are the bounded metrics.BlockReason* constants.
+type GuardBlockedError struct {
+	Reason string
+	Err    error
+}
+
+func (e *GuardBlockedError) Error() string { return e.Err.Error() }
+func (e *GuardBlockedError) Unwrap() error { return e.Err }
+
+// Blocked wraps a formatted guard-block as a permanent (non-retryable) failure
+// carrying its machine-readable reason.
+func Blocked(reason, format string, args ...interface{}) error {
+	return &PermanentError{Err: &GuardBlockedError{Reason: reason, Err: fmt.Errorf(format, args...)}}
+}
+
+// BlockedReason extracts the guard-block reason, if err is one.
+func BlockedReason(err error) (string, bool) {
+	var b *GuardBlockedError
+	if errors.As(err, &b) {
+		return b.Reason, true
+	}
+	return "", false
+}

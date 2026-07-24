@@ -20,6 +20,7 @@ func TestBuildInboundEnvelope(t *testing.T) {
 			ChannelType:    "whatsapp",
 			ContentType:    "text",
 			Content:        "Olá, quero fazer um pedido",
+			ExternalID:     "wamid.ABC123",
 		},
 	}
 
@@ -45,6 +46,51 @@ func TestBuildInboundEnvelope(t *testing.T) {
 	}
 	if env.IdempotencyKey != "msg-123" {
 		t.Errorf("IdempotencyKey = %q, quero o message.ID (dedup no Core)", env.IdempotencyKey)
+	}
+	// RFC-010: o id do canal (external id) é propagado p/ o Core correlacionar reações.
+	if env.ChannelMessageId != "wamid.ABC123" {
+		t.Errorf("ChannelMessageId = %q, quero o external id do provedor", env.ChannelMessageId)
+	}
+}
+
+// TestInboundReactionPayload prova que o payload de message.received expõe a reação do cliente
+// (is_reaction/reaction_message_id) para o bridge montar a reação inbound (RFC-010 Fatia 2).
+func TestInboundReactionPayload(t *testing.T) {
+	raw := `{"type":"message.received","tenant_id":"acme","payload":{
+		"message_id":"m-rx","channel_type":"whatsapp","content_type":"text","content":"👍",
+		"external_id":"wamid.RX","is_reaction":"true","reaction_message_id":"wamid.TARGET"}}`
+	var ev messageReceivedEvent
+	if err := json.Unmarshal([]byte(raw), &ev); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if ev.Payload.IsReaction != "true" {
+		t.Errorf("IsReaction = %q, quero true", ev.Payload.IsReaction)
+	}
+	if ev.Payload.ReactionMessageID != "wamid.TARGET" {
+		t.Errorf("ReactionMessageID = %q, quero o id do canal da msg alvo", ev.Payload.ReactionMessageID)
+	}
+	if ev.Payload.Content != "👍" {
+		t.Errorf("Content(emoji) = %q", ev.Payload.Content)
+	}
+}
+
+// TestOutboundReactionUnmarshal prova que o envelope de saída de reação (RFC-010) carrega o alvo.
+func TestOutboundReactionUnmarshal(t *testing.T) {
+	raw := `{"tenantId":"acme","vendorId":"vendor-42","customerId":"+55","channel":"WHATSAPP",
+		"messageType":"reaction","content":"👍","idempotencyKey":"rk-1",
+		"targetChannelMessageId":"wamid.XYZ"}`
+	var out LinktorOutbound
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.MessageType != "reaction" {
+		t.Errorf("MessageType = %q, quero reaction", out.MessageType)
+	}
+	if out.Content != "👍" {
+		t.Errorf("Content(emoji) = %q", out.Content)
+	}
+	if out.TargetChannelMessageId != "wamid.XYZ" {
+		t.Errorf("TargetChannelMessageId = %q, quero o id do canal da msg alvo", out.TargetChannelMessageId)
 	}
 }
 

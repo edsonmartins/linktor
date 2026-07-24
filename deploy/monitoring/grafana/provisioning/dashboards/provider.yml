@@ -1,0 +1,16 @@
+# Grafana dashboard provisioning: loads every JSON under
+# deploy/monitoring/grafana/dashboards (mounted at /var/lib/grafana/dashboards).
+# Dashboards are versioned in the repository; edits happen here, not in the UI
+# (allowUiUpdates: false keeps the repo as the source of truth).
+apiVersion: 1
+
+providers:
+  - name: linktor
+    orgId: 1
+    folder: LINKTOR
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

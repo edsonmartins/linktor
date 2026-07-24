@@ -111,7 +111,7 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 	normalized.ContactID = contact.ID
 
 	// Get or create conversation
-	conversation, isNewConversation, err := uc.getOrCreateConversation(ctx, inbound.TenantID, channel.ID, contact.ID)
+	conversation, isNewConversation, err := uc.getOrCreateConversation(ctx, channel, contact.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -281,10 +281,13 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 	return contact, true, nil
 }
 
-// getOrCreateConversation finds or creates a conversation
-func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, tenantID, channelID, contactID string) (*entity.Conversation, bool, error) {
+// getOrCreateConversation finds or creates a conversation. It takes the
+// resolved channel so a new conversation is born carrying the channel's
+// environment (INV-018) — the denormalization point for sandbox marking.
+func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, channel *entity.Channel, contactID string) (*entity.Conversation, bool, error) {
+	tenantID := channel.TenantID
 	// Try to find open conversation
-	conversation, err := uc.conversationRepo.FindOpenByContactAndChannel(ctx, contactID, channelID)
+	conversation, err := uc.conversationRepo.FindOpenByContactAndChannel(ctx, contactID, channel.ID)
 	if err == nil && conversation != nil {
 		if conversation.TenantID != tenantID {
 			return nil, false, errors.Forbidden("conversation does not belong to tenant")
@@ -297,8 +300,9 @@ func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, te
 	conversation = &entity.Conversation{
 		ID:          uuid.New().String(),
 		TenantID:    tenantID,
-		ChannelID:   channelID,
+		ChannelID:   channel.ID,
 		ContactID:   contactID,
+		Environment: channel.Environment,
 		Status:      entity.ConversationStatusOpen,
 		Priority:    entity.ConversationPriorityNormal,
 		UnreadCount: 0,
@@ -340,6 +344,7 @@ func (uc *ReceiveMessageUseCase) buildMessageReceivedOutboxEvent(tenantID string
 		"contact_id":      contact.ID,
 		"channel_id":      channel.ID,
 		"channel_type":    string(channel.Type),
+		"environment":     string(channel.Environment),
 		"content_type":    string(message.ContentType),
 		"content":         message.Content,
 		"external_id":     message.ExternalID,
@@ -348,6 +353,12 @@ func (uc *ReceiveMessageUseCase) buildMessageReceivedOutboxEvent(tenantID string
 	}
 	if atts := attachmentsPayload(message.Attachments); len(atts) > 0 {
 		payload["attachments"] = atts
+	}
+	// Reação de canal (RFC-010): propaga o alvo/emoji ao consumidor (o bridge VendaX monta a
+	// reação inbound). Sem isto a reação chega como texto solto (emoji) sem alvo.
+	if message.Metadata["is_reaction"] == "true" {
+		payload["is_reaction"] = "true"
+		payload["reaction_message_id"] = message.Metadata["reaction_message_id"]
 	}
 
 	return newOutboxEvent(nats.EventMessageReceived, tenantID, "message", message.ID,

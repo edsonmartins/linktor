@@ -183,6 +183,7 @@ func (uc *SendMessageUseCase) Execute(ctx context.Context, input *SendMessageInp
 		TenantID:       input.TenantID,
 		ChannelID:      conversation.ChannelID,
 		ChannelType:    string(channel.Type),
+		Environment:    string(channel.Environment),
 		ConversationID: conversation.ID,
 		ContactID:      contact.ID,
 		RecipientID:    recipientID,

@@ -197,6 +197,20 @@ func (r *MessageRepository) FindByExternalID(ctx context.Context, externalID str
 }
 
 // FindByConversation finds messages for a conversation with pagination
+// LastInboundAt returns when the contact last messaged in the conversation, or
+// nil if they never did. Durable source for the 24h-window policy (INV-015).
+func (r *MessageRepository) LastInboundAt(ctx context.Context, conversationID string) (*time.Time, error) {
+	var last *time.Time
+	err := r.db.Pool.QueryRow(ctx,
+		`SELECT MAX(created_at) FROM messages WHERE conversation_id = $1 AND sender_type = $2`,
+		conversationID, string(entity.SenderTypeContact),
+	).Scan(&last)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to query last inbound message time")
+	}
+	return last, nil
+}
+
 func (r *MessageRepository) FindByConversation(ctx context.Context, conversationID string, params *repository.ListParams) ([]*entity.Message, int64, error) {
 	// Count total
 	countQuery := `SELECT COUNT(*) FROM messages WHERE conversation_id = $1`
@@ -400,6 +414,28 @@ const sqlMessageStatusRank = `CASE status
 	ELSE 0 END`
 
 // UpdateStatus updates only the message status, advancing it monotonically.
+// MarkFailedWithBlockedReason marks a message failed and records the
+// machine-readable guard-block reason in metadata.blocked_by, so the console
+// can distinguish a local delivery-guard block from a provider rejection
+// without parsing the error text. "failed" is always writable (a delivery
+// failure is never lost). blockedReason must be non-empty.
+func (r *MessageRepository) MarkFailedWithBlockedReason(ctx context.Context, id, errorMessage, blockedReason string) error {
+	result, err := r.db.Pool.Exec(ctx,
+		`UPDATE messages
+		 SET status = 'failed',
+		     error_message = $2,
+		     metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{blocked_by}', to_jsonb($3::text), true)
+		 WHERE id = $1`,
+		id, errorMessage, blockedReason)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to mark message blocked")
+	}
+	if result.RowsAffected() == 0 {
+		return errors.New(errors.ErrCodeMessageNotFound, "message not found")
+	}
+	return nil
+}
+
 func (r *MessageRepository) UpdateStatus(ctx context.Context, id string, status entity.MessageStatus, errorMessage string) error {
 	now := time.Now()
 

@@ -218,6 +218,7 @@ func main() {
 	roleRepo := database.NewRoleRepository(db)
 	tenantSettingsRepo := database.NewTenantSettingsRepository(db)
 	campaignRepo := database.NewCampaignRepository(db)
+	sandboxAllowlistRepo := database.NewSandboxAllowlistRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
@@ -383,6 +384,7 @@ func main() {
 	assignmentRepo := database.NewAssignmentRepository(db)
 	slaRepo := database.NewSLARepository(db)
 	auditService := service.NewAuditService(auditLogRepo)
+	sandboxAllowlistService := service.NewSandboxAllowlistService(sandboxAllowlistRepo, channelRepo)
 	cannedService := service.NewCannedResponseService(cannedRepo)
 	roleService := service.NewRoleService(roleRepo, redisClient)
 	settingsService := service.NewSettingsService(tenantSettingsRepo)
@@ -394,6 +396,21 @@ func main() {
 	// (decrypted) credentials, driven by a NATS-backed worker. This is what
 	// actually delivers send_message and campaign messages over the Cloud API.
 	outboundResolver := outbound.NewResolver(channelRepo)
+	// Sandbox delivery guard (INV-017): every sandbox channel's sender is
+	// wrapped to consult the recipient allowlist at send time. Without this
+	// wiring the resolver fails closed for sandbox channels.
+	outboundResolver.SetSandboxAllowlist(sandboxAllowlistRepo)
+	// WhatsApp 24h customer-service window (INV-015). Two-stage rollout via
+	// LINKTOR_WA_WINDOW_ENFORCEMENT: off | dry_run (default: observe-only, no
+	// behavior change) | enforce (block before the Meta call). Reverting
+	// enforce → dry_run is a config change, no deploy.
+	outboundResolver.AddPolicy(outbound.NewSessionWindowPolicy(
+		outbound.ParsePolicyMode(os.Getenv("LINKTOR_WA_WINDOW_ENFORCEMENT")), messageRepo))
+	// Template status gate (INV-015): blocks sends of templates whose synced
+	// status is known-unusable (rejected/paused/...). Same rollout contract via
+	// LINKTOR_WA_TEMPLATE_ENFORCEMENT: off | dry_run (default) | enforce.
+	outboundResolver.AddPolicy(outbound.NewTemplateStatusPolicy(
+		outbound.ParsePolicyMode(os.Getenv("LINKTOR_WA_TEMPLATE_ENFORCEMENT")), templateRepo))
 	outboundResolver.Register(whatsappofficial.NewSenderFactory())
 	outboundResolver.Register(telegram.NewSenderFactory())
 	outboundResolver.Register(sms.NewSenderFactory())
@@ -574,6 +591,9 @@ func main() {
 
 	// Create message service and handler
 	messageService := service.NewMessageService(messageRepo, conversationRepo, channelRepo, contactRepo, producer)
+	// Synchronous sandbox recipient check (UX): the API rejects immediately;
+	// the authoritative guard remains in the outbound delivery funnel.
+	messageService.SetSandboxAllowlist(sandboxAllowlistRepo)
 	messageHandler := handlers.NewMessageHandler(messageService)
 	attachmentHandler := handlers.NewAttachmentHandler(mediaStore)
 	mediaHandler := handlers.NewMediaHandler(mediaStore)
@@ -599,7 +619,7 @@ func main() {
 		channelService.SetEnabledChannelTypes(enabled)
 		logger.Info(fmt.Sprintf("channel type allowlist enabled: %v", enabled))
 	}
-	channelHandler := handlers.NewChannelHandler(channelService, producer)
+	channelHandler := handlers.NewChannelHandler(channelService, producer, auditService)
 
 	// Create tenant service and handler
 	tenantService := service.NewTenantService(tenantRepo, userRepo, channelRepo, contactRepo)
@@ -622,6 +642,7 @@ func main() {
 
 	// whatomate-inspired handlers
 	auditHandler := handlers.NewAuditHandler(auditService)
+	sandboxAllowlistHandler := handlers.NewSandboxAllowlistHandler(sandboxAllowlistService, auditService)
 	cannedHandler := handlers.NewCannedResponseHandler(cannedService, auditService)
 	roleHandler := handlers.NewRoleHandler(roleService, auditService)
 	settingsHandler := handlers.NewSettingsHandler(settingsService, assignmentService, auditService)
@@ -802,7 +823,7 @@ func main() {
 	// Ver docs/vendax-integration/PLANO-integracao-linktor-vendax.md.
 	if natsClient != nil && os.Getenv("LINKTOR_VENDAX_BRIDGE_ENABLED") == "true" {
 		logger.Info("Starting VendaX bridge...")
-		vendaxBridge = vendax.NewBridge(natsClient, sendMessageUC, conversationRepo, contactRepo, channelRepo)
+		vendaxBridge = vendax.NewBridge(natsClient, sendMessageUC, conversationRepo, contactRepo, channelRepo, messageRepo, messageService)
 		if err := vendaxBridge.Start(ctx); err != nil {
 			logger.Warn("Failed to start VendaX bridge: " + err.Error())
 			vendaxBridge = nil
@@ -1488,6 +1509,17 @@ func main() {
 				audit.GET("", auditHandler.List)
 			}
 
+			// Sandbox recipient allowlist (INV-017). Admin only: the allowlist
+			// is the security boundary keeping synthetic traffic away from real
+			// recipients, so editing it is a privileged operation.
+			sandboxAllowlist := protected.Group("/sandbox/allowlist")
+			sandboxAllowlist.Use(authMiddleware.RequireRole("admin", "owner"))
+			{
+				sandboxAllowlist.GET("", sandboxAllowlistHandler.List)
+				sandboxAllowlist.POST("", sandboxAllowlistHandler.Add)
+				sandboxAllowlist.DELETE("/:id", sandboxAllowlistHandler.Remove)
+			}
+
 			// Bulk campaigns
 			campaigns := protected.Group("/campaigns")
 			{
@@ -1850,7 +1882,15 @@ func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.Messag
 		}
 	}
 
-	if err := messageRepo.UpdateStatus(ctx, messageID, toMessageStatus(status.Status), status.ErrorMessage); err != nil {
+	// A guard block records the machine-readable reason on the message
+	// (metadata.blocked_by) so the console distinguishes a local block from a
+	// provider rejection; a plain failure/other status uses the normal path.
+	if status.Status == "failed" && status.BlockedReason != "" {
+		if err := messageRepo.MarkFailedWithBlockedReason(ctx, messageID, status.ErrorMessage, status.BlockedReason); err != nil {
+			logger.Warn("Ignoring status update for unknown message id: " + messageID)
+			return nil
+		}
+	} else if err := messageRepo.UpdateStatus(ctx, messageID, toMessageStatus(status.Status), status.ErrorMessage); err != nil {
 		logger.Warn("Ignoring status update for unknown message id: " + messageID)
 		return nil
 	}

@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/internal/api/middleware"
@@ -51,6 +52,19 @@ func (h *AuditHandler) List(c *gin.Context) {
 		Action:       strings.TrimSpace(c.Query("action")),
 		ResourceType: strings.TrimSpace(c.Query("resource_type")),
 		ResourceID:   strings.TrimSpace(c.Query("resource_id")),
+		Actor:        strings.TrimSpace(c.Query("actor")),
+	}
+	// Period filter (RFC3339 or date-only YYYY-MM-DD); a bad value is ignored
+	// rather than failing the read.
+	if v := strings.TrimSpace(c.Query("start_date")); v != "" {
+		if ts, ok := parseAuditDate(v, false); ok {
+			filters.StartTime = ts
+		}
+	}
+	if v := strings.TrimSpace(c.Query("end_date")); v != "" {
+		if ts, ok := parseAuditDate(v, true); ok {
+			filters.EndTime = ts
+		}
 	}
 
 	logs, total, err := h.auditService.List(c.Request.Context(), tenantID, filters, params)
@@ -67,4 +81,20 @@ func (h *AuditHandler) List(c *gin.Context) {
 		HasNext:    int64(params.Page*params.PageSize) < total,
 		HasPrev:    params.Page > 1,
 	})
+}
+
+// parseAuditDate parses an audit period bound accepting RFC3339 or a date-only
+// "YYYY-MM-DD". For an end bound, a date-only value extends to end-of-day so a
+// same-day range is inclusive. Returns ok=false on an unparseable value.
+func parseAuditDate(v string, endOfDay bool) (time.Time, bool) {
+	if ts, err := time.Parse(time.RFC3339, v); err == nil {
+		return ts, true
+	}
+	if d, err := time.Parse("2006-01-02", v); err == nil {
+		if endOfDay {
+			return d.Add(24*time.Hour - time.Nanosecond), true
+		}
+		return d, true
+	}
+	return time.Time{}, false
 }
