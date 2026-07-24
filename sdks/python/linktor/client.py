@@ -2,6 +2,12 @@
 Linktor Client - Main SDK entry point
 """
 
+# Defer annotation evaluation so a method's return type like ``list[Channel]``
+# inside a resource class that also defines a ``list`` method does not resolve
+# ``list`` to that method (which would raise "'function' object is not
+# subscriptable" at import time).
+from __future__ import annotations
+
 from typing import Any, AsyncIterator, Callable, Optional
 
 from linktor.utils.http import HttpClient, AsyncHttpClient
@@ -11,6 +17,7 @@ from linktor.types import (
     Message,
     Contact,
     Channel,
+    ConnectResult,
     Bot,
     Agent,
     KnowledgeBase,
@@ -146,39 +153,58 @@ class ChannelsResource:
     def __init__(self, http: HttpClient):
         self._http = http
 
-    def list(self, **params: Any) -> PaginatedResponse[Channel]:
-        """List channels"""
-        data = self._http.get("/channels", params=params)
-        return PaginatedResponse[Channel](**data)
+    def list(self, **params: Any) -> list[Channel]:
+        """List channels (the backend returns a plain array under ``data``)."""
+        resp = self._http.get("/channels", params=params)
+        return [Channel(**c) for c in (resp.get("data") or [])]
 
     def get(self, id: str) -> Channel:
         """Get channel"""
-        data = self._http.get(f"/channels/{id}")
-        return Channel(**data)
+        resp = self._http.get(f"/channels/{id}")
+        return Channel(**resp["data"])
 
     def create(self, **kwargs: Any) -> Channel:
-        """Create channel"""
-        data = self._http.post("/channels", kwargs)
-        return Channel(**data)
+        """Create a channel.
+
+        Put secrets in ``credentials`` and non-secret settings in ``config``::
+
+            client.channels.create(
+                name="WA", type="whatsapp",
+                config={"phone_number_id": "123"},
+                credentials={"access_token": "secret"},
+            )
+        """
+        resp = self._http.post("/channels", kwargs)
+        return Channel(**resp["data"])
 
     def update(self, id: str, **kwargs: Any) -> Channel:
-        """Update channel"""
-        data = self._http.patch(f"/channels/{id}", kwargs)
-        return Channel(**data)
+        """Update a channel (PUT). Omit ``credentials`` to keep stored secrets."""
+        resp = self._http.put(f"/channels/{id}", kwargs)
+        return Channel(**resp["data"])
 
     def delete(self, id: str) -> None:
         """Delete channel"""
         self._http.delete(f"/channels/{id}")
 
-    def connect(self, id: str) -> Channel:
-        """Connect channel"""
-        data = self._http.post(f"/channels/{id}/connect")
-        return Channel(**data)
+    def connect(self, id: str) -> ConnectResult:
+        """Connect a channel.
+
+        For WhatsApp this returns a :class:`ConnectResult` carrying the QR
+        payload (``qr_code``, ``expires_in``) to render; call again to poll for a
+        fresh QR or the linked state.
+        """
+        resp = self._http.post(f"/channels/{id}/connect")
+        return ConnectResult(**resp["data"])
+
+    def request_pair_code(self, id: str, phone_number: str) -> ConnectResult:
+        """Request a WhatsApp pairing code for a phone number (QR alternative)."""
+        resp = self._http.post(f"/channels/{id}/pair", {"phone_number": phone_number})
+        return ConnectResult(**resp["data"])
 
     def disconnect(self, id: str) -> Channel:
         """Disconnect channel"""
-        data = self._http.post(f"/channels/{id}/disconnect")
-        return Channel(**data)
+        resp = self._http.post(f"/channels/{id}/disconnect")
+        return Channel(**resp["data"])
 
 
 class BotsResource:
