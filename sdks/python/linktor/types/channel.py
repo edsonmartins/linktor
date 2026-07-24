@@ -10,13 +10,27 @@ from pydantic import BaseModel, Field
 from linktor.types.common import ChannelType, PaginationParams
 
 
-class ChannelStatus(str, Enum):
-    """Channel status"""
+class ConnectionStatus(str, Enum):
+    """Live connection state (wire field ``connection_status``)."""
 
-    ACTIVE = "active"
-    INACTIVE = "inactive"
+    DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
+    CONNECTED = "connected"
     ERROR = "error"
+
+
+class CoexistenceStatus(str, Enum):
+    """WhatsApp Business App + Cloud API coexistence state."""
+
+    INACTIVE = "inactive"
+    PENDING = "pending"
+    ACTIVE = "active"
+    WARNING = "warning"
+    DISCONNECTED = "disconnected"
+
+
+# Deprecated alias kept for backwards-compatible imports.
+ChannelStatus = ConnectionStatus
 
 
 class WhatsAppConfig(BaseModel):
@@ -135,45 +149,92 @@ ChannelConfig = Union[
 
 
 class Channel(BaseModel):
-    """Channel model"""
+    """Channel model — mirrors the backend wire shape (snake_case).
+
+    Credentials are write-only and never present on a response.
+    """
 
     id: str
-    tenant_id: str = Field(alias="tenantId")
-    name: str
+    tenant_id: str
     type: ChannelType
-    status: ChannelStatus
-    config: dict[str, Any]
-    webhook_url: Optional[str] = Field(None, alias="webhookUrl")
-    metadata: Optional[dict[str, Any]] = None
-    created_at: datetime = Field(alias="createdAt")
-    updated_at: datetime = Field(alias="updatedAt")
+    name: str
+    identifier: Optional[str] = None
+    enabled: bool = False
+    connection_status: ConnectionStatus = ConnectionStatus.DISCONNECTED
+    config: Optional[dict[str, str]] = None
+    webhook_url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    # WhatsApp coexistence
+    is_coexistence: Optional[bool] = None
+    waba_id: Optional[str] = None
+    last_echo_at: Optional[datetime] = None
+    coexistence_status: Optional[CoexistenceStatus] = None
+    message_template_namespace: Optional[str] = None
 
     class Config:
         populate_by_name = True
+        extra = "ignore"
 
 
 class CreateChannelInput(BaseModel):
-    """Create channel input"""
+    """Create channel input.
+
+    ``config`` holds non-secret settings (phone_number_id, waba_id, ...);
+    ``credentials`` holds secrets (access_token, bot_token, ...) — stored
+    encrypted and never returned.
+    """
 
     name: str
     type: ChannelType
-    config: dict[str, Any]
-    metadata: Optional[dict[str, Any]] = None
+    identifier: Optional[str] = None
+    config: Optional[dict[str, str]] = None
+    credentials: Optional[dict[str, str]] = None
+    webhook_url: Optional[str] = None
 
 
 class UpdateChannelInput(BaseModel):
-    """Update channel input"""
+    """Update channel input. Omit ``credentials`` to keep the stored secrets."""
 
     name: Optional[str] = None
-    config: Optional[dict[str, Any]] = None
-    metadata: Optional[dict[str, Any]] = None
+    identifier: Optional[str] = None
+    config: Optional[dict[str, str]] = None
+    credentials: Optional[dict[str, str]] = None
+    webhook_url: Optional[str] = None
+
+
+class ConnectResult(BaseModel):
+    """Result of connecting a channel.
+
+    For WhatsApp Web-style linking, ``qr_code`` carries the payload to render and
+    ``expires_in`` its lifetime in seconds — call ``connect`` again to refresh an
+    expired code. ``pair_code`` is the phone-linking code. When
+    ``passkey_required`` is true the account is passkey-locked and must be linked
+    by signing ``passkey_challenge`` (submit via the passkey endpoint), not by QR.
+    """
+
+    channel: Optional[Channel] = None
+    qr_code: Optional[str] = None
+    expires_in: Optional[int] = None
+    pair_code: Optional[str] = None
+    passkey_required: Optional[bool] = None
+    passkey_challenge: Optional[Any] = None
+
+    class Config:
+        extra = "ignore"
+
+
+class PairCodeInput(BaseModel):
+    """Body for requesting a WhatsApp pairing code."""
+
+    phone_number: str
 
 
 class ListChannelsParams(PaginationParams):
     """List channels parameters"""
 
     type: Optional[ChannelType] = None
-    status: Optional[ChannelStatus] = None
+    status: Optional[ConnectionStatus] = None
     search: Optional[str] = None
 
 
@@ -195,6 +256,8 @@ class ChannelCapabilities(BaseModel):
 
 __all__ = [
     "ChannelStatus",
+    "ConnectionStatus",
+    "CoexistenceStatus",
     "WhatsAppConfig",
     "TelegramConfig",
     "FacebookConfig",
@@ -207,6 +270,8 @@ __all__ = [
     "Channel",
     "CreateChannelInput",
     "UpdateChannelInput",
+    "ConnectResult",
+    "PairCodeInput",
     "ListChannelsParams",
     "ChannelCapabilities",
 ]

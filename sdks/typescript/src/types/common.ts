@@ -45,13 +45,20 @@ export type MessageDirection = 'inbound' | 'outbound';
 export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 export type ChannelType =
   | 'whatsapp'
+  | 'whatsapp_official'
+  | 'whatsapp_unofficial'
   | 'telegram'
   | 'facebook'
   | 'instagram'
   | 'webchat'
   | 'sms'
   | 'email'
-  | 'rcs';
+  | 'rcs'
+  | 'voice'
+  | 'teams'
+  | 'slack'
+  | 'mattermost'
+  | 'direto';
 
 export type ContentType =
   | 'text'

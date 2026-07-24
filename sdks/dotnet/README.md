@@ -182,30 +182,48 @@ var mergedContact = await client.Contacts.MergeAsync(new MergeContactsInput
 ### Channels
 
 ```csharp
-// List channels
+// List channels (not paginated on the wire — returns List<Channel>)
 var channels = await client.Channels.ListAsync(new ListChannelsParams
 {
-    Type = "whatsapp"
+    Type = ChannelType.Whatsapp
 });
 
-// Create a channel
+// Create a channel. Non-secret settings go in Config; secrets go in Credentials
+// (write-only — never returned on a response).
 var channel = await client.Channels.CreateAsync(new CreateChannelInput
 {
     Name = "WhatsApp Business",
-    Type = "whatsapp",
-    Config = new Dictionary<string, object>
+    Type = ChannelType.Whatsapp,
+    Config = new Dictionary<string, string>
     {
-        ["phoneNumberId"] = "your-phone-number-id",
-        ["accessToken"] = "your-access-token"
-    }
+        ["phone_number_id"] = "your-phone-number-id",
+        ["waba_id"] = "your-waba-id"
+    },
+    Credentials = new Dictionary<string, string>
+    {
+        ["access_token"] = "your-access-token"
+    },
+    WebhookUrl = "https://example.com/webhooks/linktor"
 });
 
-// Connect channel
-await client.Channels.ConnectAsync("channel-id");
+// Update uses PUT and reuses the create body shape
+await client.Channels.UpdateAsync(channel.Id, new UpdateChannelInput { Name = "WA Sales" });
 
-// Get channel status
-var status = await client.Channels.GetStatusAsync("channel-id");
-Console.WriteLine($"Connected: {status.IsConnected}");
+// Connect channel — for WhatsApp Web linking, surfaces the QR payload to render
+var result = await client.Channels.ConnectAsync(channel.Id);
+if (result.QrCode != null)
+    Console.WriteLine($"Scan QR (expires in {result.ExpiresIn}s): {result.QrCode}");
+
+// Alternatively, link by phone-number pairing code
+var pair = await client.Channels.RequestPairCodeAsync(channel.Id, "+5511999999999");
+Console.WriteLine($"Pair code: {pair.PairCode}");
+
+// Inspect live connection state (distinct from the Enabled flag)
+var current = await client.Channels.GetAsync(channel.Id);
+Console.WriteLine($"Connected: {current.ConnectionStatus == ConnectionStatus.Connected}");
+
+// Disconnect
+await client.Channels.DisconnectAsync(channel.Id);
 ```
 
 ### Bots

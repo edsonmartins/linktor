@@ -52,6 +52,11 @@ class HttpClient
         return $this->request('POST', $path, $body);
     }
 
+    public function put(string $path, array $body): array
+    {
+        return $this->request('PUT', $path, $body);
+    }
+
     public function patch(string $path, array $body): array
     {
         return $this->request('PATCH', $path, $body);

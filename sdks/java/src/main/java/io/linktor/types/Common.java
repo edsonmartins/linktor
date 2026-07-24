@@ -29,8 +29,11 @@ public class Common {
         public String getSortOrder() { return sortOrder; }
         public void setSortOrder(String sortOrder) { this.sortOrder = sortOrder; }
 
-        public static Builder builder() { return new Builder(); }
-
+        // No static builder() here: subclasses (ListContactsParams, ListBotsParams,
+        // ListConversationsParams) declare their own builder() returning their own
+        // Builder, and Java forbids a subclass static method from hiding a base one
+        // with an incompatible return type. Instantiate the base builder directly
+        // via `new PaginationParams.Builder()` if ever needed.
         public static class Builder {
             private final PaginationParams params = new PaginationParams();
 

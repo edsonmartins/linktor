@@ -111,6 +111,11 @@ func (s *APIKeyService) Authenticate(ctx context.Context, rawKey string) (*entit
 			// Best effort: never block auth on a stats write.
 			_ = s.apiKeyRepo.TouchLastUsed(ctx, candidate.ID, time.Now())
 			candidate.KeyHash = ""
+			// Keys created before scopes existed have NULL/empty scopes; treat
+			// them as full access ("*") so enforcement is not a breaking change.
+			if len(candidate.Scopes) == 0 {
+				candidate.Scopes = []string{"*"}
+			}
 			return candidate, nil
 		}
 	}
