@@ -183,9 +183,13 @@ func (r *BotRepository) Update(ctx context.Context, bot *entity.Bot) error {
 			status = $6,
 			channels = $7,
 			updated_at = $8
-		WHERE id = $9
+		WHERE id = $9 AND tenant_id = $10
 	`
 
+	// tenant_id in the WHERE is defense-in-depth (INV-001): the service already
+	// validates ownership via GetByTenantAndID, but scoping the mutation in SQL
+	// means a future caller that skips that check still cannot write across
+	// tenants. bot.TenantID is the loaded (validated) owner.
 	result, err := r.db.Pool.Exec(ctx, query,
 		bot.Name,
 		string(bot.Type),
@@ -196,6 +200,7 @@ func (r *BotRepository) Update(ctx context.Context, bot *entity.Bot) error {
 		pq.Array(bot.Channels),
 		bot.UpdatedAt,
 		bot.ID,
+		bot.TenantID,
 	)
 
 	if err != nil {
@@ -209,11 +214,12 @@ func (r *BotRepository) Update(ctx context.Context, bot *entity.Bot) error {
 	return nil
 }
 
-// UpdateStatus updates only the bot status
-func (r *BotRepository) UpdateStatus(ctx context.Context, id string, status entity.BotStatus) error {
-	query := `UPDATE bots SET status = $1, updated_at = $2 WHERE id = $3`
+// UpdateStatus updates only the bot status, scoped to the tenant (INV-001
+// defense-in-depth).
+func (r *BotRepository) UpdateStatus(ctx context.Context, id, tenantID string, status entity.BotStatus) error {
+	query := `UPDATE bots SET status = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4`
 
-	result, err := r.db.Pool.Exec(ctx, query, string(status), time.Now(), id)
+	result, err := r.db.Pool.Exec(ctx, query, string(status), time.Now(), id, tenantID)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to update bot status")
 	}
@@ -225,9 +231,10 @@ func (r *BotRepository) UpdateStatus(ctx context.Context, id string, status enti
 	return nil
 }
 
-// Delete deletes a bot
-func (r *BotRepository) Delete(ctx context.Context, id string) error {
-	result, err := r.db.Pool.Exec(ctx, "DELETE FROM bots WHERE id = $1", id)
+// Delete deletes a bot, scoped to the tenant (INV-001 defense-in-depth): a
+// missing tenant match deletes nothing and reports not-found.
+func (r *BotRepository) Delete(ctx context.Context, id, tenantID string) error {
+	result, err := r.db.Pool.Exec(ctx, "DELETE FROM bots WHERE id = $1 AND tenant_id = $2", id, tenantID)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to delete bot")
 	}
@@ -254,15 +261,16 @@ func (r *BotRepository) CountByTenant(ctx context.Context, tenantID string) (int
 	return count, nil
 }
 
-// AssignChannel assigns a channel to a bot
-func (r *BotRepository) AssignChannel(ctx context.Context, botID, channelID string) error {
+// AssignChannel assigns a channel to a bot, scoped to the tenant (INV-001
+// defense-in-depth).
+func (r *BotRepository) AssignChannel(ctx context.Context, botID, tenantID, channelID string) error {
 	query := `
 		UPDATE bots
 		SET channels = array_append(channels, $1), updated_at = $2
-		WHERE id = $3 AND NOT ($1 = ANY(channels))
+		WHERE id = $3 AND tenant_id = $4 AND NOT ($1 = ANY(channels))
 	`
 
-	_, err := r.db.Pool.Exec(ctx, query, channelID, time.Now(), botID)
+	_, err := r.db.Pool.Exec(ctx, query, channelID, time.Now(), botID, tenantID)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to assign channel to bot")
 	}
@@ -270,15 +278,16 @@ func (r *BotRepository) AssignChannel(ctx context.Context, botID, channelID stri
 	return nil
 }
 
-// UnassignChannel removes a channel from a bot
-func (r *BotRepository) UnassignChannel(ctx context.Context, botID, channelID string) error {
+// UnassignChannel removes a channel from a bot, scoped to the tenant (INV-001
+// defense-in-depth).
+func (r *BotRepository) UnassignChannel(ctx context.Context, botID, tenantID, channelID string) error {
 	query := `
 		UPDATE bots
 		SET channels = array_remove(channels, $1), updated_at = $2
-		WHERE id = $3
+		WHERE id = $3 AND tenant_id = $4
 	`
 
-	_, err := r.db.Pool.Exec(ctx, query, channelID, time.Now(), botID)
+	_, err := r.db.Pool.Exec(ctx, query, channelID, time.Now(), botID, tenantID)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to unassign channel from bot")
 	}

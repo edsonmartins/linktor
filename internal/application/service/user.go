@@ -150,25 +150,29 @@ func (s *UserService) UpdateForTenant(ctx context.Context, tenantID, id string, 
 	return s.Update(ctx, user.ID, input)
 }
 
-// Delete deletes a user
-func (s *UserService) Delete(ctx context.Context, id string) error {
+// Delete deletes a user (tenant-scoped at the repo layer, INV-001)
+func (s *UserService) Delete(ctx context.Context, id, tenantID string) error {
 	_, err := s.userRepo.FindByID(ctx, id)
 	if err != nil {
 		return errors.New(errors.ErrCodeUserNotFound, "User not found")
 	}
 
-	if err := s.userRepo.Delete(ctx, id); err != nil {
+	if err := s.userRepo.Delete(ctx, id, tenantID); err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "Failed to delete user")
 	}
 
 	return nil
 }
 
-// DeleteForTenant deletes a user only if it belongs to the tenant.
+// DeleteForTenant deletes a user only if it belongs to the tenant. The repo
+// Delete is scoped by the REQUEST tenantID (not the loaded row's own tenant):
+// feeding back user.TenantID would make the SQL guard tautological, defeating
+// the defense-in-depth — if GetByTenantAndID ever returned a wrong-tenant row,
+// the guard must still refuse. Consistent with BotService.DeleteForTenant.
 func (s *UserService) DeleteForTenant(ctx context.Context, tenantID, id string) error {
 	user, err := s.GetByTenantAndID(ctx, tenantID, id)
 	if err != nil {
 		return err
 	}
-	return s.Delete(ctx, user.ID)
+	return s.Delete(ctx, user.ID, tenantID)
 }

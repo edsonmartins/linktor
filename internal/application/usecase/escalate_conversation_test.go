@@ -64,7 +64,7 @@ func (m *mockBotRepository) Update(_ context.Context, bot *entity.Bot) error {
 	return nil
 }
 
-func (m *mockBotRepository) UpdateStatus(_ context.Context, id string, status entity.BotStatus) error {
+func (m *mockBotRepository) UpdateStatus(_ context.Context, id, tenantID string, status entity.BotStatus) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -76,7 +76,7 @@ func (m *mockBotRepository) UpdateStatus(_ context.Context, id string, status en
 	return nil
 }
 
-func (m *mockBotRepository) Delete(_ context.Context, id string) error {
+func (m *mockBotRepository) Delete(_ context.Context, id, tenantID string) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -88,11 +88,11 @@ func (m *mockBotRepository) CountByTenant(_ context.Context, _ string) (int64, e
 	return 0, m.ReturnError
 }
 
-func (m *mockBotRepository) AssignChannel(_ context.Context, _, _ string) error {
+func (m *mockBotRepository) AssignChannel(_ context.Context, _, _, _ string) error {
 	return m.ReturnError
 }
 
-func (m *mockBotRepository) UnassignChannel(_ context.Context, _, _ string) error {
+func (m *mockBotRepository) UnassignChannel(_ context.Context, _, _, _ string) error {
 	return m.ReturnError
 }
 

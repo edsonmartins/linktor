@@ -138,7 +138,7 @@ func TestHistoryImportService_ConcurrentStartCancel(t *testing.T) {
 				return
 			}
 			// Race a cancel against the background goroutine's completion.
-			_ = svc.CancelImport(ctx, job.ID)
+			_ = svc.CancelImport(ctx, job.ID, tenantID)
 		}()
 	}
 	wg.Wait()

@@ -546,7 +546,9 @@ func (c *Client) GetPaymentsByCustomer(ctx context.Context, customerPhone string
 	if c.store == nil {
 		return nil, fmt.Errorf("payment store not configured")
 	}
-	return c.store.GetByCustomer(ctx, customerPhone)
+	// Scope to this client's organization so a tenant only ever sees its own
+	// payments for the phone (IDOR fix — the store filters by org).
+	return c.store.GetByCustomer(ctx, c.organizationID, customerPhone)
 }
 
 // =============================================================================

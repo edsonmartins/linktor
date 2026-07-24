@@ -12,8 +12,8 @@ type CartRepository interface {
 	// Create creates a new cart
 	Create(ctx context.Context, cart *entity.Cart) error
 
-	// GetByID retrieves a cart by ID
-	GetByID(ctx context.Context, cartID string) (*entity.Cart, error)
+	// GetByID retrieves a cart by ID, scoped to the organization (INV-001)
+	GetByID(ctx context.Context, orgID, cartID string) (*entity.Cart, error)
 
 	// GetByCustomer retrieves an active cart for a customer
 	GetByCustomer(ctx context.Context, orgID, customerPhone string) (*entity.Cart, error)
@@ -21,8 +21,8 @@ type CartRepository interface {
 	// Update updates an existing cart
 	Update(ctx context.Context, cart *entity.Cart) error
 
-	// Delete deletes a cart
-	Delete(ctx context.Context, cartID string) error
+	// Delete deletes a cart, scoped to the organization (INV-001)
+	Delete(ctx context.Context, orgID, cartID string) error
 
 	// GetCartItems retrieves items for a cart
 	GetCartItems(ctx context.Context, cartID string) ([]entity.CartItem, error)
@@ -33,8 +33,8 @@ type CartRepository interface {
 	// UpdateCartItem updates a cart item
 	UpdateCartItem(ctx context.Context, item *entity.CartItem) error
 
-	// DeleteCartItem deletes a cart item
-	DeleteCartItem(ctx context.Context, cartID, itemID string) error
+	// DeleteCartItem deletes a cart item, scoped to the organization (INV-001)
+	DeleteCartItem(ctx context.Context, orgID, cartID, itemID string) error
 
 	// ClearCart removes all items from a cart
 	ClearCart(ctx context.Context, cartID string) error
@@ -42,11 +42,11 @@ type CartRepository interface {
 	// GetAbandonedCarts retrieves abandoned carts
 	GetAbandonedCarts(ctx context.Context, orgID string, threshold time.Duration, pagination Pagination) ([]*entity.Cart, int, error)
 
-	// MarkAsAbandoned marks a cart as abandoned
-	MarkAsAbandoned(ctx context.Context, cartID string) error
+	// MarkAsAbandoned marks a cart as abandoned, scoped to the org (INV-001)
+	MarkAsAbandoned(ctx context.Context, orgID, cartID string) error
 
-	// RecoverCart recovers an abandoned cart
-	RecoverCart(ctx context.Context, cartID string) error
+	// RecoverCart recovers an abandoned cart, scoped to the org (INV-001)
+	RecoverCart(ctx context.Context, orgID, cartID string) error
 
 	// GetExpiredCarts retrieves expired carts for cleanup
 	GetExpiredCarts(ctx context.Context, limit int) ([]*entity.Cart, error)

@@ -164,9 +164,12 @@ func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {
 			status = $6,
 			last_login_at = $7,
 			updated_at = $8
-		WHERE id = $9
+		WHERE id = $9 AND tenant_id = $10
 	`
 
+	// tenant_id in the WHERE is defense-in-depth (INV-001): even if a caller
+	// skips the service ownership check, an admin of tenant A cannot mutate a
+	// user of tenant B. user.TenantID is the loaded (validated) owner.
 	result, err := r.db.Pool.Exec(ctx, query,
 		user.Email,
 		user.PasswordHash,
@@ -177,6 +180,7 @@ func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {
 		user.LastLoginAt,
 		user.UpdatedAt,
 		user.ID,
+		user.TenantID,
 	)
 
 	if err != nil {
@@ -190,9 +194,10 @@ func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {
 	return nil
 }
 
-// Delete deletes a user
-func (r *UserRepository) Delete(ctx context.Context, id string) error {
-	result, err := r.db.Pool.Exec(ctx, "DELETE FROM users WHERE id = $1", id)
+// Delete deletes a user, scoped to the tenant (INV-001 defense-in-depth): a
+// missing tenant match deletes nothing and reports not-found.
+func (r *UserRepository) Delete(ctx context.Context, id, tenantID string) error {
+	result, err := r.db.Pool.Exec(ctx, "DELETE FROM users WHERE id = $1 AND tenant_id = $2", id, tenantID)
 	if err != nil {
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to delete user")
 	}

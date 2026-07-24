@@ -139,23 +139,23 @@ func (s *BotServiceImpl) Update(ctx context.Context, id string, input *UpdateBot
 	return bot, nil
 }
 
-// Delete deletes a bot
-func (s *BotServiceImpl) Delete(ctx context.Context, id string) error {
-	return s.botRepo.Delete(ctx, id)
+// Delete deletes a bot (tenant-scoped at the repo layer, INV-001)
+func (s *BotServiceImpl) Delete(ctx context.Context, id, tenantID string) error {
+	return s.botRepo.Delete(ctx, id, tenantID)
 }
 
-// Activate activates a bot
-func (s *BotServiceImpl) Activate(ctx context.Context, id string) error {
-	return s.botRepo.UpdateStatus(ctx, id, entity.BotStatusActive)
+// Activate activates a bot (tenant-scoped at the repo layer, INV-001)
+func (s *BotServiceImpl) Activate(ctx context.Context, id, tenantID string) error {
+	return s.botRepo.UpdateStatus(ctx, id, tenantID, entity.BotStatusActive)
 }
 
-// Deactivate deactivates a bot
-func (s *BotServiceImpl) Deactivate(ctx context.Context, id string) error {
-	return s.botRepo.UpdateStatus(ctx, id, entity.BotStatusInactive)
+// Deactivate deactivates a bot (tenant-scoped at the repo layer, INV-001)
+func (s *BotServiceImpl) Deactivate(ctx context.Context, id, tenantID string) error {
+	return s.botRepo.UpdateStatus(ctx, id, tenantID, entity.BotStatusInactive)
 }
 
 // AssignChannel assigns a channel to a bot
-func (s *BotServiceImpl) AssignChannel(ctx context.Context, botID, channelID string) error {
+func (s *BotServiceImpl) AssignChannel(ctx context.Context, botID, tenantID, channelID string) error {
 	// Verify bot exists
 	bot, err := s.botRepo.FindByID(ctx, botID)
 	if err != nil {
@@ -176,18 +176,19 @@ func (s *BotServiceImpl) AssignChannel(ctx context.Context, botID, channelID str
 	// Check if channel is already assigned to another bot
 	existingBot, err := s.botRepo.FindByChannel(ctx, channelID)
 	if err == nil && existingBot != nil && existingBot.ID != botID {
-		// Unassign from existing bot first
-		if err := s.botRepo.UnassignChannel(ctx, existingBot.ID, channelID); err != nil {
+		// Unassign from existing bot first. The existing bot shares the tenant
+		// (same channel, and AssignChannel already checked bot/channel tenant).
+		if err := s.botRepo.UnassignChannel(ctx, existingBot.ID, existingBot.TenantID, channelID); err != nil {
 			return errors.Wrap(err, errors.ErrCodeInternal, "failed to unassign channel from existing bot")
 		}
 	}
 
-	return s.botRepo.AssignChannel(ctx, botID, channelID)
+	return s.botRepo.AssignChannel(ctx, botID, tenantID, channelID)
 }
 
 // UnassignChannel unassigns a channel from a bot
-func (s *BotServiceImpl) UnassignChannel(ctx context.Context, botID, channelID string) error {
-	return s.botRepo.UnassignChannel(ctx, botID, channelID)
+func (s *BotServiceImpl) UnassignChannel(ctx context.Context, botID, tenantID, channelID string) error {
+	return s.botRepo.UnassignChannel(ctx, botID, tenantID, channelID)
 }
 
 // GetBotForChannel returns the active bot assigned to a channel
@@ -614,7 +615,7 @@ func (s *BotServiceImpl) DeleteForTenant(ctx context.Context, tenantID, id strin
 	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
 		return err
 	}
-	return s.Delete(ctx, id)
+	return s.Delete(ctx, id, tenantID)
 }
 
 // ActivateForTenant activates a bot only if it belongs to the tenant.
@@ -622,7 +623,7 @@ func (s *BotServiceImpl) ActivateForTenant(ctx context.Context, tenantID, id str
 	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
 		return err
 	}
-	return s.Activate(ctx, id)
+	return s.Activate(ctx, id, tenantID)
 }
 
 // DeactivateForTenant deactivates a bot only if it belongs to the tenant.
@@ -630,7 +631,7 @@ func (s *BotServiceImpl) DeactivateForTenant(ctx context.Context, tenantID, id s
 	if _, err := s.GetByTenantAndID(ctx, tenantID, id); err != nil {
 		return err
 	}
-	return s.Deactivate(ctx, id)
+	return s.Deactivate(ctx, id, tenantID)
 }
 
 // AssignChannelForTenant assigns a channel to a bot only if the bot belongs to
@@ -639,7 +640,7 @@ func (s *BotServiceImpl) AssignChannelForTenant(ctx context.Context, tenantID, b
 	if _, err := s.GetByTenantAndID(ctx, tenantID, botID); err != nil {
 		return err
 	}
-	return s.AssignChannel(ctx, botID, channelID)
+	return s.AssignChannel(ctx, botID, tenantID, channelID)
 }
 
 // UnassignChannelForTenant unassigns a channel from a bot only if the bot
@@ -648,7 +649,7 @@ func (s *BotServiceImpl) UnassignChannelForTenant(ctx context.Context, tenantID,
 	if _, err := s.GetByTenantAndID(ctx, tenantID, botID); err != nil {
 		return err
 	}
-	return s.UnassignChannel(ctx, botID, channelID)
+	return s.UnassignChannel(ctx, botID, tenantID, channelID)
 }
 
 // UpdateConfigForTenant updates a bot's config only if it belongs to the tenant.

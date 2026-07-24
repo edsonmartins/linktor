@@ -95,7 +95,7 @@ func (m *mockBotRepository) Update(ctx context.Context, bot *entity.Bot) error {
 	return nil
 }
 
-func (m *mockBotRepository) UpdateStatus(ctx context.Context, id string, status entity.BotStatus) error {
+func (m *mockBotRepository) UpdateStatus(ctx context.Context, id, tenantID string, status entity.BotStatus) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -107,7 +107,7 @@ func (m *mockBotRepository) UpdateStatus(ctx context.Context, id string, status 
 	return nil
 }
 
-func (m *mockBotRepository) Delete(ctx context.Context, id string) error {
+func (m *mockBotRepository) Delete(ctx context.Context, id, tenantID string) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -128,7 +128,7 @@ func (m *mockBotRepository) CountByTenant(ctx context.Context, tenantID string) 
 	return count, nil
 }
 
-func (m *mockBotRepository) AssignChannel(ctx context.Context, botID, channelID string) error {
+func (m *mockBotRepository) AssignChannel(ctx context.Context, botID, tenantID, channelID string) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -140,7 +140,7 @@ func (m *mockBotRepository) AssignChannel(ctx context.Context, botID, channelID 
 	return nil
 }
 
-func (m *mockBotRepository) UnassignChannel(ctx context.Context, botID, channelID string) error {
+func (m *mockBotRepository) UnassignChannel(ctx context.Context, botID, tenantID, channelID string) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}

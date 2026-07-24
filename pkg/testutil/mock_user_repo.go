@@ -85,7 +85,7 @@ func (m *MockUserRepository) Update(ctx context.Context, user *entity.User) erro
 	return nil
 }
 
-func (m *MockUserRepository) Delete(ctx context.Context, id string) error {
+func (m *MockUserRepository) Delete(ctx context.Context, id, tenantID string) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}

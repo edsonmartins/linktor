@@ -103,7 +103,7 @@ func (m *MockBotRepository) Update(ctx context.Context, bot *entity.Bot) error {
 	return nil
 }
 
-func (m *MockBotRepository) UpdateStatus(ctx context.Context, id string, status entity.BotStatus) error {
+func (m *MockBotRepository) UpdateStatus(ctx context.Context, id, tenantID string, status entity.BotStatus) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -116,7 +116,7 @@ func (m *MockBotRepository) UpdateStatus(ctx context.Context, id string, status 
 	return nil
 }
 
-func (m *MockBotRepository) Delete(ctx context.Context, id string) error {
+func (m *MockBotRepository) Delete(ctx context.Context, id, tenantID string) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -138,7 +138,7 @@ func (m *MockBotRepository) CountByTenant(ctx context.Context, tenantID string) 
 	return count, nil
 }
 
-func (m *MockBotRepository) AssignChannel(ctx context.Context, botID, channelID string) error {
+func (m *MockBotRepository) AssignChannel(ctx context.Context, botID, tenantID, channelID string) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -149,7 +149,7 @@ func (m *MockBotRepository) AssignChannel(ctx context.Context, botID, channelID 
 	return nil
 }
 
-func (m *MockBotRepository) UnassignChannel(ctx context.Context, botID, channelID string) error {
+func (m *MockBotRepository) UnassignChannel(ctx context.Context, botID, tenantID, channelID string) error {
 	if m.ReturnError != nil {
 		return m.ReturnError
 	}
@@ -521,7 +521,7 @@ func TestBotDelete_Success(t *testing.T) {
 
 	svc := newTestBotService(botRepo, nil, nil)
 
-	err := svc.Delete(context.Background(), "bot-1")
+	err := svc.Delete(context.Background(), "bot-1", "tenant-1")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -542,7 +542,7 @@ func TestBotActivate_Success(t *testing.T) {
 
 	svc := newTestBotService(botRepo, nil, nil)
 
-	err := svc.Activate(context.Background(), "bot-1")
+	err := svc.Activate(context.Background(), "bot-1", "tenant-1")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -560,7 +560,7 @@ func TestBotDeactivate_Success(t *testing.T) {
 
 	svc := newTestBotService(botRepo, nil, nil)
 
-	err := svc.Deactivate(context.Background(), "bot-1")
+	err := svc.Deactivate(context.Background(), "bot-1", "tenant-1")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -586,7 +586,7 @@ func TestBotAssignChannel_Success(t *testing.T) {
 
 	svc := newTestBotService(botRepo, channelRepo, nil)
 
-	err := svc.AssignChannel(context.Background(), "bot-1", "ch-1")
+	err := svc.AssignChannel(context.Background(), "bot-1", "tenant-1", "ch-1")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -600,7 +600,7 @@ func TestBotAssignChannel_BotNotFound(t *testing.T) {
 	channelRepo := testutil.NewMockChannelRepository()
 	svc := newTestBotService(botRepo, channelRepo, nil)
 
-	err := svc.AssignChannel(context.Background(), "nonexistent", "ch-1")
+	err := svc.AssignChannel(context.Background(), "nonexistent", "tenant-1", "ch-1")
 	if err == nil {
 		t.Fatal("expected error for bot not found, got nil")
 	}
@@ -616,7 +616,7 @@ func TestBotAssignChannel_ChannelNotFound(t *testing.T) {
 
 	svc := newTestBotService(botRepo, channelRepo, nil)
 
-	err := svc.AssignChannel(context.Background(), "bot-1", "nonexistent")
+	err := svc.AssignChannel(context.Background(), "bot-1", "tenant-1", "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for channel not found, got nil")
 	}
@@ -635,7 +635,7 @@ func TestBotAssignChannel_DifferentTenant(t *testing.T) {
 
 	svc := newTestBotService(botRepo, channelRepo, nil)
 
-	err := svc.AssignChannel(context.Background(), "bot-1", "ch-1")
+	err := svc.AssignChannel(context.Background(), "bot-1", "tenant-1", "ch-1")
 	if err == nil {
 		t.Fatal("expected forbidden error for different tenant, got nil")
 	}
@@ -660,7 +660,7 @@ func TestBotAssignChannel_ReassignsFromAnotherBot(t *testing.T) {
 
 	svc := newTestBotService(botRepo, channelRepo, nil)
 
-	err := svc.AssignChannel(context.Background(), "bot-new", "ch-1")
+	err := svc.AssignChannel(context.Background(), "bot-new", "tenant-1", "ch-1")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -688,7 +688,7 @@ func TestBotUnassignChannel_Success(t *testing.T) {
 
 	svc := newTestBotService(botRepo, nil, nil)
 
-	err := svc.UnassignChannel(context.Background(), "bot-1", "ch-1")
+	err := svc.UnassignChannel(context.Background(), "bot-1", "tenant-1", "ch-1")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
