@@ -61,14 +61,15 @@ func (w *Worker) logActivity(ctx context.Context, level entity.LogLevel, raw *na
 		return
 	}
 	// Routing facts only — never the message body. "to" is the destination
-	// contact; the origin is this channel.
+	// contact, masked (INV-002): the prefix+suffix is enough for an operator
+	// to correlate with the conversation without exposing the full number.
 	meta := map[string]string{
 		"message_id":   raw.ID,
 		"channel_type": raw.ChannelType,
 		"direction":    "outbound",
 	}
 	if msg != nil && msg.To != "" {
-		meta["to"] = msg.To
+		meta["to"] = entity.MaskRecipient(msg.To)
 	}
 	switch level {
 	case entity.LogLevelError:

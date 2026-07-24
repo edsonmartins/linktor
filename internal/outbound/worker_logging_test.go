@@ -2,6 +2,7 @@ package outbound
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -59,8 +60,16 @@ func TestLogActivityRoutesLevelAndMetadata(t *testing.T) {
 	if warn.level != entity.LogLevelWarn || warn.tenantID != "tenant-1" || warn.channelID != "chan-1" {
 		t.Fatalf("warn entry mismatch: %+v", warn)
 	}
-	if warn.metadata["message_id"] != "msg-1" || warn.metadata["channel_type"] != "whatsapp" || warn.metadata["to"] != "+5511999999999" {
+	// "to" is masked (INV-002): same format the guard blocks use — full
+	// recipient numbers never reach message_logs.
+	if warn.metadata["message_id"] != "msg-1" || warn.metadata["channel_type"] != "whatsapp" {
 		t.Fatalf("warn metadata mismatch: %+v", warn.metadata)
+	}
+	if warn.metadata["to"] != entity.MaskRecipient("+5511999999999") {
+		t.Fatalf("to must be masked, got %q", warn.metadata["to"])
+	}
+	if strings.Contains(warn.metadata["to"], "5511999999999") {
+		t.Fatalf("to leaks the full number: %q", warn.metadata["to"])
 	}
 
 	// nil msg -> no "to" key, but still logs.
