@@ -18,6 +18,10 @@ type LinktorEnvelope struct {
 	// freeze do plano de integração (status PROPOSTA em 2026-07-23); ausência
 	// significa production para consumidores antigos.
 	Environment string `json:"environment,omitempty"`
+	// ChannelMessageId é o id da mensagem no provedor (WhatsApp etc.). ADITIVO (RFC-010):
+	// o Core o grava para correlacionar reações de canal à mensagem interna. Antes era
+	// descartado (só ia o IdempotencyKey = id interno do Linktor).
+	ChannelMessageId string `json:"channelMessageId,omitempty"`
 }
 
 // LinktorOutbound é o envelope que o Core publica em tenant.{id}.core.outbound e o bridge consome
@@ -32,6 +36,9 @@ type LinktorOutbound struct {
 	MessageType    string `json:"messageType"`
 	Content        string `json:"content"`
 	IdempotencyKey string `json:"idempotencyKey"`
+	// TargetChannelMessageId: para messageType="reaction" (RFC-010), é o id no provedor da
+	// mensagem-alvo (o `channelMessageId` que veio no inbound). Vazio nos demais tipos.
+	TargetChannelMessageId string `json:"targetChannelMessageId,omitempty"`
 }
 
 // messageReceivedEvent é o envelope do evento interno do Linktor (nats.Event) publicado em
@@ -53,14 +60,15 @@ func buildInboundEnvelope(ev messageReceivedEvent, vendorID, customerID string) 
 		content = p.Attachments[0].URL
 	}
 	return LinktorEnvelope{
-		TenantID:       ev.TenantID,
-		VendorID:       vendorID,
-		CustomerID:     customerID,
-		Channel:        coreChannelType(p.ChannelType),                     // vocabulário canônico do Core
-		MessageType:    coreMessageType(entity.ContentType(p.ContentType)), // ADR-010
-		Content:        content,
-		IdempotencyKey: p.MessageID,
-		Environment:    p.Environment,
+		TenantID:         ev.TenantID,
+		VendorID:         vendorID,
+		CustomerID:       customerID,
+		Channel:          coreChannelType(p.ChannelType),                     // vocabulário canônico do Core
+		MessageType:      coreMessageType(entity.ContentType(p.ContentType)), // ADR-010
+		Content:          content,
+		IdempotencyKey:   p.MessageID,
+		Environment:      p.Environment,
+		ChannelMessageId: p.ExternalID, // RFC-010: correlação de reações
 	}
 }
 

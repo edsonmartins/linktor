@@ -823,7 +823,7 @@ func main() {
 	// Ver docs/vendax-integration/PLANO-integracao-linktor-vendax.md.
 	if natsClient != nil && os.Getenv("LINKTOR_VENDAX_BRIDGE_ENABLED") == "true" {
 		logger.Info("Starting VendaX bridge...")
-		vendaxBridge = vendax.NewBridge(natsClient, sendMessageUC, conversationRepo, contactRepo, channelRepo)
+		vendaxBridge = vendax.NewBridge(natsClient, sendMessageUC, conversationRepo, contactRepo, channelRepo, messageRepo, messageService)
 		if err := vendaxBridge.Start(ctx); err != nil {
 			logger.Warn("Failed to start VendaX bridge: " + err.Error())
 			vendaxBridge = nil

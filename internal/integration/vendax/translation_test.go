@@ -20,6 +20,7 @@ func TestBuildInboundEnvelope(t *testing.T) {
 			ChannelType:    "whatsapp",
 			ContentType:    "text",
 			Content:        "Olá, quero fazer um pedido",
+			ExternalID:     "wamid.ABC123",
 		},
 	}
 
@@ -45,6 +46,30 @@ func TestBuildInboundEnvelope(t *testing.T) {
 	}
 	if env.IdempotencyKey != "msg-123" {
 		t.Errorf("IdempotencyKey = %q, quero o message.ID (dedup no Core)", env.IdempotencyKey)
+	}
+	// RFC-010: o id do canal (external id) é propagado p/ o Core correlacionar reações.
+	if env.ChannelMessageId != "wamid.ABC123" {
+		t.Errorf("ChannelMessageId = %q, quero o external id do provedor", env.ChannelMessageId)
+	}
+}
+
+// TestOutboundReactionUnmarshal prova que o envelope de saída de reação (RFC-010) carrega o alvo.
+func TestOutboundReactionUnmarshal(t *testing.T) {
+	raw := `{"tenantId":"acme","vendorId":"vendor-42","customerId":"+55","channel":"WHATSAPP",
+		"messageType":"reaction","content":"👍","idempotencyKey":"rk-1",
+		"targetChannelMessageId":"wamid.XYZ"}`
+	var out LinktorOutbound
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.MessageType != "reaction" {
+		t.Errorf("MessageType = %q, quero reaction", out.MessageType)
+	}
+	if out.Content != "👍" {
+		t.Errorf("Content(emoji) = %q", out.Content)
+	}
+	if out.TargetChannelMessageId != "wamid.XYZ" {
+		t.Errorf("TargetChannelMessageId = %q, quero o id do canal da msg alvo", out.TargetChannelMessageId)
 	}
 }
 

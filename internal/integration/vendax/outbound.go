@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	natsgo "github.com/nats-io/nats.go"
 
@@ -36,6 +37,11 @@ func (b *Bridge) handleOutbound(ctx context.Context, data []byte) error {
 		return fmt.Errorf("unmarshal outbound: %w", err)
 	}
 
+	// Reação (RFC-010): não é uma mensagem de conteúdo — trata em caminho próprio.
+	if strings.EqualFold(out.MessageType, "reaction") {
+		return b.handleOutboundReaction(ctx, out)
+	}
+
 	// Rich objects (quote/suggestion/…) não são entregues ao canal como tal — decisão de produto
 	// pendente (ver README §L3). Não vazamos JSON cru ao cliente.
 	if !deliverableToChannel(out.MessageType) {
@@ -58,6 +64,42 @@ func (b *Bridge) handleOutbound(ctx context.Context, data []byte) error {
 
 	if _, err = b.sendMessageUC.Execute(ctx, buildSendInput(out, conv.ID)); err != nil {
 		return fmt.Errorf("send message: %w", err)
+	}
+	return nil
+}
+
+// handleOutboundReaction entrega uma reação do vendedor a uma mensagem do cliente (RFC-010, Fatia 1):
+// resolve a conversa por (customer, channel), acha a mensagem-alvo pelo id do canal
+// (TargetChannelMessageId → external id) e chama o SendReaction que já existe. Content vazio = remover.
+func (b *Bridge) handleOutboundReaction(ctx context.Context, out LinktorOutbound) error {
+	if out.TargetChannelMessageId == "" {
+		return fmt.Errorf("reação sem targetChannelMessageId (idem=%s)", out.IdempotencyKey)
+	}
+	// Idempotência: (idempotencyKey) cobre retries do outbox do Core.
+	if b.outboundDedupe.seenBefore(out.IdempotencyKey) {
+		return nil
+	}
+
+	conv, err := b.resolveConversation(ctx, out)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return fmt.Errorf("conversa Linktor não encontrada p/ reação (customer=%s channel=%s)", out.CustomerID, out.Channel)
+	}
+
+	target, err := b.messageRepo.FindByExternalID(ctx, out.TargetChannelMessageId)
+	if err != nil {
+		return fmt.Errorf("mensagem-alvo por external id %s: %w", out.TargetChannelMessageId, err)
+	}
+	if target == nil {
+		return fmt.Errorf("mensagem-alvo não encontrada (externalId=%s)", out.TargetChannelMessageId)
+	}
+
+	// SendReactionForTenant valida que a conversa é do tenant; content = emoji (vazio remove).
+	if err := b.messageService.SendReactionForTenant(
+		ctx, out.TenantID, conv.ID, target.ID, out.Content, out.VendorID); err != nil {
+		return fmt.Errorf("enviar reação: %w", err)
 	}
 	return nil
 }

@@ -24,6 +24,7 @@ import (
 
 	natsgo "github.com/nats-io/nats.go"
 
+	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/application/usecase"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	linktornats "github.com/msgfy/linktor/internal/infrastructure/nats"
@@ -42,6 +43,8 @@ type Bridge struct {
 	conversationRepo repository.ConversationRepository
 	contactRepo      repository.ContactRepository
 	channelRepo      repository.ChannelRepository
+	messageRepo      repository.MessageRepository
+	messageService   *service.MessageService
 
 	outboundSub *natsgo.Subscription
 	channelSub  *natsgo.Subscription
@@ -64,6 +67,8 @@ func NewBridge(
 	conversationRepo repository.ConversationRepository,
 	contactRepo repository.ContactRepository,
 	channelRepo repository.ChannelRepository,
+	messageRepo repository.MessageRepository,
+	messageService *service.MessageService,
 ) *Bridge {
 	return &Bridge{
 		nats:             nats,
@@ -71,6 +76,8 @@ func NewBridge(
 		conversationRepo: conversationRepo,
 		contactRepo:      contactRepo,
 		channelRepo:      channelRepo,
+		messageRepo:      messageRepo,
+		messageService:   messageService,
 		appliedVersion:   make(map[string]int),
 		outboundDedupe:   newDedupe(10000),
 	}
