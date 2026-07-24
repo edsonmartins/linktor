@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/linktor/linktor-go/types"
@@ -73,6 +74,36 @@ func TestChannelsCreateSendsCredentials(t *testing.T) {
 	}
 	if _, ok := body["credentials"]; !ok {
 		t.Errorf("credentials not sent in request body: %v", body)
+	}
+}
+
+// TestChannelsListUnwrapsArrayAndSendsFilters proves List returns a plain
+// []Channel from the {success,data:[...]} envelope and forwards filters as query
+// params (consistent with the other SDKs).
+func TestChannelsListUnwrapsArrayAndSendsFilters(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"success":true,"data":[
+			{"id":"a","type":"whatsapp","connection_status":"connected"},
+			{"id":"b","type":"telegram","connection_status":"disconnected"}]}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient(WithBaseURL(srv.URL), WithAPIKey("lk_test"))
+	list, err := c.Channels.List(context.Background(), &types.ListChannelsParams{
+		Type:   types.ChannelTypeWhatsApp,
+		Search: "x",
+	})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 2 || list[0].ID != "a" || list[1].ID != "b" {
+		t.Fatalf("unexpected list: %+v", list)
+	}
+	if !strings.Contains(gotQuery, "type=whatsapp") || !strings.Contains(gotQuery, "search=x") {
+		t.Errorf("filters not sent as query: %q", gotQuery)
 	}
 }
 
