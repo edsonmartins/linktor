@@ -65,9 +65,13 @@ async function mockConversation(page: Page, messages: unknown[]) {
       body: JSON.stringify({ success: true, data: [conv] }),
     })
   })
-  // Silence the auxiliary calls chat-view makes.
+  // Silence the auxiliary calls chat-view makes on mount so the test is
+  // hermetic (no live requests to a non-running backend).
   await page.route('**/api/v1/conversations/conv-1/escalation-context', async (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: {} }) })
+  )
+  await page.route('**/api/v1/users**', async (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) })
   )
 }
 
@@ -82,12 +86,20 @@ test.describe('Message failure diagnosis (WP-K)', () => {
     await page.goto('/conversations')
     await page.getByRole('button').filter({ hasText: 'Homologação ACME' }).first().click()
 
-    // Local block: "Blocked locally" + actionable allowlist reason.
+    // Local block: "Blocked locally" + the ACTIONABLE guidance. Assert on the
+    // fix verb phrase ("Add it under" / "Adicione-o" / "Agréguelo"), which
+    // appears ONLY in the translated reason paragraph — never in the raw
+    // error_message nor in the sidebar nav link — so this cannot pass on the
+    // technical-detail line if the reason rendering regresses.
     await expect(page.getByText(/Bloqueado localmente|Blocked locally/i)).toBeVisible()
-    await expect(page.getByText(/allowlist de sandbox|sandbox allowlist/i).first()).toBeVisible()
+    await expect(
+      page.getByText(/Adicione-o|Add it under|Agréguelo/i)
+    ).toBeVisible()
 
-    // Provider failure: distinct "Rejected by the provider".
-    await expect(page.getByText(/Rejeitado pelo provedor|Rejected by the provider/i)).toBeVisible()
+    // Provider failure: distinct "Rejected by the provider" (pt/en/es).
+    await expect(
+      page.getByText(/Rejeitado pelo provedor|Rejected by the provider|Rechazado por el proveedor/i)
+    ).toBeVisible()
 
     // The technical detail is available for the block, with masked number.
     await expect(page.getByText(/\+55\*+99/)).toBeVisible()
@@ -102,7 +114,8 @@ test.describe('Message failure diagnosis (WP-K)', () => {
     await page.goto('/conversations')
     await page.getByRole('button').filter({ hasText: 'Homologação ACME' }).first().click()
 
-    // Still classified as a local block, and the raw reason is shown verbatim.
+    // Still classified as a local block, and the raw reason is shown verbatim
+    // (localBlock text is identical in pt/es; the regex also covers en).
     await expect(page.getByText(/Bloqueado localmente|Blocked locally/i)).toBeVisible()
     await expect(page.getByText(/some_future_reason/)).toBeVisible()
   })
