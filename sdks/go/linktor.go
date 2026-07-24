@@ -243,6 +243,11 @@ func (c *Client) patch(ctx context.Context, path string, body, result interface{
 	return c.request(ctx, http.MethodPatch, path, body, result)
 }
 
+// put makes a PUT request
+func (c *Client) put(ctx context.Context, path string, body, result interface{}) error {
+	return c.request(ctx, http.MethodPut, path, body, result)
+}
+
 // delete makes a DELETE request
 func (c *Client) delete(ctx context.Context, path string) error {
 	return c.request(ctx, http.MethodDelete, path, nil, nil)
@@ -381,30 +386,64 @@ func (r *ChannelsResource) List(ctx context.Context, params *types.ListChannelsP
 
 // Get gets a channel
 func (r *ChannelsResource) Get(ctx context.Context, id string) (*types.Channel, error) {
-	var result types.Channel
-	err := r.client.get(ctx, "/channels/"+id, &result)
-	return &result, err
+	var env struct {
+		Data types.Channel `json:"data"`
+	}
+	err := r.client.get(ctx, "/channels/"+id, &env)
+	return &env.Data, err
 }
 
 // Create creates a channel
 func (r *ChannelsResource) Create(ctx context.Context, input *types.CreateChannelInput) (*types.Channel, error) {
-	var result types.Channel
-	err := r.client.post(ctx, "/channels", input, &result)
-	return &result, err
+	var env struct {
+		Data types.Channel `json:"data"`
+	}
+	err := r.client.post(ctx, "/channels", input, &env)
+	return &env.Data, err
 }
 
-// Connect connects a channel
-func (r *ChannelsResource) Connect(ctx context.Context, id string) (*types.Channel, error) {
-	var result types.Channel
-	err := r.client.post(ctx, "/channels/"+id+"/connect", nil, &result)
-	return &result, err
+// Update updates a channel's settings, credentials or webhook.
+func (r *ChannelsResource) Update(ctx context.Context, id string, input *types.UpdateChannelInput) (*types.Channel, error) {
+	var env struct {
+		Data types.Channel `json:"data"`
+	}
+	err := r.client.put(ctx, "/channels/"+id, input, &env)
+	return &env.Data, err
+}
+
+// Delete removes a channel.
+func (r *ChannelsResource) Delete(ctx context.Context, id string) error {
+	return r.client.delete(ctx, "/channels/"+id)
+}
+
+// Connect starts (or refreshes) a channel connection. For WhatsApp it returns a
+// ConnectResult carrying the QR payload to render (and ExpiresIn); call Connect
+// again to poll for a fresh QR or the linked state.
+func (r *ChannelsResource) Connect(ctx context.Context, id string) (*types.ConnectResult, error) {
+	var env struct {
+		Data types.ConnectResult `json:"data"`
+	}
+	err := r.client.post(ctx, "/channels/"+id+"/connect", nil, &env)
+	return &env.Data, err
+}
+
+// RequestPairCode requests a WhatsApp pairing code for the given phone number as
+// an alternative to QR linking.
+func (r *ChannelsResource) RequestPairCode(ctx context.Context, id, phoneNumber string) (*types.ConnectResult, error) {
+	var env struct {
+		Data types.ConnectResult `json:"data"`
+	}
+	err := r.client.post(ctx, "/channels/"+id+"/pair", &types.PairCodeInput{PhoneNumber: phoneNumber}, &env)
+	return &env.Data, err
 }
 
 // Disconnect disconnects a channel
 func (r *ChannelsResource) Disconnect(ctx context.Context, id string) (*types.Channel, error) {
-	var result types.Channel
-	err := r.client.post(ctx, "/channels/"+id+"/disconnect", nil, &result)
-	return &result, err
+	var env struct {
+		Data types.Channel `json:"data"`
+	}
+	err := r.client.post(ctx, "/channels/"+id+"/disconnect", nil, &env)
+	return &env.Data, err
 }
 
 // BotsResource handles bots
