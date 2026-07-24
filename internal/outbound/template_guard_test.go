@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
+	apperrors "github.com/msgfy/linktor/pkg/errors"
 )
 
 type fakeTemplateProvider struct {
@@ -113,5 +115,51 @@ func TestTemplateGuard_NonTemplateContentPassesThrough(t *testing.T) {
 	}
 	if p.calls != 0 {
 		t.Fatal("template provider consulted for non-template content")
+	}
+}
+
+func TestTemplateGuard_FailOpenCausesAreDistinguished(t *testing.T) {
+	inner := &countingSender{}
+
+	// Cause 1: template never synced locally (not-found) → status_unknown.
+	notFound := &fakeTemplateProvider{err: apperrors.New(apperrors.ErrCodeNotFound, "template not found")}
+	g := newTemplateGuard(PolicyModeEnforce, notFound, inner)
+	beforeUnknown := failOpenCount(metrics.BlockReasonTemplateRejected, metrics.FailOpenCauseStatusUnknown, "enforce")
+	if _, err := g.Send(context.Background(), templateMsg()); err != nil {
+		t.Fatalf("must fail open, got %v", err)
+	}
+	if got := failOpenCount(metrics.BlockReasonTemplateRejected, metrics.FailOpenCauseStatusUnknown, "enforce"); got != beforeUnknown+1 {
+		t.Fatalf("status_unknown fail-open = %v, want %v", got, beforeUnknown+1)
+	}
+
+	// Cause 2: infrastructure failure on lookup → lookup_error.
+	broken := &fakeTemplateProvider{err: errors.New("db down")}
+	g = newTemplateGuard(PolicyModeEnforce, broken, inner)
+	beforeLookup := failOpenCount(metrics.BlockReasonTemplateRejected, metrics.FailOpenCauseLookupError, "enforce")
+	beforeBlocked := blockedCount(metrics.BlockReasonTemplateRejected, "enforce")
+	if _, err := g.Send(context.Background(), templateMsg()); err != nil {
+		t.Fatalf("must fail open, got %v", err)
+	}
+	if got := failOpenCount(metrics.BlockReasonTemplateRejected, metrics.FailOpenCauseLookupError, "enforce"); got != beforeLookup+1 {
+		t.Fatalf("lookup_error fail-open = %v, want %v", got, beforeLookup+1)
+	}
+	if got := blockedCount(metrics.BlockReasonTemplateRejected, "enforce"); got != beforeBlocked {
+		t.Fatal("blocked counter must not move on a fail-open")
+	}
+}
+
+func TestTemplateGuard_ApprovedDoesNotCountFailOpen(t *testing.T) {
+	inner := &countingSender{}
+	p := &fakeTemplateProvider{template: &entity.Template{Status: entity.TemplateStatusApproved}}
+	g := newTemplateGuard(PolicyModeEnforce, p, inner)
+
+	beforeU := failOpenCount(metrics.BlockReasonTemplateRejected, metrics.FailOpenCauseStatusUnknown, "enforce")
+	beforeL := failOpenCount(metrics.BlockReasonTemplateRejected, metrics.FailOpenCauseLookupError, "enforce")
+	if _, err := g.Send(context.Background(), templateMsg()); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if failOpenCount(metrics.BlockReasonTemplateRejected, metrics.FailOpenCauseStatusUnknown, "enforce") != beforeU ||
+		failOpenCount(metrics.BlockReasonTemplateRejected, metrics.FailOpenCauseLookupError, "enforce") != beforeL {
+		t.Fatal("normal evaluation must not count as fail-open")
 	}
 }

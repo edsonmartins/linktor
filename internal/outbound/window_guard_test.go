@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 type fakeLastInbound struct {
@@ -139,5 +141,47 @@ func TestWindowGuard_OnlyWrapsWhatsAppOfficial(t *testing.T) {
 	off := NewSessionWindowPolicy(PolicyModeOff, &fakeLastInbound{})(waOfficialChannel(), inner)
 	if off != Sender(inner) {
 		t.Fatal("mode off must not wrap")
+	}
+}
+
+func failOpenCount(policy, cause, mode string) float64 {
+	return promtestutil.ToFloat64(metrics.GuardFailOpen.WithLabelValues("whatsapp_official", policy, cause, mode))
+}
+
+func blockedCount(reason, mode string) float64 {
+	return promtestutil.ToFloat64(metrics.GuardBlocked.WithLabelValues("whatsapp_official", reason, mode))
+}
+
+func TestWindowGuard_FailOpenIsCounted(t *testing.T) {
+	inner := &countingSender{}
+	g := newWindowGuard(PolicyModeEnforce, &fakeLastInbound{err: errors.New("db down")}, inner, time.Now())
+
+	beforeOpen := failOpenCount(metrics.BlockReasonWindow24h, metrics.FailOpenCauseLookupError, "enforce")
+	beforeBlocked := blockedCount(metrics.BlockReasonWindow24h, "enforce")
+
+	if _, err := g.Send(context.Background(), windowMsg(Text{Body: "hi"})); err != nil {
+		t.Fatalf("must fail open, got %v", err)
+	}
+
+	if got := failOpenCount(metrics.BlockReasonWindow24h, metrics.FailOpenCauseLookupError, "enforce"); got != beforeOpen+1 {
+		t.Fatalf("fail-open counter = %v, want %v — fail-open without a signal is indistinguishable from absence of risk", got, beforeOpen+1)
+	}
+	if got := blockedCount(metrics.BlockReasonWindow24h, "enforce"); got != beforeBlocked {
+		t.Fatalf("blocked counter moved on a fail-open (= %v, want %v)", got, beforeBlocked)
+	}
+}
+
+func TestWindowGuard_NormalAllowDoesNotCountFailOpen(t *testing.T) {
+	now := time.Now()
+	recent := now.Add(-1 * time.Hour)
+	inner := &countingSender{}
+	g := newWindowGuard(PolicyModeEnforce, &fakeLastInbound{last: &recent}, inner, now)
+
+	before := failOpenCount(metrics.BlockReasonWindow24h, metrics.FailOpenCauseLookupError, "enforce")
+	if _, err := g.Send(context.Background(), windowMsg(Text{Body: "hi"})); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if got := failOpenCount(metrics.BlockReasonWindow24h, metrics.FailOpenCauseLookupError, "enforce"); got != before {
+		t.Fatal("normal evaluation must not count as fail-open — it is an exception signal, not the happy path")
 	}
 }

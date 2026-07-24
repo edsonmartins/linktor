@@ -65,7 +65,13 @@ func (g *sessionWindowGuard) Send(ctx context.Context, msg *Message) (*Receipt, 
 
 	lastInbound, err := g.provider.LastInboundAt(ctx, msg.ConversationID)
 	if err != nil {
-		logger.Warn("outbound: 24h-window check failed for message " + msg.ID + ", allowing send: " + err.Error())
+		// Fail open (G-006) — but observably (INV-024): a systematic lookup
+		// failure would otherwise disable enforcement while the block counter
+		// only shows an "improvement".
+		metrics.RecordGuardFailOpen(string(entity.ChannelTypeWhatsAppOfficial),
+			metrics.BlockReasonWindow24h, metrics.FailOpenCauseLookupError, string(g.mode))
+		logger.Warn("outbound: 24h-window evaluation FAILED OPEN for message " + msg.ID +
+			" (conversation " + msg.ConversationID + "): last-inbound lookup error: " + err.Error())
 		return g.inner.Send(ctx, msg)
 	}
 	if windowOpen(lastInbound, g.now()) {

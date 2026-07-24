@@ -5,6 +5,7 @@ import (
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/infrastructure/metrics"
+	"github.com/msgfy/linktor/pkg/errors"
 	"github.com/msgfy/linktor/pkg/logger"
 )
 
@@ -71,7 +72,20 @@ func (g *templateStatusGuard) Send(ctx context.Context, msg *Message) (*Receipt,
 
 	record, err := g.provider.FindByName(ctx, g.tenantID, g.channelID, tpl.Name, tpl.Language)
 	if err != nil || record == nil {
-		logger.Warn("outbound: template status unknown for " + tpl.Name + " (" + tpl.Language + "), allowing send; Meta remains the validator")
+		// Fail open (G-006, decisão humana da fase 0) — but observably
+		// (INV-024), with the cause split so an operator can tell "template
+		// never synced" (expected, self-heals on sync) from "lookup errored"
+		// (infrastructure problem silently disabling the policy).
+		cause := metrics.FailOpenCauseStatusUnknown
+		detail := "no local record (not synced yet)"
+		if err != nil && !errors.IsNotFound(err) {
+			cause = metrics.FailOpenCauseLookupError
+			detail = "lookup error: " + err.Error()
+		}
+		metrics.RecordGuardFailOpen(string(entity.ChannelTypeWhatsAppOfficial),
+			metrics.BlockReasonTemplateRejected, cause, string(g.mode))
+		logger.Warn("outbound: template-status evaluation FAILED OPEN for " + tpl.Name +
+			" (" + tpl.Language + "), message " + msg.ID + ": " + detail + "; Meta remains the validator")
 		return g.inner.Send(ctx, msg)
 	}
 	if !blockedTemplateStatuses[record.Status] {
