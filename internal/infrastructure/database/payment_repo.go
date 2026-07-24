@@ -161,19 +161,21 @@ func (r *PaymentRepository) Update(ctx context.Context, payment *payments.Paymen
 	return nil
 }
 
-// GetByCustomer retrieves all payments for a customer phone number
-func (r *PaymentRepository) GetByCustomer(ctx context.Context, customerPhone string) ([]*payments.Payment, error) {
+// GetByCustomer retrieves a customer's payments scoped to an organization.
+// The organization_id filter is what keeps one tenant from reading another
+// tenant's financial history for the same phone number (IDOR).
+func (r *PaymentRepository) GetByCustomer(ctx context.Context, organizationID, customerPhone string) ([]*payments.Payment, error) {
 	query := `
 		SELECT id, organization_id, channel_id, order_id, reference_id, customer_phone,
 		       amount, currency, status, type, method, gateway_payment_id, gateway_order_id,
 		       description, expires_at, paid_at, failed_at, refunded_at, failure_reason,
 		       message_id, metadata, created_at, updated_at
 		FROM whatsapp_payments
-		WHERE customer_phone = $1
+		WHERE customer_phone = $1 AND organization_id = $2
 		ORDER BY created_at DESC
 	`
 
-	rows, err := r.db.Pool.Query(ctx, query, customerPhone)
+	rows, err := r.db.Pool.Query(ctx, query, customerPhone, organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query payments by customer: %w", err)
 	}

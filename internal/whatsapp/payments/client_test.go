@@ -49,10 +49,10 @@ func (m *mockPaymentStore) Update(ctx context.Context, payment *Payment) error {
 	return nil
 }
 
-func (m *mockPaymentStore) GetByCustomer(ctx context.Context, phone string) ([]*Payment, error) {
+func (m *mockPaymentStore) GetByCustomer(ctx context.Context, organizationID, phone string) ([]*Payment, error) {
 	var result []*Payment
 	for _, p := range m.payments {
-		if p.CustomerPhone == phone {
+		if p.CustomerPhone == phone && p.OrganizationID == organizationID {
 			result = append(result, p)
 		}
 	}
@@ -532,5 +532,19 @@ func TestClient_CrossOrgPayment_Denied(t *testing.T) {
 	}
 	if _, err := client.GetPayment(context.Background(), "pay-1"); err != nil {
 		t.Fatalf("same-org GetPayment should succeed: %v", err)
+	}
+
+	// GetPaymentsByCustomer must be scoped to the client's org: both orgs have a
+	// payment for the SAME phone, and org-1's client must see only its own.
+	// This is the IDOR that leaked financial history by phone across tenants.
+	const sharedPhone = "+5511999999999"
+	store.payments["pay-1"].CustomerPhone = sharedPhone
+	store.payments["pay-2"].CustomerPhone = sharedPhone
+	got, err := client.GetPaymentsByCustomer(context.Background(), sharedPhone)
+	if err != nil {
+		t.Fatalf("GetPaymentsByCustomer (same-org): %v", err)
+	}
+	if len(got) != 1 || got[0].OrganizationID != "org-1" {
+		t.Fatalf("GetPaymentsByCustomer leaked cross-tenant data: got %d payments %+v, want only org-1", len(got), got)
 	}
 }
