@@ -2091,6 +2091,19 @@
     "filterLabel": "Environment",
     "filterAll": "All environments",
     "filterProduction": "Production",
-    "filterSandbox": "Sandbox"
+    "filterSandbox": "Sandbox",
+    "formLabel": "Channel environment",
+    "formProduction": "Production — real customer traffic",
+    "formSandbox": "Sandbox — test/homologation channel",
+    "formDefaultHint": "Immutable after creation. Sandbox only delivers to recipients on the tenant allowlist.",
+    "immutableReason": "The environment is immutable after creation (INV-016): every sandbox guarantee (allowlist, marking, future purge) depends on the channel never switching environments. To promote, create a new production channel.",
+    "sandboxSection": "Sandbox configuration",
+    "credentialDeclaration": "I declare these credentials belong to the TEST number (not production)",
+    "credentialDeclarationHint": "Mandatory declaration (INV-002). The check is declarative: the effective barrier against reaching real customers is the recipient allowlist.",
+    "credentialDeclarationStored": "Declaration recorded at channel creation.",
+    "testPhoneIdsLabel": "Declared test phone_number_ids",
+    "testPhoneIdsHint": "Comma-separated list of Meta test phone_number_ids. The channel's phone_number_id must be in this list.",
+    "credentialDeclarationRequired": "The test-credential declaration is required for a sandbox channel",
+    "testPhoneIdsRequired": "The test phone_number_ids list is required for a sandbox channel"
   }
 }

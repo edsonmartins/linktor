@@ -2091,6 +2091,19 @@
     "filterLabel": "Entorno",
     "filterAll": "Todos los entornos",
     "filterProduction": "Producción",
-    "filterSandbox": "Sandbox"
+    "filterSandbox": "Sandbox",
+    "formLabel": "Entorno del canal",
+    "formProduction": "Producción — tráfico real de clientes",
+    "formSandbox": "Sandbox — canal de prueba/homologación",
+    "formDefaultHint": "Inmutable tras la creación. Sandbox solo entrega a destinatarios en la allowlist del tenant.",
+    "immutableReason": "El entorno es inmutable tras la creación (INV-016): todas las garantías de sandbox dependen de que el canal nunca cambie de entorno. Para promover, cree un canal nuevo de producción.",
+    "sandboxSection": "Configuración de sandbox",
+    "credentialDeclaration": "Declaro que estas credenciales pertenecen al número de PRUEBA (no de producción)",
+    "credentialDeclarationHint": "Declaración obligatoria (INV-002). La verificación es declarativa: la barrera efectiva es la allowlist de destinatarios.",
+    "credentialDeclarationStored": "Declaración registrada en la creación del canal.",
+    "testPhoneIdsLabel": "phone_number_ids de prueba declarados",
+    "testPhoneIdsHint": "Lista separada por comas de los phone_number_ids de prueba de Meta. El phone_number_id del canal debe estar en esta lista.",
+    "credentialDeclarationRequired": "La declaración de credencial de prueba es obligatoria para canal sandbox",
+    "testPhoneIdsRequired": "La lista de phone_number_ids de prueba es obligatoria para canal sandbox"
   }
 }

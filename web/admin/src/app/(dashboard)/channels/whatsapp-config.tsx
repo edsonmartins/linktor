@@ -44,6 +44,15 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { EnvironmentBadge } from '@/components/environment-badge'
+import {
   Alert,
   AlertDescription,
   AlertTitle,
@@ -72,15 +81,40 @@ import type { Channel } from '@/types'
 /**
  * WhatsApp Official Configuration Schema
  */
-const whatsappConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
-  access_token: z.string().min(1, 'Access token is required'),
-  phone_number_id: z.string().min(1, 'Phone number ID is required'),
-  business_id: z.string().optional(), // Optional - not used in embedded signup flow
-  verify_token: z.string().min(1, 'Verify token is required'),
-  webhook_secret: z.string().optional(),
-  api_version: z.string().min(1),
-})
+const whatsappConfigSchema = z
+  .object({
+    name: z.string().min(1, 'Channel name is required'),
+    access_token: z.string().min(1, 'Access token is required'),
+    phone_number_id: z.string().min(1, 'Phone number ID is required'),
+    business_id: z.string().optional(), // Optional - not used in embedded signup flow
+    verify_token: z.string().min(1, 'Verify token is required'),
+    webhook_secret: z.string().optional(),
+    api_version: z.string().min(1),
+    // Environment (INV-016): selectable at creation only; immutable afterwards.
+    environment: z.enum(['production', 'sandbox']),
+    // Declarative test-credential binding (INV-002): the human declares the
+    // credentials belong to the TEST number. Format-level check only — the
+    // backend revalidates and the delivery allowlist is the hard barrier.
+    credential_is_sandbox: z.boolean(),
+    sandbox_test_phone_number_ids: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.environment !== 'sandbox') return
+    if (!data.credential_is_sandbox) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credential_is_sandbox'],
+        message: 'The test-credential declaration is required for a sandbox channel',
+      })
+    }
+    if (!data.sandbox_test_phone_number_ids?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sandbox_test_phone_number_ids'],
+        message: 'The test phone_number_ids list is required for a sandbox channel',
+      })
+    }
+  })
 
 type WhatsAppConfigForm = z.infer<typeof whatsappConfigSchema>
 
@@ -161,6 +195,7 @@ export function WhatsAppConfig({
 }: WhatsAppConfigProps) {
   const t = useTranslations('channels.config')
   const tCommon = useTranslations('common')
+  const tEnv = useTranslations('environment')
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showAccessToken, setShowAccessToken] = useState(false)
@@ -189,8 +224,14 @@ export function WhatsAppConfig({
       verify_token: (channel?.config?.verify_token as string) || generateVerifyToken(),
       webhook_secret: '',
       api_version: (channel?.config?.api_version as string) || 'v23.0',
+      environment: channel?.environment === 'sandbox' ? 'sandbox' : 'production',
+      credential_is_sandbox: channel?.environment === 'sandbox',
+      sandbox_test_phone_number_ids:
+        (channel?.config?.sandbox_test_phone_number_ids as string) || '',
     },
   })
+  const watchEnvironment = form.watch('environment')
+  const isSandbox = isEditing ? channel?.environment === 'sandbox' : watchEnvironment === 'sandbox'
 
   const webhookUrl = channel
     ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/whatsapp_official/${channel.id}`
@@ -322,15 +363,22 @@ export function WhatsAppConfig({
       const payload = {
         name: data.name,
         type: 'whatsapp_official',
+        // environment só na criação: imutável após criado (INV-016), o campo
+        // nem é submetido no update.
+        ...(isEditing ? {} : { environment: data.environment }),
         config: {
           phone_number_id: data.phone_number_id,
           business_id: data.business_id,
           verify_token: data.verify_token,
           api_version: data.api_version,
+          ...(isSandbox && data.sandbox_test_phone_number_ids
+            ? { sandbox_test_phone_number_ids: data.sandbox_test_phone_number_ids }
+            : {}),
         },
         credentials: {
           access_token: data.access_token,
           webhook_secret: data.webhook_secret,
+          ...(isSandbox ? { credential_environment: 'sandbox' } : {}),
         },
       }
 
@@ -470,6 +518,88 @@ export function WhatsAppConfig({
                 </FormItem>
               )}
             />
+
+            {/* Ambiente do canal (INV-016). Na criação: selecionável, default
+                production. Na edição: SOMENTE LEITURA com a razão visível —
+                erro pós-submit para regra conhecida seria defeito de UI. */}
+            {isEditing ? (
+              <FormItem>
+                <FormLabel>{tEnv('formLabel')}</FormLabel>
+                <div className="flex items-center gap-2">
+                  <EnvironmentBadge environment={channel?.environment} showProduction />
+                </div>
+                <FormDescription>{tEnv('immutableReason')}</FormDescription>
+              </FormItem>
+            ) : (
+              <FormField
+                control={form.control}
+                name="environment"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{tEnv('formLabel')}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="production">{tEnv('formProduction')}</SelectItem>
+                        <SelectItem value="sandbox">{tEnv('formSandbox')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>{tEnv('formDefaultHint')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {/* Campos de sandbox: obrigatórios quando environment=sandbox. */}
+            {isSandbox && (
+              <div className="space-y-4 rounded-md border border-yellow-500/40 bg-yellow-500/5 p-4">
+                <p className="text-sm font-medium">{tEnv('sandboxSection')}</p>
+                <FormField
+                  control={form.control}
+                  name="sandbox_test_phone_number_ids"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{tEnv('testPhoneIdsLabel')}</FormLabel>
+                      <FormControl>
+                        <Input placeholder="111222333, 444555666" {...field} />
+                      </FormControl>
+                      <FormDescription>{tEnv('testPhoneIdsHint')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="credential_is_sandbox"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center gap-2">
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            disabled={isEditing}
+                            aria-label={tEnv('credentialDeclaration')}
+                          />
+                        </FormControl>
+                        <FormLabel className="!mt-0">{tEnv('credentialDeclaration')}</FormLabel>
+                      </div>
+                      <FormDescription>
+                        {isEditing
+                          ? tEnv('credentialDeclarationStored')
+                          : tEnv('credentialDeclarationHint')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             {/* Access Token */}
             <FormField
