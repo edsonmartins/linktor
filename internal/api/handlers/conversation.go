@@ -58,11 +58,13 @@ func (h *ConversationHandler) List(c *gin.Context) {
 	status := c.Query("status")
 	assignedTo := c.Query("assigned_to")
 	channelID := c.Query("channel_id")
+	environment := c.Query("environment") // "" = all; "production" | "sandbox"
 
 	filters := &service.ConversationFilters{
-		Status:     status,
-		AssignedTo: assignedTo,
-		ChannelID:  channelID,
+		Status:      status,
+		AssignedTo:  assignedTo,
+		ChannelID:   channelID,
+		Environment: environment,
 	}
 
 	conversations, total, err := h.conversationService.List(c.Request.Context(), tenantID, filters, nil)

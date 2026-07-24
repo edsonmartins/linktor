@@ -19,8 +19,10 @@ export async function setupAuth(page: Page, role: UserRole = 'admin') {
 
   // Auth marker cookie must exist before navigation: middleware.ts redirects
   // to /login server-side when it is missing.
+  // domain+path (not url) keeps the cookie port-agnostic: cookies ignore the
+  // port, so this works whether the dev server runs on 3000 or another port.
   await page.context().addCookies([
-    { name: 'linktor_authed', value: '1', url: 'http://localhost:3000' },
+    { name: 'linktor_authed', value: '1', domain: 'localhost', path: '/' },
   ])
 
   // Set tokens + zustand persisted auth store

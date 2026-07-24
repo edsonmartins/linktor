@@ -500,6 +500,10 @@ func applyConversationFilters(whereClause string, args []interface{}, filters ma
 			whereClause += fmt.Sprintf(" AND c.assignee_id = $%d", len(args))
 		}
 	}
+	if environment, ok := filters["environment"].(string); ok && environment != "" {
+		args = append(args, environment)
+		whereClause += fmt.Sprintf(" AND c.environment = $%d", len(args))
+	}
 	return whereClause, args
 }
 

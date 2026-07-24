@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar } from '@/components/ui/avatar'
+import { EnvironmentBadge } from '@/components/environment-badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -83,6 +84,11 @@ function ConversationItem({ conversation, isActive, onClick, t }: ConversationIt
           >
             {t(conversation.status)}
           </Badge>
+          {/* Marcação de origem sintética (INV-018): valor vem da API. */}
+          <EnvironmentBadge
+            environment={conversation.environment}
+            className="text-[10px] px-1.5 py-0"
+          />
         </div>
         <p className="mt-1 text-xs text-muted-foreground truncate">
           {conversation.last_message?.content
@@ -105,8 +111,12 @@ function ConversationItem({ conversation, isActive, onClick, t }: ConversationIt
 export default function ConversationsPage() {
   const t = useTranslations('conversations')
   const tCommon = useTranslations('common')
+  const tEnv = useTranslations('environment')
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | 'all'>('all')
+  // Default "all": sandbox conversations stay discoverable and the mandatory
+  // badge is what prevents reading them as real (decisão WP-H).
+  const [environmentFilter, setEnvironmentFilter] = useState<'all' | 'production' | 'sandbox'>('all')
   const activeConversationId = useActiveConversation()
   const setActiveConversation = useUIStore((s) => s.setActiveConversation)
 
@@ -158,16 +168,19 @@ export default function ConversationsPage() {
     { label: t('snoozed'), value: 'snoozed' },
   ]
 
-  // Fetch conversations
+  // Fetch conversations. The environment filter is applied by the BACKEND
+  // (query param), never in memory here (WP-H).
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.conversations.list({
       search: searchQuery,
       status: statusFilter,
+      environment: environmentFilter,
     }),
     queryFn: () =>
       api.getEnvelope<Conversation[]>('/conversations', {
         ...(searchQuery && { search: searchQuery }),
         ...(statusFilter !== 'all' && { status: statusFilter }),
+        ...(environmentFilter !== 'all' && { environment: environmentFilter }),
       }),
   })
 
@@ -220,20 +233,51 @@ export default function ConversationsPage() {
                     {filter.label}
                   </DropdownMenuItem>
                 ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>{tEnv('filterLabel')}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {([
+                  { value: 'all', label: tEnv('filterAll') },
+                  { value: 'production', label: tEnv('filterProduction') },
+                  { value: 'sandbox', label: tEnv('filterSandbox') },
+                ] as const).map((filter) => (
+                  <DropdownMenuItem
+                    key={filter.value}
+                    onClick={() => setEnvironmentFilter(filter.value)}
+                    className={cn(
+                      environmentFilter === filter.value && 'bg-primary/10 text-primary'
+                    )}
+                  >
+                    {filter.label}
+                  </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          {statusFilter !== 'all' && (
+          {(statusFilter !== 'all' || environmentFilter !== 'all') && (
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="gap-1">
-                {tCommon('status')}: {t(statusFilter)}
-                <button
-                  onClick={() => setStatusFilter('all')}
-                  className="ml-1 hover:text-foreground"
-                >
-                  ×
-                </button>
-              </Badge>
+              {statusFilter !== 'all' && (
+                <Badge variant="outline" className="gap-1">
+                  {tCommon('status')}: {t(statusFilter)}
+                  <button
+                    onClick={() => setStatusFilter('all')}
+                    className="ml-1 hover:text-foreground"
+                  >
+                    ×
+                  </button>
+                </Badge>
+              )}
+              {environmentFilter !== 'all' && (
+                <Badge variant="outline" className="gap-1">
+                  {tEnv('filterLabel')}: {environmentFilter === 'sandbox' ? tEnv('filterSandbox') : tEnv('filterProduction')}
+                  <button
+                    onClick={() => setEnvironmentFilter('all')}
+                    className="ml-1 hover:text-foreground"
+                  >
+                    ×
+                  </button>
+                </Badge>
+              )}
             </div>
           )}
         </div>

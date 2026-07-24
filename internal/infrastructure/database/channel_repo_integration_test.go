@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/domain/repository"
 	apperrors "github.com/msgfy/linktor/pkg/errors"
 )
 
@@ -412,5 +413,75 @@ func TestMessageRepository_LastInboundAt(t *testing.T) {
 	}
 	if !last.Equal(inboundAt) {
 		t.Fatalf("last inbound = %v, want %v (agent message must not count)", last, inboundAt)
+	}
+}
+
+// TestConversationEnvironmentFilter verifies the listing filter runs in the
+// database (WP-H: filtering must happen in the backend, never client-side).
+func TestConversationEnvironmentFilter(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewPostgresDB(testDBConfig(t))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+	if err := db.RunMigrations(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	channelRepo := NewChannelRepository(db, nil)
+	convRepo := NewConversationRepository(db)
+	tenantID := seedTenant(t, ctx, db)
+	contactID := uuid.New().String()
+	if _, err := db.Pool.Exec(ctx,
+		`INSERT INTO contacts (id, tenant_id, name) VALUES ($1, $2, $3)`,
+		contactID, tenantID, "filter-contact"); err != nil {
+		t.Fatalf("seed contact: %v", err)
+	}
+
+	mkConv := func(env entity.ChannelEnvironment) {
+		ch := newTestChannel(tenantID, env)
+		if err := channelRepo.Create(ctx, ch); err != nil {
+			t.Fatalf("seed channel: %v", err)
+		}
+		conv := &entity.Conversation{
+			ID: uuid.New().String(), TenantID: tenantID, ChannelID: ch.ID,
+			ContactID: contactID, Environment: env,
+			Status: entity.ConversationStatusOpen, Priority: entity.ConversationPriorityNormal,
+			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}
+		if err := convRepo.Create(ctx, conv); err != nil {
+			t.Fatalf("seed conversation: %v", err)
+		}
+	}
+	mkConv(entity.ChannelEnvironmentSandbox)
+	mkConv(entity.ChannelEnvironmentProduction)
+	mkConv(entity.ChannelEnvironmentProduction)
+
+	list := func(env string) int {
+		params := repository.NewListParams()
+		if env != "" {
+			params.Filters["environment"] = env
+		}
+		convs, _, err := convRepo.FindByTenant(ctx, tenantID, params)
+		if err != nil {
+			t.Fatalf("list env=%q: %v", env, err)
+		}
+		for _, c := range convs {
+			if env != "" && string(c.Environment) != env {
+				t.Fatalf("filter env=%q returned conversation with environment %q", env, c.Environment)
+			}
+		}
+		return len(convs)
+	}
+
+	if n := list(""); n != 3 {
+		t.Fatalf("no filter: %d conversations, want 3", n)
+	}
+	if n := list("sandbox"); n != 1 {
+		t.Fatalf("sandbox filter: %d conversations, want 1", n)
+	}
+	if n := list("production"); n != 2 {
+		t.Fatalf("production filter: %d conversations, want 2", n)
 	}
 }

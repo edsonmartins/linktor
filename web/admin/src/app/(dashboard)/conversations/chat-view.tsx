@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { EnvironmentBadge, SandboxConversationBanner } from '@/components/environment-badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
@@ -300,6 +301,10 @@ function ChatHeader({
             >
               {conversation.channel?.type}
             </Badge>
+            <EnvironmentBadge
+              environment={conversation.environment}
+              className="text-[10px] px-1.5 py-0"
+            />
             <span>
               {conversation.contact?.phone || conversation.contact?.email || t('noContactInfo')}
             </span>
@@ -1059,6 +1064,9 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      {/* Persistent, non-dismissable sandbox marking (WP-H / INV-018): stays
+          visible for the whole session while the conversation is open. */}
+      <SandboxConversationBanner environment={conversation.environment} />
       <ChatHeader
         conversation={conversation}
         onAssign={() => setAssignDialogOpen(true)}

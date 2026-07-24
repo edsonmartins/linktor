@@ -35,7 +35,10 @@ type ConversationFilters struct {
 	AssignedTo string
 	ChannelID  string
 	ContactID  string
-	Tags       []string
+	// Environment filters by the denormalized channel environment
+	// ("production" | "sandbox", INV-018). Empty means no filter (all).
+	Environment string
+	Tags        []string
 }
 
 // ConversationService handles conversation operations
@@ -103,6 +106,17 @@ func (s *ConversationService) List(ctx context.Context, tenantID string, filters
 		}
 		if filters.ContactID != "" {
 			params.Filters["contact_id"] = filters.ContactID
+		}
+		if filters.Environment != "" {
+			// Validate at the edge so an arbitrary value never reaches the
+			// query as a filter key (it is parameterized anyway, but an
+			// invalid environment should read as a caller mistake, not as
+			// "no results").
+			if env, ok := entity.ParseChannelEnvironment(filters.Environment); ok {
+				params.Filters["environment"] = string(env)
+			} else {
+				return nil, 0, errors.Validation("invalid environment filter: " + filters.Environment)
+			}
 		}
 	}
 

@@ -46,6 +46,11 @@ export interface TenantLimits {
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error'
 export type CoexistenceStatus = 'inactive' | 'active' | 'warning' | 'disconnected'
 
+// Environment of a channel/conversation (INV-018). Always provided by the
+// backend — never inferred client-side. Absent/undefined means production
+// (legacy rows).
+export type ChannelEnvironment = 'production' | 'sandbox'
+
 export interface Channel {
   id: string
   tenant_id: string
@@ -53,6 +58,7 @@ export interface Channel {
   type: ChannelType
   enabled: boolean
   connection_status: ConnectionStatus
+  environment?: ChannelEnvironment
   config: Record<string, unknown>
   webhook_url?: string
   created_at: string
@@ -114,6 +120,7 @@ export interface Conversation {
   channel_id: string
   contact_id: string
   assigned_user_id?: string
+  environment?: ChannelEnvironment
   status: ConversationStatus
   priority: 'low' | 'medium' | 'high' | 'urgent'
   subject?: string

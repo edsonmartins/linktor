@@ -1771,7 +1771,7 @@
     "error": "Erro",
     "source": "Origem",
     "allSources": "Todas as Origens",
-      "allChannels": "Todos os Canais",
+    "allChannels": "Todos os Canais",
     "channel": "Canal",
     "queue": "Fila",
     "system": "Sistema",
@@ -2086,5 +2086,16 @@
     "all": "Todos",
     "prev": "Anterior",
     "next": "Próximo"
+  },
+  "environment": {
+    "sandbox": "Sandbox",
+    "production": "Produção",
+    "sandboxAria": "Ambiente de teste (sandbox): dado sintético de homologação",
+    "sandboxTooltip": "Canal de teste: mensagens sintéticas de homologação. Entrega restrita à allowlist do tenant.",
+    "sandboxBanner": "Conversa de SANDBOX — tráfego sintético de homologação; não é um cliente real.",
+    "filterLabel": "Ambiente",
+    "filterAll": "Todos os ambientes",
+    "filterProduction": "Produção",
+    "filterSandbox": "Sandbox"
   }
 }

@@ -1766,7 +1766,7 @@
     "error": "Error",
     "source": "Source",
     "allSources": "All Sources",
-      "allChannels": "All Channels",
+    "allChannels": "All Channels",
     "channel": "Channel",
     "queue": "Queue",
     "system": "System",
@@ -2081,5 +2081,16 @@
     "all": "All",
     "prev": "Previous",
     "next": "Next"
+  },
+  "environment": {
+    "sandbox": "Sandbox",
+    "production": "Production",
+    "sandboxAria": "Test environment (sandbox): synthetic homologation data",
+    "sandboxTooltip": "Test channel: synthetic homologation messages. Delivery restricted to the tenant allowlist.",
+    "sandboxBanner": "SANDBOX conversation — synthetic homologation traffic; not a real customer.",
+    "filterLabel": "Environment",
+    "filterAll": "All environments",
+    "filterProduction": "Production",
+    "filterSandbox": "Sandbox"
   }
 }

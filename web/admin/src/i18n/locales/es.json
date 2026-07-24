@@ -2081,5 +2081,16 @@
     "all": "Todos",
     "prev": "Anterior",
     "next": "Siguiente"
+  },
+  "environment": {
+    "sandbox": "Sandbox",
+    "production": "Producción",
+    "sandboxAria": "Entorno de prueba (sandbox): datos sintéticos de homologación",
+    "sandboxTooltip": "Canal de prueba: mensajes sintéticos de homologación. Entrega restringida a la allowlist del tenant.",
+    "sandboxBanner": "Conversación de SANDBOX — tráfico sintético de homologación; no es un cliente real.",
+    "filterLabel": "Entorno",
+    "filterAll": "Todos los entornos",
+    "filterProduction": "Producción",
+    "filterSandbox": "Sandbox"
   }
 }
