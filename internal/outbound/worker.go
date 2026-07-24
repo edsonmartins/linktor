@@ -80,6 +80,22 @@ func (w *Worker) logActivity(ctx context.Context, level entity.LogLevel, raw *na
 	}
 }
 
+// logBlocked records a guard/policy block in the channel log with the
+// machine-readable reason in metadata (blocked_by) and, per INV-002, the
+// destination already masked by the guard's error message.
+func (w *Worker) logBlocked(ctx context.Context, raw *nats.OutboundMessage, msg *Message, reason, detail string) {
+	if w.logs == nil {
+		return
+	}
+	meta := map[string]string{
+		"message_id":   raw.ID,
+		"channel_type": raw.ChannelType,
+		"direction":    "outbound",
+		"blocked_by":   reason,
+	}
+	w.logs.Error(ctx, raw.TenantID, raw.ChannelID, "Envio bloqueado por guarda ("+reason+"): "+detail, meta)
+}
+
 // NewWorker creates a delivery worker. campaignRepo may be nil.
 func NewWorker(subscriber Subscriber, publisher StatusPublisher, resolver *Resolver, campaignRepo repository.CampaignRepository, perChannelRatePerSec int) *Worker {
 	return &Worker{
@@ -138,7 +154,14 @@ func (w *Worker) handle(ctx context.Context, raw *nats.OutboundMessage) error {
 		if IsPermanent(err) {
 			metrics.RecordOutbound(raw.ChannelType, metrics.ResultFailed, start)
 			w.recordFailure(ctx, raw, msg, err.Error())
-			w.logActivity(ctx, entity.LogLevelError, raw, msg, "Envio falhou (permanente): "+err.Error())
+			// Guard blocks get a distinct log message + blocked_by metadata so
+			// an operator can tell a policy/sandbox block from a provider
+			// failure straight from the log viewer.
+			if reason, blocked := BlockedReason(err); blocked {
+				w.logBlocked(ctx, raw, msg, reason, err.Error())
+			} else {
+				w.logActivity(ctx, entity.LogLevelError, raw, msg, "Envio falhou (permanente): "+err.Error())
+			}
 			logger.Error("outbound: permanent send failure for " + msg.ID + ": " + err.Error())
 			return nil // ack: do not retry a permanent failure
 		}

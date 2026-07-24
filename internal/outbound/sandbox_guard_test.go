@@ -304,3 +304,46 @@ func TestWorker_RetryPathStaysGuarded(t *testing.T) {
 		t.Fatal("provider was called on retry despite the guard")
 	}
 }
+
+func TestWorker_GuardBlockIsDistinguishableInChannelLog(t *testing.T) {
+	w, _, _ := newGuardedWorker(t, newFakeChecker())
+	logs := &captureLogger{}
+	w.SetChannelLogger(logs)
+
+	raw := &nats.OutboundMessage{
+		ID: "m9", TenantID: "t1", ChannelID: "sandbox-ch",
+		ChannelType: "whatsapp_official", RecipientID: "+5511888887777",
+		ContentType: "text", Content: "hi",
+	}
+	if err := w.handle(context.Background(), raw); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	if len(logs.entries) != 1 {
+		t.Fatalf("log entries = %d, want 1", len(logs.entries))
+	}
+	entry := logs.entries[0]
+	if entry.metadata["blocked_by"] != "allowlist" {
+		t.Fatalf("blocked_by = %q, want allowlist — operator must distinguish guard block from provider failure", entry.metadata["blocked_by"])
+	}
+	if !strings.Contains(entry.message, "bloqueado por guarda") {
+		t.Fatalf("log message must identify a guard block: %q", entry.message)
+	}
+	if strings.Contains(entry.message, "5511888887777") || strings.Contains(entry.metadata["to"], "5511888887777") {
+		t.Fatalf("guard-block log leaks the full recipient: %+v", entry)
+	}
+}
+
+func TestBlockedReason(t *testing.T) {
+	err := Blocked("allowlist", "sandbox guard: recipient blocked")
+	if !IsPermanent(err) {
+		t.Fatal("Blocked must be permanent")
+	}
+	reason, ok := BlockedReason(err)
+	if !ok || reason != "allowlist" {
+		t.Fatalf("BlockedReason = %q/%v", reason, ok)
+	}
+	if _, ok := BlockedReason(Permanentf("provider 400")); ok {
+		t.Fatal("plain permanent error must not read as a guard block")
+	}
+}

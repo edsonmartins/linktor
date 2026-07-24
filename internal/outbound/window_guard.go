@@ -79,5 +79,6 @@ func (g *sessionWindowGuard) Send(ctx context.Context, msg *Message) (*Receipt, 
 	}
 
 	metrics.RecordGuardBlocked(string(entity.ChannelTypeWhatsAppOfficial), metrics.BlockReasonWindow24h, "enforce")
-	return nil, Permanentf("24h window: customer-service window expired for this conversation; send an approved template instead")
+	return nil, Blocked(metrics.BlockReasonWindow24h,
+		"24h window: customer-service window expired for this conversation; send an approved template instead")
 }

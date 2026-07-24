@@ -85,5 +85,6 @@ func (g *templateStatusGuard) Send(ctx context.Context, msg *Message) (*Receipt,
 	}
 
 	metrics.RecordGuardBlocked(string(entity.ChannelTypeWhatsAppOfficial), metrics.BlockReasonTemplateRejected, "enforce")
-	return nil, Permanentf("template %s (%s) is not usable: status %s", tpl.Name, tpl.Language, record.Status)
+	return nil, Blocked(metrics.BlockReasonTemplateRejected,
+		"template %s (%s) is not usable: status %s", tpl.Name, tpl.Language, record.Status)
 }

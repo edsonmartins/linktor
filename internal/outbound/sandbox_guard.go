@@ -57,13 +57,15 @@ func newSandboxGuard(inner Sender, allowlist AllowlistChecker, tenantID, channel
 func (g *sandboxGuard) Send(ctx context.Context, msg *Message) (*Receipt, error) {
 	if !sandboxGuardedTypes[g.channelType] {
 		metrics.RecordGuardBlocked(g.channelType, metrics.BlockReasonUnsupportedSandbox, "enforce")
-		return nil, Permanentf("sandbox guard: channel type %q has no sandbox delivery semantics yet; refusing to send", g.channelType)
+		return nil, Blocked(metrics.BlockReasonUnsupportedSandbox,
+			"sandbox guard: channel type %q has no sandbox delivery semantics yet; refusing to send", g.channelType)
 	}
 
 	recipient, ok := entity.NormalizeE164(msg.To)
 	if !ok {
 		metrics.RecordGuardBlocked(g.channelType, metrics.BlockReasonInvalidRecipient, "enforce")
-		return nil, Permanentf("sandbox guard: recipient %s is not a valid E.164 number", entity.MaskRecipient(msg.To))
+		return nil, Blocked(metrics.BlockReasonInvalidRecipient,
+			"sandbox guard: recipient %s is not a valid E.164 number", entity.MaskRecipient(msg.To))
 	}
 
 	allowed, err := g.allowlist.IsAllowed(ctx, g.tenantID, g.channelID, recipient)
@@ -73,7 +75,8 @@ func (g *sandboxGuard) Send(ctx context.Context, msg *Message) (*Receipt, error)
 	}
 	if !allowed {
 		metrics.RecordGuardBlocked(g.channelType, metrics.BlockReasonAllowlist, "enforce")
-		return nil, Permanentf("sandbox guard: recipient %s is not in the tenant's sandbox allowlist", entity.MaskRecipient(recipient))
+		return nil, Blocked(metrics.BlockReasonAllowlist,
+			"sandbox guard: recipient %s is not in the tenant's sandbox allowlist", entity.MaskRecipient(recipient))
 	}
 
 	return g.inner.Send(ctx, msg)
