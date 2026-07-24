@@ -67,6 +67,11 @@ public class LinktorClient
         return await RequestAsync<T>(HttpMethod.Patch, path, body, ct);
     }
 
+    internal async Task<T> PutAsync<T>(string path, object body, CancellationToken ct = default)
+    {
+        return await RequestAsync<T>(HttpMethod.Put, path, body, ct);
+    }
+
     internal async Task DeleteAsync(string path, CancellationToken ct = default)
     {
         await RequestAsync<object?>(HttpMethod.Delete, path, null, ct);
