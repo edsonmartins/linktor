@@ -21,8 +21,16 @@ export async function setupAuth(page: Page, role: UserRole = 'admin') {
   // to /login server-side when it is missing.
   // domain+path (not url) keeps the cookie port-agnostic: cookies ignore the
   // port, so this works whether the dev server runs on 3000 or another port.
+  //
+  // The `locale` cookie pins the rendered language deterministically. Without
+  // it, src/i18n/request.ts falls back to the runner's Accept-Language, so a
+  // machine/CI sending es (or any non-en locale) would render text the specs'
+  // matchers don't expect. Pinning 'en' matches the current effective test
+  // locale (Playwright Chromium sends en-US) and makes every spec immune to
+  // the runner's locale.
   await page.context().addCookies([
     { name: 'linktor_authed', value: '1', domain: 'localhost', path: '/' },
+    { name: 'locale', value: 'en', domain: 'localhost', path: '/' },
   ])
 
   // Set tokens + zustand persisted auth store
