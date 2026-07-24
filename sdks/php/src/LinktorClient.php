@@ -75,6 +75,11 @@ class LinktorClient
         return $this->http->post($path, $body);
     }
 
+    public function put(string $path, array $body): array
+    {
+        return $this->http->put($path, $body);
+    }
+
     public function patch(string $path, array $body): array
     {
         return $this->http->patch($path, $body);

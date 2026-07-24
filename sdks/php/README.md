@@ -144,25 +144,43 @@ $mergedContact = $client->contacts->merge('primary-contact-id', ['duplicate-1', 
 ### Channels
 
 ```php
-// List channels
+// List channels (returns Channel[] — channels have no pagination envelope)
 $channels = $client->channels->list(['type' => 'whatsapp']);
+foreach ($channels as $channel) {
+    echo "{$channel->name}: {$channel->connectionStatus}\n";
+}
 
-// Create a channel
+// Create a channel. Put secrets in `credentials` (write-only, never returned)
+// and non-secret settings in `config`.
 $channel = $client->channels->create([
     'name' => 'WhatsApp Business',
     'type' => 'whatsapp',
     'config' => [
-        'phoneNumberId' => 'your-phone-number-id',
-        'accessToken' => 'your-access-token',
+        'phone_number_id' => 'your-phone-number-id',
+    ],
+    'credentials' => [
+        'access_token' => 'your-access-token',
     ],
 ]);
 
-// Connect channel
-$client->channels->connect('channel-id');
+// Update a channel (PUT). Omit `credentials` to keep the stored secrets.
+$channel = $client->channels->update($channel->id, [
+    'name' => 'WhatsApp Support',
+]);
 
-// Get channel status
-$status = $client->channels->getStatus('channel-id');
-echo "Connected: " . ($status->isConnected ? 'Yes' : 'No') . "\n";
+// Connect a channel — returns a ConnectResult. For WhatsApp linking, render
+// the QR payload and re-call connect() to refresh an expired code.
+$result = $client->channels->connect($channel->id);
+if ($result->qrCode !== null) {
+    echo "Scan QR (expires in {$result->expiresIn}s): {$result->qrCode}\n";
+}
+
+// Alternatively, request a phone pairing code
+$result = $client->channels->requestPairCode($channel->id, '+15551234567');
+echo "Pair code: {$result->pairCode}\n";
+
+// Disconnect a channel
+$channel = $client->channels->disconnect($channel->id);
 ```
 
 ### Bots

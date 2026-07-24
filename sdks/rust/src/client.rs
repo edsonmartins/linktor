@@ -153,6 +153,10 @@ impl LinktorClient {
         self.request(reqwest::Method::POST, path, Some(body)).await
     }
 
+    pub(crate) async fn put<T: DeserializeOwned>(&self, path: &str, body: impl Serialize) -> Result<T> {
+        self.request(reqwest::Method::PUT, path, Some(body)).await
+    }
+
     pub(crate) async fn patch<T: DeserializeOwned>(&self, path: &str, body: impl Serialize) -> Result<T> {
         self.request(reqwest::Method::PATCH, path, Some(body)).await
     }
@@ -336,7 +340,9 @@ pub struct ChannelsResource {
 }
 
 impl ChannelsResource {
-    pub async fn list(&self, params: Option<ListChannelsParams>) -> Result<PaginatedResponse<Channel>> {
+    /// List channels. The backend returns a plain array under `data` (no
+    /// pagination envelope for channels).
+    pub async fn list(&self, params: Option<ListChannelsParams>) -> Result<Vec<Channel>> {
         let path = match params {
             Some(p) => format!("/channels?{}", serde_urlencoded::to_string(&p).unwrap_or_default()),
             None => "/channels".to_string(),
@@ -348,22 +354,41 @@ impl ChannelsResource {
         self.client.get(&format!("/channels/{}", id)).await
     }
 
+    /// Create a channel. Put secrets in `credentials` (write-only) and
+    /// non-secret settings in `config`.
     pub async fn create(&self, input: CreateChannelInput) -> Result<Channel> {
         self.client.post("/channels", input).await
     }
 
+    /// Update a channel (PUT). Omit `credentials` to keep the stored secrets.
     pub async fn update(&self, id: &str, input: UpdateChannelInput) -> Result<Channel> {
-        self.client.patch(&format!("/channels/{}", id), input).await
+        self.client.put(&format!("/channels/{}", id), input).await
     }
 
     pub async fn delete(&self, id: &str) -> Result<()> {
         self.client.delete(&format!("/channels/{}", id)).await
     }
 
-    pub async fn connect(&self, id: &str) -> Result<Channel> {
+    /// Connect a channel. For WhatsApp this starts (or refreshes) linking and
+    /// returns a [`ConnectResult`] carrying the QR payload (`qr_code`,
+    /// `expires_in`) to render; call `connect` again to poll for a fresh QR or
+    /// the linked state.
+    pub async fn connect(&self, id: &str) -> Result<ConnectResult> {
         self.client.post(&format!("/channels/{}/connect", id), serde_json::json!({})).await
     }
 
+    /// Request a WhatsApp pairing code for a phone number, as an alternative to
+    /// QR linking.
+    pub async fn request_pair_code(&self, id: &str, phone_number: &str) -> Result<ConnectResult> {
+        self.client
+            .post(
+                &format!("/channels/{}/pair", id),
+                serde_json::json!({ "phone_number": phone_number }),
+            )
+            .await
+    }
+
+    /// Disconnect a channel (deactivate it).
     pub async fn disconnect(&self, id: &str) -> Result<Channel> {
         self.client.post(&format!("/channels/{}/disconnect", id), serde_json::json!({})).await
     }
