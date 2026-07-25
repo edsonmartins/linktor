@@ -97,10 +97,12 @@ func TestStatusEnvelopeGolden(t *testing.T) {
 		Timestamp: fixedTime,
 		TenantID:  "tenant_abc",
 		Data: StatusData{
-			MessageID: "msg_3",
-			Status:    "delivered",
-			Direction: "outbound",
-			Timestamp: fixedTime,
+			MessageID:   "msg_3",
+			Status:      "delivered",
+			Direction:   "outbound",
+			Timestamp:   fixedTime,
+			ChannelID:   "ch_1",
+			ChannelType: "whatsapp",
 		},
 	}
 
@@ -109,7 +111,7 @@ func TestStatusEnvelopeGolden(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	const want = `{"id":"evt_789","type":"message.delivered","timestamp":"2026-06-28T10:30:00Z","tenantId":"tenant_abc","data":{"messageId":"msg_3","status":"delivered","direction":"outbound","timestamp":"2026-06-28T10:30:00Z"}}`
+	const want = `{"id":"evt_789","type":"message.delivered","timestamp":"2026-06-28T10:30:00Z","tenantId":"tenant_abc","data":{"messageId":"msg_3","status":"delivered","direction":"outbound","timestamp":"2026-06-28T10:30:00Z","channelId":"ch_1","channelType":"whatsapp"}}`
 
 	if string(got) != want {
 		t.Errorf("status envelope mismatch:\n got: %s\nwant: %s", got, want)

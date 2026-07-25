@@ -226,6 +226,57 @@ func TestDispatcherEnqueuesContactCreated(t *testing.T) {
 	}
 }
 
+// Status events must carry the channel like every other payload: a consumer serving many channels
+// on one endpoint routes by it, and one that resolves the tenant from the channel cannot process
+// the event without it.
+func TestDispatcherStatusCarriesChannel(t *testing.T) {
+	for _, tc := range []struct {
+		eventType string
+		wantType  string
+	}{
+		{nats.EventMessageSent, TypeMessageSent},
+		{nats.EventMessageDelivered, TypeMessageDelivered},
+		{nats.EventMessageRead, TypeMessageRead},
+		{nats.EventMessageFailed, TypeMessageFailed},
+	} {
+		t.Run(tc.wantType, func(t *testing.T) {
+			pub := &recordingPublisher{}
+			d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+
+			err := d.handle(context.Background(), &nats.Event{
+				Type:     tc.eventType,
+				TenantID: "tenant-1",
+				Payload: map[string]interface{}{
+					"message_id": "msg-7",
+					"channel_id": "ch-1",
+					"status":     "delivered",
+				},
+			})
+			if err != nil {
+				t.Fatalf("handle: %v", err)
+			}
+			if len(pub.deliveries) != 1 {
+				t.Fatalf("expected 1 delivery, got %d", len(pub.deliveries))
+			}
+
+			var env Envelope
+			if err := json.Unmarshal(pub.deliveries[0].Body, &env); err != nil {
+				t.Fatalf("body not an envelope: %v", err)
+			}
+			if env.Type != tc.wantType {
+				t.Errorf("type = %q, want %q", env.Type, tc.wantType)
+			}
+			data, _ := env.Data.(map[string]interface{})
+			if data["channelId"] != "ch-1" {
+				t.Errorf("channelId = %v, want ch-1 (data: %+v)", data["channelId"], data)
+			}
+			if data["messageId"] != "msg-7" {
+				t.Errorf("messageId = %v, want msg-7", data["messageId"])
+			}
+		})
+	}
+}
+
 func TestDispatcherEnqueuesConversationLifecycle(t *testing.T) {
 	cases := []struct {
 		eventType     string
