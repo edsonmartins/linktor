@@ -250,6 +250,12 @@ func translate(raw *nats.OutboundMessage) *Message {
 		}
 	case "interactive":
 		msg.Content = translateInteractive(raw, meta)
+	case "reaction":
+		// O alvo é o id da mensagem NO PROVEDOR: a reação é endereçada do lado dele.
+		msg.Content = Reaction{
+			TargetExternalID: meta["reaction_target_external_id"],
+			Emoji:            raw.Content, // vazio = remover a reação
+		}
 	case "image", "video", "audio", "document":
 		msg.Content = mediaContent(MediaType(raw.ContentType), raw, meta)
 	default: // "text", "", anything else falls back to text

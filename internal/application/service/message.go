@@ -9,6 +9,7 @@ import (
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/errors"
+	"github.com/msgfy/linktor/pkg/logger"
 )
 
 // SendMessageInput represents input for sending a message
@@ -335,25 +336,65 @@ func (s *MessageService) SendReaction(ctx context.Context, conversationID, messa
 		return errors.Wrap(err, errors.ErrCodeInternal, "failed to persist reaction")
 	}
 
-	// Publish reaction event to NATS for the adapter to send
-	if s.producer != nil {
-		event := &nats.Event{
-			Type:     "message.reaction",
-			TenantID: conversation.TenantID,
-			Payload: map[string]interface{}{
-				"channel_id":      conversation.ChannelID,
-				"message_id":      messageID,
-				"external_id":     message.ExternalID,
-				"conversation_id": conversationID,
-				"emoji":           emoji,
-				"sender_id":       senderID,
+	if s.producer == nil {
+		return nil
+	}
+
+	// A ENTREGA vai pelo stream de OUTBOUND, como qualquer envio: é ele que tem worker, retry, DLQ
+	// e resolução de sender por canal. Antes havia só o evento `message.reaction` publicado abaixo,
+	// comentado como "for the adapter to send" — nenhum consumidor o lia, então a reação era
+	// persistida, a API devolvia 200 e ela nunca chegava ao cliente.
+	if message.ExternalID == "" {
+		// Sem id do provedor não há o que reagir do lado dele (mensagem que nunca saiu ao canal).
+		logger.Warn("reaction: mensagem " + messageID + " sem external_id; nada a entregar no canal")
+	} else {
+		channel, err := s.channelRepo.FindByID(ctx, conversation.ChannelID)
+		if err != nil {
+			return errors.New(errors.ErrCodeChannelNotFound, "channel not found")
+		}
+		contact, err := s.contactRepo.FindByID(ctx, conversation.ContactID)
+		if err != nil {
+			return errors.New(errors.ErrCodeContactNotFound, "contact not found")
+		}
+		outbound := &nats.OutboundMessage{
+			ID:             uuid.New().String(),
+			TenantID:       conversation.TenantID,
+			ChannelID:      conversation.ChannelID,
+			ChannelType:    string(channel.Type),
+			Environment:    string(channel.Environment),
+			ConversationID: conversationID,
+			ContactID:      contact.ID,
+			RecipientID:    findRecipientForChannel(contact, string(channel.Type)),
+			ContentType:    "reaction",
+			Content:        emoji, // vazio = remover a reação
+			Metadata: map[string]string{
+				"reaction_target_external_id": message.ExternalID,
+				"reaction_target_message_id":  messageID,
 			},
 			Timestamp: time.Now(),
 		}
-
-		if err := s.producer.PublishEvent(ctx, event); err != nil {
+		if err := s.producer.PublishOutbound(ctx, outbound); err != nil {
 			return errors.Wrap(err, errors.ErrCodeInternal, "failed to publish reaction")
 		}
+	}
+
+	// Evento de domínio: consumidores internos (dispatcher de webhook, automações) seguem vendo a
+	// reação. Ao contrário da entrega acima, este não move nada para o provedor.
+	event := &nats.Event{
+		Type:     "message.reaction",
+		TenantID: conversation.TenantID,
+		Payload: map[string]interface{}{
+			"channel_id":      conversation.ChannelID,
+			"message_id":      messageID,
+			"external_id":     message.ExternalID,
+			"conversation_id": conversationID,
+			"emoji":           emoji,
+			"sender_id":       senderID,
+		},
+		Timestamp: time.Now(),
+	}
+	if err := s.producer.PublishEvent(ctx, event); err != nil {
+		return errors.Wrap(err, errors.ErrCodeInternal, "failed to publish reaction")
 	}
 
 	return nil

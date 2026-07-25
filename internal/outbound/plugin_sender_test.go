@@ -112,3 +112,83 @@ func TestToPluginMessageMedia(t *testing.T) {
 		t.Fatalf("media mapping wrong: %+v", out)
 	}
 }
+
+// reactingAdapter also implements the optional plugin.ReactionSender capability.
+type reactingAdapter struct {
+	*fakeAdapter
+	lastReaction *plugin.OutboundReaction
+	reactionErr  error
+}
+
+func (r *reactingAdapter) SendReaction(_ context.Context, reaction *plugin.OutboundReaction) error {
+	r.lastReaction = reaction
+	return r.reactionErr
+}
+
+func reactionMessage() *Message {
+	return &Message{
+		ID:        "m-1",
+		ChannelID: "ch-1",
+		To:        "5511999999999",
+		Content:   Reaction{TargetExternalID: "WA-EXTERNAL-1", Emoji: "👍"},
+	}
+}
+
+// A reaction must reach the provider through SendReaction — never as a text message, which would
+// drop a stray emoji into the customer's chat.
+func TestPluginSenderDeliversReaction(t *testing.T) {
+	adapter := &reactingAdapter{fakeAdapter: newFakeAdapter(&plugin.SendResult{Success: true})}
+	s := &pluginSender{
+		channelType: "whatsapp",
+		registry:    &fakeRegistry{byID: map[string]plugin.ChannelAdapter{"ch-1": adapter}},
+	}
+
+	if _, err := s.Send(context.Background(), reactionMessage()); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	if adapter.lastReaction == nil {
+		t.Fatal("SendReaction not called — reaction never reaches the provider")
+	}
+	if adapter.lastReaction.TargetMessageID != "WA-EXTERNAL-1" {
+		t.Errorf("target = %q, want WA-EXTERNAL-1", adapter.lastReaction.TargetMessageID)
+	}
+	if adapter.lastReaction.Emoji != "👍" {
+		t.Errorf("emoji = %q", adapter.lastReaction.Emoji)
+	}
+	if adapter.lastMsg != nil {
+		t.Error("reaction must not be sent as a message")
+	}
+}
+
+// An adapter whose provider has no reactions skips it instead of failing the delivery forever.
+func TestPluginSenderSkipsReactionWhenUnsupported(t *testing.T) {
+	adapter := newFakeAdapter(&plugin.SendResult{Success: true})
+	s := &pluginSender{
+		channelType: "sms",
+		registry:    &fakeRegistry{byID: map[string]plugin.ChannelAdapter{"ch-1": adapter}},
+	}
+
+	if _, err := s.Send(context.Background(), reactionMessage()); err != nil {
+		t.Fatalf("send should ack, got %v", err)
+	}
+	if adapter.lastMsg != nil {
+		t.Error("must not fall back to sending the emoji as text")
+	}
+}
+
+// A provider failure is returned so the worker retries it.
+func TestPluginSenderPropagatesReactionError(t *testing.T) {
+	adapter := &reactingAdapter{
+		fakeAdapter: newFakeAdapter(&plugin.SendResult{Success: true}),
+		reactionErr: fmt.Errorf("socket closed"),
+	}
+	s := &pluginSender{
+		channelType: "whatsapp",
+		registry:    &fakeRegistry{byID: map[string]plugin.ChannelAdapter{"ch-1": adapter}},
+	}
+
+	if _, err := s.Send(context.Background(), reactionMessage()); err == nil {
+		t.Fatal("expected the provider error to propagate for retry")
+	}
+}

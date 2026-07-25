@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 )
 
@@ -59,6 +60,25 @@ func (s *pluginSender) Send(ctx context.Context, msg *Message) (*Receipt, error)
 			// No live session/connection right now: retry (transient).
 			return nil, fmt.Errorf("no live %s adapter for channel %s", s.channelType, msg.ChannelID)
 		}
+	}
+
+	// A reaction is not a message: it attaches to one already on the chat. An adapter whose provider
+	// has no concept of reactions skips it — sending the emoji as text instead would drop a stray
+	// character into the customer's conversation.
+	if reaction, ok := msg.Content.(Reaction); ok {
+		reactionSender, supported := adapter.(plugin.ReactionSender)
+		if !supported {
+			logger.Warn("outbound: canal " + s.channelType + " não entrega reações; ignorada")
+			return &Receipt{}, nil
+		}
+		if err := reactionSender.SendReaction(ctx, &plugin.OutboundReaction{
+			RecipientID:     msg.To,
+			TargetMessageID: reaction.TargetExternalID,
+			Emoji:           reaction.Emoji,
+		}); err != nil {
+			return nil, err
+		}
+		return &Receipt{}, nil
 	}
 
 	res, err := adapter.SendMessage(ctx, toPluginMessage(msg))
