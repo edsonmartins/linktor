@@ -211,6 +211,8 @@
     "markAsResolved": "Marcar como resolvida",
     "noConversations": "Nenhuma conversa encontrada",
     "filterByStatus": "Filtrar por Status",
+    "filterByChannel": "Filtrar por Canal",
+    "allChannels": "Todos os canais",
     "all": "Todas",
     "unknownContact": "Contato Desconhecido",
     "noMessagesYet": "Ainda sem mensagens",

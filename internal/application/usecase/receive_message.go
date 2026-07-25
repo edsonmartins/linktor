@@ -184,6 +184,10 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 	// Try to find existing contact by identity
 	contact, err := uc.contactRepo.FindByIdentity(ctx, inbound.TenantID, inbound.ChannelType, identifier)
 	if err == nil && contact != nil {
+		// The channel may now supply a profile name the contact was created
+		// without (e.g. the first message arrived before WhatsApp had synced the
+		// pushName). Backfill it so the contact stops showing as "Unknown".
+		uc.backfillContactName(ctx, contact, inbound)
 		return contact, false, nil
 	}
 
@@ -202,19 +206,16 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 				CreatedAt:   time.Now(),
 			}
 			uc.contactRepo.AddIdentity(ctx, identity)
+			uc.backfillContactName(ctx, contact, inbound)
 			return contact, false, nil
 		}
 	}
 
-	// Create new contact
+	// Create new contact. Leave the name empty when the channel supplied none —
+	// the UI localizes an empty name to "Unknown Contact"; a hardcoded "Unknown"
+	// string would both be un-localized and block the backfill above forever.
 	now := time.Now()
-	name := "Unknown"
-	if n, ok := inbound.Metadata["sender_name"]; ok {
-		name = n
-	}
-	if n, ok := inbound.Metadata["name"]; ok {
-		name = n
-	}
+	name := inboundName(inbound)
 
 	phone := ""
 	if p, ok := inbound.Metadata["phone"]; ok {
@@ -279,6 +280,43 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 	}
 
 	return contact, true, nil
+}
+
+// inboundName returns the display name the channel supplied for the sender
+// (e.g. WhatsApp profile.name / pushName), or "" when none was provided.
+func inboundName(inbound *nats.InboundMessage) string {
+	// An explicit "name" takes precedence over the channel-derived "sender_name".
+	if n, ok := inbound.Metadata["name"]; ok && n != "" {
+		return n
+	}
+	if n, ok := inbound.Metadata["sender_name"]; ok && n != "" {
+		return n
+	}
+	return ""
+}
+
+// nameIsPlaceholder reports whether a stored contact name is missing or the
+// legacy hardcoded "Unknown" placeholder, and so should be backfilled from the
+// channel-provided name when one becomes available.
+func nameIsPlaceholder(name string) bool {
+	return name == "" || name == "Unknown"
+}
+
+// backfillContactName upgrades an existing contact's name from the channel when
+// the contact currently has no real name and the inbound message carries one.
+// Best-effort: a failed persist must not block message ingestion, and the
+// in-memory contact still carries the resolved name for this message.
+func (uc *ReceiveMessageUseCase) backfillContactName(ctx context.Context, contact *entity.Contact, inbound *nats.InboundMessage) {
+	if !nameIsPlaceholder(contact.Name) {
+		return
+	}
+	name := inboundName(inbound)
+	if name == "" {
+		return
+	}
+	contact.Name = name
+	contact.UpdatedAt = time.Now()
+	_ = uc.contactRepo.Update(ctx, contact)
 }
 
 // getOrCreateConversation finds or creates a conversation. It takes the

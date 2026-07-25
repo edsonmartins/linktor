@@ -291,19 +291,22 @@ function ChatHeader({
     <div className="flex h-16 items-center justify-between border-b border-border bg-card px-4">
       <div className="flex items-center gap-3">
         <Avatar
-          fallback={conversation.contact?.name || 'U'}
+          fallback={(conversation.contact?.name && conversation.contact.name !== 'Unknown' ? conversation.contact.name : '') || 'U'}
           status={conversation.status === 'open' ? 'online' : 'offline'}
         />
         <div>
           <h2 className="font-medium">
-            {conversation.contact?.name || t('unknownContact')}
+            {(conversation.contact?.name && conversation.contact.name !== 'Unknown'
+              ? conversation.contact.name
+              : '') || t('unknownContact')}
           </h2>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Badge
               variant={conversation.channel?.type as 'webchat' | undefined || 'secondary'}
               className="text-[10px] px-1.5 py-0"
+              title={conversation.channel?.type}
             >
-              {conversation.channel?.type}
+              {conversation.channel?.name || conversation.channel?.type}
             </Badge>
             <EnvironmentBadge
               environment={conversation.environment}

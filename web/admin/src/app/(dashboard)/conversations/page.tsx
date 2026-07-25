@@ -25,7 +25,7 @@ import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { useUIStore, useActiveConversation } from '@/stores/ui-store'
 import { ChatView } from './chat-view'
-import type { Conversation, ConversationStatus } from '@/types'
+import type { Channel, Conversation, ConversationStatus } from '@/types'
 
 /**
  * Conversation List Item
@@ -45,6 +45,15 @@ function ConversationItem({ conversation, isActive, onClick, t }: ConversationIt
     snoozed: 'secondary',
   }
 
+  // Treat the legacy hardcoded "Unknown" the same as an empty name so it is
+  // localized, not shown as the raw English word. New inbound backfills the real
+  // WhatsApp name (see receive_message.go).
+  const rawName = conversation.contact?.name
+  const contactName = rawName && rawName !== 'Unknown' ? rawName : ''
+  // Label the channel by its name (falling back to type) so two channels of the
+  // same type are distinguishable.
+  const channelLabel = conversation.channel?.name || conversation.channel?.type || 'unknown'
+
   return (
     <button
       onClick={onClick}
@@ -56,14 +65,14 @@ function ConversationItem({ conversation, isActive, onClick, t }: ConversationIt
       )}
     >
       <Avatar
-        fallback={conversation.contact?.name || 'U'}
+        fallback={contactName || 'U'}
         size="default"
         status={conversation.status === 'open' ? 'online' : 'offline'}
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className="font-medium truncate">
-            {conversation.contact?.name || t('unknownContact')}
+            {contactName || t('unknownContact')}
           </span>
           <span className="text-xs text-muted-foreground shrink-0">
             {conversation.last_message_at
@@ -75,8 +84,9 @@ function ConversationItem({ conversation, isActive, onClick, t }: ConversationIt
           <Badge
             variant={conversation.channel?.type as 'webchat' | undefined || 'secondary'}
             className="text-[10px] px-1.5 py-0"
+            title={conversation.channel?.type}
           >
-            {conversation.channel?.type || 'unknown'}
+            {channelLabel}
           </Badge>
           <Badge
             variant={statusVariant[conversation.status]}
@@ -117,6 +127,7 @@ export default function ConversationsPage() {
   // Default "all": sandbox conversations stay discoverable and the mandatory
   // badge is what prevents reading them as real (decisão WP-H).
   const [environmentFilter, setEnvironmentFilter] = useState<'all' | 'production' | 'sandbox'>('all')
+  const [channelFilter, setChannelFilter] = useState<string>('all')
   const activeConversationId = useActiveConversation()
   const setActiveConversation = useUIStore((s) => s.setActiveConversation)
 
@@ -168,23 +179,32 @@ export default function ConversationsPage() {
     { label: t('snoozed'), value: 'snoozed' },
   ]
 
-  // Fetch conversations. The environment filter is applied by the BACKEND
-  // (query param), never in memory here (WP-H).
+  // Channels for the per-channel filter (and to label rows by channel name).
+  const { data: channels = [] } = useQuery({
+    queryKey: queryKeys.channels.list(),
+    queryFn: () => api.get<Channel[]>('/channels'),
+  })
+
+  // Fetch conversations. Status/environment/channel filters are applied by the
+  // BACKEND (query params), never in memory here (WP-H).
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: queryKeys.conversations.list({
       search: searchQuery,
       status: statusFilter,
       environment: environmentFilter,
+      channel_id: channelFilter,
     }),
     queryFn: () =>
       api.getEnvelope<Conversation[]>('/conversations', {
         ...(searchQuery && { search: searchQuery }),
         ...(statusFilter !== 'all' && { status: statusFilter }),
         ...(environmentFilter !== 'all' && { environment: environmentFilter }),
+        ...(channelFilter !== 'all' && { channel_id: channelFilter }),
       }),
   })
 
   const conversations = data?.data ?? []
+  const selectedChannel = channels.find((ch) => ch.id === channelFilter)
 
   return (
     <div ref={rootRef} className="flex h-full overflow-hidden">
@@ -251,11 +271,44 @@ export default function ConversationsPage() {
                     {filter.label}
                   </DropdownMenuItem>
                 ))}
+                {channels.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>{t('filterByChannel')}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setChannelFilter('all')}
+                      className={cn(channelFilter === 'all' && 'bg-primary/10 text-primary')}
+                    >
+                      {t('allChannels')}
+                    </DropdownMenuItem>
+                    {channels.map((ch) => (
+                      <DropdownMenuItem
+                        key={ch.id}
+                        onClick={() => setChannelFilter(ch.id)}
+                        className={cn(channelFilter === ch.id && 'bg-primary/10 text-primary')}
+                      >
+                        {ch.name || ch.type}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          {(statusFilter !== 'all' || environmentFilter !== 'all') && (
-            <div className="flex items-center gap-2">
+          {(statusFilter !== 'all' || environmentFilter !== 'all' || channelFilter !== 'all') && (
+            <div className="flex flex-wrap items-center gap-2">
+              {channelFilter !== 'all' && (
+                <Badge variant="outline" className="gap-1">
+                  {t('filterByChannel')}: {selectedChannel?.name || selectedChannel?.type || channelFilter}
+                  <button
+                    onClick={() => setChannelFilter('all')}
+                    className="ml-1 hover:text-foreground"
+                  >
+                    ×
+                  </button>
+                </Badge>
+              )}
               {statusFilter !== 'all' && (
                 <Badge variant="outline" className="gap-1">
                   {tCommon('status')}: {t(statusFilter)}
