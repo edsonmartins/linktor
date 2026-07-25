@@ -211,6 +211,8 @@
     "markAsResolved": "Mark as resolved",
     "noConversations": "No conversations found",
     "filterByStatus": "Filter by Status",
+    "filterByChannel": "Filter by Channel",
+    "allChannels": "All channels",
     "all": "All",
     "unknownContact": "Unknown Contact",
     "noMessagesYet": "No messages yet",
