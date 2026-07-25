@@ -356,6 +356,18 @@ func (s *MessageService) SendReaction(ctx context.Context, conversationID, messa
 		if err != nil {
 			return errors.New(errors.ErrCodeContactNotFound, "contact not found")
 		}
+		// As identidades são onde mora o endereço por canal — o contato sozinho pode ter o telefone
+		// vazio. Sem elas findRecipientForChannel devolve "" e o worker recusa a entrega com
+		// "recipient is required", exatamente como acontecia com a reação (o Send já as carregava).
+		if identities, idErr := s.contactRepo.FindIdentitiesByContact(ctx, contact.ID); idErr == nil {
+			contact.Identities = identities
+		}
+
+		recipient := findRecipientForChannel(contact, string(channel.Type))
+		if recipient == "" {
+			return errors.Validation("contato sem endereço para o canal " + string(channel.Type))
+		}
+
 		outbound := &nats.OutboundMessage{
 			ID:             uuid.New().String(),
 			TenantID:       conversation.TenantID,
@@ -364,7 +376,7 @@ func (s *MessageService) SendReaction(ctx context.Context, conversationID, messa
 			Environment:    string(channel.Environment),
 			ConversationID: conversationID,
 			ContactID:      contact.ID,
-			RecipientID:    findRecipientForChannel(contact, string(channel.Type)),
+			RecipientID:    recipient,
 			ContentType:    "reaction",
 			Content:        emoji, // vazio = remover a reação
 			Metadata: map[string]string{
