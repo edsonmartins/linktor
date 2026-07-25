@@ -59,14 +59,21 @@ class MessageReceivedEventData(BaseModel):
 
 
 class MessageStatusEventData(BaseModel):
-    """Message status event data"""
+    """Message status event data.
+
+    Mirrors the server's ``StatusData``: ``channelId`` identifies which channel the event belongs
+    to, as in every other payload. ``conversationId`` is optional because the server does not send
+    it on status events — declaring it required made this model reject real payloads.
+    """
 
     message_id: str = Field(alias="messageId")
-    conversation_id: str = Field(alias="conversationId")
     status: MessageStatus
     direction: MessageDirection
     timestamp: datetime
     error: Optional[str] = None
+    channel_id: Optional[str] = Field(None, alias="channelId")
+    channel_type: Optional[ChannelType] = Field(None, alias="channelType")
+    conversation_id: Optional[str] = Field(None, alias="conversationId")
 
     class Config:
         populate_by_name = True

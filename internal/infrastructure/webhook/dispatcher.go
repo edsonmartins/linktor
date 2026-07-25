@@ -167,6 +167,10 @@ func (d *Dispatcher) dispatchStatus(ctx context.Context, event *nats.Event, even
 		Direction: "outbound",
 		Timestamp: d.now().UTC(),
 		Error:     p.str("error"),
+		// The channel is already resolved above; carrying it lets the consumer route the event
+		// exactly like the inbound ones instead of guessing.
+		ChannelID:   channel.ID,
+		ChannelType: channelType(channel, p),
 	}
 
 	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), eventType), data)

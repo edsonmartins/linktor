@@ -123,12 +123,20 @@ type ConversationData struct {
 }
 
 // StatusData is the `data` payload for `message.{sent,delivered,read,failed}`.
+//
+// ChannelID/ChannelType mirror every other data payload. Without them a consumer serving several
+// channels on one endpoint cannot tell whose event this is, and one that resolves the tenant from
+// the channel — rather than trusting the envelope's tenantId, which is the Linktor tenant — cannot
+// process the event at all. VendaX was rejecting these with 400, which became retries and DLQ on
+// our side. Additive and backward-compatible (INV-018), like `environment`.
 type StatusData struct {
-	MessageID string    `json:"messageId"`
-	Status    string    `json:"status"`
-	Direction string    `json:"direction"` // always "outbound"
-	Timestamp time.Time `json:"timestamp"`
-	Error     string    `json:"error,omitempty"`
+	MessageID   string    `json:"messageId"`
+	Status      string    `json:"status"`
+	Direction   string    `json:"direction"` // always "outbound"
+	Timestamp   time.Time `json:"timestamp"`
+	Error       string    `json:"error,omitempty"`
+	ChannelID   string    `json:"channelId"`
+	ChannelType string    `json:"channelType,omitempty"`
 }
 
 // ComputeSignature returns the hex-encoded HMAC-SHA256 of payload keyed by
