@@ -291,14 +291,14 @@ function ChatHeader({
     <div className="flex h-16 items-center justify-between border-b border-border bg-card px-4">
       <div className="flex items-center gap-3">
         <Avatar
-          fallback={(conversation.contact?.name && conversation.contact.name !== 'Unknown' ? conversation.contact.name : '') || 'U'}
+          fallback={(conversation.contact?.name && conversation.contact.name !== 'Unknown' ? conversation.contact.name : '') || conversation.contact?.phone || 'U'}
           status={conversation.status === 'open' ? 'online' : 'offline'}
         />
         <div>
           <h2 className="font-medium">
             {(conversation.contact?.name && conversation.contact.name !== 'Unknown'
               ? conversation.contact.name
-              : '') || t('unknownContact')}
+              : '') || conversation.contact?.phone || t('unknownContact')}
           </h2>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Badge

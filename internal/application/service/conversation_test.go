@@ -7,6 +7,7 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/pkg/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupConversationTest() (*ConversationService, *testutil.MockConversationRepository) {
@@ -20,6 +21,28 @@ func setupConversationTest() (*ConversationService, *testutil.MockConversationRe
 
 	svc := NewConversationService(convRepo, contactRepo, channelRepo, nil)
 	return svc, convRepo
+}
+
+func TestConversationService_List_EnrichesContactAndChannel(t *testing.T) {
+	svc, _ := setupConversationTest()
+	ctx := context.Background()
+
+	_, err := svc.Create(ctx, &CreateConversationInput{
+		TenantID:  "tenant1",
+		ContactID: "contact1",
+		ChannelID: "channel1",
+	})
+	require.NoError(t, err)
+
+	// The repository scans only conversation columns; the service must attach the
+	// contact and channel so the UI can label rows (not show "unknown").
+	convs, _, err := svc.List(ctx, "tenant1", nil, nil)
+	require.NoError(t, err)
+	require.Len(t, convs, 1)
+	require.NotNil(t, convs[0].Contact, "contact relation must be enriched")
+	assert.Equal(t, "Test", convs[0].Contact.Name)
+	require.NotNil(t, convs[0].Channel, "channel relation must be enriched")
+	assert.Equal(t, entity.ChannelTypeWhatsApp, convs[0].Channel.Type)
 }
 
 func TestConversationService_Create(t *testing.T) {

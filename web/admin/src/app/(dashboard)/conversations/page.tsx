@@ -46,10 +46,12 @@ function ConversationItem({ conversation, isActive, onClick, t }: ConversationIt
   }
 
   // Treat the legacy hardcoded "Unknown" the same as an empty name so it is
-  // localized, not shown as the raw English word. New inbound backfills the real
-  // WhatsApp name (see receive_message.go).
+  // localized, not shown as the raw English word. When no real name is known,
+  // fall back to the phone number so the contact is still identifiable (the
+  // user's ask) — only then to the localized "Unknown Contact".
   const rawName = conversation.contact?.name
-  const contactName = rawName && rawName !== 'Unknown' ? rawName : ''
+  const contactName =
+    (rawName && rawName !== 'Unknown' ? rawName : '') || conversation.contact?.phone || ''
   // Label the channel by its name (falling back to type) so two channels of the
   // same type are distinguishable.
   const channelLabel = conversation.channel?.name || conversation.channel?.type || 'unknown'

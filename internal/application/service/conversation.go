@@ -120,7 +120,41 @@ func (s *ConversationService) List(ctx context.Context, tenantID string, filters
 		}
 	}
 
-	return s.conversationRepo.FindByTenant(ctx, tenantID, params)
+	conversations, total, err := s.conversationRepo.FindByTenant(ctx, tenantID, params)
+	if err != nil {
+		return nil, 0, err
+	}
+	s.enrichConversations(ctx, conversations)
+	return conversations, total, nil
+}
+
+// enrichConversations populates each conversation's Contact and Channel relation
+// for API responses. The repository scans only conversation columns, so without
+// this the list shows every contact as "unknown" and every channel unlabeled.
+// Best-effort: a lookup miss leaves that relation nil (the UI localizes it)
+// rather than failing the whole list. Channels are deduped (and negative results
+// cached) since many conversations share a single channel.
+func (s *ConversationService) enrichConversations(ctx context.Context, conversations []*entity.Conversation) {
+	channelCache := make(map[string]*entity.Channel)
+	contactCache := make(map[string]*entity.Contact)
+	for _, conv := range conversations {
+		if conv.ContactID != "" {
+			contact, ok := contactCache[conv.ContactID]
+			if !ok {
+				contact, _ = s.contactRepo.FindByID(ctx, conv.ContactID)
+				contactCache[conv.ContactID] = contact
+			}
+			conv.Contact = contact
+		}
+		if conv.ChannelID != "" {
+			channel, ok := channelCache[conv.ChannelID]
+			if !ok {
+				channel, _ = s.channelRepo.FindByID(ctx, conv.ChannelID)
+				channelCache[conv.ChannelID] = channel
+			}
+			conv.Channel = channel
+		}
+	}
 }
 
 // Create creates a new conversation
@@ -204,6 +238,7 @@ func (s *ConversationService) GetByTenantAndID(ctx context.Context, tenantID, id
 	if conversation.TenantID != tenantID {
 		return nil, errors.New(errors.ErrCodeConversationNotFound, "conversation not found")
 	}
+	s.enrichConversations(ctx, []*entity.Conversation{conversation})
 	return conversation, nil
 }
 

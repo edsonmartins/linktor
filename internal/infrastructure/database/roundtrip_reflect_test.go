@@ -88,6 +88,8 @@ var roundTripCases = []roundTripCase{
 		entity: "Conversation",
 		exceptions: map[string]string{
 			"LastMessageAt": "calculado por subquery sobre messages no SELECT; não é coluna própria",
+			"Contact":       "relação expandida pela camada de API (List/Get) para o front; nunca persistida — o repo grava só colunas próprias",
+			"Channel":       "relação expandida pela camada de API (List/Get) para o front; nunca persistida — idem Contact",
 		},
 		run: func(t *testing.T, ctx context.Context, db *PostgresDB, tenantID string) (any, any) {
 			channelRepo := NewChannelRepository(db, nil)
