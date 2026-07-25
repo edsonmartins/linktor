@@ -3,6 +3,7 @@ package webhook
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -223,6 +224,136 @@ func TestDispatcherEnqueuesContactCreated(t *testing.T) {
 	data, _ := env.Data.(map[string]interface{})
 	if data["contactId"] != "ct-9" || data["channelId"] != "ch-1" || data["email"] != "ada@example.com" {
 		t.Errorf("unexpected contact data: %+v", data)
+	}
+}
+
+type fakeMessages struct {
+	byExternalID map[string]*entity.Message
+	err          error
+}
+
+func (f *fakeMessages) FindByExternalID(_ context.Context, externalID string) (*entity.Message, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.byExternalID[externalID], nil
+}
+
+func reactionEvent() *nats.Event {
+	return &nats.Event{
+		Type:     nats.EventMessageReceived,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"message_id":          "msg-reaction",
+			"channel_id":          "ch-1",
+			"content_type":        "text",
+			"content":             "👍",
+			"is_reaction":         "true",
+			"reaction_message_id": "WA-EXTERNAL-1",
+		},
+	}
+}
+
+func inboundOf(t *testing.T, pub *recordingPublisher) InboundData {
+	t.Helper()
+	if len(pub.deliveries) != 1 {
+		t.Fatalf("expected 1 delivery, got %d", len(pub.deliveries))
+	}
+	var raw struct {
+		Data InboundData `json:"data"`
+	}
+	if err := json.Unmarshal(pub.deliveries[0].Body, &raw); err != nil {
+		t.Fatalf("body not an envelope: %v", err)
+	}
+	return raw.Data
+}
+
+// A reaction must reach the consumer as a reaction, with the target translated to our id — the
+// consumer never saw the provider's. Before this it arrived as an empty text message.
+func TestDispatcherInboundReactionResolvesTarget(t *testing.T) {
+	pub := &recordingPublisher{}
+	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()}).
+		WithMessages(&fakeMessages{byExternalID: map[string]*entity.Message{
+			"WA-EXTERNAL-1": {ID: "linktor-msg-1"},
+		}})
+
+	if err := d.handle(context.Background(), reactionEvent()); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	got := inboundOf(t, pub).Message.Reaction
+	if got == nil {
+		t.Fatal("reaction block missing — consumer would see an empty message")
+	}
+	if got.Emoji != "👍" {
+		t.Errorf("emoji = %q, want 👍", got.Emoji)
+	}
+	if got.TargetMessageID != "linktor-msg-1" {
+		t.Errorf("targetMessageId = %q, want linktor-msg-1", got.TargetMessageID)
+	}
+	if got.TargetChannelMessageID != "WA-EXTERNAL-1" {
+		t.Errorf("targetChannelMessageId = %q, want WA-EXTERNAL-1", got.TargetChannelMessageID)
+	}
+}
+
+// Target unknown (older than the integration, or lookup unavailable): still ship the reaction with
+// the provider id rather than dropping it or pretending it is a message.
+func TestDispatcherInboundReactionWithUnresolvableTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		messages MessageLookup
+	}{
+		{"sem lookup", nil},
+		{"alvo desconhecido", &fakeMessages{byExternalID: map[string]*entity.Message{}}},
+		{"lookup falha", &fakeMessages{err: errors.New("db down")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pub := &recordingPublisher{}
+			d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+			if tc.messages != nil {
+				d = d.WithMessages(tc.messages)
+			}
+
+			if err := d.handle(context.Background(), reactionEvent()); err != nil {
+				t.Fatalf("handle: %v", err)
+			}
+
+			got := inboundOf(t, pub).Message.Reaction
+			if got == nil {
+				t.Fatal("reaction block missing")
+			}
+			if got.TargetMessageID != "" {
+				t.Errorf("targetMessageId = %q, want empty", got.TargetMessageID)
+			}
+			if got.TargetChannelMessageID != "WA-EXTERNAL-1" {
+				t.Errorf("targetChannelMessageId = %q", got.TargetChannelMessageID)
+			}
+		})
+	}
+}
+
+// An ordinary message must not grow a reaction block.
+func TestDispatcherInboundMessageHasNoReaction(t *testing.T) {
+	pub := &recordingPublisher{}
+	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()}).
+		WithMessages(&fakeMessages{byExternalID: map[string]*entity.Message{}})
+
+	err := d.handle(context.Background(), &nats.Event{
+		Type:     nats.EventMessageReceived,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"message_id":   "msg-1",
+			"channel_id":   "ch-1",
+			"content_type": "text",
+			"content":      "oi",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	if got := inboundOf(t, pub).Message.Reaction; got != nil {
+		t.Errorf("reaction should be absent, got %+v", got)
 	}
 }
 

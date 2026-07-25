@@ -883,9 +883,15 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 		inbound.Metadata["quoted_text"] = msg.ReplyTo.Text
 	}
 
-	// Handle reaction
+	// Handle reaction. Mirrors the official adapter (whatsapp_official/webhook.go): without
+	// is_reaction the whole pipeline treats it as a plain message — buildMessageReceivedOutboxEvent
+	// only carries the reaction fields when that flag is set, so the reaction target never reached
+	// any consumer and the event surfaced as an empty text message.
 	if msg.Reaction != nil {
+		inbound.Content = msg.Reaction.Emoji
+		inbound.Metadata["is_reaction"] = "true"
 		inbound.Metadata["reaction"] = msg.Reaction.Emoji
+		inbound.Metadata["reaction_emoji"] = msg.Reaction.Emoji
 		inbound.Metadata["reaction_message_id"] = msg.Reaction.MessageID
 	}
 
