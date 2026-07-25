@@ -266,12 +266,24 @@ func (a *Adapter) Logout(ctx context.Context) error {
 	return client.Logout(ctx)
 }
 
-// IsLoggedIn returns true if the client is logged in
+// IsLoggedIn reports whether a WhatsApp session is stored for this adapter (the device is paired).
+// It says nothing about the socket: a paired adapter whose connection dropped still answers true.
+// Use IsConnected to know whether the channel can actually send and receive right now.
 func (a *Adapter) IsLoggedIn() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	return a.client != nil && a.client.IsLoggedIn()
+}
+
+// IsConnected reports whether the WhatsApp socket is live. Paired-but-disconnected adapters answer
+// false here and true to IsLoggedIn — conflating the two leaves a channel marked "connected" while
+// it silently receives nothing.
+func (a *Adapter) IsConnected() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	return a.client != nil && a.client.IsConnected()
 }
 
 // GetDeviceInfo returns information about the connected device

@@ -512,21 +512,38 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 		zap.String("channel_id", channel.ID),
 		zap.String("tenant_id", channel.TenantID))
 
-	// Check if already connected via registry
+	// Reuse the live session when there is one. `IsLoggedIn` alone is NOT enough: it only means the
+	// device is paired (credentials in the store). A paired adapter whose socket dropped — after a
+	// restart, a network blip, or a companion being cycled by WhatsApp — would be reported as
+	// "already connected", get its status written back as connected, and go on receiving nothing,
+	// with reconnect attempts short-circuiting here forever. So: pair + live socket = reuse;
+	// pair without socket = reconnect it (no QR needed, the session is stored).
 	if s.registry != nil {
 		if existingAdapter, err := s.registry.GetAdapterByChannelID(channel.ID); err == nil {
 			waAdapter, ok := existingAdapter.(*whatsapp.Adapter)
 			if ok && waAdapter.IsLoggedIn() {
-				logger.Info("WhatsApp channel already connected via registry",
+				if waAdapter.IsConnected() {
+					logger.Info("WhatsApp channel already connected via registry",
+						zap.String("channel_id", channel.ID))
+					s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "Canal WhatsApp já conectado (sessão ativa)")
+					return s.markChannelConnected(ctx, channel), nil
+				}
+
+				logger.Warn("WhatsApp session paired but socket is down; reconnecting",
 					zap.String("channel_id", channel.ID))
-				s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "Canal WhatsApp já conectado (sessão ativa)")
-				channel.ConnectionStatus = entity.ConnectionStatusConnected
-				channel.UpdatedAt = time.Now()
-				s.repo.UpdateConnectionStatus(ctx, channel.ID, entity.ConnectionStatusConnected)
-				s.notifyChannelConnected(ctx, channel)
-				return &ConnectResult{
-					Channel: channel,
-				}, nil
+				s.logLifecycle(ctx, entity.LogLevelWarn, channel.TenantID, channel.ID,
+					"Sessão pareada mas desconectada — reconectando")
+				if err := waAdapter.Connect(ctx); err != nil || !waAdapter.IsConnected() {
+					// Could not revive it: fall through and start a fresh pairing (QR).
+					logger.Warn("could not reconnect the stored WhatsApp session; falling back to pairing",
+						zap.String("channel_id", channel.ID))
+					s.updateChannelConnectionStatus(channel.ID, entity.ConnectionStatusDisconnected)
+				} else {
+					logger.Info("WhatsApp session reconnected without a new pairing",
+						zap.String("channel_id", channel.ID))
+					s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "Sessão WhatsApp reconectada")
+					return s.markChannelConnected(ctx, channel), nil
+				}
 			}
 		}
 	}
@@ -779,6 +796,16 @@ func (s *ChannelService) monitorWhatsAppLoginStatus(channelID string, adapter *w
 			return
 		}
 	}
+}
+
+// markChannelConnected persists the connected status, notifies listeners and returns the result
+// shared by the "already live" and "reconnected" paths of connectWhatsAppUnofficial.
+func (s *ChannelService) markChannelConnected(ctx context.Context, channel *entity.Channel) *ConnectResult {
+	channel.ConnectionStatus = entity.ConnectionStatusConnected
+	channel.UpdatedAt = time.Now()
+	s.repo.UpdateConnectionStatus(ctx, channel.ID, entity.ConnectionStatusConnected)
+	s.notifyChannelConnected(ctx, channel)
+	return &ConnectResult{Channel: channel}
 }
 
 // recordPairedNumber stores the WhatsApp number on the channel once pairing completes.
