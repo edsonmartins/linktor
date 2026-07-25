@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -91,6 +93,10 @@ type ChannelService struct {
 	// logout/connect-failure) to the observability log store for the admin log
 	// viewer. Optional; nil disables lifecycle logging. See SetObservability.
 	obs *ObservabilityService
+	// loginEpochs numbers the login attempts per channel so a superseded monitor
+	// cannot demote a channel a newer pairing already connected.
+	loginMu     sync.Mutex
+	loginEpochs map[string]uint64
 }
 
 // NewChannelService creates a new channel service
@@ -722,6 +728,11 @@ func (s *ChannelService) SubmitPasskeyResponse(ctx context.Context, tenantID, ch
 // monitorWhatsAppLoginStatus monitors the QR channel for login success
 // and updates the channel status accordingly
 func (s *ChannelService) monitorWhatsAppLoginStatus(channelID string, adapter *whatsapp.Adapter, qrChan <-chan whatsapp.QRCodeEvent) {
+	// Each connect supersedes the previous attempt. A stale monitor (whose QR expired) must never
+	// demote a channel that a newer pairing already brought online — that is what silently knocked
+	// a freshly connected channel offline, sending its inbound messages to the DLQ.
+	epoch := s.nextLoginEpoch(channelID)
+
 	logger.Info("Started monitoring WhatsApp login status",
 		zap.String("channel_id", channelID))
 
@@ -736,11 +747,16 @@ func (s *ChannelService) monitorWhatsAppLoginStatus(channelID string, adapter *w
 				if adapter.IsLoggedIn() {
 					logger.Info("WhatsApp login successful",
 						zap.String("channel_id", channelID))
+					// The number is only known after the scan — persist it now.
+					s.recordPairedNumber(channelID, adapter)
 					s.updateChannelConnectionStatus(channelID, entity.ConnectionStatusConnected)
-				} else {
+				} else if s.isCurrentLoginEpoch(channelID, epoch) {
 					logger.Warn("WhatsApp login failed or timed out",
 						zap.String("channel_id", channelID))
 					s.updateChannelConnectionStatus(channelID, entity.ConnectionStatusDisconnected)
+				} else {
+					logger.Info("Superseded WhatsApp login attempt ended; leaving channel status untouched",
+						zap.String("channel_id", channelID))
 				}
 				return
 			}
@@ -749,6 +765,11 @@ func (s *ChannelService) monitorWhatsAppLoginStatus(channelID string, adapter *w
 				zap.String("channel_id", channelID))
 
 		case <-timeout:
+			if !s.isCurrentLoginEpoch(channelID, epoch) {
+				logger.Info("Superseded WhatsApp login monitor timed out; leaving channel status untouched",
+					zap.String("channel_id", channelID))
+				return
+			}
 			logger.Warn("WhatsApp login monitoring timed out",
 				zap.String("channel_id", channelID))
 			if !adapter.IsLoggedIn() {
@@ -758,6 +779,59 @@ func (s *ChannelService) monitorWhatsAppLoginStatus(channelID string, adapter *w
 			return
 		}
 	}
+}
+
+// recordPairedNumber stores the WhatsApp number on the channel once pairing completes.
+//
+// The number is only known after the QR is scanned, so this is the first chance to persist it —
+// which is why channels paired by QR used to carry an empty identifier (invisible in the API/UI).
+//
+// It deliberately does NOT reject a number already used by another channel: WhatsApp multi-device
+// allows up to 4 linked devices, so running two channels off the same number is a supported setup
+// and both receive the inbound fan-out.
+func (s *ChannelService) recordPairedNumber(channelID string, adapter *whatsapp.Adapter) {
+	info := adapter.GetDeviceInfo()
+	if info == nil {
+		return
+	}
+	number := strings.TrimSpace(info.PhoneNumber)
+	if number == "" {
+		number = strings.TrimSpace(info.JID)
+	}
+	if number == "" {
+		return
+	}
+
+	ctx := context.Background()
+	channel, err := s.repo.FindByID(ctx, channelID)
+	if err != nil || channel == nil || channel.Identifier == number {
+		return
+	}
+	channel.Identifier = number
+	if err := s.repo.Update(ctx, channel); err != nil {
+		logger.Warn("could not record the paired number on the channel: "+err.Error(),
+			zap.String("channel_id", channelID))
+	}
+}
+
+// nextLoginEpoch marks the start of a new login attempt for a channel and returns its epoch.
+// Each POST /connect supersedes the previous attempt; the epoch lets a monitor tell whether it is
+// still the current one before it touches the channel status.
+func (s *ChannelService) nextLoginEpoch(channelID string) uint64 {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	if s.loginEpochs == nil {
+		s.loginEpochs = make(map[string]uint64)
+	}
+	s.loginEpochs[channelID]++
+	return s.loginEpochs[channelID]
+}
+
+// isCurrentLoginEpoch reports whether epoch is still the newest login attempt for the channel.
+func (s *ChannelService) isCurrentLoginEpoch(channelID string, epoch uint64) bool {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	return s.loginEpochs[channelID] == epoch
 }
 
 // updateChannelConnectionStatus updates only the connection status in the database
