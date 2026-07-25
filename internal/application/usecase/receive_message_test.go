@@ -184,6 +184,81 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, nats.EventMessageReceived, f.messageRepo.OutboxEvents[0].EventType)
 	})
 
+	t.Run("Existing Contact with placeholder name - Backfills from channel", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		// A contact created earlier without a real name (the legacy "Unknown"
+		// placeholder) and a matching identity, so it resolves via FindByIdentity.
+		existingContact := &entity.Contact{
+			ID:           "contact-unknown",
+			TenantID:     "tenant-1",
+			Name:         "Unknown",
+			Phone:        "+5511888888888",
+			CustomFields: make(map[string]string),
+			Tags:         []string{},
+			Identities: []*entity.ContactIdentity{
+				{
+					ID:          "identity-1",
+					ContactID:   "contact-unknown",
+					ChannelType: "whatsapp",
+					Identifier:  "+5511888888888",
+				},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		f.contactRepo.Contacts[existingContact.ID] = existingContact
+
+		// This inbound carries the WhatsApp profile name "John Doe".
+		inbound := makeInbound("ch-1", "tenant-1")
+
+		output, err := f.uc.Execute(ctx, inbound)
+		require.NoError(t, err)
+		require.NotNil(t, output)
+
+		// The placeholder name is upgraded from the channel...
+		assert.Equal(t, "contact-unknown", output.Contact.ID)
+		assert.Equal(t, "John Doe", output.Contact.Name)
+		// ...and persisted, not just set in memory.
+		assert.Equal(t, "John Doe", f.contactRepo.Contacts["contact-unknown"].Name)
+		assert.Len(t, f.contactRepo.Contacts, 1)
+	})
+
+	t.Run("Existing Contact with real name - Not overwritten", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		existingContact := &entity.Contact{
+			ID:           "contact-named",
+			TenantID:     "tenant-1",
+			Name:         "Maria (saved manually)",
+			Phone:        "+5511888888888",
+			CustomFields: make(map[string]string),
+			Tags:         []string{},
+			Identities: []*entity.ContactIdentity{
+				{
+					ID:          "identity-1",
+					ContactID:   "contact-named",
+					ChannelType: "whatsapp",
+					Identifier:  "+5511888888888",
+				},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		f.contactRepo.Contacts[existingContact.ID] = existingContact
+
+		inbound := makeInbound("ch-1", "tenant-1") // sender_name "John Doe"
+
+		output, err := f.uc.Execute(ctx, inbound)
+		require.NoError(t, err)
+		// A real, human-curated name is never clobbered by the channel push name.
+		assert.Equal(t, "Maria (saved manually)", output.Contact.Name)
+	})
+
 	t.Run("Existing Contact by Phone - Adds Identity", func(t *testing.T) {
 		f := newReceiveMessageFixture()
 		channel := makeChannel("ch-1", "tenant-1")
@@ -669,7 +744,7 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, "Full Name", output.Contact.Name)
 	})
 
-	t.Run("Contact Name Fallback to Unknown", func(t *testing.T) {
+	t.Run("Contact Name empty when channel supplies none", func(t *testing.T) {
 		f := newReceiveMessageFixture()
 		channel := makeChannel("ch-1", "tenant-1")
 		f.channelRepo.Channels[channel.ID] = channel
@@ -682,7 +757,9 @@ func TestReceiveMessageUseCase(t *testing.T) {
 
 		output, err := f.uc.Execute(ctx, inbound)
 		require.NoError(t, err)
-		assert.Equal(t, "Unknown", output.Contact.Name)
+		// No hardcoded "Unknown": the name is left empty so the UI localizes it
+		// and a later message carrying a profile name can backfill it.
+		assert.Equal(t, "", output.Contact.Name)
 	})
 
 	t.Run("Unread Count Increment", func(t *testing.T) {
