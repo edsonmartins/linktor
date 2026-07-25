@@ -69,6 +69,12 @@ type Conversation struct {
 	ResolvedAt     *time.Time           `json:"resolved_at,omitempty"`
 	CreatedAt      time.Time            `json:"created_at"`
 	UpdatedAt      time.Time            `json:"updated_at"`
+
+	// Expanded relations, populated by the API layer for list/detail responses
+	// (never persisted — the repo scans only the columns above). Nil unless a
+	// handler/service enriched the conversation.
+	Contact *Contact `json:"contact,omitempty"`
+	Channel *Channel `json:"channel,omitempty"`
 }
 
 // NewConversation creates a new conversation
