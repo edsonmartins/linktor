@@ -22,6 +22,13 @@ type EventSubscriber interface {
 	SubscribeEvents(ctx context.Context, handler nats.EventHandler) error
 }
 
+// MessageLookup resolves the message a reaction points at. The provider reports the target by its
+// own id (the WhatsApp message id), which the consumer has no way to match — it only ever saw our
+// ids. Translating here keeps that asymmetry out of every consumer.
+type MessageLookup interface {
+	FindByExternalID(ctx context.Context, externalID string) (*entity.Message, error)
+}
+
 // DeliveryPublisher enqueues a webhook for durable delivery. *nats.Producer
 // satisfies it; the durable webhooks stream gives crash-safe retry + DLQ.
 type DeliveryPublisher interface {
@@ -68,6 +75,7 @@ func subscribedTo(channel *entity.Channel, eventType string) bool {
 type Dispatcher struct {
 	deliveries DeliveryPublisher
 	channels   ChannelLookup
+	messages   MessageLookup
 	now        func() time.Time
 	newID      func() string
 }
@@ -81,6 +89,13 @@ func NewDispatcher(deliveries DeliveryPublisher, channels ChannelLookup) *Dispat
 		now:        time.Now,
 		newID:      func() string { return uuid.New().String() },
 	}
+}
+
+// WithMessages enables resolving a reaction's target to our own message id. Optional: without it
+// reactions still ship, carrying only the provider's id — the consumer just has more work to do.
+func (d *Dispatcher) WithMessages(messages MessageLookup) *Dispatcher {
+	d.messages = messages
+	return d
 }
 
 // Start subscribes to the events stream and begins dispatching.
@@ -143,6 +158,7 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 			SenderID:    p.str("sender_id"),
 			SenderType:  string(entity.SenderTypeContact),
 			Metadata:    inboundMetadata(p),
+			Reaction:    d.reactionOf(ctx, p),
 		},
 		ConversationID: p.str("conversation_id"),
 		ContactID:      p.str("contact_id"),
@@ -151,6 +167,37 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 	}
 
 	return d.deliver(ctx, channel, TypeMessageReceived, event.TenantID, dedupKey(p.str("message_id"), "received"), data)
+}
+
+// reactionOf builds the reaction block when the inbound event is a reaction rather than a message.
+// Returns nil for ordinary messages, so the field stays absent in the envelope.
+//
+// The target is translated from the provider's id to ours whenever possible: the consumer only ever
+// saw our ids, so shipping the raw WhatsApp id would leave it unable to find the message. When the
+// lookup is unavailable or the target is unknown (e.g. a message older than the integration), the
+// provider id still ships — a consumer that tracks it can cope, the others skip the reaction.
+func (d *Dispatcher) reactionOf(ctx context.Context, p eventPayload) *ReactionPayload {
+	if p.str("is_reaction") != "true" {
+		return nil
+	}
+	targetExternalID := p.str("reaction_message_id")
+	reaction := &ReactionPayload{
+		Emoji:                  p.str("content"),
+		TargetChannelMessageID: targetExternalID,
+	}
+	if d.messages == nil || targetExternalID == "" {
+		return reaction
+	}
+	target, err := d.messages.FindByExternalID(ctx, targetExternalID)
+	if err != nil {
+		logger.Warn("webhook: falha ao resolver alvo da reação (externalId=" + targetExternalID +
+			"): " + err.Error())
+		return reaction
+	}
+	if target != nil {
+		reaction.TargetMessageID = target.ID
+	}
+	return reaction
 }
 
 func (d *Dispatcher) dispatchStatus(ctx context.Context, event *nats.Event, eventType string) error {

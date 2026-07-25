@@ -82,6 +82,22 @@ type InboundMessagePayload struct {
 	SenderID    string            `json:"senderId,omitempty"`
 	SenderType  string            `json:"senderType"` // "contact"
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	// Reaction, when set, means the contact reacted to an earlier message instead of sending a new
+	// one. Consumers should apply it to the target rather than appending a message — without this
+	// a reaction arrives as an empty text bubble.
+	Reaction *ReactionPayload `json:"reaction,omitempty"`
+}
+
+// ReactionPayload describes a reaction to an earlier message.
+type ReactionPayload struct {
+	// Emoji is empty when the contact removed the reaction.
+	Emoji string `json:"emoji"`
+	// TargetMessageID is the Linktor id of the reacted message — the same id the consumer saw in
+	// `message.received`, or got back when it sent the message. Empty when the target predates the
+	// consumer or could not be resolved; fall back to TargetChannelMessageID.
+	TargetMessageID string `json:"targetMessageId,omitempty"`
+	// TargetChannelMessageID is the provider's own id (e.g. the WhatsApp message id).
+	TargetChannelMessageID string `json:"targetChannelMessageId,omitempty"`
 }
 
 // MessageContent carries text and/or a single media attachment.

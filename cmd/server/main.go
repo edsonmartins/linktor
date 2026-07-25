@@ -934,7 +934,9 @@ func main() {
 			logger.Info("Webhook delivery worker started")
 		}
 
-		webhookDispatcher := infrawebhook.NewDispatcher(producer, channelRepo)
+		// WithMessages: a reação reporta o alvo pelo id do provedor; o lookup traduz para o nosso,
+		// que é o único que o consumidor conhece.
+		webhookDispatcher := infrawebhook.NewDispatcher(producer, channelRepo).WithMessages(messageRepo)
 		if err := webhookDispatcher.Start(ctx, consumer); err != nil {
 			logger.Warn("Failed to start outbound webhook dispatcher: " + err.Error())
 		} else {
