@@ -25,8 +25,13 @@ type EventSubscriber interface {
 // MessageLookup resolves the message a reaction points at. The provider reports the target by its
 // own id (the WhatsApp message id), which the consumer has no way to match — it only ever saw our
 // ids. Translating here keeps that asymmetry out of every consumer.
+//
+// The lookup is scoped to the conversation because an external id is not unique: the same provider
+// message is stored once per channel that received it (two channels paired to the same WhatsApp
+// number is the common case). An unscoped lookup returns whichever row comes first, so the reaction
+// gets attached to a message id the consumer of *this* channel has never seen.
 type MessageLookup interface {
-	FindByExternalID(ctx context.Context, externalID string) (*entity.Message, error)
+	FindByExternalIDInConversation(ctx context.Context, externalID, conversationID string) (*entity.Message, error)
 }
 
 // DeliveryPublisher enqueues a webhook for durable delivery. *nats.Producer
@@ -181,14 +186,16 @@ func (d *Dispatcher) reactionOf(ctx context.Context, p eventPayload) *ReactionPa
 		return nil
 	}
 	targetExternalID := p.str("reaction_message_id")
+	conversationID := p.str("conversation_id")
 	reaction := &ReactionPayload{
 		Emoji:                  p.str("content"),
 		TargetChannelMessageID: targetExternalID,
 	}
-	if d.messages == nil || targetExternalID == "" {
+	if d.messages == nil || targetExternalID == "" || conversationID == "" {
 		return reaction
 	}
-	target, err := d.messages.FindByExternalID(ctx, targetExternalID)
+	// Scoped to the conversation on purpose: see MessageLookup.
+	target, err := d.messages.FindByExternalIDInConversation(ctx, targetExternalID, conversationID)
 	if err != nil {
 		logger.Warn("webhook: falha ao resolver alvo da reação (externalId=" + targetExternalID +
 			"): " + err.Error())

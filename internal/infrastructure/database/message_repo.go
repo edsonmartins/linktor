@@ -175,7 +175,12 @@ func (r *MessageRepository) FindByID(ctx context.Context, id string) (*entity.Me
 	return message, nil
 }
 
-// FindByExternalID finds a message by external ID
+// FindByExternalID finds a message by external ID.
+//
+// An external id is NOT unique across the platform: the same provider message is stored once per
+// channel that received it (two channels paired to the same WhatsApp number, which multi-device
+// allows, is the common case). This returns an arbitrary one of them — prefer
+// FindByExternalIDInConversation whenever the caller knows which conversation it means.
 func (r *MessageRepository) FindByExternalID(ctx context.Context, externalID string) (*entity.Message, error) {
 	query := `
 		SELECT id, conversation_id, sender_type, sender_id, content_type, content,
@@ -183,12 +188,41 @@ func (r *MessageRepository) FindByExternalID(ctx context.Context, externalID str
 		       read_at, created_at, reactions
 		FROM messages
 		WHERE external_id = $1
+		LIMIT 1
 	`
 
 	message, err := r.scanMessage(r.db.Pool.QueryRow(ctx, query, externalID))
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, errors.New(errors.ErrCodeMessageNotFound, "message not found")
+		}
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to find message")
+	}
+
+	return message, nil
+}
+
+// FindByExternalIDInConversation finds a message by external ID within one conversation, which is
+// what makes the lookup unambiguous when the same provider message exists on several channels.
+//
+// Returns (nil, nil) when there is no such message: a miss is an ordinary outcome here — a reaction
+// may point at a message older than the integration — not an error worth propagating.
+func (r *MessageRepository) FindByExternalIDInConversation(
+	ctx context.Context, externalID, conversationID string,
+) (*entity.Message, error) {
+	query := `
+		SELECT id, conversation_id, sender_type, sender_id, content_type, content,
+		       metadata, status, external_id, error_message, sent_at, delivered_at,
+		       read_at, created_at, reactions
+		FROM messages
+		WHERE external_id = $1 AND conversation_id = $2
+		LIMIT 1
+	`
+
+	message, err := r.scanMessage(r.db.Pool.QueryRow(ctx, query, externalID, conversationID))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
 		}
 		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to find message")
 	}

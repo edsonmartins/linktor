@@ -523,6 +523,21 @@ func (m *MockMessageRepository) FindByExternalID(ctx context.Context, externalID
 	return nil, fmt.Errorf("message not found by external ID: %s", externalID)
 }
 
+// FindByExternalIDInConversation mirrors the real repository: a miss is (nil, nil), not an error.
+func (m *MockMessageRepository) FindByExternalIDInConversation(
+	ctx context.Context, externalID, conversationID string,
+) (*entity.Message, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
+	for _, msg := range m.Messages {
+		if msg.ExternalID == externalID && msg.ConversationID == conversationID {
+			return msg, nil
+		}
+	}
+	return nil, nil
+}
+
 func (m *MockMessageRepository) LastInboundAt(ctx context.Context, conversationID string) (*time.Time, error) {
 	if m.ReturnError != nil {
 		return nil, m.ReturnError

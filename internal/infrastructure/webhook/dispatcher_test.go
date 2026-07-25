@@ -227,16 +227,20 @@ func TestDispatcherEnqueuesContactCreated(t *testing.T) {
 	}
 }
 
+// fakeMessages keys by "externalID@conversationID" so a test can hold the same external id on two
+// conversations — exactly the shape that made an unscoped lookup return the wrong channel's message.
 type fakeMessages struct {
 	byExternalID map[string]*entity.Message
 	err          error
 }
 
-func (f *fakeMessages) FindByExternalID(_ context.Context, externalID string) (*entity.Message, error) {
+func (f *fakeMessages) FindByExternalIDInConversation(
+	_ context.Context, externalID, conversationID string,
+) (*entity.Message, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	return f.byExternalID[externalID], nil
+	return f.byExternalID[externalID+"@"+conversationID], nil
 }
 
 func reactionEvent() *nats.Event {
@@ -246,6 +250,7 @@ func reactionEvent() *nats.Event {
 		Payload: map[string]interface{}{
 			"message_id":          "msg-reaction",
 			"channel_id":          "ch-1",
+			"conversation_id":     "conv-ch1",
 			"content_type":        "text",
 			"content":             "👍",
 			"is_reaction":         "true",
@@ -272,9 +277,12 @@ func inboundOf(t *testing.T, pub *recordingPublisher) InboundData {
 // consumer never saw the provider's. Before this it arrived as an empty text message.
 func TestDispatcherInboundReactionResolvesTarget(t *testing.T) {
 	pub := &recordingPublisher{}
+	// The same provider message also exists on another channel's conversation. Resolving without
+	// the conversation scope would hand the consumer an id it has never seen.
 	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()}).
 		WithMessages(&fakeMessages{byExternalID: map[string]*entity.Message{
-			"WA-EXTERNAL-1": {ID: "linktor-msg-1"},
+			"WA-EXTERNAL-1@conv-ch1":   {ID: "linktor-msg-1"},
+			"WA-EXTERNAL-1@conv-outro": {ID: "msg-de-outro-canal"},
 		}})
 
 	if err := d.handle(context.Background(), reactionEvent()); err != nil {

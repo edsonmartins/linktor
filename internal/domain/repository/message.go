@@ -20,8 +20,15 @@ type MessageRepository interface {
 	// FindByID finds a message by ID
 	FindByID(ctx context.Context, id string) (*entity.Message, error)
 
-	// FindByExternalID finds a message by external ID (from channel provider)
+	// FindByExternalID finds a message by external ID (from channel provider).
+	//
+	// External ids are not unique platform-wide — the same provider message is stored once per
+	// channel that received it — so this may return any of them.
 	FindByExternalID(ctx context.Context, externalID string) (*entity.Message, error)
+
+	// FindByExternalIDInConversation finds a message by external ID inside one conversation, which
+	// disambiguates the lookup above. Returns (nil, nil) when there is no match.
+	FindByExternalIDInConversation(ctx context.Context, externalID, conversationID string) (*entity.Message, error)
 
 	// FindByConversation finds messages for a conversation with pagination
 	FindByConversation(ctx context.Context, conversationID string, params *ListParams) ([]*entity.Message, int64, error)
