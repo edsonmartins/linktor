@@ -589,6 +589,23 @@ func (a *Adapter) SendTypingIndicator(ctx context.Context, indicator *plugin.Typ
 	return client.SendChatPresence(ctx, jid, state)
 }
 
+// SendReaction attaches (or removes, with an empty emoji) a reaction to a message already on the
+// chat. Implements the optional plugin.ReactionSender capability — the Client side already existed;
+// nothing reached it because reactions were published as a NATS event with no consumer.
+func (a *Adapter) SendReaction(ctx context.Context, reaction *plugin.OutboundReaction) error {
+	if reaction == nil || reaction.TargetMessageID == "" {
+		return fmt.Errorf("reaction requires the target message id")
+	}
+	a.mu.RLock()
+	client := a.client
+	a.mu.RUnlock()
+
+	if client == nil || !client.IsConnected() {
+		return ErrClientNotReady
+	}
+	return client.SendReaction(ctx, reaction.RecipientID, reaction.TargetMessageID, reaction.Emoji)
+}
+
 // SendReadReceipt marks messages as read
 func (a *Adapter) SendReadReceipt(ctx context.Context, receipt *plugin.ReadReceipt) error {
 	a.mu.RLock()

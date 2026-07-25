@@ -16,6 +16,7 @@ const (
 	KindTemplate    Kind = "template"
 	KindMedia       Kind = "media"
 	KindInteractive Kind = "interactive"
+	KindReaction    Kind = "reaction"
 )
 
 // Content is a typed outbound payload. Implementations are value types that
@@ -84,6 +85,22 @@ type Interactive struct {
 }
 
 func (Interactive) Kind() Kind { return KindInteractive }
+
+// Reaction attaches an emoji to a message already sent on the channel, instead of sending a new
+// one. It rides the same outbound path (retry, DLQ, status) as everything else — reactions used to
+// be published as a bare NATS event that nothing consumed, so they never reached the provider.
+//
+// Senders that cannot deliver reactions skip it: an undelivered reaction is a cosmetic loss, and
+// falling back to a text message would put a stray emoji in the customer's chat.
+type Reaction struct {
+	// TargetExternalID is the provider's id of the message being reacted to (e.g. the WhatsApp
+	// message id) — not ours, since the reaction is addressed on the provider's side.
+	TargetExternalID string
+	// Emoji is empty when the reaction is being removed.
+	Emoji string
+}
+
+func (Reaction) Kind() Kind { return KindReaction }
 
 // Message is a normalized outbound message ready for delivery on a specific
 // channel. It is produced by translating a transport-level nats.OutboundMessage.

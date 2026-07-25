@@ -194,3 +194,23 @@ func (b *BaseAdapter) UploadMedia(ctx context.Context, media *Media) (*MediaUplo
 func (b *BaseAdapter) DownloadMedia(ctx context.Context, mediaID string) (*Media, error) {
 	return nil, nil
 }
+
+// OutboundReaction is an emoji attached to a message already delivered on the channel.
+type OutboundReaction struct {
+	// RecipientID is the chat the reaction belongs to (phone/handle).
+	RecipientID string
+	// TargetMessageID is the provider's id of the message being reacted to.
+	TargetMessageID string
+	// Emoji is empty when the reaction is being removed.
+	Emoji string
+}
+
+// ReactionSender is an OPTIONAL adapter capability. Adapters that can attach reactions on their
+// provider implement it; the outbound sender type-asserts for it and skips the delivery otherwise.
+//
+// Kept out of ChannelAdapter on purpose: making it mandatory would force every adapter (SMS, RCS,
+// e-mail) to carry a no-op for something their provider has no concept of, and a silent no-op is
+// indistinguishable from a real send.
+type ReactionSender interface {
+	SendReaction(ctx context.Context, reaction *OutboundReaction) error
+}
