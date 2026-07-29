@@ -162,9 +162,20 @@ func (c *Client) Login(ctx context.Context) (<-chan QRCodeEvent, error) {
 	go func() {
 		defer close(c.qrCh)
 
+		qrCount := 0
 		for evt := range qrChan {
 			switch evt.Event {
 			case whatsmeow.QRChannelEventCode:
+				// qrcode_max_count (0 = unlimited): give up after N regenerations
+				// so a never-scanned login doesn't churn QR codes forever.
+				qrCount++
+				if max := c.config.QRCodeMaxCount; max > 0 && qrCount > max {
+					c.logger.Warnf("qrcode_max_count (%d) reached; giving up QR login", max)
+					c.mu.Lock()
+					c.state = DeviceStateDisconnected
+					c.mu.Unlock()
+					return
+				}
 				c.qrCh <- QRCodeEvent{
 					Code:      evt.Code,
 					ExpiresAt: time.Now().Add(evt.Timeout),

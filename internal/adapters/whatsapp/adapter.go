@@ -103,6 +103,17 @@ func (a *Adapter) Initialize(config map[string]string) error {
 		RecordCalls:   config["record_calls"] == "true",
 		RecordingsDir: config["recordings_dir"],
 		IgnoreGroups:  config["ignore_groups"] == "true",
+
+		IgnoreStatus:     config["ignore_status"] == "true",
+		AlwaysOnline:     config["always_online"] == "true",
+		AutoReadMessages: config["auto_read_messages"] == "true",
+		RejectCall:       config["reject_call"] == "true",
+		RejectCallMsg:    config["reject_call_msg"],
+		QRCodeMaxCount:   atoiOr(config["qrcode_max_count"], 0),
+		ProxyHost:        config["proxy_host"],
+		ProxyPort:        atoiOr(config["proxy_port"], 0),
+		ProxyUser:        config["proxy_user"],
+		ProxyPass:        config["proxy_pass"],
 	}
 
 	if a.config.LogLevel == "" {
@@ -798,16 +809,30 @@ func (a *Adapter) eventLoop() {
 }
 
 // shouldForwardInbound decides whether an inbound message is handed to the app.
-// Skips our own echoes and, when ignore_groups is set on the channel, group
-// messages — the whole point of the flag (default false → groups flow).
+// Skips our own echoes and, per the channel config, group messages
+// (ignore_groups) and status/story broadcasts (ignore_status). All flags default
+// off, so by default every inbound flows.
 func (a *Adapter) shouldForwardInbound(v *IncomingMessage) bool {
 	if v.IsFromMe {
 		return false
 	}
-	if v.IsGroup && a.config != nil && a.config.IgnoreGroups {
-		return false
+	if a.config != nil {
+		if v.IsGroup && a.config.IgnoreGroups {
+			return false
+		}
+		if a.config.IgnoreStatus && v.ChatJID.User == "status" && v.ChatJID.Server == types.BroadcastServer {
+			return false
+		}
 	}
 	return true
+}
+
+// atoiOr parses s as an int, falling back to def on any error/empty.
+func atoiOr(s string, def int) int {
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return def
 }
 
 // convertToInboundMessage converts an IncomingMessage to plugin.InboundMessage

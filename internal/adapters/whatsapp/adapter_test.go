@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
 )
 
 // AdapterTestSuite tests the WhatsApp adapter
@@ -280,6 +281,23 @@ func (suite *AdapterTestSuite) TestShouldForwardInbound_IgnoreGroups() {
 	assert.True(suite.T(), on.shouldForwardInbound(direct), "1:1 flui mesmo com ignore_groups")
 	assert.True(suite.T(), off.shouldForwardInbound(group), "sem ignore_groups, grupo flui (padrão)")
 	assert.False(suite.T(), off.shouldForwardInbound(mine), "eco próprio nunca é encaminhado")
+}
+
+func (suite *AdapterTestSuite) TestShouldForwardInbound_IgnoreStatus() {
+	on := &Adapter{config: &Config{IgnoreStatus: true}}
+	off := &Adapter{config: &Config{IgnoreStatus: false}}
+	status := &IncomingMessage{ChatJID: types.NewJID("status", types.BroadcastServer)}
+	direct := &IncomingMessage{ChatJID: types.NewJID("5511999999999", types.DefaultUserServer)}
+
+	assert.False(suite.T(), on.shouldForwardInbound(status), "ignore_status → story/status não é encaminhado")
+	assert.True(suite.T(), on.shouldForwardInbound(direct), "1:1 flui com ignore_status")
+	assert.True(suite.T(), off.shouldForwardInbound(status), "sem ignore_status, status flui (padrão)")
+}
+
+func (suite *AdapterTestSuite) TestAtoiOr() {
+	assert.Equal(suite.T(), 5, atoiOr("5", 0))
+	assert.Equal(suite.T(), 0, atoiOr("", 0))
+	assert.Equal(suite.T(), 3, atoiOr("nope", 3))
 }
 
 func (suite *AdapterTestSuite) TestConvertToInboundMessage_Mentions() {
