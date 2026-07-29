@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -818,6 +819,13 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 			"is_group":   fmt.Sprintf("%t", msg.IsGroup),
 			"msg_type":   msg.MessageType,
 		},
+	}
+
+	// Menções (@fulano): sinal de que alguém foi cobrado diretamente — em grupo, é
+	// o que fura o debounce do consumidor. JIDs unidos por vírgula; ausente em
+	// mensagens sem menção, para não poluir o 1:1.
+	if len(msg.Mentions) > 0 {
+		inbound.Metadata["mentions"] = strings.Join(msg.Mentions, ",")
 	}
 
 	if msg.SenderPN.User != "" {

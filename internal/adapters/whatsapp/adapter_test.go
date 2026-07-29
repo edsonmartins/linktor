@@ -269,6 +269,28 @@ func (suite *AdapterTestSuite) TestConvertToInboundMessage_GroupMessage() {
 	assert.Equal(suite.T(), "true", result.Metadata["is_group"])
 }
 
+func (suite *AdapterTestSuite) TestConvertToInboundMessage_Mentions() {
+	msg := suite.fixtures.SampleIncomingMessage("msg-men", "5511999999999", "@gestor decide pf", true)
+	msg.Mentions = []string{"5511777777777@s.whatsapp.net", "5512999999999@s.whatsapp.net"}
+
+	result := convertToInboundMessage(msg)
+
+	assert.NotNil(suite.T(), result)
+	assert.Equal(suite.T(),
+		"5511777777777@s.whatsapp.net,5512999999999@s.whatsapp.net",
+		result.Metadata["mentions"])
+}
+
+func (suite *AdapterTestSuite) TestConvertToInboundMessage_NoMentions() {
+	msg := suite.fixtures.SampleIncomingMessage("msg-nomen", "5511999999999", "bom dia", false)
+
+	result := convertToInboundMessage(msg)
+
+	assert.NotNil(suite.T(), result)
+	_, has := result.Metadata["mentions"]
+	assert.False(suite.T(), has, "message without mention must not set the mentions metadata")
+}
+
 func (suite *AdapterTestSuite) TestConvertToInboundMessage_ImageMessage() {
 	msg := suite.fixtures.SampleIncomingMessage("msg-3", "5511999999999", "Image caption", false)
 	msg.MessageType = "image"

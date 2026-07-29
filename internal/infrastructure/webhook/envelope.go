@@ -93,6 +93,9 @@ type InboundMessagePayload struct {
 	SenderID    string            `json:"senderId,omitempty"`
 	SenderType  string            `json:"senderType"` // "contact"
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	// Mentions carries the JIDs mentioned in this message (absent when none). In a
+	// group, a direct mention of the manager lets the consumer skip the debounce.
+	Mentions []string `json:"mentions,omitempty"`
 	// Reaction, when set, means the contact reacted to an earlier message instead of sending a new
 	// one. Consumers should apply it to the target rather than appending a message — without this
 	// a reaction arrives as an empty text bubble.

@@ -163,6 +163,7 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 			SenderID:    p.str("sender_id"),
 			SenderType:  string(entity.SenderTypeContact),
 			Metadata:    inboundMetadata(p),
+			Mentions:    inboundMentions(p),
 			Reaction:    d.reactionOf(ctx, p),
 		},
 		ConversationID: p.str("conversation_id"),
@@ -394,6 +395,27 @@ func inboundGroup(p eventPayload) *GroupPayload {
 		return nil
 	}
 	return &GroupPayload{ID: id}
+}
+
+// inboundMentions splits the comma-joined mention JIDs into a slice. Returns nil
+// when there is no mention, so the field stays absent in the envelope (1:1 and
+// group messages without a mention are unaffected).
+func inboundMentions(p eventPayload) []string {
+	raw := p.str("mentions")
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, m := range parts {
+		if m = strings.TrimSpace(m); m != "" {
+			out = append(out, m)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // inboundMetadata surfaces the provider sender name (and other passthrough
