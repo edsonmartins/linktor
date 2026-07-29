@@ -620,6 +620,7 @@ func main() {
 		logger.Info(fmt.Sprintf("channel type allowlist enabled: %v", enabled))
 	}
 	channelHandler := handlers.NewChannelHandler(channelService, producer, auditService)
+	groupHandler := handlers.NewGroupHandler(producer, channelService)
 
 	// Create tenant service and handler
 	tenantService := service.NewTenantService(tenantRepo, userRepo, channelRepo, contactRepo)
@@ -1238,6 +1239,10 @@ func main() {
 				channels.POST("/:id/pair", channelHandler.RequestPairCode)
 				channels.POST("/:id/passkey/response", channelHandler.SubmitPasskeyResponse)
 				channels.POST("/:id/disconnect", channelHandler.Disconnect)
+				// Send a message straight to a group JID (@g.us), bypassing contact
+				// resolution — used to publish a group notice. Group-level scope gate
+				// already requires channels:write for this POST.
+				channels.POST("/:id/groups/:groupId/messages", groupHandler.SendMessage)
 				// WhatsApp Coexistence routes
 				channels.GET("/:id/coexistence-status", waEmbeddedSignupHandler.GetCoexistenceStatus)
 				channels.POST("/:id/subscribe-echoes", waEmbeddedSignupHandler.SubscribeMessageEchoes)
