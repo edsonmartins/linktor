@@ -118,6 +118,8 @@ const whatsappConfigSchema = z
     webhook_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
     webhook_secret: z.string().optional(),
     webhook_events: z.array(z.string()).optional(),
+    // Receive group messages (maps to the inverse of config.ignore_groups).
+    receive_groups: z.boolean(),
     // Environment (INV-016): selectable at creation only; immutable afterwards.
     environment: z.enum(['production', 'sandbox']),
     credential_is_sandbox: z.boolean(),
@@ -208,6 +210,7 @@ export function WhatsAppUnofficialConfig({
       webhook_url: channel?.webhook_url || '',
       webhook_secret: '',
       webhook_events: parseWebhookEvents(channel?.config?.webhook_events),
+      receive_groups: (channel?.config?.ignore_groups as string) !== 'true',
       environment: channel?.environment === 'sandbox' ? 'sandbox' : 'production',
       credential_is_sandbox: channel?.environment === 'sandbox',
     },
@@ -278,6 +281,8 @@ export function WhatsAppUnofficialConfig({
           device_name: data.device_name,
           // Comma-separated list; empty string means "deliver all events".
           webhook_events: (data.webhook_events || []).join(','),
+          // Stored as string; adapter reads config["ignore_groups"] == "true".
+          ignore_groups: (!data.receive_groups).toString(),
         },
         credentials: {
           ...(data.webhook_secret ? { webhook_secret: data.webhook_secret } : {}),
@@ -578,6 +583,28 @@ export function WhatsAppUnofficialConfig({
                   <FormDescription>
                     {t('deviceNameDesc')}
                   </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Receive group messages — off drops inbound group messages at the adapter. */}
+            <FormField
+              control={form.control}
+              name="receive_groups"
+              render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-center gap-2">
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        aria-label={t('receiveGroups')}
+                      />
+                    </FormControl>
+                    <FormLabel className="!mt-0">{t('receiveGroups')}</FormLabel>
+                  </div>
+                  <FormDescription>{t('receiveGroupsDesc')}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

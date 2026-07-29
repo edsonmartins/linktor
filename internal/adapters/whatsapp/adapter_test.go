@@ -269,6 +269,19 @@ func (suite *AdapterTestSuite) TestConvertToInboundMessage_GroupMessage() {
 	assert.Equal(suite.T(), "true", result.Metadata["is_group"])
 }
 
+func (suite *AdapterTestSuite) TestShouldForwardInbound_IgnoreGroups() {
+	on := &Adapter{config: &Config{IgnoreGroups: true}}
+	off := &Adapter{config: &Config{IgnoreGroups: false}}
+	group := &IncomingMessage{IsGroup: true}
+	direct := &IncomingMessage{IsGroup: false}
+	mine := &IncomingMessage{IsGroup: false, IsFromMe: true}
+
+	assert.False(suite.T(), on.shouldForwardInbound(group), "ignore_groups → grupo não é encaminhado")
+	assert.True(suite.T(), on.shouldForwardInbound(direct), "1:1 flui mesmo com ignore_groups")
+	assert.True(suite.T(), off.shouldForwardInbound(group), "sem ignore_groups, grupo flui (padrão)")
+	assert.False(suite.T(), off.shouldForwardInbound(mine), "eco próprio nunca é encaminhado")
+}
+
 func (suite *AdapterTestSuite) TestConvertToInboundMessage_Mentions() {
 	msg := suite.fixtures.SampleIncomingMessage("msg-men", "5511999999999", "@gestor decide pf", true)
 	msg.Mentions = []string{"5511777777777@s.whatsapp.net", "5512999999999@s.whatsapp.net"}

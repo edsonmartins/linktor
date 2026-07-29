@@ -60,6 +60,10 @@ type Config struct {
 	// RecordingsDir is where call recordings are written (default
 	// "media/recordings"). Only used when RecordCalls is true.
 	RecordingsDir string
+
+	// IgnoreGroups drops inbound group messages before they are forwarded.
+	// When false (default) group messages flow like any other.
+	IgnoreGroups bool
 }
 
 // Validate validates the configuration

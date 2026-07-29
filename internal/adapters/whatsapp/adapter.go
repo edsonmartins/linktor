@@ -102,6 +102,7 @@ func (a *Adapter) Initialize(config map[string]string) error {
 		LogLevel:      config["log_level"],
 		RecordCalls:   config["record_calls"] == "true",
 		RecordingsDir: config["recordings_dir"],
+		IgnoreGroups:  config["ignore_groups"] == "true",
 	}
 
 	if a.config.LogLevel == "" {
@@ -742,7 +743,7 @@ func (a *Adapter) eventLoop() {
 
 			switch v := evt.(type) {
 			case *IncomingMessage:
-				if msgHandler != nil && !v.IsFromMe {
+				if msgHandler != nil && a.shouldForwardInbound(v) {
 					// Resolve @lid senders to their phone-number JID so the
 					// conversation keys on a stable phone identity.
 					if isLID(v.SenderJID) {
@@ -794,6 +795,19 @@ func (a *Adapter) eventLoop() {
 			}
 		}
 	}
+}
+
+// shouldForwardInbound decides whether an inbound message is handed to the app.
+// Skips our own echoes and, when ignore_groups is set on the channel, group
+// messages — the whole point of the flag (default false → groups flow).
+func (a *Adapter) shouldForwardInbound(v *IncomingMessage) bool {
+	if v.IsFromMe {
+		return false
+	}
+	if v.IsGroup && a.config != nil && a.config.IgnoreGroups {
+		return false
+	}
+	return true
 }
 
 // convertToInboundMessage converts an IncomingMessage to plugin.InboundMessage

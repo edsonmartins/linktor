@@ -417,6 +417,8 @@
       "deviceName": "Device Name",
       "deviceNamePlaceholder": "Linktor",
       "deviceNameDesc": "Name shown in WhatsApp linked devices",
+      "receiveGroups": "Receive group messages",
+      "receiveGroupsDesc": "When off, inbound group messages are dropped at the channel and never delivered. Keep on to monitor group conversations.",
       "multiDeviceSupport": "Multi-Device Support",
       "multiDeviceDesc": "This connection uses WhatsApp multi-device protocol. Your phone doesn't need to stay online after initial setup.",
       "cancel": "Cancel",

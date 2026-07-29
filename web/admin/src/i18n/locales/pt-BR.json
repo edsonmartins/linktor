@@ -417,6 +417,8 @@
       "deviceName": "Nome do Dispositivo",
       "deviceNamePlaceholder": "Linktor",
       "deviceNameDesc": "Nome exibido nos dispositivos vinculados do WhatsApp",
+      "receiveGroups": "Receber mensagens de grupo",
+      "receiveGroupsDesc": "Quando desligado, as mensagens de grupo são descartadas no canal e nunca entregues. Mantenha ligado para acompanhar conversas de grupo.",
       "multiDeviceSupport": "Suporte Multi-Dispositivo",
       "multiDeviceDesc": "Esta conexão usa o protocolo multi-dispositivo do WhatsApp. Seu celular não precisa permanecer online após a configuração inicial.",
       "cancel": "Cancelar",
