@@ -163,6 +163,11 @@ func (a *Adapter) Connect(ctx context.Context) error {
 	// works whether it is called before or after Connect.
 	if raw := client.GetRawClient(); raw != nil {
 		g := NewCallGateway(raw, nil, func(cctx context.Context, evt CallEvent) {
+			// reject_call: auto-decline inbound calls (default off), optionally
+			// sending reject_call_msg to the caller afterwards.
+			if evt.Type == CallEventIncoming && a.config != nil && a.config.RejectCall {
+				go a.autoRejectCall(evt)
+			}
 			a.mu.RLock()
 			h := a.callHandler
 			a.mu.RUnlock()
@@ -543,6 +548,26 @@ func (a *Adapter) RejectCall(ctx context.Context, callID string) error {
 	return g.RejectCall(ctx, callID)
 }
 
+// autoRejectCall declines an inbound call and, when reject_call_msg is set,
+// notifies the caller. Runs off the whatsmeow event goroutine.
+func (a *Adapter) autoRejectCall(evt CallEvent) {
+	ctx := context.Background()
+	if err := a.RejectCall(ctx, evt.CallID); err != nil {
+		return
+	}
+	a.mu.RLock()
+	msg := ""
+	if a.config != nil {
+		msg = a.config.RejectCallMsg
+	}
+	client := a.client
+	a.mu.RUnlock()
+	if msg == "" || evt.PeerJID == "" || client == nil {
+		return
+	}
+	_, _ = client.SendTextMessage(ctx, evt.PeerJID, msg)
+}
+
 // EndCall hangs up an in-progress call.
 func (a *Adapter) EndCall(ctx context.Context, callID string) error {
 	a.mu.RLock()
@@ -769,6 +794,10 @@ func (a *Adapter) eventLoop() {
 					if err := msgHandler(ctx, inbound); err != nil {
 						// Log error but continue
 					}
+					// auto_read_messages: mark the message read on arrival (default off).
+					if a.config != nil && a.config.AutoReadMessages && v.ExternalID != "" {
+						_ = client.MarkAsRead(ctx, []string{v.ExternalID}, v.ChatJID, v.SenderJID)
+					}
 				}
 
 			case *Receipt:
@@ -784,6 +813,15 @@ func (a *Adapter) eventLoop() {
 				a.mu.Lock()
 				a.SetConnected(connected)
 				a.mu.Unlock()
+
+				// always_online: mark the session available on connect so the
+				// account shows online (default off).
+				if connected && a.config != nil && a.config.AlwaysOnline {
+					if err := client.SendPresence(ctx, true); err != nil {
+						// best-effort; presence isn't critical
+						_ = err
+					}
+				}
 
 				// Notify connection handler
 				if connHandler != nil {
