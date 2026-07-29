@@ -1168,6 +1168,8 @@ func main() {
 
 			// Conversations
 			conversations := protected.Group("/conversations")
+			// Gate de escopo para chamadas por API key (no-op para JWT/humanos).
+			conversations.Use(authMiddleware.RequireScopeByMethod(middleware.ScopeConversationsRead, middleware.ScopeConversationsWrite))
 			{
 				conversations.GET("", conversationHandler.List)
 				conversations.POST("", conversationHandler.Create)
@@ -1196,6 +1198,8 @@ func main() {
 
 			// Contacts
 			contacts := protected.Group("/contacts")
+			// Gate de escopo para chamadas por API key (no-op para JWT/humanos).
+			contacts.Use(authMiddleware.RequireScopeByMethod(middleware.ScopeContactsRead, middleware.ScopeContactsWrite))
 			contacts.Use(auditMw.Record())
 			{
 				contacts.GET("", contactHandler.List)
@@ -1271,6 +1275,8 @@ func main() {
 
 			// Bots
 			bots := protected.Group("/bots")
+			// Gate de escopo para chamadas por API key (no-op para JWT/humanos).
+			bots.Use(authMiddleware.RequireScopeByMethod(middleware.ScopeBotsRead, middleware.ScopeBotsWrite))
 			{
 				bots.GET("", botHandler.List)
 				bots.POST("", botHandler.Create)
@@ -1288,6 +1294,8 @@ func main() {
 
 			// AI
 			ai := protected.Group("/ai")
+			// Gate de escopo para chamadas por API key (no-op para JWT/humanos).
+			ai.Use(authMiddleware.RequireScope(middleware.ScopeAiUse))
 			{
 				ai.GET("/providers", aiHandler.ListProviders)
 				ai.GET("/providers/:provider/models", aiHandler.GetModels)
@@ -1301,6 +1309,8 @@ func main() {
 
 			// Knowledge Bases
 			knowledge := protected.Group("/knowledge-bases")
+			// Gate de escopo para chamadas por API key (no-op para JWT/humanos).
+			knowledge.Use(authMiddleware.RequireScopeByMethod(middleware.ScopeKnowledgeRead, middleware.ScopeKnowledgeWrite))
 			{
 				knowledge.GET("", knowledgeHandler.ListKnowledgeBases)
 				knowledge.POST("", knowledgeHandler.CreateKnowledgeBase)
@@ -1331,6 +1341,8 @@ func main() {
 
 			// Flows (Conversational Decision Trees)
 			flows := protected.Group("/flows")
+			// Gate de escopo para chamadas por API key (no-op para JWT/humanos).
+			flows.Use(authMiddleware.RequireScopeByMethod(middleware.ScopeFlowsRead, middleware.ScopeFlowsWrite))
 			{
 				flows.GET("", flowHandler.List)
 				flows.POST("", flowHandler.Create)
@@ -1344,6 +1356,8 @@ func main() {
 
 			// WhatsApp Templates
 			templates := protected.Group("/templates")
+			// Gate de escopo para chamadas por API key (no-op para JWT/humanos).
+			templates.Use(authMiddleware.RequireScopeByMethod(middleware.ScopeTemplatesRead, middleware.ScopeTemplatesWrite))
 			{
 				templates.GET("", templateHandler.List)
 				templates.POST("", templateHandler.Create)
@@ -1360,6 +1374,8 @@ func main() {
 
 			// Analytics
 			analyticsRoutes := protected.Group("/analytics")
+			// Gate de escopo para chamadas por API key (no-op para JWT/humanos).
+			analyticsRoutes.Use(authMiddleware.RequireScope(middleware.ScopeAnalyticsRead))
 			{
 				analyticsRoutes.GET("/overview", analyticsHandler.GetOverview)
 				analyticsRoutes.GET("/conversations", analyticsHandler.GetConversations)
@@ -1392,6 +1408,8 @@ func main() {
 
 			// Orders (commerce)
 			orderRoutes := protected.Group("/orders")
+			// Gate de escopo para chamadas por API key (no-op para JWT/humanos).
+			orderRoutes.Use(authMiddleware.RequireScopeByMethod(middleware.ScopeOrdersRead, middleware.ScopeOrdersWrite))
 			{
 				orderRoutes.GET("", orderHandler.ListOrders)
 				orderRoutes.GET("/stats", orderHandler.GetOrderStats)

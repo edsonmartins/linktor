@@ -112,3 +112,75 @@ func TestRequireScopeByMethod(t *testing.T) {
 		})
 	}
 }
+
+// A chave restrita ao vocabulário de canais/mensagens não pode alcançar os demais recursos. Antes
+// dos gates em contacts/bots/flows/..., uma chave "channels:*, messages:send" lia contatos e bots
+// normalmente — a restrição existia no painel e não no backend.
+func TestRequireScope_ChannelKeyCannotReachOtherResources(t *testing.T) {
+	channelKey := []string{ScopeChannelsRead, ScopeChannelsWrite, ScopeMessagesSend}
+
+	forbidden := []string{
+		ScopeContactsRead, ScopeContactsWrite,
+		ScopeBotsRead, ScopeBotsWrite,
+		ScopeFlowsRead, ScopeFlowsWrite,
+		ScopeTemplatesRead, ScopeTemplatesWrite,
+		ScopeKnowledgeRead, ScopeKnowledgeWrite,
+		ScopeOrdersRead, ScopeOrdersWrite,
+		ScopeAnalyticsRead, ScopeAiUse,
+		ScopeConversationsRead, ScopeConversationsWrite,
+	}
+	for _, required := range forbidden {
+		if HasScope(channelKey, required) {
+			t.Errorf("chave de canal não deveria satisfazer %q", required)
+		}
+	}
+
+	// ...e continua alcançando o que lhe cabe.
+	for _, required := range []string{ScopeChannelsRead, ScopeChannelsWrite, ScopeMessagesSend} {
+		if !HasScope(channelKey, required) {
+			t.Errorf("chave de canal deveria satisfazer %q", required)
+		}
+	}
+}
+
+// Chaves criadas antes dos escopos guardam "*" e não podem ser quebradas por esta mudança.
+func TestRequireScope_LegacyStarKeyReachesEverything(t *testing.T) {
+	legacy := []string{ScopeAll}
+	for _, required := range []string{
+		ScopeChannelsRead, ScopeContactsWrite, ScopeBotsRead, ScopeFlowsWrite,
+		ScopeTemplatesRead, ScopeKnowledgeWrite, ScopeOrdersRead, ScopeAnalyticsRead, ScopeAiUse,
+	} {
+		if !HasScope(legacy, required) {
+			t.Errorf("chave legada (*) deveria satisfazer %q", required)
+		}
+	}
+}
+
+// Um recurso com escopo de escrita alcança a leitura do MESMO recurso, e só dele.
+func TestRequireScope_WriteImpliesReadPerResource(t *testing.T) {
+	botsWriter := []string{ScopeBotsWrite}
+	if !HasScope(botsWriter, ScopeBotsRead) {
+		t.Error("bots:write deveria implicar bots:read")
+	}
+	if HasScope(botsWriter, ScopeFlowsRead) {
+		t.Error("bots:write NÃO deveria implicar flows:read")
+	}
+}
+
+func TestRequireScope_DeniedResponseIs403(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	m := &AuthMiddleware{}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/bots", nil)
+	c.Set(ScopesKey, []string{ScopeChannelsRead})
+
+	m.RequireScope(ScopeBotsRead)(c)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
+	}
+	if !c.IsAborted() {
+		t.Error("a requisição deveria ter sido abortada")
+	}
+}

@@ -30,6 +30,28 @@ const (
 
 	ScopeConversationsRead  = "conversations:read"
 	ScopeConversationsWrite = "conversations:write"
+
+	// Demais recursos da API. Sem eles, uma chave restrita a "channels:*" + "messages:send"
+	// continuava lendo bots, fluxos, templates, analytics, base de conhecimento e pedidos: o painel
+	// oferecia a restrição, mas o gate só existia em canais e no envio de mensagens.
+	ScopeBotsRead  = "bots:read"
+	ScopeBotsWrite = "bots:write"
+
+	ScopeFlowsRead  = "flows:read"
+	ScopeFlowsWrite = "flows:write"
+
+	ScopeTemplatesRead  = "templates:read"
+	ScopeTemplatesWrite = "templates:write"
+
+	ScopeKnowledgeRead  = "knowledge:read"
+	ScopeKnowledgeWrite = "knowledge:write"
+
+	ScopeOrdersRead  = "orders:read"
+	ScopeOrdersWrite = "orders:write"
+
+	ScopeAnalyticsRead = "analytics:read"
+
+	ScopeAiUse = "ai:use"
 )
 
 // HasScope reports whether the granted scopes satisfy the required scope.

@@ -452,13 +452,31 @@ function AppearanceSettings({ t }: { t: ReturnType<typeof useTranslations<'setti
  */
 // Scopes the backend ACTUALLY enforces today (resource:action), kept in sync
 // with the RequireScope wiring in cmd/server/main.go. Only enforced scopes are
-// offered so a granular key never implies a restriction that isn't applied — the
-// contacts:* / conversations:* vocabulary exists in scopes.go but is not yet
-// gated on those routes, so it is intentionally omitted here until it is.
+// offered so a granular key never implies a restriction that isn't applied.
+//
+// Note the limit of the model: a granular key still reaches routes that carry no
+// gate at all (e.g. /me, /oauth). Scopes are least-privilege, not an isolation
+// boundary — for that, use a separate tenant.
 const API_KEY_SCOPES = [
   'channels:read',
   'channels:write',
   'messages:send',
+  'conversations:read',
+  'conversations:write',
+  'contacts:read',
+  'contacts:write',
+  'bots:read',
+  'bots:write',
+  'flows:read',
+  'flows:write',
+  'templates:read',
+  'templates:write',
+  'knowledge:read',
+  'knowledge:write',
+  'orders:read',
+  'orders:write',
+  'analytics:read',
+  'ai:use',
 ] as const
 
 function ApiKeysSettings({ t }: { t: ReturnType<typeof useTranslations<'settings'>> }) {
