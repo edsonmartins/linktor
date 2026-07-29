@@ -365,6 +365,65 @@ func TestDispatcherInboundMessageHasNoReaction(t *testing.T) {
 	}
 }
 
+// A group message must carry the group block so the consumer can thread by group;
+// the individual who spoke stays in Message.SenderID.
+func TestDispatcherInboundGroupCarriesGroupId(t *testing.T) {
+	pub := &recordingPublisher{}
+	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+
+	err := d.handle(context.Background(), &nats.Event{
+		Type:     nats.EventMessageReceived,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"message_id":   "m-g1",
+			"channel_id":   "ch-1",
+			"content_type": "text",
+			"content":      "manda o invite pf",
+			"sender_id":    "5512999999999",
+			"is_group":     "true",
+			"chat_jid":     "120363000000000000@g.us",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	data := inboundOf(t, pub)
+	if data.Group == nil {
+		t.Fatal("group message must carry a group block")
+	}
+	if data.Group.ID != "120363000000000000@g.us" {
+		t.Errorf("group.id = %q, want the chat_jid", data.Group.ID)
+	}
+	if data.Message.SenderID != "5512999999999" {
+		t.Errorf("senderId = %q, want the individual who spoke", data.Message.SenderID)
+	}
+}
+
+// A 1:1 message must not carry a group block (consumers key those by contact).
+func TestDispatcherInbound1x1HasNoGroup(t *testing.T) {
+	pub := &recordingPublisher{}
+	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+
+	err := d.handle(context.Background(), &nats.Event{
+		Type:     nats.EventMessageReceived,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"message_id":   "m-1x1",
+			"channel_id":   "ch-1",
+			"content_type": "text",
+			"content":      "oi",
+			"sender_id":    "5511888888888",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if g := inboundOf(t, pub).Group; g != nil {
+		t.Errorf("1:1 message must have no group block, got %+v", g)
+	}
+}
+
 // Status events must carry the channel like every other payload: a consumer serving many channels
 // on one endpoint routes by it, and one that resolves the tenant from the channel cannot process
 // the event without it.

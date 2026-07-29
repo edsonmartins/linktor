@@ -169,6 +169,7 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 		ContactID:      p.str("contact_id"),
 		ChannelID:      channelID,
 		ChannelType:    channelType(channel, p),
+		Group:          inboundGroup(p),
 	}
 
 	return d.deliver(ctx, channel, TypeMessageReceived, event.TenantID, dedupKey(p.str("message_id"), "received"), data)
@@ -378,6 +379,21 @@ func buildContent(p eventPayload) MessageContent {
 		content.Media = media
 	}
 	return content
+}
+
+// inboundGroup builds the group block when the message came from a group
+// conversation. Returns nil for 1:1, so the field stays absent in the envelope.
+// The individual who spoke ships as Message.SenderID (unchanged); Group.ID is the
+// stable group key (chat_jid) the consumer threads by.
+func inboundGroup(p eventPayload) *GroupPayload {
+	if p.str("is_group") != "true" {
+		return nil
+	}
+	id := p.str("chat_jid")
+	if id == "" {
+		return nil
+	}
+	return &GroupPayload{ID: id}
 }
 
 // inboundMetadata surfaces the provider sender name (and other passthrough
