@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -103,6 +104,14 @@ func (c *Client) Connect(ctx context.Context) error {
 	client := whatsmeow.NewClient(device, c.logger)
 	client.EnableAutoReconnect = c.config.AutoReconnect
 	client.AutoTrustIdentity = c.config.AutoTrustIdentity
+
+	// proxy_*: route the connection through a SOCKS5 proxy when configured. Set
+	// before any connect so it applies to the whole session.
+	if addr := c.proxyAddress(); addr != "" {
+		if err := client.SetProxyAddress(addr); err != nil {
+			c.logger.Warnf("invalid proxy address: %v", err)
+		}
+	}
 
 	c.client = client
 
@@ -216,6 +225,23 @@ func (c *Client) Login(ctx context.Context) (<-chan QRCodeEvent, error) {
 	}
 
 	return c.qrCh, nil
+}
+
+// proxyAddress builds the SOCKS5 proxy URL from the channel config, or "" when
+// no proxy is configured. Credentials are URL-escaped.
+func (c *Client) proxyAddress() string {
+	if c.config == nil || c.config.ProxyHost == "" || c.config.ProxyPort == 0 {
+		return ""
+	}
+	auth := ""
+	if c.config.ProxyUser != "" {
+		auth = url.QueryEscape(c.config.ProxyUser)
+		if c.config.ProxyPass != "" {
+			auth += ":" + url.QueryEscape(c.config.ProxyPass)
+		}
+		auth += "@"
+	}
+	return fmt.Sprintf("socks5://%s%s:%d", auth, c.config.ProxyHost, c.config.ProxyPort)
 }
 
 // SubmitPasskeyResponse forwards a WebAuthn assertion (produced by the account
