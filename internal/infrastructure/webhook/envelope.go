@@ -71,6 +71,17 @@ type InboundData struct {
 	ContactID      string                `json:"contactId"`
 	ChannelID      string                `json:"channelId"`
 	ChannelType    string                `json:"channelType"`
+	// Group is present only when the message came from a group conversation
+	// (absent for 1:1). The individual who spoke is Message.SenderID; Group.ID is
+	// the stable group key the consumer uses to thread the conversation.
+	Group *GroupPayload `json:"group,omitempty"`
+}
+
+// GroupPayload identifies a group conversation. Name is best-effort (may be empty
+// until resolved out-of-band).
+type GroupPayload struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
 }
 
 // InboundMessagePayload is the normalized message inside InboundData.
@@ -82,6 +93,9 @@ type InboundMessagePayload struct {
 	SenderID    string            `json:"senderId,omitempty"`
 	SenderType  string            `json:"senderType"` // "contact"
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	// Mentions carries the JIDs mentioned in this message (absent when none). In a
+	// group, a direct mention of the manager lets the consumer skip the debounce.
+	Mentions []string `json:"mentions,omitempty"`
 	// Reaction, when set, means the contact reacted to an earlier message instead of sending a new
 	// one. Consumers should apply it to the target rather than appending a message — without this
 	// a reaction arrives as an empty text bubble.

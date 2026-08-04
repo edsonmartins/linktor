@@ -388,6 +388,13 @@ func (uc *ReceiveMessageUseCase) buildMessageReceivedOutboxEvent(tenantID string
 		"external_id":     message.ExternalID,
 		"sender_id":       message.Metadata["sender_id"],
 		"sender_name":     message.Metadata["sender_name"],
+		// Grupo (quando o adaptador marca): o consumidor thread-eia pela conversa de
+		// grupo; sender_id acima continua sendo o indivíduo que falou. Vazio em 1:1.
+		"is_group": message.Metadata["is_group"],
+		"chat_jid": message.Metadata["chat_jid"],
+		// Menções (JIDs unidos por vírgula): em grupo, menção direta fura o debounce
+		// do consumidor. Vazio/ausente quando não há menção.
+		"mentions": message.Metadata["mentions"],
 	}
 	if atts := attachmentsPayload(message.Attachments); len(atts) > 0 {
 		payload["attachments"] = atts

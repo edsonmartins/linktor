@@ -445,3 +445,18 @@ func (suite *ClientTestSuite) TestGetGroupInfo_WhenNotConnected() {
 	assert.Error(suite.T(), err)
 	assert.Equal(suite.T(), ErrClientNotReady, err)
 }
+
+func TestProxyAddress(t *testing.T) {
+	none := &Client{config: &Config{}}
+	if got := none.proxyAddress(); got != "" {
+		t.Errorf("sem proxy → vazio, got %q", got)
+	}
+	plain := &Client{config: &Config{ProxyHost: "10.0.0.1", ProxyPort: 1080}}
+	if got := plain.proxyAddress(); got != "socks5://10.0.0.1:1080" {
+		t.Errorf("proxy sem auth: got %q", got)
+	}
+	auth := &Client{config: &Config{ProxyHost: "h", ProxyPort: 1080, ProxyUser: "u", ProxyPass: "p@ss"}}
+	if got := auth.proxyAddress(); got != "socks5://u:p%40ss@h:1080" {
+		t.Errorf("proxy com auth escapada: got %q", got)
+	}
+}

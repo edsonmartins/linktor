@@ -60,6 +60,34 @@ type Config struct {
 	// RecordingsDir is where call recordings are written (default
 	// "media/recordings"). Only used when RecordCalls is true.
 	RecordingsDir string
+
+	// IgnoreGroups drops inbound group messages before they are forwarded.
+	// When false (default) group messages flow like any other.
+	IgnoreGroups bool
+
+	// IgnoreStatus drops inbound status/story broadcasts (status@broadcast).
+	IgnoreStatus bool
+
+	// AlwaysOnline keeps the session marked available (presence) after connect.
+	AlwaysOnline bool
+
+	// AutoReadMessages marks inbound messages as read on arrival.
+	AutoReadMessages bool
+
+	// RejectCall auto-declines inbound calls; RejectCallMsg, when set, is sent
+	// to the caller after the rejection.
+	RejectCall    bool
+	RejectCallMsg string
+
+	// QRCodeMaxCount caps how many QR codes are generated before giving up
+	// (0 = unlimited).
+	QRCodeMaxCount int
+
+	// Proxy routes the whatsmeow connection through a SOCKS5/HTTP proxy.
+	ProxyHost string
+	ProxyPort int
+	ProxyUser string
+	ProxyPass string
 }
 
 // Validate validates the configuration

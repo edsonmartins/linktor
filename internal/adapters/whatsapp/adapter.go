@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,6 +102,18 @@ func (a *Adapter) Initialize(config map[string]string) error {
 		LogLevel:      config["log_level"],
 		RecordCalls:   config["record_calls"] == "true",
 		RecordingsDir: config["recordings_dir"],
+		IgnoreGroups:  config["ignore_groups"] == "true",
+
+		IgnoreStatus:     config["ignore_status"] == "true",
+		AlwaysOnline:     config["always_online"] == "true",
+		AutoReadMessages: config["auto_read_messages"] == "true",
+		RejectCall:       config["reject_call"] == "true",
+		RejectCallMsg:    config["reject_call_msg"],
+		QRCodeMaxCount:   atoiOr(config["qrcode_max_count"], 0),
+		ProxyHost:        config["proxy_host"],
+		ProxyPort:        atoiOr(config["proxy_port"], 0),
+		ProxyUser:        config["proxy_user"],
+		ProxyPass:        config["proxy_pass"],
 	}
 
 	if a.config.LogLevel == "" {
@@ -150,6 +163,11 @@ func (a *Adapter) Connect(ctx context.Context) error {
 	// works whether it is called before or after Connect.
 	if raw := client.GetRawClient(); raw != nil {
 		g := NewCallGateway(raw, nil, func(cctx context.Context, evt CallEvent) {
+			// reject_call: auto-decline inbound calls (default off), optionally
+			// sending reject_call_msg to the caller afterwards.
+			if evt.Type == CallEventIncoming && a.config != nil && a.config.RejectCall {
+				go a.autoRejectCall(evt)
+			}
 			a.mu.RLock()
 			h := a.callHandler
 			a.mu.RUnlock()
@@ -530,6 +548,26 @@ func (a *Adapter) RejectCall(ctx context.Context, callID string) error {
 	return g.RejectCall(ctx, callID)
 }
 
+// autoRejectCall declines an inbound call and, when reject_call_msg is set,
+// notifies the caller. Runs off the whatsmeow event goroutine.
+func (a *Adapter) autoRejectCall(evt CallEvent) {
+	ctx := context.Background()
+	if err := a.RejectCall(ctx, evt.CallID); err != nil {
+		return
+	}
+	a.mu.RLock()
+	msg := ""
+	if a.config != nil {
+		msg = a.config.RejectCallMsg
+	}
+	client := a.client
+	a.mu.RUnlock()
+	if msg == "" || evt.PeerJID == "" || client == nil {
+		return
+	}
+	_, _ = client.SendTextMessage(ctx, evt.PeerJID, msg)
+}
+
 // EndCall hangs up an in-progress call.
 func (a *Adapter) EndCall(ctx context.Context, callID string) error {
 	a.mu.RLock()
@@ -741,7 +779,7 @@ func (a *Adapter) eventLoop() {
 
 			switch v := evt.(type) {
 			case *IncomingMessage:
-				if msgHandler != nil && !v.IsFromMe {
+				if msgHandler != nil && a.shouldForwardInbound(v) {
 					// Resolve @lid senders to their phone-number JID so the
 					// conversation keys on a stable phone identity.
 					if isLID(v.SenderJID) {
@@ -755,6 +793,10 @@ func (a *Adapter) eventLoop() {
 					enrichInboundMedia(ctx, v, inbound, client)
 					if err := msgHandler(ctx, inbound); err != nil {
 						// Log error but continue
+					}
+					// auto_read_messages: mark the message read on arrival (default off).
+					if a.config != nil && a.config.AutoReadMessages && v.ExternalID != "" {
+						_ = client.MarkAsRead(ctx, []string{v.ExternalID}, v.ChatJID, v.SenderJID)
 					}
 				}
 
@@ -771,6 +813,15 @@ func (a *Adapter) eventLoop() {
 				a.mu.Lock()
 				a.SetConnected(connected)
 				a.mu.Unlock()
+
+				// always_online: mark the session available on connect so the
+				// account shows online (default off).
+				if connected && a.config != nil && a.config.AlwaysOnline {
+					if err := client.SendPresence(ctx, true); err != nil {
+						// best-effort; presence isn't critical
+						_ = err
+					}
+				}
 
 				// Notify connection handler
 				if connHandler != nil {
@@ -793,6 +844,33 @@ func (a *Adapter) eventLoop() {
 			}
 		}
 	}
+}
+
+// shouldForwardInbound decides whether an inbound message is handed to the app.
+// Skips our own echoes and, per the channel config, group messages
+// (ignore_groups) and status/story broadcasts (ignore_status). All flags default
+// off, so by default every inbound flows.
+func (a *Adapter) shouldForwardInbound(v *IncomingMessage) bool {
+	if v.IsFromMe {
+		return false
+	}
+	if a.config != nil {
+		if v.IsGroup && a.config.IgnoreGroups {
+			return false
+		}
+		if a.config.IgnoreStatus && v.ChatJID.User == "status" && v.ChatJID.Server == types.BroadcastServer {
+			return false
+		}
+	}
+	return true
+}
+
+// atoiOr parses s as an int, falling back to def on any error/empty.
+func atoiOr(s string, def int) int {
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return def
 }
 
 // convertToInboundMessage converts an IncomingMessage to plugin.InboundMessage
@@ -818,6 +896,13 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 			"is_group":   fmt.Sprintf("%t", msg.IsGroup),
 			"msg_type":   msg.MessageType,
 		},
+	}
+
+	// Menções (@fulano): sinal de que alguém foi cobrado diretamente — em grupo, é
+	// o que fura o debounce do consumidor. JIDs unidos por vírgula; ausente em
+	// mensagens sem menção, para não poluir o 1:1.
+	if len(msg.Mentions) > 0 {
+		inbound.Metadata["mentions"] = strings.Join(msg.Mentions, ",")
 	}
 
 	if msg.SenderPN.User != "" {

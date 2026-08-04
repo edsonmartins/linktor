@@ -118,6 +118,19 @@ const whatsappConfigSchema = z
     webhook_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
     webhook_secret: z.string().optional(),
     webhook_events: z.array(z.string()).optional(),
+    // Receive group messages (maps to the inverse of config.ignore_groups).
+    receive_groups: z.boolean(),
+    // Advanced channel behavior (maps to channel.config.* strings).
+    ignore_status: z.boolean(),
+    always_online: z.boolean(),
+    auto_read_messages: z.boolean(),
+    reject_call: z.boolean(),
+    reject_call_msg: z.string().optional(),
+    qrcode_max_count: z.coerce.number().int().min(0).optional(),
+    proxy_host: z.string().optional(),
+    proxy_port: z.coerce.number().int().min(0).max(65535).optional(),
+    proxy_user: z.string().optional(),
+    proxy_pass: z.string().optional(),
     // Environment (INV-016): selectable at creation only; immutable afterwards.
     environment: z.enum(['production', 'sandbox']),
     credential_is_sandbox: z.boolean(),
@@ -208,6 +221,17 @@ export function WhatsAppUnofficialConfig({
       webhook_url: channel?.webhook_url || '',
       webhook_secret: '',
       webhook_events: parseWebhookEvents(channel?.config?.webhook_events),
+      receive_groups: (channel?.config?.ignore_groups as string) !== 'true',
+      ignore_status: (channel?.config?.ignore_status as string) === 'true',
+      always_online: (channel?.config?.always_online as string) === 'true',
+      auto_read_messages: (channel?.config?.auto_read_messages as string) === 'true',
+      reject_call: (channel?.config?.reject_call as string) === 'true',
+      reject_call_msg: (channel?.config?.reject_call_msg as string) || '',
+      qrcode_max_count: Number(channel?.config?.qrcode_max_count ?? 0) || 0,
+      proxy_host: (channel?.config?.proxy_host as string) || '',
+      proxy_port: Number(channel?.config?.proxy_port ?? 0) || 0,
+      proxy_user: (channel?.config?.proxy_user as string) || '',
+      proxy_pass: (channel?.config?.proxy_pass as string) || '',
       environment: channel?.environment === 'sandbox' ? 'sandbox' : 'production',
       credential_is_sandbox: channel?.environment === 'sandbox',
     },
@@ -278,6 +302,18 @@ export function WhatsAppUnofficialConfig({
           device_name: data.device_name,
           // Comma-separated list; empty string means "deliver all events".
           webhook_events: (data.webhook_events || []).join(','),
+          // Stored as string; adapter reads config["ignore_groups"] == "true".
+          ignore_groups: (!data.receive_groups).toString(),
+          ignore_status: data.ignore_status.toString(),
+          always_online: data.always_online.toString(),
+          auto_read_messages: data.auto_read_messages.toString(),
+          reject_call: data.reject_call.toString(),
+          reject_call_msg: data.reject_call_msg || '',
+          qrcode_max_count: String(data.qrcode_max_count ?? 0),
+          proxy_host: data.proxy_host || '',
+          proxy_port: String(data.proxy_port ?? 0),
+          proxy_user: data.proxy_user || '',
+          proxy_pass: data.proxy_pass || '',
         },
         credentials: {
           ...(data.webhook_secret ? { webhook_secret: data.webhook_secret } : {}),
@@ -582,6 +618,150 @@ export function WhatsAppUnofficialConfig({
                 </FormItem>
               )}
             />
+
+            {/* Receive group messages — off drops inbound group messages at the adapter. */}
+            <FormField
+              control={form.control}
+              name="receive_groups"
+              render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-center gap-2">
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        aria-label={t('receiveGroups')}
+                      />
+                    </FormControl>
+                    <FormLabel className="!mt-0">{t('receiveGroups')}</FormLabel>
+                  </div>
+                  <FormDescription>{t('receiveGroupsDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Advanced channel behavior (maps to channel.config.*). */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">{t('advancedSection')}</CardTitle>
+                <CardDescription>{t('advancedDesc')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {([
+                  ['always_online', 'alwaysOnline'],
+                  ['auto_read_messages', 'autoRead'],
+                  ['ignore_status', 'ignoreStatus'],
+                  ['reject_call', 'rejectCall'],
+                ] as const).map(([fieldName, key]) => (
+                  <FormField
+                    key={fieldName}
+                    control={form.control}
+                    name={fieldName}
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-center gap-2">
+                          <FormControl>
+                            <Switch
+                              checked={field.value as boolean}
+                              onCheckedChange={field.onChange}
+                              aria-label={t(key)}
+                            />
+                          </FormControl>
+                          <FormLabel className="!mt-0">{t(key)}</FormLabel>
+                        </div>
+                        <FormDescription>{t(`${key}Desc`)}</FormDescription>
+                      </FormItem>
+                    )}
+                  />
+                ))}
+
+                <FormField
+                  control={form.control}
+                  name="reject_call_msg"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('rejectCallMsg')}</FormLabel>
+                      <FormControl>
+                        <Input placeholder={t('rejectCallMsgPlaceholder')} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="qrcode_max_count"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('qrMaxCount')}</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={0} {...field} />
+                      </FormControl>
+                      <FormDescription>{t('qrMaxCountDesc')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="proxy_host"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('proxyHost')}</FormLabel>
+                        <FormControl>
+                          <Input placeholder="10.0.0.1" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="proxy_port"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('proxyPort')}</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={0} max={65535} placeholder="1080" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="proxy_user"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('proxyUser')}</FormLabel>
+                        <FormControl>
+                          <Input autoComplete="off" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="proxy_pass"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('proxyPass')}</FormLabel>
+                        <FormControl>
+                          <Input type="password" autoComplete="new-password" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormDescription>{t('proxyDesc')}</FormDescription>
+              </CardContent>
+            </Card>
 
             <Alert>
               <Smartphone className="h-4 w-4" />

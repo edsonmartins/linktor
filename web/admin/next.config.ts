@@ -23,6 +23,7 @@ const apiOrigin =
 const nextConfig: NextConfig = {
   output: 'standalone',
   reactStrictMode: true,
+  reactCompiler: true,
   allowedDevOrigins: ['http://localhost:3001'],
   // API proxy para o backend Go
   async rewrites() {

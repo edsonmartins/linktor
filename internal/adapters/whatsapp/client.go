@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -104,6 +105,14 @@ func (c *Client) Connect(ctx context.Context) error {
 	client.EnableAutoReconnect = c.config.AutoReconnect
 	client.AutoTrustIdentity = c.config.AutoTrustIdentity
 
+	// proxy_*: route the connection through a SOCKS5 proxy when configured. Set
+	// before any connect so it applies to the whole session.
+	if addr := c.proxyAddress(); addr != "" {
+		if err := client.SetProxyAddress(addr); err != nil {
+			c.logger.Warnf("invalid proxy address: %v", err)
+		}
+	}
+
 	c.client = client
 
 	// Register event handler
@@ -162,9 +171,20 @@ func (c *Client) Login(ctx context.Context) (<-chan QRCodeEvent, error) {
 	go func() {
 		defer close(c.qrCh)
 
+		qrCount := 0
 		for evt := range qrChan {
 			switch evt.Event {
 			case whatsmeow.QRChannelEventCode:
+				// qrcode_max_count (0 = unlimited): give up after N regenerations
+				// so a never-scanned login doesn't churn QR codes forever.
+				qrCount++
+				if max := c.config.QRCodeMaxCount; max > 0 && qrCount > max {
+					c.logger.Warnf("qrcode_max_count (%d) reached; giving up QR login", max)
+					c.mu.Lock()
+					c.state = DeviceStateDisconnected
+					c.mu.Unlock()
+					return
+				}
 				c.qrCh <- QRCodeEvent{
 					Code:      evt.Code,
 					ExpiresAt: time.Now().Add(evt.Timeout),
@@ -205,6 +225,23 @@ func (c *Client) Login(ctx context.Context) (<-chan QRCodeEvent, error) {
 	}
 
 	return c.qrCh, nil
+}
+
+// proxyAddress builds the SOCKS5 proxy URL from the channel config, or "" when
+// no proxy is configured. Credentials are URL-escaped.
+func (c *Client) proxyAddress() string {
+	if c.config == nil || c.config.ProxyHost == "" || c.config.ProxyPort == 0 {
+		return ""
+	}
+	auth := ""
+	if c.config.ProxyUser != "" {
+		auth = url.QueryEscape(c.config.ProxyUser)
+		if c.config.ProxyPass != "" {
+			auth += ":" + url.QueryEscape(c.config.ProxyPass)
+		}
+		auth += "@"
+	}
+	return fmt.Sprintf("socks5://%s%s:%d", auth, c.config.ProxyHost, c.config.ProxyPort)
 }
 
 // SubmitPasskeyResponse forwards a WebAuthn assertion (produced by the account

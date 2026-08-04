@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
 )
 
 // AdapterTestSuite tests the WhatsApp adapter
@@ -267,6 +268,58 @@ func (suite *AdapterTestSuite) TestConvertToInboundMessage_GroupMessage() {
 
 	assert.NotNil(suite.T(), result)
 	assert.Equal(suite.T(), "true", result.Metadata["is_group"])
+}
+
+func (suite *AdapterTestSuite) TestShouldForwardInbound_IgnoreGroups() {
+	on := &Adapter{config: &Config{IgnoreGroups: true}}
+	off := &Adapter{config: &Config{IgnoreGroups: false}}
+	group := &IncomingMessage{IsGroup: true}
+	direct := &IncomingMessage{IsGroup: false}
+	mine := &IncomingMessage{IsGroup: false, IsFromMe: true}
+
+	assert.False(suite.T(), on.shouldForwardInbound(group), "ignore_groups → grupo não é encaminhado")
+	assert.True(suite.T(), on.shouldForwardInbound(direct), "1:1 flui mesmo com ignore_groups")
+	assert.True(suite.T(), off.shouldForwardInbound(group), "sem ignore_groups, grupo flui (padrão)")
+	assert.False(suite.T(), off.shouldForwardInbound(mine), "eco próprio nunca é encaminhado")
+}
+
+func (suite *AdapterTestSuite) TestShouldForwardInbound_IgnoreStatus() {
+	on := &Adapter{config: &Config{IgnoreStatus: true}}
+	off := &Adapter{config: &Config{IgnoreStatus: false}}
+	status := &IncomingMessage{ChatJID: types.NewJID("status", types.BroadcastServer)}
+	direct := &IncomingMessage{ChatJID: types.NewJID("5511999999999", types.DefaultUserServer)}
+
+	assert.False(suite.T(), on.shouldForwardInbound(status), "ignore_status → story/status não é encaminhado")
+	assert.True(suite.T(), on.shouldForwardInbound(direct), "1:1 flui com ignore_status")
+	assert.True(suite.T(), off.shouldForwardInbound(status), "sem ignore_status, status flui (padrão)")
+}
+
+func (suite *AdapterTestSuite) TestAtoiOr() {
+	assert.Equal(suite.T(), 5, atoiOr("5", 0))
+	assert.Equal(suite.T(), 0, atoiOr("", 0))
+	assert.Equal(suite.T(), 3, atoiOr("nope", 3))
+}
+
+func (suite *AdapterTestSuite) TestConvertToInboundMessage_Mentions() {
+	msg := suite.fixtures.SampleIncomingMessage("msg-men", "5511999999999", "@gestor decide pf", true)
+	msg.Mentions = []string{"5511777777777@s.whatsapp.net", "5512999999999@s.whatsapp.net"}
+
+	result := convertToInboundMessage(msg)
+
+	assert.NotNil(suite.T(), result)
+	assert.Equal(suite.T(),
+		"5511777777777@s.whatsapp.net,5512999999999@s.whatsapp.net",
+		result.Metadata["mentions"])
+}
+
+func (suite *AdapterTestSuite) TestConvertToInboundMessage_NoMentions() {
+	msg := suite.fixtures.SampleIncomingMessage("msg-nomen", "5511999999999", "bom dia", false)
+
+	result := convertToInboundMessage(msg)
+
+	assert.NotNil(suite.T(), result)
+	_, has := result.Metadata["mentions"]
+	assert.False(suite.T(), has, "message without mention must not set the mentions metadata")
 }
 
 func (suite *AdapterTestSuite) TestConvertToInboundMessage_ImageMessage() {

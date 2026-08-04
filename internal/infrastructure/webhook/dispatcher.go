@@ -163,12 +163,14 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 			SenderID:    p.str("sender_id"),
 			SenderType:  string(entity.SenderTypeContact),
 			Metadata:    inboundMetadata(p),
+			Mentions:    inboundMentions(p),
 			Reaction:    d.reactionOf(ctx, p),
 		},
 		ConversationID: p.str("conversation_id"),
 		ContactID:      p.str("contact_id"),
 		ChannelID:      channelID,
 		ChannelType:    channelType(channel, p),
+		Group:          inboundGroup(p),
 	}
 
 	return d.deliver(ctx, channel, TypeMessageReceived, event.TenantID, dedupKey(p.str("message_id"), "received"), data)
@@ -378,6 +380,42 @@ func buildContent(p eventPayload) MessageContent {
 		content.Media = media
 	}
 	return content
+}
+
+// inboundGroup builds the group block when the message came from a group
+// conversation. Returns nil for 1:1, so the field stays absent in the envelope.
+// The individual who spoke ships as Message.SenderID (unchanged); Group.ID is the
+// stable group key (chat_jid) the consumer threads by.
+func inboundGroup(p eventPayload) *GroupPayload {
+	if p.str("is_group") != "true" {
+		return nil
+	}
+	id := p.str("chat_jid")
+	if id == "" {
+		return nil
+	}
+	return &GroupPayload{ID: id}
+}
+
+// inboundMentions splits the comma-joined mention JIDs into a slice. Returns nil
+// when there is no mention, so the field stays absent in the envelope (1:1 and
+// group messages without a mention are unaffected).
+func inboundMentions(p eventPayload) []string {
+	raw := p.str("mentions")
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, m := range parts {
+		if m = strings.TrimSpace(m); m != "" {
+			out = append(out, m)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // inboundMetadata surfaces the provider sender name (and other passthrough
