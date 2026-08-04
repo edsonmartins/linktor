@@ -12,7 +12,7 @@ const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password']
  * API's Authorization check — this is a UX/defense-in-depth layer only.
  * Locale detection is handled in i18n/request.ts.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   if (pathname === '/' || PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
