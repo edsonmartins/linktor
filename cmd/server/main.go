@@ -594,6 +594,9 @@ func main() {
 	// Synchronous sandbox recipient check (UX): the API rejects immediately;
 	// the authoritative guard remains in the outbound delivery funnel.
 	messageService.SetSandboxAllowlist(sandboxAllowlistRepo)
+	// Typing inbound (VendaX Direto, RFC-009): resolve phone→contact→conversation e mostra o
+	// "digitando" do cliente na UI do agente. Opcional (no-op sem estas deps).
+	webhookHandler.SetTypingDeps(contactRepo, conversationRepo, messageService)
 	messageHandler := handlers.NewMessageHandler(messageService)
 	attachmentHandler := handlers.NewAttachmentHandler(mediaStore)
 	mediaHandler := handlers.NewMediaHandler(mediaStore)
