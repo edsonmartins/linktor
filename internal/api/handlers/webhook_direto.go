@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -20,6 +21,16 @@ type diretoWebhookPayload struct {
 	InstanceID string                 `json:"instanceId"`
 	Channel    string                 `json:"channel"`
 	Messages   []diretoWebhookMessage `json:"messages"`
+	// Eventos EFÊMEROS (typing/presença) — RFC-009. Não são mensagens.
+	Events []diretoWebhookEvent `json:"events,omitempty"`
+}
+
+// diretoWebhookEvent é um sinal efêmero: type="typing"|"presence"; from=telefone E.164 do cliente;
+// state="on" (typing) | "active"|"away" (presença).
+type diretoWebhookEvent struct {
+	Type  string `json:"type"`
+	From  string `json:"from"`
+	State string `json:"state"`
 }
 
 type diretoWebhookMessage struct {
@@ -80,7 +91,34 @@ func (h *WebhookHandler) DiretoWebhook(c *gin.Context) {
 		}
 	}
 
+	// Sinais efêmeros (typing/presença) — RFC-009. Best-effort: não afetam o status da resposta.
+	for _, ev := range payload.Events {
+		h.processDiretoEvent(c.Request.Context(), channel, ev)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// processDiretoEvent mostra o "digitando" do cliente na UI do agente. Resolve telefone→contato→
+// conversa aberta e dispara o typing indicator. No-op se as deps de typing não estiverem ligadas
+// (SetTypingDeps) ou não houver contato/conversa. Presença (active/away) é recebida mas ainda não
+// exibida (follow-up) — só typing por ora.
+func (h *WebhookHandler) processDiretoEvent(ctx context.Context, channel *entity.Channel, ev diretoWebhookEvent) {
+	if h.typingSvc == nil || h.contactRepo == nil || h.conversationRepo == nil {
+		return
+	}
+	if ev.Type != "typing" || ev.From == "" {
+		return
+	}
+	contact, err := h.contactRepo.FindByPhone(ctx, channel.TenantID, ev.From)
+	if err != nil || contact == nil {
+		return // cliente desconhecido: nada a mostrar
+	}
+	conv, err := h.conversationRepo.FindOpenByContactAndChannel(ctx, contact.ID, channel.ID)
+	if err != nil || conv == nil {
+		return // sem conversa aberta: nada a mostrar
+	}
+	_ = h.typingSvc.SendTypingIndicatorForTenant(ctx, channel.TenantID, conv.ID, ev.State == "on")
 }
 
 func (h *WebhookHandler) processDiretoMessage(c *gin.Context, channelID, tenantID string, msg diretoWebhookMessage) error {

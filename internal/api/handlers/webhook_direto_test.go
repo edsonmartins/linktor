@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/msgfy/linktor/internal/domain/entity"
 )
 
 // Teste de CONTRATO do conector Direto (RFC-009): trava o formato + HMAC contra o MESMO vetor
@@ -50,4 +53,28 @@ func TestDiretoWebhookParsesGoldenPayload(t *testing.T) {
 	if m.Text == nil || m.Text.Body != "oi de volta" {
 		t.Errorf("text body: %+v", m.Text)
 	}
+}
+
+// Contrato dos EVENTOS efêmeros (RFC-009): o Linktor DEVE parsear o payload de typing/presença que
+// o Direto envia (ChannelSignalDispatcher.buildPayload → {instanceId,channel,events:[{type,from,state}]}).
+func TestDiretoWebhookParsesEvents(t *testing.T) {
+	const body = `{"instanceId":"inst-rq-01","channel":"direto","events":[{"type":"typing","from":"+5511999990001","state":"on"}]}`
+	var p diretoWebhookPayload
+	if err := json.Unmarshal([]byte(body), &p); err != nil {
+		t.Fatalf("não parseou o payload de eventos: %v", err)
+	}
+	if len(p.Events) != 1 {
+		t.Fatalf("events: got %d", len(p.Events))
+	}
+	e := p.Events[0]
+	if e.Type != "typing" || e.From != "+5511999990001" || e.State != "on" {
+		t.Errorf("event: %+v", e)
+	}
+}
+
+// Sem as deps de typing (SetTypingDeps não chamado), processDiretoEvent é no-op seguro (não panica).
+func TestProcessDiretoEventNoopWithoutDeps(t *testing.T) {
+	h := &WebhookHandler{}
+	h.processDiretoEvent(context.Background(), &entity.Channel{TenantID: "t"},
+		diretoWebhookEvent{Type: "typing", From: "+5511999990001", State: "on"})
 }
