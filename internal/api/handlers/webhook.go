@@ -45,6 +45,22 @@ type WebhookHandler struct {
 	// (e.g. Slack url_private) so external consumers can fetch it. May be nil,
 	// in which case the original provider URL is passed through unchanged.
 	mediaStore storage.Client
+
+	// Optional deps to surface INBOUND typing/presence signals (e.g. the VendaX
+	// Direto channel, RFC-009 events) on the agent UI. Set via SetTypingDeps;
+	// when nil, typing events are ignored (messages still flow normally).
+	contactRepo      repository.ContactRepository
+	conversationRepo repository.ConversationRepository
+	typingSvc        *appservice.MessageService
+}
+
+// SetTypingDeps wires the repos/service needed to resolve an inbound typing
+// signal (phone → contact → open conversation) and broadcast it to the agent UI.
+// Optional: without it, DiretoWebhook simply ignores typing events.
+func (h *WebhookHandler) SetTypingDeps(contactRepo repository.ContactRepository, conversationRepo repository.ConversationRepository, typingSvc *appservice.MessageService) {
+	h.contactRepo = contactRepo
+	h.conversationRepo = conversationRepo
+	h.typingSvc = typingSvc
 }
 
 // NewWebhookHandler creates a new webhook handler. mediaStore may be nil to
