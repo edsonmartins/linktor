@@ -4,10 +4,17 @@
  * NEXT_PUBLIC_* values are inlined by Next at build time, which pins a published
  * image to a single deployment: CI builds with the SaaS URLs, so the same image
  * cannot serve an on-prem install that talks to another host. The root layout
- * therefore re-publishes these values at request time as
- * `window.__LINKTOR_CONFIG__`, read from env vars that are *not* inlined
- * (LINKTOR_ADMIN_*). Build-time values stay as the fallback, so a deployment
- * that sets none of them behaves exactly as before.
+ * therefore re-publishes these values at request time, read from env vars that
+ * are *not* inlined (LINKTOR_ADMIN_*). Build-time values stay as the fallback,
+ * so a deployment that sets none of them behaves exactly as before.
+ *
+ * They travel as a data attribute on <html> rather than as an inline script.
+ * Next emits its bundles as `async` scripts in the head, and an async script may
+ * execute before the parser reaches anything in the body — so a script-based
+ * handoff would race with module evaluation, and the loser would silently read
+ * the build-time value. An attribute on the document element is parsed before
+ * any script in the document can run, which removes the ordering question
+ * instead of betting on it.
  *
  * Server and browser resolve to the same string — the layout renders per request
  * (next-intl reads cookies/headers) — so SSR and hydration agree.
@@ -26,14 +33,11 @@ export type RuntimeConfig = {
   webhookBaseUrl: string
 }
 
-declare global {
-  interface Window {
-    __LINKTOR_CONFIG__?: Partial<RuntimeConfig>
-  }
-}
-
-/** Name of the global the root layout writes and the browser reads. */
-export const RUNTIME_CONFIG_GLOBAL = '__LINKTOR_CONFIG__'
+/**
+ * Attribute on <html> carrying the serialised config. `data-linktor-config`
+ * reaches the DOM as `dataset.linktorConfig`.
+ */
+export const RUNTIME_CONFIG_ATTRIBUTE = 'data-linktor-config'
 
 const BUILD_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1'
 const BUILD_WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8081/api/v1/ws'
@@ -68,13 +72,28 @@ export function resolveRuntimeConfig(): RuntimeConfig {
   }
 }
 
+// Parsed once: the attribute is fixed for the life of the document.
+let published: Partial<RuntimeConfig> | null = null
+
+function fromDocument(): Partial<RuntimeConfig> {
+  if (published) return published
+  try {
+    published = JSON.parse(
+      document.documentElement.getAttribute(RUNTIME_CONFIG_ATTRIBUTE) || '{}'
+    ) as Partial<RuntimeConfig>
+  } catch {
+    published = {}
+  }
+  return published
+}
+
 function configured(key: keyof RuntimeConfig, buildFallback: string): string {
   if (typeof window === 'undefined') {
     return resolveRuntimeConfig()[key]
   }
-  // Absent only if the layout script failed to run; the build-time value then
-  // keeps the SaaS deployment working.
-  return window[RUNTIME_CONFIG_GLOBAL]?.[key] || buildFallback
+  // Missing only if the page was not rendered by this layout; the build-time
+  // value then keeps the SaaS deployment working.
+  return fromDocument()[key] || buildFallback
 }
 
 /** Resolves an origin-relative value ("/api/v1") against the current page. */
