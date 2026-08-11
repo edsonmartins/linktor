@@ -5,8 +5,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { tokenStorage } from '@/lib/api'
-
-const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8081/api/v1/ws'
+import { getWsBaseUrl } from '@/lib/runtime-config'
 
 // WebSocket event types (match backend)
 export const WSEventTypes = {
@@ -162,7 +161,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     setConnectionState('connecting')
     // The HttpOnly access_token cookie is sent automatically with the WS
     // handshake (same-site); no token in the URL.
-    const url = WS_BASE_URL
+    const url = getWsBaseUrl()
 
     try {
       wsRef.current = new WebSocket(url)

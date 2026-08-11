@@ -3,12 +3,7 @@
  * Centralized HTTP client with interceptors and automatic token refresh
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1'
-const WEBHOOK_BASE_URL = (
-  process.env.NEXT_PUBLIC_WEBHOOK_BASE_URL ||
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/v1\/?$/, '') ||
-  'http://localhost:8081'
-).replace(/\/$/, '')
+import { getApiBaseUrl, WEBHOOK_BASE_URL } from './runtime-config'
 
 // Flag to prevent multiple simultaneous refresh attempts
 let isRefreshing = false
@@ -121,7 +116,7 @@ async function refreshAccessToken(): Promise<boolean> {
   isRefreshing = true
   refreshPromise = (async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -161,7 +156,7 @@ async function request<T>(endpoint: string, config: RequestConfig = {}, isRetry 
   }
 
   // Build URL with params
-  let url = `${API_BASE_URL}${endpoint}`
+  let url = `${getApiBaseUrl()}${endpoint}`
   if (finalConfig.params) {
     const searchParams = new URLSearchParams(finalConfig.params)
     url += `?${searchParams.toString()}`
@@ -231,7 +226,7 @@ async function requestEnvelope<T>(endpoint: string, config: RequestConfig = {}, 
  * unwrapping behaviour of `request`.
  */
 async function uploadFile<T>(endpoint: string, formData: FormData, isRetry = false): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
     method: 'POST',
     credentials: 'include',
     body: formData,
@@ -286,5 +281,5 @@ export const api = {
     requestEnvelope<T>(endpoint, { method: 'GET', params }),
 }
 
-export { tokenStorage, ApiError, API_BASE_URL, WEBHOOK_BASE_URL }
+export { tokenStorage, ApiError, getApiBaseUrl, WEBHOOK_BASE_URL }
 export type { ApiEnvelope, MetaResponse, RequestConfig, RequestInterceptor, ResponseInterceptor }
