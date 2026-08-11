@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -15,7 +16,7 @@ func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
 		if origin != "" {
-			if !isAllowedOrigin(origin, allowedOrigins) {
+			if !IsSameOrigin(origin, c.Request) && !isAllowedOrigin(origin, allowedOrigins) {
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 					"code":    "FORBIDDEN",
 					"message": "origin not allowed",
@@ -39,6 +40,30 @@ func CORS() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// IsSameOrigin reports whether the Origin header points at the very host the
+// request was addressed to.
+//
+// Browsers send Origin on same-origin non-GET requests too, so without this a
+// single-origin deployment — admin and API behind one reverse proxy, as in the
+// on-prem install — would 403 its own front-end unless every hostname or IP a
+// user might type were listed in LINKTOR_CORS_ALLOWED_ORIGINS.
+//
+// Only hosts are compared, never schemes: behind a TLS-terminating proxy the
+// request reaching us is plain HTTP while the page origin is https. That grants
+// nothing to a third-party page — an attacker cannot make the browser send our
+// Host alongside their Origin. Subdomain deployments (app.x calling api.x) are
+// unaffected: the hosts differ, so the allowlist still decides.
+func IsSameOrigin(origin string, r *http.Request) bool {
+	if origin == "" || r == nil || r.Host == "" {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Host == r.Host
 }
 
 func parseAllowedOrigins(value string) map[string]struct{} {
