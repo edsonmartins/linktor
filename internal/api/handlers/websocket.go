@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
+	"github.com/msgfy/linktor/internal/api/middleware"
 )
 
 const (
@@ -322,6 +323,13 @@ func (h *WebSocketHandler) HandleConnection(c *gin.Context) {
 func isWebSocketOriginAllowed(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
+		return true
+	}
+
+	// A handshake from the same host we were addressed at is the admin talking
+	// to its own API (single-origin deploys, e.g. on-prem behind one reverse
+	// proxy). See middleware.IsSameOrigin for why this is safe.
+	if middleware.IsSameOrigin(origin, r) {
 		return true
 	}
 
