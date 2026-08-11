@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { Providers } from '@/components/providers'
-import { RUNTIME_CONFIG_GLOBAL, resolveRuntimeConfig } from '@/lib/runtime-config'
+import { RUNTIME_CONFIG_ATTRIBUTE, resolveRuntimeConfig } from '@/lib/runtime-config'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -22,18 +22,16 @@ export default async function RootLayout({
   const runtimeConfig = resolveRuntimeConfig()
 
   return (
-    <html lang={locale} className="dark">
+    // The deployment's URLs ride on the document element so one published image
+    // can serve any host. An attribute — not an inline script — because Next
+    // emits its bundles as async scripts in the head, which may run before the
+    // parser reaches the body. See lib/runtime-config.ts.
+    <html
+      lang={locale}
+      className="dark"
+      {...{ [RUNTIME_CONFIG_ATTRIBUTE]: JSON.stringify(runtimeConfig) }}
+    >
       <body className="min-h-screen bg-background font-mono antialiased">
-        {/* Publishes the deployment's API/WS URLs before any app module runs,
-            so one published image can serve any host. Next's bundles load
-            after this inline script. See lib/runtime-config.ts. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `window.${RUNTIME_CONFIG_GLOBAL}=${JSON.stringify(
-              runtimeConfig
-            ).replace(/</g, '\\u003c')};`,
-          }}
-        />
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Providers>{children}</Providers>
         </NextIntlClientProvider>
