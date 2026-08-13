@@ -13,6 +13,9 @@ export * from './auth';
 // Conversation and Message types
 export * from './conversation';
 
+// Direct send types
+export * from './message';
+
 // Contact types
 export * from './contact';
 

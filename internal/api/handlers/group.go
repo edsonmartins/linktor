@@ -74,6 +74,12 @@ func (h *GroupHandler) SendMessage(c *gin.Context) {
 		RespondValidationError(c, "invalid request body", map[string]string{"details": err.Error()})
 		return
 	}
+	// Same metadata contract as the other send routes: internal fields are the
+	// platform's to write, not the caller's.
+	if offending := validateClientMetadata(req.Metadata); len(offending) > 0 {
+		respondReservedMetadata(c, offending)
+		return
+	}
 	// Validate the channel belongs to the tenant and get its type (routes the subject).
 	ch, err := h.channels.GetByTenantAndID(c.Request.Context(), tenantID, channelID)
 	if err != nil {

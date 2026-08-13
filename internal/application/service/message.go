@@ -14,14 +14,25 @@ import (
 
 // SendMessageInput represents input for sending a message
 type SendMessageInput struct {
-	TenantID       string
+	TenantID string
+	// MessageID pre-allocates the id of the message row. Optional: empty means
+	// Send mints one. The direct-send path sets it because it reserves the
+	// idempotency key against that id *before* the message exists.
+	MessageID      string
 	ConversationID string
-	SenderID       string
-	SenderType     string
-	ContentType    string
-	Content        string
-	Metadata       map[string]string
-	Attachments    []MessageAttachmentInput
+	// RecipientID pins the destination address instead of re-deriving it from the
+	// contact. Optional: empty falls back to findRecipientForChannel. The direct
+	// send sets it because the caller named an explicit `to`, and a contact can
+	// hold several identities of the same channel type (the identity query has no
+	// ORDER BY) — re-deriving could deliver to a different address than the one
+	// the caller asked for.
+	RecipientID string
+	SenderID    string
+	SenderType  string
+	ContentType string
+	Content     string
+	Metadata    map[string]string
+	Attachments []MessageAttachmentInput
 }
 
 // MessageAttachmentInput describes an already-uploaded attachment to attach to
@@ -44,6 +55,9 @@ type MessageService struct {
 	// sandboxAllowlist enables the synchronous sandbox recipient check in Send.
 	// Optional (nil skips the fail-fast; the outbound guard still blocks).
 	sandboxAllowlist repository.SandboxAllowlistRepository
+	// idempotency backs metadata.idempotency_key on the direct-send route.
+	// Optional (nil persists the key without collapsing repeats).
+	idempotency repository.MessageIdempotencyRepository
 }
 
 // SetSandboxAllowlist wires the allowlist used for the synchronous sandbox
@@ -57,12 +71,11 @@ func (s *MessageService) SetSandboxAllowlist(repo repository.SandboxAllowlistRep
 // outbound guard so the API caller gets an immediate, explicit error. It fails
 // closed on any uncertainty (no checker wired, non-phone recipient, lookup
 // error) — never by letting the send through.
-func (s *MessageService) checkSandboxRecipient(ctx context.Context, channel *entity.Channel, contact *entity.Contact) error {
+func (s *MessageService) checkSandboxRecipient(ctx context.Context, channel *entity.Channel, recipientID string) error {
 	if s.sandboxAllowlist == nil {
 		return errors.New(errors.ErrCodeInternal,
 			"sandbox channel has no allowlist checker configured; refusing to send")
 	}
-	recipientID := findRecipientForChannel(contact, string(channel.Type))
 	recipient, ok := entity.NormalizeE164(recipientID)
 	if !ok {
 		return errors.Validation("sandbox channel: recipient " + entity.MaskRecipient(recipientID) + " is not a valid E.164 number")
@@ -176,12 +189,20 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 		contact.Identities = identities
 	}
 
+	// The address the message actually goes to: what the caller pinned, or the
+	// contact's identity for this channel. Resolved before the sandbox check so
+	// the check and the delivery can never disagree about the destination.
+	recipientID := input.RecipientID
+	if recipientID == "" {
+		recipientID = findRecipientForChannel(contact, string(channel.Type))
+	}
+
 	// Sandbox fail-fast (UX only): give the API caller a synchronous error
 	// instead of an async "failed" status. The authoritative guard lives in the
 	// outbound delivery funnel (outbound.sandboxGuard) and still runs for every
 	// path — this check must never be the only barrier.
 	if channel.IsSandbox() {
-		if err := s.checkSandboxRecipient(ctx, channel, contact); err != nil {
+		if err := s.checkSandboxRecipient(ctx, channel, recipientID); err != nil {
 			return nil, err
 		}
 	}
@@ -196,9 +217,14 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 		contentType = string(entity.ContentTypeText)
 	}
 
+	messageID := input.MessageID
+	if messageID == "" {
+		messageID = uuid.New().String()
+	}
+
 	now := time.Now()
 	message := &entity.Message{
-		ID:             uuid.New().String(),
+		ID:             messageID,
 		ConversationID: input.ConversationID,
 		SenderType:     entity.SenderType(input.SenderType),
 		SenderID:       input.SenderID,
@@ -240,7 +266,6 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 
 	// Publish to NATS for channel delivery (if producer is available)
 	if s.producer != nil {
-		recipientID := findRecipientForChannel(contact, string(channel.Type))
 		outbound := &nats.OutboundMessage{
 			ID:             message.ID,
 			TenantID:       conversation.TenantID,

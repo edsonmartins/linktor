@@ -13,6 +13,7 @@ export * from './types';
 // Resources
 export { AuthResource } from './resources/auth';
 export { ConversationsResource } from './resources/conversations';
+export { MessagesResource } from './resources/messages';
 export { ContactsResource } from './resources/contacts';
 export { ChannelsResource } from './resources/channels';
 export { BotsResource } from './resources/bots';

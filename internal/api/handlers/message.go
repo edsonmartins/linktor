@@ -132,6 +132,13 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 
+	// Same metadata contract as POST /messages/send: the caller's keys are
+	// preserved verbatim, except the internal ones, which it may not set.
+	if offending := validateClientMetadata(req.Metadata); len(offending) > 0 {
+		respondReservedMetadata(c, offending)
+		return
+	}
+
 	attachments := make([]service.MessageAttachmentInput, 0, len(req.Attachments))
 	for _, a := range req.Attachments {
 		attachments = append(attachments, service.MessageAttachmentInput{
@@ -146,7 +153,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	input := &service.SendMessageInput{
 		TenantID:       tenantID,
 		ConversationID: conversationID,
-		SenderID:       userID,
+		SenderID:       persistableSenderID(userID),
 		SenderType:     "user",
 		ContentType:    req.ContentType,
 		Content:        req.Content,

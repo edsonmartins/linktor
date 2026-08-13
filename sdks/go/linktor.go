@@ -72,6 +72,7 @@ type Client struct {
 	// Resources
 	Auth          *AuthResource
 	Conversations *ConversationsResource
+	Messages      *MessagesResource
 	Contacts      *ContactsResource
 	Channels      *ChannelsResource
 	Bots          *BotsResource
@@ -110,6 +111,7 @@ func NewClient(opts ...Option) *Client {
 	// Initialize resources
 	client.Auth = &AuthResource{client: client}
 	client.Conversations = &ConversationsResource{client: client}
+	client.Messages = &MessagesResource{client: client}
 	client.Contacts = &ContactsResource{client: client}
 	client.Channels = &ChannelsResource{client: client}
 	client.Bots = &BotsResource{client: client}
@@ -283,6 +285,31 @@ func (r *AuthResource) GetCurrentUser(ctx context.Context) (*types.User, error) 
 	var result types.User
 	err := r.client.get(ctx, "/auth/me", &result)
 	return &result, err
+}
+
+// MessagesResource handles message sending that is not scoped to a
+// conversation the caller already knows.
+type MessagesResource struct {
+	client *Client
+}
+
+// SendDirect sends a message on a channel to a recipient, letting Linktor
+// resolve (or create) the identity, contact and conversation. Requires the
+// messages:send scope. The call returns as soon as the message is queued.
+func (r *MessagesResource) SendDirect(ctx context.Context, input *types.DirectSendInput) (*types.DirectSendResult, error) {
+	var result types.DirectSendResult
+	err := r.client.post(ctx, "/messages/send", input, &result)
+	return &result, err
+}
+
+// SendDirectText is SendDirect for a plain text message.
+func (r *MessagesResource) SendDirectText(ctx context.Context, channelID, to, text string) (*types.DirectSendResult, error) {
+	return r.SendDirect(ctx, &types.DirectSendInput{
+		ChannelID:   channelID,
+		To:          to,
+		ContentType: "text",
+		Text:        text,
+	})
 }
 
 // ConversationsResource handles conversations

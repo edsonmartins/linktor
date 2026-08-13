@@ -96,8 +96,10 @@ func NewDispatcher(deliveries DeliveryPublisher, channels ChannelLookup) *Dispat
 	}
 }
 
-// WithMessages enables resolving a reaction's target to our own message id. Optional: without it
-// reactions still ship, carrying only the provider's id — the consumer just has more work to do.
+// WithMessages enables the two lookups that need the quoted/target message: translating a
+// reaction's target to our own message id, and reading the correlation metadata off the message an
+// inbound reply quotes. Optional: without it reactions still ship carrying only the provider's id,
+// and `context` is simply never populated.
 func (d *Dispatcher) WithMessages(messages MessageLookup) *Dispatcher {
 	d.messages = messages
 	return d
@@ -171,9 +173,86 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 		ChannelID:      channelID,
 		ChannelType:    channelType(channel, p),
 		Group:          inboundGroup(p),
+		Context:        d.correlationContext(ctx, p),
 	}
 
 	return d.deliver(ctx, channel, TypeMessageReceived, event.TenantID, dedupKey(p.str("message_id"), "received"), data)
+}
+
+// correlationKeys are the metadata keys that *constitute* a correlation: an
+// opaque token the integrator attached to its own outbound message. At least one
+// of them must be present on the quoted message for `context` to exist at all.
+var correlationKeys = []string{"alcada_correlation"}
+
+// contextQualifiers ride along once a correlation is established, but never
+// trigger `context` on their own. "source" is the reason for the split: Linktor
+// itself stamps it on WhatsApp Business App echoes, so a customer replying to a
+// message an operator typed in the WhatsApp app would otherwise produce a
+// `context` block carrying no correlation — which reads to a consumer as
+// "correlated" when nothing was.
+var contextQualifiers = []string{"source"}
+
+// correlationAllowlist is the full set of keys that may cross from a quoted
+// outbound message into the webhook. An allowlist, not a passthrough: outbound
+// metadata also carries routing and provider detail that has no business being
+// echoed back, so a new key must be an explicit decision rather than a side
+// effect of someone setting it on a send.
+func correlationAllowlist() []string {
+	return append(append([]string{}, correlationKeys...), contextQualifiers...)
+}
+
+// correlationContext resolves the metadata an integrator attached to the
+// outbound message that this inbound message quotes.
+//
+// The lookup is (conversation_id, external_id) and never external_id alone: a
+// provider id is not unique — the same provider message is stored once per
+// channel that received it — so an unscoped lookup would happily return a
+// message from another conversation, and therefore potentially another tenant.
+// Scoping to the conversation, which is already resolved from the channel, keeps
+// correlation inside the tenant by construction.
+//
+// Returns nil (field omitted) whenever there is no explicit citation, no quoted
+// message, or the quoted message carries none of the allowlisted keys.
+func (d *Dispatcher) correlationContext(ctx context.Context, p eventPayload) map[string]string {
+	if d.messages == nil {
+		return nil
+	}
+	replyToExternalID := p.str("reply_to_id")
+	conversationID := p.str("conversation_id")
+	if replyToExternalID == "" || conversationID == "" {
+		return nil
+	}
+
+	quoted, err := d.messages.FindByExternalIDInConversation(ctx, replyToExternalID, conversationID)
+	if err != nil {
+		logger.Warn("webhook: falha ao resolver mensagem citada (externalId=" + replyToExternalID +
+			"): " + err.Error())
+		return nil
+	}
+	if quoted == nil || len(quoted.Metadata) == 0 {
+		return nil
+	}
+	if !hasAny(quoted.Metadata, correlationKeys) {
+		return nil // quoted message carries no correlation → not a correlated reply
+	}
+
+	out := make(map[string]string, len(correlationKeys)+len(contextQualifiers))
+	for _, key := range correlationAllowlist() {
+		if v := quoted.Metadata[key]; v != "" {
+			out[key] = v
+		}
+	}
+	return out
+}
+
+// hasAny reports whether metadata carries a non-empty value for any of keys.
+func hasAny(metadata map[string]string, keys []string) bool {
+	for _, key := range keys {
+		if metadata[key] != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // reactionOf builds the reaction block when the inbound event is a reaction rather than a message.
