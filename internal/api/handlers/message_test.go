@@ -549,3 +549,74 @@ func TestMessageSendReaction_MessageOutsideConversation_ReturnsError(t *testing.
 	assert.False(t, resp.Success)
 	require.NotNil(t, resp.Error)
 }
+
+// ---------------------------------------------------------------------------
+// Metadata contract (shared with POST /messages/send)
+// ---------------------------------------------------------------------------
+
+// seedConversationSendDeps seeds the conversation/channel/contact trio the Send
+// flow needs and returns the message repo for assertions.
+func seedConversationSendDeps(convRepo *testutil.MockConversationRepository, channelRepo *testutil.MockChannelRepository, contactRepo *testutil.MockContactRepository) {
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
+	channelRepo.Channels["channel-1"] = &entity.Channel{
+		ID: "channel-1", TenantID: "tenant-1", Type: entity.ChannelTypeWhatsApp,
+	}
+	contactRepo.Contacts["contact-1"] = &entity.Contact{
+		ID: "contact-1", TenantID: "tenant-1", Name: "Test Contact", Phone: "5511999999999",
+	}
+}
+
+func postConversationMessage(handler *MessageHandler, payload SendMessageRequest) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(payload)
+	c, w := newMessageAuthContext()
+	c.Params = gin.Params{{Key: "id", Value: "conv-1"}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/conversations/conv-1/messages", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	handler.Send(c)
+	return w
+}
+
+// The conversation route carries the caller's metadata exactly like the direct
+// send: through the message row and on to the outbound stream.
+func TestMessageSend_PreservesCallerMetadata(t *testing.T) {
+	handler, msgRepo, convRepo, channelRepo, contactRepo, producer := setupMessageHandler()
+	seedConversationSendDeps(convRepo, channelRepo, contactRepo)
+
+	w := postConversationMessage(handler, SendMessageRequest{
+		ContentType: "text",
+		Content:     "Mensagem",
+		Metadata: map[string]string{
+			"source":             "alcada",
+			"idempotency_key":    "chave-logica",
+			"alcada_correlation": "token-opaco",
+		},
+	})
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	require.Len(t, msgRepo.Messages, 1)
+	for _, msg := range msgRepo.Messages {
+		assert.Equal(t, "alcada", msg.Metadata["source"])
+		assert.Equal(t, "chave-logica", msg.Metadata["idempotency_key"])
+		assert.Equal(t, "token-opaco", msg.Metadata["alcada_correlation"])
+	}
+
+	require.Len(t, producer.OutboundMessages, 1)
+	out := producer.OutboundMessages[0]
+	assert.Equal(t, "alcada", out.Metadata["source"])
+	assert.Equal(t, "token-opaco", out.Metadata["alcada_correlation"])
+}
+
+func TestMessageSend_ReservedMetadata_Returns400(t *testing.T) {
+	handler, msgRepo, convRepo, channelRepo, contactRepo, producer := setupMessageHandler()
+	seedConversationSendDeps(convRepo, channelRepo, contactRepo)
+
+	w := postConversationMessage(handler, SendMessageRequest{
+		ContentType: "text",
+		Content:     "Mensagem",
+		Metadata:    map[string]string{"alcada_correlation": "ok", "campaign_id": "campanha-forjada"},
+	})
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Empty(t, msgRepo.Messages)
+	assert.Empty(t, producer.OutboundMessages)
+}

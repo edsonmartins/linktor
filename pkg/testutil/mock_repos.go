@@ -923,3 +923,79 @@ func (m *MockSandboxAllowlistRepository) IsAllowed(ctx context.Context, tenantID
 	}
 	return false, nil
 }
+
+// ============================================================================
+// MockMessageIdempotencyRepository
+// ============================================================================
+
+// MockMessageIdempotencyRepository mirrors the (tenant_id, idempotency_key)
+// primary key of message_idempotency_keys: Reserve is the insert, so the first
+// caller wins and every later one reads the winner's message id back.
+type MockMessageIdempotencyRepository struct {
+	// Reservations maps "tenantID\x00key" to the reserved message id.
+	Reservations map[string]string
+	// ReservedAt records when each reservation was made, so a test can age one
+	// past abandonedReservationAge and exercise the reclaim path.
+	ReservedAt  map[string]time.Time
+	ReturnError error
+}
+
+// NewMockMessageIdempotencyRepository creates an empty idempotency store.
+func NewMockMessageIdempotencyRepository() *MockMessageIdempotencyRepository {
+	return &MockMessageIdempotencyRepository{
+		Reservations: make(map[string]string),
+		ReservedAt:   make(map[string]time.Time),
+	}
+}
+
+func (m *MockMessageIdempotencyRepository) reservationKey(tenantID, key string) string {
+	return tenantID + "\x00" + key
+}
+
+func (m *MockMessageIdempotencyRepository) Reserve(ctx context.Context, tenantID, key, messageID string) (string, error) {
+	if m.ReturnError != nil {
+		return "", m.ReturnError
+	}
+	k := m.reservationKey(tenantID, key)
+	if existing, ok := m.Reservations[k]; ok {
+		return existing, nil
+	}
+	m.Reservations[k] = messageID
+	m.ReservedAt[k] = time.Now()
+	return "", nil
+}
+
+// ReclaimIfStale re-points an abandoned reservation, mirroring the UPDATE ...
+// WHERE created_at < staleBefore of the real repository.
+func (m *MockMessageIdempotencyRepository) ReclaimIfStale(
+	ctx context.Context, tenantID, key, messageID string, staleBefore time.Time,
+) (bool, error) {
+	if m.ReturnError != nil {
+		return false, m.ReturnError
+	}
+	k := m.reservationKey(tenantID, key)
+	if _, ok := m.Reservations[k]; !ok {
+		return false, nil
+	}
+	if !m.ReservedAt[k].Before(staleBefore) {
+		return false, nil
+	}
+	m.Reservations[k] = messageID
+	m.ReservedAt[k] = time.Now()
+	return true, nil
+}
+
+// Release deletes only when messageID still owns the reservation, mirroring the
+// message_id predicate of the real DELETE.
+func (m *MockMessageIdempotencyRepository) Release(ctx context.Context, tenantID, key, messageID string) error {
+	if m.ReturnError != nil {
+		return m.ReturnError
+	}
+	k := m.reservationKey(tenantID, key)
+	if m.Reservations[k] != messageID {
+		return nil
+	}
+	delete(m.Reservations, k)
+	delete(m.ReservedAt, k)
+	return nil
+}

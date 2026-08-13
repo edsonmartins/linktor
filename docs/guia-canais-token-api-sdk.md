@@ -53,7 +53,7 @@ Base URL da API: `https://<host>/api/v1`.
 Cada API key carrega **scopes** no formato `recurso:ação`, **agora aplicados** pelo backend:
 
 - `channels:read` — `GET /channels…` · `channels:write` — criar/editar/remover/`connect`/`pair`/`disconnect`.
-- `messages:send` — `POST /conversations/:id/messages`.
+- `messages:send` — `POST /messages/send`, `POST /conversations/:id/messages` e `POST /channels/:id/groups/:groupId/messages`. Enviar mensagem **não** concede permissão de editar canais: a rota de grupo exige este scope, não `channels:write`.
 - `contacts:read|write`, `conversations:read|write` — vocabulário reservado (ainda não aplicado nessas rotas).
 - Curingas: `*` (tudo) e `recurso:*`; `recurso:write` implica `recurso:read`.
 - Chaves criadas **antes** dos scopes existirem operam como `["*"]` (sem quebra).
@@ -146,6 +146,66 @@ curl -X POST https://<host>/api/v1/channels/$CHANNEL_ID/pair \
 curl -X PUT  https://<host>/api/v1/channels/$CHANNEL_ID/enabled -H "X-API-Key: $KEY" -H 'Content-Type: application/json' -d '{"enabled": true}'
 curl -X POST https://<host>/api/v1/channels/$CHANNEL_ID/disconnect -H "X-API-Key: $KEY"
 ```
+
+### Envio direto (canal + destinatário)
+
+`POST /api/v1/messages/send` envia sem que o integrador precise conhecer uma conversa: o Linktor resolve (ou cria), dentro do tenant, a identidade do destinatário naquele tipo de canal, o contato, a conversa e a mensagem outbound, e publica no fluxo NATS/outbound — o mesmo que já tem retry, DLQ, guarda de sandbox e status. Requer `messages:send`.
+
+```bash
+curl -X POST https://<host>/api/v1/messages/send \
+  -H "X-API-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '{
+    "channel_id": "'"$CHANNEL_ID"'",
+    "to": "+5511999999999",
+    "content_type": "text",
+    "text": "Mensagem",
+    "metadata": {
+      "source": "meu-sistema",
+      "idempotency_key": "chave-logica",
+      "alcada_correlation": "token-opaco"
+    }
+  }'
+```
+
+Resposta **202**:
+
+```json
+{"success": true, "data": {"id": "…", "conversation_id": "…", "channel_id": "…", "status": "queued"}}
+```
+
+`202` significa *enfileirada*, não entregue: o desfecho chega depois no webhook do canal como `message.sent` / `message.failed`.
+
+Regras do contrato:
+
+- `content_type` está restrito a `text` por enquanto; `content` é aceito como alias de `text`.
+- **`metadata` é preservada ponta a ponta** — persiste na mensagem e chega ao adaptador do canal. Duas chaves mudam comportamento em vez de só viajar junto:
+  - `idempotency_key` — único por tenant. Repetir a chamada com a mesma chave devolve a **mensagem original** (202 idempotente), não envia de novo.
+  - `subject` — vira o assunto no canal de e-mail (há um assunto padrão se ausente).
+- `metadata` **não pode sobrescrever campos internos** do Linktor (`campaign_id`, `sender_id`, `external_id`, ids de roteamento, alvos de reação…). Uma requisição que os nomeie é rejeitada com 400 — não silenciosamente limpa. `reply_to_id` e `quoted_text` **não** são reservados: são justamente como o cliente pede uma resposta citada.
+- `idempotency_key` tem no máximo 255 caracteres. Uma repetição cuja mensagem original ainda não existe (envio concorrente em andamento) recebe **409** com pedido de retry, em vez de um `202` que mentiria sobre uma entrega.
+- Vale para qualquer canal: `to` é o telefone (WhatsApp/SMS/RCS), o e-mail (canal `email`) ou o id do destinatário no canal.
+- Canal de outro tenant, inexistente, desabilitado ou desconectado é recusado antes de qualquer escrita.
+
+### Correlacionar a resposta do cliente
+
+Quando o contato **responde citando** uma mensagem enviada por esta rota, o webhook `message.received` traz de volta a correlação que você anexou, no bloco `context`:
+
+```json
+{
+  "type": "message.received",
+  "data": {
+    "channelId": "…", "channelType": "whatsapp", "conversationId": "…",
+    "message": { "id": "…", "senderId": "+5511999999999", "content": { "text": "Pode seguir" } },
+    "context": { "source": "meu-sistema", "alcada_correlation": "token-opaco" }
+  }
+}
+```
+
+- `context` só aparece para uma **citação explícita** cuja mensagem citada carregava metadata correlacionável. Sem citação, sem `context` — o Linktor nunca infere correlação por telefone, conversa, proximidade temporal ou texto.
+- A busca da mensagem citada é escopada a `conversation_id + external_id`, nunca só ao id do provedor: isso mantém a correlação dentro do tenant por construção.
+- A chave de correlação hoje é **uma só e fixa: `alcada_correlation`** — qualquer outro nome (`meu_correlation`, `x-correlation`…) é preservado na mensagem outbound, mas **não volta** no `context`. Para usar outro nome é preciso incluí-lo em `correlationKeys` (`internal/infrastructure/webhook/dispatcher.go`).
+- Só chaves de uma **allowlist** atravessam — o resto da metadata outbound não é ecoado. A allowlist tem duas metades: `alcada_correlation` é o que *constitui* a correlação (sem ela não há `context`), e `source` é qualificador — viaja junto, mas nunca dispara o bloco sozinho. Sem essa separação, uma resposta a mensagem digitada no app do WhatsApp Business (que o Linktor marca com `source: business_app`) chegaria parecendo correlacionada.
+- O campo é aditivo: consumidores anteriores a ele seguem processando o envelope normalmente.
 
 ### Semântica de erros
 

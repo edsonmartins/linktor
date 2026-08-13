@@ -762,8 +762,24 @@ func joinStrings(strs []string, sep string) string {
 	return result
 }
 
-// SendDirectMessage sends a message directly to a recipient
-func (c *Client) SendDirectMessage(channelID, to string, input map[string]interface{}) (*Message, error) {
+// DirectSendResult is the canonical answer to POST /api/v1/messages/send. The
+// message is queued, not yet delivered — Status is "queued" and the delivery
+// outcome arrives later on the channel's webhook as message.sent/failed.
+type DirectSendResult struct {
+	ID             string `json:"id"`
+	ConversationID string `json:"conversation_id"`
+	ChannelID      string `json:"channel_id"`
+	Status         string `json:"status"`
+}
+
+// SendDirectMessage sends a message to a recipient on a channel, without the
+// caller needing to know a conversation: the API resolves (or creates) the
+// contact identity, contact and conversation inside the tenant.
+//
+// input carries the message fields ("text") and any "metadata" the integrator
+// wants preserved end to end — notably metadata.idempotency_key, which makes a
+// repeated call return the original message instead of sending twice.
+func (c *Client) SendDirectMessage(channelID, to string, input map[string]interface{}) (*DirectSendResult, error) {
 	sendInput := map[string]interface{}{
 		"channel_id":   channelID,
 		"to":           to,
@@ -772,7 +788,7 @@ func (c *Client) SendDirectMessage(channelID, to string, input map[string]interf
 	for k, v := range input {
 		sendInput[k] = v
 	}
-	var result Message
+	var result DirectSendResult
 	err := c.post("/api/v1/messages/send", sendInput, &result)
 	return &result, err
 }

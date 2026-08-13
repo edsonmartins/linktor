@@ -892,3 +892,43 @@ func TestReceiveMessage_RedeliveryDoesNotDuplicateOutbox(t *testing.T) {
 	assert.Len(t, f.messageRepo.Messages, 1, "no duplicate message row")
 	assert.Len(t, f.messageRepo.OutboxEvents, 1, "no duplicate outbox event")
 }
+
+// The adapter records the quoted provider id on the message metadata, but the
+// dispatcher only ever sees the durable event. Unless reply_to_id rides on that
+// payload there is nothing to look the quoted message up by, and a reply can
+// never be correlated back to the outbound message it answers.
+func TestReceiveMessage_ReplyToIDReachesTheDurableEvent(t *testing.T) {
+	ctx := context.Background()
+	f := newReceiveMessageFixture()
+	channel := makeChannel("ch-1", "tenant-1")
+	f.channelRepo.Channels[channel.ID] = channel
+
+	inbound := makeInbound("ch-1", "tenant-1")
+	inbound.Metadata["reply_to_id"] = "wamid.OUT-1"
+
+	out, err := f.uc.Execute(ctx, inbound)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+
+	require.Len(t, f.messageRepo.OutboxEvents, 1)
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(f.messageRepo.OutboxEvents[0].Payload, &payload))
+	assert.Equal(t, "wamid.OUT-1", payload["reply_to_id"])
+}
+
+// A message that quotes nothing carries an empty reply_to_id, so the dispatcher
+// has nothing to look up and omits `context` — correlation is never inferred.
+func TestReceiveMessage_NonReplyCarriesNoReplyToID(t *testing.T) {
+	ctx := context.Background()
+	f := newReceiveMessageFixture()
+	channel := makeChannel("ch-1", "tenant-1")
+	f.channelRepo.Channels[channel.ID] = channel
+
+	_, err := f.uc.Execute(ctx, makeInbound("ch-1", "tenant-1"))
+	require.NoError(t, err)
+
+	require.Len(t, f.messageRepo.OutboxEvents, 1)
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(f.messageRepo.OutboxEvents[0].Payload, &payload))
+	assert.Empty(t, payload["reply_to_id"])
+}

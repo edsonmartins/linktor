@@ -395,6 +395,11 @@ func (uc *ReceiveMessageUseCase) buildMessageReceivedOutboxEvent(tenantID string
 		// Menções (JIDs unidos por vírgula): em grupo, menção direta fura o debounce
 		// do consumidor. Vazio/ausente quando não há menção.
 		"mentions": message.Metadata["mentions"],
+		// Id EXTERNO (do provedor) da mensagem citada, quando o inbound é uma
+		// resposta. O adaptador já o registrava na metadata da mensagem, mas ele
+		// parava ali: sem carregá-lo no evento durável, o dispatcher não tinha
+		// como achar a mensagem citada e correlacionar a resposta.
+		"reply_to_id": message.Metadata["reply_to_id"],
 	}
 	if atts := attachmentsPayload(message.Attachments); len(atts) > 0 {
 		payload["attachments"] = atts

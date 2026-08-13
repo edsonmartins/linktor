@@ -5,6 +5,7 @@
 import { HttpClient, HttpClientConfig } from './utils/http';
 import { AuthResource } from './resources/auth';
 import { ConversationsResource } from './resources/conversations';
+import { MessagesResource } from './resources/messages';
 import { ContactsResource } from './resources/contacts';
 import { ChannelsResource } from './resources/channels';
 import { BotsResource } from './resources/bots';
@@ -81,6 +82,11 @@ export class LinktorClient {
    * Conversations resource
    */
   public readonly conversations: ConversationsResource;
+
+  /**
+   * Messages resource (direct send, not scoped to a known conversation)
+   */
+  public readonly messages: MessagesResource;
 
   /**
    * Contacts resource
@@ -182,6 +188,7 @@ export class LinktorClient {
     // Initialize resources
     this.auth = new AuthResource(this.http);
     this.conversations = new ConversationsResource(this.http);
+    this.messages = new MessagesResource(this.http);
     this.contacts = new ContactsResource(this.http);
     this.channels = new ChannelsResource(this.http);
     this.bots = new BotsResource(this.http);

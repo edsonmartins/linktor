@@ -219,6 +219,7 @@ func main() {
 	tenantSettingsRepo := database.NewTenantSettingsRepository(db)
 	campaignRepo := database.NewCampaignRepository(db)
 	sandboxAllowlistRepo := database.NewSandboxAllowlistRepository(db)
+	messageIdempotencyRepo := database.NewMessageIdempotencyRepository(db)
 
 	// Initialize services
 	logger.Info("Initializing services...")
@@ -594,6 +595,9 @@ func main() {
 	// Synchronous sandbox recipient check (UX): the API rejects immediately;
 	// the authoritative guard remains in the outbound delivery funnel.
 	messageService.SetSandboxAllowlist(sandboxAllowlistRepo)
+	// Idempotência lógica do envio direto: (tenant_id, metadata.idempotency_key)
+	// não produz duas mensagens.
+	messageService.SetIdempotencyStore(messageIdempotencyRepo)
 	// Typing inbound (VendaX Direto, RFC-009): resolve phone→contact→conversation e mostra o
 	// "digitando" do cliente na UI do agente. Opcional (no-op sem estas deps).
 	webhookHandler.SetTypingDeps(contactRepo, conversationRepo, messageService)
@@ -1199,6 +1203,18 @@ func main() {
 
 			// Messages (direct access by ID)
 			protected.GET("/messages/:id", messageHandler.Get)
+			// Envio direto (canal + destinatário), sem que o chamador precise
+			// conhecer uma conversa. Fica fora do grupo /conversations de
+			// propósito: exige messages:send, não conversations:write — enviar
+			// uma mensagem não deve conceder permissão de editar conversas.
+			protected.POST("/messages/send", authMiddleware.RequireScope(middleware.ScopeMessagesSend), messageHandler.SendDirect)
+			// Envio a um JID de grupo. Registrada aqui, e não no grupo /channels,
+			// porque lá herdava channels:write: enviar mensagem passava a exigir
+			// (e implicitamente conceder) permissão para editar canais.
+			protected.POST("/channels/:id/groups/:groupId/messages",
+				authMiddleware.RequireScope(middleware.ScopeMessagesSend),
+				auditMw.Record(),
+				groupHandler.SendMessage)
 
 			// Contacts
 			contacts := protected.Group("/contacts")
@@ -1242,10 +1258,8 @@ func main() {
 				channels.POST("/:id/pair", channelHandler.RequestPairCode)
 				channels.POST("/:id/passkey/response", channelHandler.SubmitPasskeyResponse)
 				channels.POST("/:id/disconnect", channelHandler.Disconnect)
-				// Send a message straight to a group JID (@g.us), bypassing contact
-				// resolution — used to publish a group notice. Group-level scope gate
-				// already requires channels:write for this POST.
-				channels.POST("/:id/groups/:groupId/messages", groupHandler.SendMessage)
+				// A rota de envio a grupo (POST /:id/groups/:groupId/messages) é
+				// registrada fora deste grupo, com messages:send — ver acima.
 				// WhatsApp Coexistence routes
 				channels.GET("/:id/coexistence-status", waEmbeddedSignupHandler.GetCoexistenceStatus)
 				channels.POST("/:id/subscribe-echoes", waEmbeddedSignupHandler.SubscribeMessageEchoes)

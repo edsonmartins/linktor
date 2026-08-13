@@ -35,6 +35,14 @@ export interface MessageReceivedEvent {
   contactId: string;
   channelId: string;
   channelType: ChannelType;
+  /**
+   * Correlation the integrator attached to the outbound message that this
+   * inbound one *quotes*. Present only for an explicit reply/citation whose
+   * quoted message carried allowlisted metadata — Linktor never infers
+   * correlation from the phone number, the conversation, timing or the text.
+   * Absent means "not correlated".
+   */
+  context?: Record<string, string>;
 }
 
 export interface MessageStatusEvent {

@@ -3,6 +3,7 @@ package webhook
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -194,5 +195,103 @@ func TestVerifySignatureRejectsTamperedBody(t *testing.T) {
 	headers := SignatureHeaders([]byte(`{"id":"evt_1"}`), secret, fixedTime)
 	if VerifySignature([]byte(`{"id":"evil"}`), headers[SignatureHeader], headers[TimestampHeader], secret, fixedTime, DefaultTolerance) {
 		t.Error("a tampered body must be rejected")
+	}
+}
+
+// TestInboundEnvelopeWithContextGolden pins the wire shape of a correlated
+// inbound event: the `context` block an integrator gets back when the contact
+// replies quoting a message it sent through POST /messages/send. Map keys are
+// emitted sorted, so "alcada_correlation" precedes "source".
+func TestInboundEnvelopeWithContextGolden(t *testing.T) {
+	env := &Envelope{
+		ID:        "evt_123",
+		Type:      TypeMessageReceived,
+		Timestamp: time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC),
+		TenantID:  "tenant_1",
+		Data: InboundData{
+			Message: InboundMessagePayload{
+				ID:          "msg_in",
+				Direction:   "inbound",
+				ContentType: "text",
+				Content:     MessageContent{Text: "Confirmado"},
+				SenderID:    "+5511999999999",
+				SenderType:  "contact",
+			},
+			ConversationID: "conv_1",
+			ContactID:      "contact_1",
+			ChannelID:      "channel_1",
+			ChannelType:    "whatsapp",
+			Context: map[string]string{
+				"source":             "alcada",
+				"alcada_correlation": "token-teste",
+			},
+		},
+	}
+
+	got, err := MarshalEnvelope(env)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	const want = `{"id":"evt_123","type":"message.received","timestamp":"2026-08-13T12:00:00Z","tenantId":"tenant_1","data":{"message":{"id":"msg_in","direction":"inbound","contentType":"text","content":{"text":"Confirmado"},"senderId":"+5511999999999","senderType":"contact"},"conversationId":"conv_1","contactId":"contact_1","channelId":"channel_1","channelType":"whatsapp","context":{"alcada_correlation":"token-teste","source":"alcada"}}}`
+
+	if string(got) != want {
+		t.Errorf("correlated inbound envelope mismatch:\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// A message that is not a correlated reply must omit `context` entirely — an
+// empty object would read as "correlated with nothing".
+func TestInboundEnvelopeOmitsEmptyContext(t *testing.T) {
+	for name, ctxMap := range map[string]map[string]string{
+		"nil":   nil,
+		"vazio": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := &Envelope{
+				ID:        "evt_123",
+				Type:      TypeMessageReceived,
+				Timestamp: fixedTime,
+				TenantID:  "tenant_1",
+				Data: InboundData{
+					Message: InboundMessagePayload{
+						ID: "msg_in", Direction: "inbound", ContentType: "text",
+						Content: MessageContent{Text: "oi"}, SenderType: "contact",
+					},
+					ConversationID: "conv_1", ContactID: "contact_1",
+					ChannelID: "channel_1", ChannelType: "whatsapp",
+					Context: ctxMap,
+				},
+			}
+			got, err := MarshalEnvelope(env)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if strings.Contains(string(got), `"context"`) {
+				t.Errorf("context não deveria aparecer: %s", got)
+			}
+		})
+	}
+}
+
+// The signature covers timestamp + "." + body, and adding `context` changes
+// neither that construction nor its verification.
+func TestCorrelatedEnvelopeSignatureCoversTimestampAndBody(t *testing.T) {
+	body := []byte(`{"id":"evt_123","data":{"context":{"alcada_correlation":"token-teste"}}}`)
+	const secret = "s3cr3t"
+
+	headers := SignatureHeaders(body, secret, fixedTime)
+	ts := headers[TimestampHeader]
+
+	if want := ComputeSignature(append([]byte(ts+"."), body...), secret); headers[SignatureHeader] != want {
+		t.Fatalf("assinatura não é HMAC de timestamp + \".\" + body")
+	}
+	if !VerifySignature(body, headers[SignatureHeader], ts, secret, fixedTime, 0) {
+		t.Error("verificação falhou para um envelope correlacionado válido")
+	}
+	// Stripping the correlation must break the signature.
+	tampered := []byte(`{"id":"evt_123","data":{"context":{}}}`)
+	if VerifySignature(tampered, headers[SignatureHeader], ts, secret, fixedTime, 0) {
+		t.Error("assinatura aceitou um corpo adulterado")
 	}
 }

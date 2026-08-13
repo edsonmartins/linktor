@@ -75,6 +75,13 @@ type InboundData struct {
 	// (absent for 1:1). The individual who spoke is Message.SenderID; Group.ID is
 	// the stable group key the consumer uses to thread the conversation.
 	Group *GroupPayload `json:"group,omitempty"`
+	// Context carries correlation the integrator itself attached to the outbound
+	// message this inbound one *quotes*. It is present only for an explicit
+	// reply/citation whose quoted message carried allowlisted metadata; Linktor
+	// never infers correlation from the phone number, the conversation, timing or
+	// the text. Additive and backward-compatible (INV-018): consumers that
+	// predate it keep parsing, and its absence means "not correlated".
+	Context map[string]string `json:"context,omitempty"`
 }
 
 // GroupPayload identifies a group conversation. Name is best-effort (may be empty

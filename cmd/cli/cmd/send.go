@@ -36,6 +36,11 @@ var (
 	sendFilename string
 	sendDelay    time.Duration
 	interactive  bool
+	// sendMetadata are repeatable key=value pairs preserved end to end on the
+	// message; sendIdempotencyKey is the shorthand for the one key that changes
+	// the API's behaviour rather than just riding along.
+	sendMetadata       []string
+	sendIdempotencyKey string
 )
 
 func init() {
@@ -48,6 +53,8 @@ func init() {
 	sendCmd.Flags().StringVar(&sendCaption, "caption", "", "Caption for media")
 	sendCmd.Flags().StringVar(&sendFilename, "filename", "", "Filename for document")
 	sendCmd.Flags().DurationVar(&sendDelay, "delay", 0, "Delay between messages (for broadcast)")
+	sendCmd.Flags().StringArrayVar(&sendMetadata, "metadata", nil, "Metadata carried with the message, key=value (repeatable)")
+	sendCmd.Flags().StringVar(&sendIdempotencyKey, "idempotency-key", "", "Logical send key: repeating it returns the original message instead of sending twice")
 	sendCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Interactive mode")
 }
 
@@ -84,6 +91,13 @@ func runSend(cmd *cobra.Command, args []string) error {
 		recipients = []string{sendTo}
 	}
 
+	// An idempotency key names ONE logical message. Reused across a broadcast it
+	// would send to the first recipient and hand back that same message for all
+	// the others, so refuse the combination instead of silently dropping sends.
+	if len(recipients) > 1 && buildSendMetadata()["idempotency_key"] != "" {
+		return fmt.Errorf("an idempotency key identifies a single message; do not combine it with a recipient list")
+	}
+
 	// Build message input
 	input := buildMessageInput()
 
@@ -92,16 +106,6 @@ func runSend(cmd *cobra.Command, args []string) error {
 	failed := 0
 
 	for i, recipient := range recipients {
-		// For now, we need a conversation - this is simplified
-		// In a real implementation, you'd either find or create a conversation
-		msgInput := map[string]interface{}{
-			"channelId": sendChannel,
-			"to":        recipient,
-		}
-		for k, v := range input {
-			msgInput[k] = v
-		}
-
 		fmt.Printf("Sending to %s...\n", recipient)
 
 		msg, err := sendDirectMessage(c, sendChannel, recipient, input)
@@ -229,11 +233,37 @@ func readRecipientsFile(path string) ([]string, error) {
 	return recipients, scanner.Err()
 }
 
-// sendDirectMessage is not yet wired to a real backend route: the server
-// exposes message sending only within an existing conversation
-// (POST /conversations/:id/messages), not a direct channel+recipient send.
-// Return an explicit error instead of calling a non-existent endpoint so the
-// CLI fails clearly rather than with a confusing 404.
-func sendDirectMessage(_ *client.Client, _, _ string, _ map[string]interface{}) (*client.Message, error) {
-	return nil, fmt.Errorf("direct send is not available yet: the API has no channel+recipient send endpoint. Use the admin UI or POST /api/v1/conversations/{id}/messages")
+// sendDirectMessage posts to the channel+recipient send route
+// (POST /api/v1/messages/send), which resolves the contact and conversation
+// server-side. The route currently carries text only; media still has to go
+// through a conversation, so we say so instead of silently dropping the
+// attachment.
+func sendDirectMessage(c *client.Client, channelID, to string, input map[string]interface{}) (*client.DirectSendResult, error) {
+	if input["media"] != nil {
+		return nil, fmt.Errorf("direct send carries text only; send media from an existing conversation (POST /api/v1/conversations/{id}/messages)")
+	}
+	if metadata := buildSendMetadata(); len(metadata) > 0 {
+		input["metadata"] = metadata
+	}
+	return c.SendDirectMessage(channelID, to, input)
+}
+
+// buildSendMetadata assembles the metadata carried end to end with the message:
+// the repeatable --metadata k=v pairs plus --idempotency-key, which makes a
+// repeated send return the original message instead of delivering twice.
+func buildSendMetadata() map[string]string {
+	metadata := make(map[string]string, len(sendMetadata)+1)
+	for _, pair := range sendMetadata {
+		key, value, found := strings.Cut(pair, "=")
+		if !found {
+			continue
+		}
+		if key = strings.TrimSpace(key); key != "" {
+			metadata[key] = value
+		}
+	}
+	if sendIdempotencyKey != "" {
+		metadata["idempotency_key"] = sendIdempotencyKey
+	}
+	return metadata
 }
