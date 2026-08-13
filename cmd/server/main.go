@@ -712,13 +712,30 @@ func main() {
 		ctwaHandler,
 	)
 
-	// Reconnect WhatsApp channels with stored sessions
-	logger.Info("Reconnecting WhatsApp channels...")
-	if reconnected, err := channelService.ReconnectWhatsAppChannels(context.Background()); err != nil {
-		logger.Warn("Failed to reconnect some WhatsApp channels: " + err.Error())
-	} else if reconnected > 0 {
-		logger.Info(fmt.Sprintf("Reconnected %d WhatsApp channel(s)", reconnected))
-	}
+	// Reconnect WhatsApp channels with stored sessions.
+	//
+	// Em goroutine, e não no caminho de boot: esta rotina fala com um provedor
+	// externo e com o store local de sessões, e já travou a produção. Numa
+	// reconexão em que a sessão estava inválida, o Disconnect subsequente ficou
+	// preso num lock (processo em futex_wait, sem nenhuma conexão de rede
+	// aberta), o servidor HTTP nunca chegou a escutar na porta, o Traefik tirou
+	// o backend do roteamento por estar unhealthy e a API inteira passou a
+	// responder 404. Determinístico: todo restart repetia no mesmo ponto.
+	//
+	// Reconectar canal é melhor-esforço e não pode ser pré-requisito para o
+	// processo atender. O timeout limita o desperdício quando trava; quem
+	// garante o boot é a goroutine.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		logger.Info("Reconnecting WhatsApp channels...")
+		if reconnected, err := channelService.ReconnectWhatsAppChannels(ctx); err != nil {
+			logger.Warn("Failed to reconnect some WhatsApp channels: " + err.Error())
+		} else if reconnected > 0 {
+			logger.Info(fmt.Sprintf("Reconnected %d WhatsApp channel(s)", reconnected))
+		}
+	}()
 
 	// Create VRE handler (if VRE service is available)
 	var vreHandler *handlers.VREHandler

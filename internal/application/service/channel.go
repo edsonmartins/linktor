@@ -1083,6 +1083,11 @@ func (s *ChannelService) Disconnect(ctx context.Context, id string) error {
 	return nil
 }
 
+// whatsAppReconnectTimeout limita quanto tempo o boot espera por UM canal antes
+// de seguir para o próximo. Reconexão é melhor-esforço; travar aqui já custou
+// uma indisponibilidade completa da API em produção.
+const whatsAppReconnectTimeout = 30 * time.Second
+
 // ReconnectWhatsAppChannels reconnects all WhatsApp channels that have stored sessions
 // This should be called on server startup to restore connections
 func (s *ChannelService) ReconnectWhatsAppChannels(ctx context.Context) (int, error) {
@@ -1102,15 +1107,37 @@ func (s *ChannelService) ReconnectWhatsAppChannels(ctx context.Context) (int, er
 
 	reconnected := 0
 	for _, channel := range channels {
-		// Try to reconnect
-		if err := s.reconnectWhatsAppChannel(ctx, channel); err != nil {
-			logger.Warn("Failed to reconnect WhatsApp channel",
+		// Cada canal roda isolado, com prazo próprio. Um canal que trava não
+		// pode impedir os seguintes de reconectar: em produção, um único canal
+		// com sessão inválida ficou preso num lock dentro do Disconnect e o
+		// laço nunca avançou. O goroutine que ficar para trás é abandonado —
+		// desperdiça memória, mas não sequestra os demais canais.
+		done := make(chan error, 1)
+		go func(ch *entity.Channel) {
+			done <- s.reconnectWhatsAppChannel(ctx, ch)
+		}(channel)
+
+		select {
+		case err := <-done:
+			if err != nil {
+				logger.Warn("Failed to reconnect WhatsApp channel",
+					zap.String("channel_id", channel.ID),
+					zap.String("tenant_id", channel.TenantID),
+					zap.Error(err))
+				continue
+			}
+			reconnected++
+		case <-time.After(whatsAppReconnectTimeout):
+			logger.Warn("Timeout reconnecting WhatsApp channel, moving on",
 				zap.String("channel_id", channel.ID),
 				zap.String("tenant_id", channel.TenantID),
-				zap.Error(err))
-			continue
+				zap.Duration("timeout", whatsAppReconnectTimeout))
+		case <-ctx.Done():
+			logger.Warn("Reconnection cancelled",
+				zap.String("channel_id", channel.ID),
+				zap.Error(ctx.Err()))
+			return reconnected, nil
 		}
-		reconnected++
 	}
 
 	return reconnected, nil
