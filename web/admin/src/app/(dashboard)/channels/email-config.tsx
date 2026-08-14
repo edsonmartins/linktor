@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { api, WEBHOOK_BASE_URL } from '@/lib/api'
+import { copyText } from '@/lib/clipboard'
 import { useToast } from '@/hooks/use-toast'
 
 // Combined schema with all fields (provider-specific fields are optional for form handling)
@@ -238,7 +239,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
 
   const copyWebhookUrl = (provider: string) => {
     const webhookUrl = `${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/${provider}`
-    navigator.clipboard.writeText(webhookUrl)
+    void copyText(webhookUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

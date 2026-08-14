@@ -159,10 +159,34 @@ jobs:
 
       - name: Smoke test (aguarda o rollout)
         run: |
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            if curl -fsS https://api.linktor.dev/health >/dev/null; then
-              echo "API healthy"; exit 0
+          # Verifica que a VERSÃO NOVA subiu, não apenas que a API responde.
+          #
+          # A versão anterior deste passo consultava /health logo após despachar
+          # o deploy e recebia 200 do container ANTIGO, passando em 0,4s. Ele
+          # nunca observou o rollout: em 14/08 o webhook falhou, o deploy não
+          # aconteceu, e este passo teria dado verde do mesmo jeito.
+          alvo="${{ steps.tag.outputs.tag }}"
+          echo "aguardando a API reportar version=$alvo"
+
+          for i in $(seq 1 30); do
+            atual=$(curl -fsS --max-time 10 https://api.linktor.dev/health 2>/dev/null \
+              | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+
+            if [ "$atual" = "$alvo" ]; then
+              echo "rollout confirmado: version=$atual"
+              exit 0
             fi
-            echo "aguardando API ($i/10)…"; sleep 15
+
+            echo "($i/30) version=${atual:-sem-resposta}, esperando…"
+            sleep 15
           done
-          echo "::error::API não respondeu ao health após o deploy"; exit 1
+
+          # Sem o campo version, a API é anterior a esta mudança: não dá para
+          # confirmar o rollout, e falhar aqui seria alarme falso.
+          if [ -z "$atual" ] && curl -fsS --max-time 10 https://api.linktor.dev/health >/dev/null 2>&1; then
+            echo "::warning::API responde mas não reporta version — rollout não verificado"
+            exit 0
+          fi
+
+          echo "::error::rollout não confirmado após 7min (esperado $alvo, obtido ${atual:-sem-resposta})"
+          exit 1

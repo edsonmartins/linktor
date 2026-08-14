@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { api } from '@/lib/api'
+import { copyText } from '@/lib/clipboard'
 import { queryKeys } from '@/lib/query'
 import type { Channel, VoiceProvider } from '@/types'
 
@@ -449,7 +450,7 @@ export function VoiceConfig({ channel, onSuccess, onCancel }: VoiceConfigProps) 
                     variant="outline"
                     size="icon"
                     disabled={!canCopyWebhookUrl}
-                    onClick={() => navigator.clipboard.writeText(webhookUrl)}
+                    onClick={() => void copyText(webhookUrl)}
                   >
                     <Copy className="h-4 w-4" />
                   </Button>

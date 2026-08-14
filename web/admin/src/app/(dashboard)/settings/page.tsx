@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { useUser } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/clipboard'
 import { useToast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
@@ -535,7 +536,7 @@ function ApiKeysSettings({ t }: { t: ReturnType<typeof useTranslations<'settings
   })
 
   const handleCopyKey = async (key: string) => {
-    await navigator.clipboard.writeText(key)
+    await copyText(key)
     toast({ title: t('apiKeyCopied'), description: t('apiKeyCopiedDesc') })
   }
 

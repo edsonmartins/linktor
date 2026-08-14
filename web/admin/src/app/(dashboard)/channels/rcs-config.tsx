@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { copyText } from '@/lib/clipboard'
 
 // Provider types
 type RCSProvider = "zenvia" | "infobip" | "pontaltech" | "google";
@@ -595,7 +596,7 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
                       <Button
                         variant="outline"
                         onClick={() => {
-                          navigator.clipboard.writeText(webhookUrl);
+                          void copyText(webhookUrl);
                           toast({
                             title: tCommon('copied'),
                             description: t('copiedToClipboard'),

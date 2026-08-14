@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -38,18 +39,32 @@ func (h *HealthHandler) SetNATSChecker(connected func() bool) {
 	h.natsConnected = connected
 }
 
+// version reports which build is answering, para que o CD consiga distinguir
+// "a API respondeu" de "a versão nova subiu".
+//
+// Sem isto, o smoke test do pipeline consultava /health logo após despachar o
+// deploy e recebia 200 do container ANTIGO, passando em 0,4s: ele nunca
+// verificou o rollout, e um deploy que não aconteceu passava como sucesso.
+//
+// Vazio quando não configurado — é informação de operação, não contrato: quem
+// consome trata a ausência como "desconhecido", nunca como falha.
+func version() string {
+	return os.Getenv("LINKTOR_VERSION")
+}
+
 // Health godoc
 // @Summary      Health check
 // @Description  Returns basic health status of the service
 // @Tags         health
 // @Accept       json
 // @Produce      json
-// @Success      200 {object} object{status=string,service=string,timestamp=string}
+// @Success      200 {object} object{status=string,service=string,version=string,timestamp=string}
 // @Router       /health [get]
 func (h *HealthHandler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "ok",
 		"service":   "linktor",
+		"version":   version(),
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 }
