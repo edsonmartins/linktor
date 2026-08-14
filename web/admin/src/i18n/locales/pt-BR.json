@@ -1115,7 +1115,8 @@
     "copyChannelId": "Copiar ID do canal",
     "channelIdCopied": "ID do canal copiado",
     "copyFailed": "Não foi possível copiar",
-    "copyFailedDesc": "Copie manualmente: o navegador bloqueou o acesso à área de transferência."
+    "copyFailedDesc": "Copie manualmente: o navegador bloqueou o acesso à área de transferência.",
+    "channelActions": "Ações do canal"
   },
   "bots": {
     "title": "Bots",

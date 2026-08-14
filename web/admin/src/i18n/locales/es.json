@@ -1110,7 +1110,8 @@
     "copyChannelId": "Copiar ID del canal",
     "channelIdCopied": "ID del canal copiado",
     "copyFailed": "No se pudo copiar",
-    "copyFailedDesc": "Cópielo manualmente: el navegador bloqueó el acceso al portapapeles."
+    "copyFailedDesc": "Cópielo manualmente: el navegador bloqueó el acceso al portapapeles.",
+    "channelActions": "Acciones del canal"
   },
   "bots": {
     "title": "Bots",
