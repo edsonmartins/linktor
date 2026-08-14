@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -23,9 +23,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { api, WEBHOOK_BASE_URL } from '@/lib/api'
 import { copyText } from '@/lib/clipboard'
 import { useToast } from '@/hooks/use-toast'
+import type { Channel } from '@/types'
 
 // Combined schema with all fields (provider-specific fields are optional for form handling)
-const createEmailConfigSchema = (tCommon: (key: string) => string, t: (key: string) => string) => z.object({
+const createEmailConfigSchema = (
+  tCommon: (key: string) => string,
+  t: (key: string) => string,
+  isEditing = false
+) => z.object({
   name: z.string().min(1, tCommon('required')),
   provider: z.enum(['smtp', 'sendgrid', 'mailgun', 'ses', 'postmark']),
   from_email: z.string().email(t('validEmailRequired')),
@@ -57,6 +62,13 @@ const createEmailConfigSchema = (tCommon: (key: string) => string, t: (key: stri
   // Postmark fields
   postmark_server_token: z.string().optional(),
 }).superRefine((data, ctx) => {
+  // Ao editar, os segredos não são exigidos: a API nunca devolve credencial
+  // guardada, então o formulário abre com esses campos em branco. Exigi-los aqui
+  // obrigaria a redigitar a senha para mudar qualquer outra coisa — e foi
+  // exatamente o que impediu de corrigir a criptografia de um canal existente.
+  // Em branco significa "mantenha a que está guardada"; o merge do backend faz isso.
+  // Campos não secretos (host, porta, domínio, região) seguem obrigatórios,
+  // porque vêm preenchidos.
   // Validate provider-specific required fields
   if (data.provider === 'smtp') {
     if (!data.smtp_host) {
@@ -66,28 +78,28 @@ const createEmailConfigSchema = (tCommon: (key: string) => string, t: (key: stri
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['smtp_port'] })
     }
   } else if (data.provider === 'sendgrid') {
-    if (!data.sendgrid_api_key) {
+    if (!isEditing && !data.sendgrid_api_key) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['sendgrid_api_key'] })
     }
   } else if (data.provider === 'mailgun') {
     if (!data.mailgun_domain) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['mailgun_domain'] })
     }
-    if (!data.mailgun_api_key) {
+    if (!isEditing && !data.mailgun_api_key) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['mailgun_api_key'] })
     }
   } else if (data.provider === 'ses') {
     if (!data.ses_region) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['ses_region'] })
     }
-    if (!data.ses_access_key_id) {
+    if (!isEditing && !data.ses_access_key_id) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['ses_access_key_id'] })
     }
-    if (!data.ses_secret_key) {
+    if (!isEditing && !data.ses_secret_key) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['ses_secret_key'] })
     }
   } else if (data.provider === 'postmark') {
-    if (!data.postmark_server_token) {
+    if (!isEditing && !data.postmark_server_token) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['postmark_server_token'] })
     }
   }
@@ -97,10 +109,11 @@ type EmailConfigForm = z.infer<ReturnType<typeof createEmailConfigSchema>>
 
 interface EmailConfigProps {
   channelId?: string
+  channel?: Channel
   onSuccess?: () => void
 }
 
-export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
+export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -110,7 +123,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
   const tCommon = useTranslations('common')
 
   const isEditing = !!channelId
-  const emailConfigSchema = createEmailConfigSchema(tCommon, t)
+  const emailConfigSchema = createEmailConfigSchema(tCommon, t, isEditing)
 
   // Provider options with translations
   const providers = [
@@ -128,6 +141,7 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
     setValue,
     trigger,
     getValues,
+    reset,
     formState: { errors },
   } = useForm<EmailConfigForm>({
     resolver: zodResolver(emailConfigSchema),
@@ -139,6 +153,40 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
   })
 
   const selectedProvider = watch('provider')
+
+  // Preenche o formulário ao editar.
+  //
+  // Sem isto, abrir um canal existente trazia todos os campos em branco: mudar
+  // só a criptografia obrigava a redigitar host, porta e remetente, e o salvar
+  // era recusado por "campos obrigatórios". Os segredos continuam vazios de
+  // propósito — a API não os devolve, e em branco significa "manter".
+  useEffect(() => {
+    if (!channel) return
+
+    const cfg = (channel.config ?? {}) as Record<string, string>
+    const numero = (v?: string) => (v ? Number(v) : undefined)
+
+    reset({
+      name: channel.name,
+      provider: (cfg.provider as EmailConfigForm['provider']) || 'smtp',
+      from_email: cfg.from_email || '',
+      from_name: cfg.from_name || '',
+      reply_to: cfg.reply_to || '',
+
+      smtp_host: cfg.smtp_host || '',
+      smtp_port: numero(cfg.smtp_port),
+      smtp_encryption: (cfg.smtp_encryption as EmailConfigForm['smtp_encryption']) || 'tls',
+
+      imap_host: cfg.imap_host || '',
+      imap_port: numero(cfg.imap_port),
+      imap_folder: cfg.imap_folder || '',
+      imap_poll_interval: numero(cfg.imap_poll_interval),
+
+      mailgun_domain: cfg.mailgun_domain || '',
+      mailgun_region: (cfg.mailgun_region as EmailConfigForm['mailgun_region']) || 'us',
+      ses_region: cfg.ses_region || '',
+    })
+  }, [channel, reset])
 
   /**
    * Monta config/credentials a partir do formulário.

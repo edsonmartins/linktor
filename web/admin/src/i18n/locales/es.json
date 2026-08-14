@@ -134,7 +134,9 @@
     "optional": "Opcional",
     "channelNameRequired": "El nombre del canal es obligatorio",
     "accessDeniedTitle": "Acceso denegado",
-    "accessDeniedDescription": "No tienes permiso para ver esta página. Contacta a un administrador si necesitas acceso."
+    "accessDeniedDescription": "No tienes permiso para ver esta página. Contacta a un administrador si necesitas acceso.",
+    "username": "Usuario",
+    "password": "Contraseña"
   },
   "nav": {
     "dashboard": "Panel",
