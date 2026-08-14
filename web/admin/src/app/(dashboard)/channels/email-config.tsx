@@ -153,6 +153,21 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
   })
 
   const selectedProvider = watch('provider')
+  const selectedEncryption = watch('smtp_encryption')
+
+  /**
+   * Aplica a escolha de um <Select> ao formulário, ignorando string vazia.
+   *
+   * O Radix emite `onValueChange('')` sozinho quando o Select é ressincronizado
+   * — o que acontece logo depois do reset de preenchimento, porque o cartão SMTP
+   * remonta. Esse callback espúrio zerava `smtp_encryption`, e como o payload usa
+   * `data.smtp_encryption || 'tls'`, um canal gravado com STARTTLS voltava a ser
+   * salvo como TLS: a alteração do usuário simplesmente sumia.
+   */
+  const escolher = (aplicar: (valor: string) => void) => (valor: string) => {
+    if (!valor) return
+    aplicar(valor)
+  }
 
   // Preenche o formulário ao editar.
   //
@@ -353,7 +368,7 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
           <Label htmlFor="provider">{t('emailProvider')}</Label>
           <Select
             value={selectedProvider}
-            onValueChange={(value) => setValue('provider', value as EmailConfigForm['provider'])}
+            onValueChange={escolher((v) => setValue('provider', v as EmailConfigForm['provider'], { shouldDirty: true }))}
           >
             <SelectTrigger>
               <SelectValue placeholder={t('selectProvider')} />
@@ -485,9 +500,15 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
 
                 <div className="space-y-2">
                   <Label htmlFor="smtp_encryption">{t('encryption')}</Label>
+                  {/*
+                    Controlado, como o seletor de provedor. Com `defaultValue`
+                    fixo ele exibia "TLS" mesmo num canal gravado com STARTTLS —
+                    não havia como conferir o valor guardado nem se a alteração
+                    tinha pegado.
+                  */}
                   <Select
-                    defaultValue="tls"
-                    onValueChange={(value) => setValue('smtp_encryption', value as EmailConfigForm['smtp_encryption'])}
+                    value={selectedEncryption || 'tls'}
+                    onValueChange={escolher((v) => setValue('smtp_encryption', v as EmailConfigForm['smtp_encryption'], { shouldDirty: true }))}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -594,8 +615,8 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
                   <div className="space-y-2">
                     <Label htmlFor="mailgun_region">{t('region')}</Label>
                     <Select
-                      defaultValue="us"
-                      onValueChange={(value) => setValue('mailgun_region', value as EmailConfigForm['mailgun_region'])}
+                      value={watch('mailgun_region') || 'us'}
+                      onValueChange={escolher((v) => setValue('mailgun_region', v as EmailConfigForm['mailgun_region'], { shouldDirty: true }))}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -652,7 +673,8 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
                 <div className="space-y-2">
                   <Label htmlFor="ses_region">{t('region')}</Label>
                   <Select
-                    onValueChange={(value) => setValue('ses_region', value)}
+                    value={watch('ses_region') || undefined}
+                    onValueChange={escolher((v) => setValue('ses_region', v, { shouldDirty: true }))}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder={t('selectRegion')} />
