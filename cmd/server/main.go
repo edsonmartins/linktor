@@ -1269,6 +1269,7 @@ func main() {
 				channels.POST("/test-teams", channelHandler.TestTeamsConnection)
 				channels.POST("/test-slack", channelHandler.TestSlackConnection)
 				channels.POST("/test-mattermost", channelHandler.TestMattermostConnection)
+				channels.POST("/test-email", channelHandler.TestEmailConnection)
 				channels.PUT("/:id/status", channelHandler.UpdateStatus)
 				channels.PUT("/:id/enabled", channelHandler.UpdateEnabled)
 				channels.POST("/:id/connect", channelHandler.Connect)

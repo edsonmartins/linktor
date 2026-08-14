@@ -1104,7 +1104,8 @@
       "openBusinessAppWarning": "Abra WhatsApp Business App para mantener la conexión activa",
       "openBusinessAppReconnect": "Abra WhatsApp Business App para reconectar",
       "importHistory": "Importar Historial",
-      "importHistoryDesc": "Importar hasta 6 meses de historial de conversaciones de WhatsApp Business App"
+      "importHistoryDesc": "Importar hasta 6 meses de historial de conversaciones de WhatsApp Business App",
+      "emailFixFormFirst": "Corrija los campos marcados antes de probar."
     },
     "channelId": "ID del canal",
     "copyChannelId": "Copiar ID del canal",

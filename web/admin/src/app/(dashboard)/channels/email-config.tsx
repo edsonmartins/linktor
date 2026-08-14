@@ -126,6 +126,8 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
     handleSubmit,
     watch,
     setValue,
+    trigger,
+    getValues,
     formState: { errors },
   } = useForm<EmailConfigForm>({
     resolver: zodResolver(emailConfigSchema),
@@ -138,11 +140,15 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
 
   const selectedProvider = watch('provider')
 
-  const onSubmit = async (data: EmailConfigForm) => {
-    setIsSubmitting(true)
+  /**
+   * Monta config/credentials a partir do formulário.
+   *
+   * Compartilhado entre salvar e testar de propósito: se o teste montasse o
+   * payload por conta própria, ele poderia aprovar uma combinação diferente da
+   * que seria gravada — e o "testado e aprovado" não valeria nada.
+   */
+  const buildChannelPayload = (data: EmailConfigForm) => {
 
-    try {
-      // Build config based on provider
       const config: Record<string, string> = {
         provider: data.provider,
         from_email: data.from_email,
@@ -181,6 +187,15 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
         credentials.postmark_server_token = data.postmark_server_token || ''
       }
 
+    return { config, credentials }
+  }
+
+  const onSubmit = async (data: EmailConfigForm) => {
+    setIsSubmitting(true)
+
+    try {
+      const { config, credentials } = buildChannelPayload(data)
+
       const payload = {
         name: data.name,
         type: 'email',
@@ -216,16 +231,37 @@ export function EmailConfig({ channelId, onSuccess }: EmailConfigProps) {
   }
 
   const testConnection = async () => {
-    setIsTesting(true)
+    // Valida o formulário antes de ir à rede: erro de campo obrigatório vira
+    // marcação no campo, que é onde a pessoa consegue corrigir.
+    if (!(await trigger())) {
+      toast({
+        title: t('connectionFailed'),
+        description: t('emailFixFormFirst'),
+        variant: 'error',
+      })
+      return
+    }
 
+    setIsTesting(true)
     try {
-      // Would call test endpoint
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const { config, credentials } = buildChannelPayload(getValues())
+
+      // A resposta traz o que foi verificado de fato ("envio ok via smtp,
+      // recebimento ok via IMAP em ..."), então é ela que aparece na tela —
+      // não uma frase genérica nossa.
+      const res = await api.post<{ message?: string }>('/channels/test-email', {
+        type: 'email',
+        config,
+        credentials,
+      })
+
       toast({
         title: t('connectionSuccess'),
-        description: t('emailConnectionVerified'),
+        description: res?.message || t('emailConnectionVerified'),
       })
     } catch (error) {
+      // O backend diz qual credencial falta ou qual lado falhou; repassar isso
+      // é mais útil que "verifique as credenciais".
       const msg = error instanceof Error ? error.message : t('emailConnectionError')
       toast({
         title: t('connectionFailed'),
