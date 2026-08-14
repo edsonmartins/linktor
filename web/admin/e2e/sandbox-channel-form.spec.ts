@@ -121,7 +121,7 @@ test.describe('Channel form environment (WP-I)', () => {
     const card = page
       .getByRole('heading', { name: 'Homologação ACME' })
       .locator('xpath=ancestor::div[contains(@class,"hover:border-primary/30")]')
-    await card.getByRole('button').click()
+    await card.locator('button[aria-haspopup="menu"]').click()
     await page.getByRole('menuitem', { name: /Configure|Configurar/i }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog).toBeVisible()

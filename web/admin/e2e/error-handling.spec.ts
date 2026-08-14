@@ -221,7 +221,7 @@ test.describe('Error Handling - Users (Team)', () => {
     const card = page
       .locator('[class*="hover:border-primary"]')
       .filter({ hasText: 'Agent Smith' })
-    await card.getByRole('button').click()
+    await card.locator('button[aria-haspopup="menu"]').click()
     await page.getByRole('menuitem', { name: 'Delete' }).click()
     await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
 

@@ -1110,7 +1110,8 @@
     "copyChannelId": "Copy channel ID",
     "channelIdCopied": "Channel ID copied",
     "copyFailed": "Could not copy",
-    "copyFailedDesc": "Copy it manually: the browser blocked clipboard access."
+    "copyFailedDesc": "Copy it manually: the browser blocked clipboard access.",
+    "channelActions": "Channel actions"
   },
   "bots": {
     "title": "Bots",
