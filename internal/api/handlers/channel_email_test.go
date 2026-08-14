@@ -70,3 +70,33 @@ func TestLiveChannelCheck_EmailTemVerificacaoViva(t *testing.T) {
 		t.Fatal("liveChannelCheck deveria reconhecer o tipo email")
 	}
 }
+
+// Exercita o ENDPOINT, não a função interna.
+//
+// A primeira versão desta funcionalidade testava só liveEmailCheck e passou
+// verde, enquanto em produção o endpoint respondia "unsupported channel type":
+// validateChannelTestConfig roda antes e não conhecia o tipo email, então a
+// verificação nunca era alcançada. Testar a função sem o caminho HTTP não prova
+// que a funcionalidade existe.
+func TestValidateChannelTestConfig_EmailNaoEhTipoDesconhecido(t *testing.T) {
+	err := validateChannelTestConfig("email", map[string]string{
+		"provider":      "smtp",
+		"from_email":    "suporte@exemplo.com",
+		"smtp_host":     "smtp.exemplo.com",
+		"smtp_port":     "587",
+		"smtp_username": "u",
+		"smtp_password": "p",
+	})
+	if err != nil {
+		t.Fatalf("configuração SMTP válida foi recusada: %v", err)
+	}
+
+	// E o erro específico não pode voltar de forma alguma para email.
+	err = validateChannelTestConfig("email", map[string]string{"provider": "smtp"})
+	if err != nil && strings.Contains(err.Error(), "unsupported channel type") {
+		t.Fatalf("email caiu no default de tipo desconhecido: %v", err)
+	}
+	if err == nil {
+		t.Fatal("configuração SMTP incompleta deveria ser recusada")
+	}
+}

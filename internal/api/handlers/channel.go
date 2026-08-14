@@ -948,6 +948,10 @@ func validateChannelTestConfig(channelType string, config map[string]string) err
 			return fmt.Errorf("bot_token is required")
 		}
 		return nil
+	case "email":
+		// A validação por provedor já vive no pacote de e-mail; reusá-la evita
+		// duas listas de campos obrigatórios divergindo com o tempo.
+		return email.ConfigFromMap(config).Validate()
 	default:
 		return fmt.Errorf("unsupported channel type: %s", channelType)
 	}
