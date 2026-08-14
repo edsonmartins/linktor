@@ -41,16 +41,30 @@ import type { Channel } from '@/types'
 /**
  * Microsoft Teams Configuration Schema
  */
-const teamsConfigSchema = z.object({
+/**
+ * Segredos são exigidos apenas na CRIAÇÃO.
+ *
+ * A API nunca devolve credencial guardada, então ao editar esses campos abrem
+ * vazios e a tela mostra "••••••••", prometendo que o valor atual será mantido.
+ * Exigi-los no schema quebrava a promessa: era impossível salvar qualquer
+ * alteração — até renomear o canal — sem redigitar o segredo. Em branco, o
+ * backend mantém o guardado (service/channel.go: `if v == "" { continue }`).
+ */
+const teamsConfigSchema = (isEditing = false) => z.object({
   name: z.string().min(1, 'Channel name is required'),
   app_id: z.string().min(1, 'App ID is required'),
-  app_password: z.string().min(1, 'App password is required'),
+  app_password: z.string().optional(),
   tenant_id: z.string().optional(),
   webhook_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
   webhook_secret: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (isEditing) return // em branco = manter o segredo guardado
+  if (!data.app_password) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'App password is required', path: ['app_password'] })
+  }
 })
 
-type TeamsConfigForm = z.infer<typeof teamsConfigSchema>
+type TeamsConfigForm = z.infer<ReturnType<typeof teamsConfigSchema>>
 
 interface TeamsConfigProps {
   channel?: Channel
@@ -70,9 +84,8 @@ export function TeamsConfig({ channel, onSuccess, onCancel }: TeamsConfigProps) 
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
 
   const isEditing = !!channel
-
   const form = useForm<TeamsConfigForm>({
-    resolver: zodResolver(teamsConfigSchema),
+    resolver: zodResolver(teamsConfigSchema(isEditing)),
     defaultValues: {
       name: channel?.name || '',
       app_id: (channel?.config?.app_id as string) || '',
@@ -126,7 +139,7 @@ export function TeamsConfig({ channel, onSuccess, onCancel }: TeamsConfigProps) 
       })
     } finally {
       setIsSubmitting(false)
-    }
+  }
   }
 
   const testConnection = async () => {
@@ -138,7 +151,7 @@ export function TeamsConfig({ channel, onSuccess, onCancel }: TeamsConfigProps) 
         variant: 'error',
       })
       return
-    }
+  }
 
     setTestStatus('testing')
     try {
@@ -159,7 +172,7 @@ export function TeamsConfig({ channel, onSuccess, onCancel }: TeamsConfigProps) 
         description: t('checkCredentials'),
         variant: 'error',
       })
-    }
+  }
   }
 
   const copyToClipboard = async (text: string) => {

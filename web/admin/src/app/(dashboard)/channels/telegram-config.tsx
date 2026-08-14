@@ -63,13 +63,27 @@ import type { Channel } from '@/types'
 /**
  * Telegram Configuration Schema
  */
-const telegramConfigSchema = z.object({
+/**
+ * Segredos são exigidos apenas na CRIAÇÃO.
+ *
+ * A API nunca devolve credencial guardada, então ao editar esses campos abrem
+ * vazios e a tela mostra "••••••••", prometendo que o valor atual será mantido.
+ * Exigi-los no schema quebrava a promessa: era impossível salvar qualquer
+ * alteração — até renomear o canal — sem redigitar o segredo. Em branco, o
+ * backend mantém o guardado (service/channel.go: `if v == "" { continue }`).
+ */
+const telegramConfigSchema = (isEditing = false) => z.object({
   name: z.string().min(1, 'Channel name is required'),
-  bot_token: z.string().min(1, 'Bot token is required'),
+  bot_token: z.string().optional(),
   bot_name: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (isEditing) return // em branco = manter o segredo guardado
+  if (!data.bot_token) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Bot token is required', path: ['bot_token'] })
+  }
 })
 
-type TelegramConfigForm = z.infer<typeof telegramConfigSchema>
+type TelegramConfigForm = z.infer<ReturnType<typeof telegramConfigSchema>>
 
 interface TelegramConfigProps {
   channel?: Channel
@@ -93,9 +107,8 @@ export function TelegramConfig({
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
 
   const isEditing = !!channel
-
   const form = useForm<TelegramConfigForm>({
-    resolver: zodResolver(telegramConfigSchema),
+    resolver: zodResolver(telegramConfigSchema(isEditing)),
     defaultValues: {
       name: channel?.name || '',
       bot_token: '',
@@ -144,7 +157,7 @@ export function TelegramConfig({
       })
     } finally {
       setIsSubmitting(false)
-    }
+  }
   }
 
   const testConnection = async () => {
@@ -156,7 +169,7 @@ export function TelegramConfig({
         variant: 'error',
       })
       return
-    }
+  }
 
     setTestStatus('testing')
     try {
@@ -175,7 +188,7 @@ export function TelegramConfig({
         description: t('checkCredentials'),
         variant: 'error',
       })
-    }
+  }
   }
 
   const copyToClipboard = async (text: string, label: string) => {

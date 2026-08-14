@@ -67,21 +67,35 @@ import type { Channel } from '@/types'
 /**
  * SMS/Twilio Configuration Schema
  */
-const createSmsConfigSchema = (tCommon: (key: string) => string) => z.object({
+/**
+ * Segredos são exigidos apenas na CRIAÇÃO.
+ *
+ * A API nunca devolve credencial guardada, então ao editar esses campos abrem
+ * vazios e a tela mostra "••••••••", prometendo que o valor atual será mantido.
+ * Exigi-los no schema quebrava a promessa: era impossível salvar qualquer
+ * alteração — até renomear o canal — sem redigitar o segredo. Em branco, o
+ * backend mantém o guardado (service/channel.go: `if v == "" { continue }`).
+ */
+const createSmsConfigSchema = (tCommon: (key: string) => string, isEditing = false) => z.object({
   name: z.string().min(1, tCommon('required')),
   account_sid: z.string().min(1, tCommon('required')),
-  auth_token: z.string().min(1, tCommon('required')),
+  auth_token: z.string().optional(),
   sender_type: z.enum(['phone_number', 'messaging_service']),
   phone_number: z.string().optional(),
   messaging_service_sid: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (isEditing) return // em branco = manter o segredo guardado
+  if (!data.auth_token) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['auth_token'] })
+  }
 }).refine(
   (data) => {
     if (data.sender_type === 'phone_number') {
       return !!data.phone_number
-    }
+  }
     if (data.sender_type === 'messaging_service') {
       return !!data.messaging_service_sid
-    }
+  }
     return false
   },
   {
@@ -111,10 +125,9 @@ export function SMSConfig({
   const tCommon = useTranslations('common')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showAuthToken, setShowAuthToken] = useState(false)
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
-
   const isEditing = !!channel
-  const smsConfigSchema = createSmsConfigSchema(tCommon)
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const smsConfigSchema = createSmsConfigSchema(tCommon, isEditing)
 
   const form = useForm<SMSConfigForm>({
     resolver: zodResolver(smsConfigSchema),
@@ -175,7 +188,7 @@ export function SMSConfig({
       })
     } finally {
       setIsSubmitting(false)
-    }
+  }
   }
 
   const testConnection = async () => {
@@ -187,7 +200,7 @@ export function SMSConfig({
         variant: 'error',
       })
       return
-    }
+  }
 
     setTestStatus('testing')
     try {
@@ -207,7 +220,7 @@ export function SMSConfig({
         description: t('twilioConnectionError'),
         variant: 'error',
       })
-    }
+  }
   }
 
   const copyToClipboard = async (text: string) => {

@@ -64,13 +64,27 @@ import type { Channel } from '@/types'
 /**
  * Instagram Configuration Schema
  */
-const createInstagramConfigSchema = (tCommon: (key: string) => string) => z.object({
+/**
+ * Segredos são exigidos apenas na CRIAÇÃO.
+ *
+ * A API nunca devolve credencial guardada, então ao editar esses campos abrem
+ * vazios e a tela mostra "••••••••", prometendo que o valor atual será mantido.
+ * Exigi-los no schema quebrava a promessa: era impossível salvar qualquer
+ * alteração — até renomear o canal — sem redigitar o segredo. Em branco, o
+ * backend mantém o guardado (service/channel.go: `if v == "" { continue }`).
+ */
+const createInstagramConfigSchema = (tCommon: (key: string) => string, isEditing = false) => z.object({
   name: z.string().min(1, tCommon('required')),
   instagram_id: z.string().min(1, tCommon('required')),
-  access_token: z.string().min(1, tCommon('required')),
+  access_token: z.string().optional(),
   app_id: z.string().optional(),
   app_secret: z.string().optional(),
   verify_token: z.string().min(1, tCommon('required')),
+}).superRefine((data, ctx) => {
+  if (isEditing) return // em branco = manter o segredo guardado
+  if (!data.access_token) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['access_token'] })
+  }
 })
 
 type InstagramConfigForm = z.infer<ReturnType<typeof createInstagramConfigSchema>>
@@ -114,10 +128,9 @@ export function InstagramConfig({
   const [oauthAccounts, setOauthAccounts] = useState<OAuthInstagramAccount[]>([])
   const [selectedAccount, setSelectedAccount] = useState<OAuthInstagramAccount | null>(null)
   const [oauthAppId, setOauthAppId] = useState('')
-  const [oauthAppSecret, setOauthAppSecret] = useState('')
-
   const isEditing = !!channel
-  const instagramConfigSchema = createInstagramConfigSchema(tCommon)
+  const [oauthAppSecret, setOauthAppSecret] = useState('')
+  const instagramConfigSchema = createInstagramConfigSchema(tCommon, isEditing)
 
   const form = useForm<InstagramConfigForm>({
     resolver: zodResolver(instagramConfigSchema),
@@ -173,7 +186,7 @@ export function InstagramConfig({
       })
     } finally {
       setIsSubmitting(false)
-    }
+  }
   }
 
   const testConnection = async () => {
@@ -185,7 +198,7 @@ export function InstagramConfig({
         variant: 'error',
       })
       return
-    }
+  }
 
     setTestStatus('testing')
     try {
@@ -205,7 +218,7 @@ export function InstagramConfig({
         description: t('instagramConnectionError'),
         variant: 'error',
       })
-    }
+  }
   }
 
   const copyToClipboard = async (text: string) => {
@@ -225,7 +238,7 @@ export function InstagramConfig({
         variant: 'error',
       })
       return
-    }
+  }
 
     setOauthLoading(true)
     try {
@@ -274,7 +287,7 @@ export function InstagramConfig({
         description: error instanceof Error ? error.message : t('oauthStartError'),
         variant: 'error',
       })
-    }
+  }
   }
 
   // OAuth: Handle callback
@@ -309,7 +322,7 @@ export function InstagramConfig({
       })
     } finally {
       setOauthLoading(false)
-    }
+  }
   }
 
   // OAuth: Create channel from selected account
@@ -321,7 +334,7 @@ export function InstagramConfig({
         variant: 'error',
       })
       return
-    }
+  }
 
     setIsSubmitting(true)
     try {
@@ -349,7 +362,7 @@ export function InstagramConfig({
       })
     } finally {
       setIsSubmitting(false)
-    }
+  }
   }
 
   return (

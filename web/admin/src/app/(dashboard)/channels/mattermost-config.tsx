@@ -33,16 +33,30 @@ import type { Channel } from '@/types'
 /**
  * Mattermost Configuration Schema
  */
-const mattermostConfigSchema = z.object({
+/**
+ * Segredos são exigidos apenas na CRIAÇÃO.
+ *
+ * A API nunca devolve credencial guardada, então ao editar esses campos abrem
+ * vazios e a tela mostra "••••••••", prometendo que o valor atual será mantido.
+ * Exigi-los no schema quebrava a promessa: era impossível salvar qualquer
+ * alteração — até renomear o canal — sem redigitar o segredo. Em branco, o
+ * backend mantém o guardado (service/channel.go: `if v == "" { continue }`).
+ */
+const mattermostConfigSchema = (isEditing = false) => z.object({
   name: z.string().min(1, 'Channel name is required'),
   base_url: z.string().min(1, 'Server URL is required'),
-  bot_token: z.string().min(1, 'Bot token is required'),
+  bot_token: z.string().optional(),
   bot_user_id: z.string().optional(),
   webhook_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
   webhook_secret: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (isEditing) return // em branco = manter o segredo guardado
+  if (!data.bot_token) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Bot token is required', path: ['bot_token'] })
+  }
 })
 
-type MattermostConfigForm = z.infer<typeof mattermostConfigSchema>
+type MattermostConfigForm = z.infer<ReturnType<typeof mattermostConfigSchema>>
 
 interface MattermostConfigProps {
   channel?: Channel
@@ -62,9 +76,8 @@ export function MattermostConfig({ channel, onSuccess, onCancel }: MattermostCon
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
 
   const isEditing = !!channel
-
   const form = useForm<MattermostConfigForm>({
-    resolver: zodResolver(mattermostConfigSchema),
+    resolver: zodResolver(mattermostConfigSchema(isEditing)),
     defaultValues: {
       name: channel?.name || '',
       base_url: (channel?.config?.base_url as string) || '',
@@ -114,7 +127,7 @@ export function MattermostConfig({ channel, onSuccess, onCancel }: MattermostCon
       })
     } finally {
       setIsSubmitting(false)
-    }
+  }
   }
 
   const testConnection = async () => {
@@ -126,7 +139,7 @@ export function MattermostConfig({ channel, onSuccess, onCancel }: MattermostCon
         variant: 'error',
       })
       return
-    }
+  }
 
     setTestStatus('testing')
     try {
@@ -146,7 +159,7 @@ export function MattermostConfig({ channel, onSuccess, onCancel }: MattermostCon
         description: t('checkCredentials'),
         variant: 'error',
       })
-    }
+  }
   }
 
   return (
