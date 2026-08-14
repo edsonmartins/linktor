@@ -120,14 +120,42 @@ jobs:
 
       - name: Trigger CD webhook
         run: |
-          code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
-            -X POST "https://deploy.linktor.dev/hooks/deploy" \
-            -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"env\":\"production\",\"component\":\"all\",\"tag\":\"${{ steps.tag.outputs.tag }}\"}")
-          echo "webhook HTTP $code"; cat /tmp/resp.txt || true
-          # 200 = deploy despachado; 403 = token inválido; outros = falha.
-          [ "$code" = "200" ] || { echo "::error::CD webhook falhou (HTTP $code)"; exit 1; }
+          # Com tentativa única, uma intermitência de rede vira pipeline vermelho
+          # e redeploy manual. Já aconteceu duas vezes com a MESMA assinatura —
+          # 05/08 e 14/08, ambas "curl: (28) Failed to connect ... after ~136s".
+          # O host é o mesmo que serve api./app., que respondem normalmente
+          # minutos depois, então é a conexão TCP que falha, não o receiver.
+          #
+          # --connect-timeout evita queimar 136s numa tentativa que não vai
+          # completar; a espera progressiva dá tempo de a rede se recuperar.
+          for attempt in 1 2 3 4 5; do
+            code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              --connect-timeout 10 --max-time 30 \
+              -X POST "https://deploy.linktor.dev/hooks/deploy" \
+              -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -d "{\"env\":\"production\",\"component\":\"all\",\"tag\":\"${{ steps.tag.outputs.tag }}\"}") || code=000
+            echo "tentativa $attempt: HTTP $code"; cat /tmp/resp.txt 2>/dev/null || true
+
+            if [ "$code" = "200" ]; then
+              echo "deploy despachado"
+              exit 0
+            fi
+
+            # Token inválido não melhora com repetição — falha na hora.
+            if [ "$code" = "403" ]; then
+              echo "::error::CD webhook recusou o token (HTTP 403)"
+              exit 1
+            fi
+
+            if [ "$attempt" -lt 5 ]; then
+              espera=$((attempt * 15))
+              echo "nova tentativa em ${espera}s…"
+              sleep "$espera"
+            fi
+          done
+          echo "::error::CD webhook falhou após 5 tentativas (último HTTP $code)"
+          exit 1
 
       - name: Smoke test (aguarda o rollout)
         run: |
