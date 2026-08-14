@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/msgfy/linktor/internal/adapters/email"
 	"github.com/msgfy/linktor/internal/adapters/facebook"
 	"github.com/msgfy/linktor/internal/adapters/instagram"
 	"github.com/msgfy/linktor/internal/adapters/mattermost"
@@ -227,6 +228,10 @@ func (h *ChannelHandler) TestMattermostConnection(c *gin.Context) {
 	h.testConnection(c, "mattermost")
 }
 
+func (h *ChannelHandler) TestEmailConnection(c *gin.Context) {
+	h.testConnection(c, "email")
+}
+
 func (h *ChannelHandler) testConnection(c *gin.Context, forcedType string) {
 	var raw map[string]interface{}
 	if err := c.ShouldBindJSON(&raw); err != nil {
@@ -295,9 +300,59 @@ func liveChannelCheck(ctx context.Context, channelType string, config map[string
 			return "", true, e
 		}
 		return fmt.Sprintf("connected to Mattermost (bot %q)", username), true, nil
+	case "email":
+		return liveEmailCheck(ctx, config)
 	default:
 		return "", false, nil
 	}
+}
+
+// liveEmailCheck exercita a configuração de e-mail de verdade, nas DUAS direções
+// quando ambas estiverem configuradas.
+//
+// Testar só a saída deixaria passar o erro mais caro do canal de e-mail: com
+// IMAP mal configurado o canal envia normalmente e nunca recebe resposta —
+// falha silenciosa que só aparece quando um cliente reclama que ninguém
+// respondeu. Por isso a entrada, quando declarada, também é verificada.
+//
+// Nada é enviado: os provedores validam credencial por chamada de API, e SMTP
+// e IMAP apenas conectam e autenticam.
+func liveEmailCheck(ctx context.Context, config map[string]string) (string, bool, error) {
+	cfg := email.ConfigFromMap(config)
+
+	// A validação estática já sabe o que cada provedor exige; usá-la aqui dá
+	// mensagem específica ("sendgrid_api_key is required") em vez de um erro de
+	// conexão confuso lá na frente.
+	if err := cfg.Validate(); err != nil {
+		return "", true, err
+	}
+
+	client, err := email.NewClient(cfg)
+	if err != nil {
+		return "", true, err
+	}
+	if err := client.TestConnection(ctx); err != nil {
+		return "", true, fmt.Errorf("envio (%s): %w", client.GetProviderName(), err)
+	}
+
+	detail := fmt.Sprintf("envio ok via %s", client.GetProviderName())
+
+	// IMAP é opcional: só o SMTP tem recebimento próprio. Os demais provedores
+	// recebem por webhook, que não dá para verificar daqui.
+	if cfg.IMAPHost == "" {
+		return detail + " (recebimento por webhook, não verificável aqui)", true, nil
+	}
+
+	imapClient, err := email.NewIMAPClient(cfg)
+	if err != nil {
+		return "", true, fmt.Errorf("recebimento (IMAP): %w", err)
+	}
+	if err := imapClient.Connect(ctx); err != nil {
+		return "", true, fmt.Errorf("recebimento (IMAP em %s): %w", cfg.IMAPHost, err)
+	}
+	defer imapClient.Disconnect()
+
+	return detail + fmt.Sprintf(", recebimento ok via IMAP em %s", cfg.IMAPHost), true, nil
 }
 
 // Get godoc
