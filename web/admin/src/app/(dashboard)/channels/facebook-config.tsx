@@ -64,13 +64,30 @@ import type { Channel } from '@/types'
 /**
  * Facebook Configuration Schema
  */
-const createFacebookConfigSchema = (tCommon: (key: string) => string) => z.object({
+/**
+ * Segredos são exigidos apenas na CRIAÇÃO.
+ *
+ * A API nunca devolve credencial guardada, então ao editar esses campos abrem
+ * vazios e a tela mostra "••••••••", prometendo que o valor atual será mantido.
+ * Exigi-los no schema quebrava a promessa: era impossível salvar qualquer
+ * alteração — até renomear o canal — sem redigitar o segredo. Em branco, o
+ * backend mantém o guardado (service/channel.go: `if v == "" { continue }`).
+ */
+const createFacebookConfigSchema = (tCommon: (key: string) => string, isEditing = false) => z.object({
   name: z.string().min(1, tCommon('required')),
   app_id: z.string().min(1, tCommon('required')),
-  app_secret: z.string().min(1, tCommon('required')),
+  app_secret: z.string().optional(),
   page_id: z.string().min(1, tCommon('required')),
-  page_access_token: z.string().min(1, tCommon('required')),
+  page_access_token: z.string().optional(),
   verify_token: z.string().min(1, tCommon('required')),
+}).superRefine((data, ctx) => {
+  if (isEditing) return // em branco = manter o segredo guardado
+  if (!data.app_secret) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['app_secret'] })
+  }
+  if (!data.page_access_token) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: tCommon('required'), path: ['page_access_token'] })
+  }
 })
 
 type FacebookConfigForm = z.infer<ReturnType<typeof createFacebookConfigSchema>>
@@ -118,10 +135,9 @@ export function FacebookConfig({
   const [oauthPages, setOauthPages] = useState<OAuthPage[]>([])
   const [selectedPage, setSelectedPage] = useState<OAuthPage | null>(null)
   const [oauthAppId, setOauthAppId] = useState('')
-  const [oauthAppSecret, setOauthAppSecret] = useState('')
-
   const isEditing = !!channel
-  const facebookConfigSchema = createFacebookConfigSchema(tCommon)
+  const [oauthAppSecret, setOauthAppSecret] = useState('')
+  const facebookConfigSchema = createFacebookConfigSchema(tCommon, isEditing)
 
   const form = useForm<FacebookConfigForm>({
     resolver: zodResolver(facebookConfigSchema),
@@ -177,7 +193,7 @@ export function FacebookConfig({
       })
     } finally {
       setIsSubmitting(false)
-    }
+  }
   }
 
   const testConnection = async () => {
@@ -189,7 +205,7 @@ export function FacebookConfig({
         variant: 'error',
       })
       return
-    }
+  }
 
     setTestStatus('testing')
     try {
@@ -209,7 +225,7 @@ export function FacebookConfig({
         description: t('facebookConnectionError'),
         variant: 'error',
       })
-    }
+  }
   }
 
   const copyToClipboard = async (text: string) => {
@@ -229,7 +245,7 @@ export function FacebookConfig({
         variant: 'error',
       })
       return
-    }
+  }
 
     setOauthLoading(true)
     try {
@@ -278,7 +294,7 @@ export function FacebookConfig({
         description: error instanceof Error ? error.message : t('oauthStartError'),
         variant: 'error',
       })
-    }
+  }
   }
 
   // OAuth: Handle callback
@@ -313,7 +329,7 @@ export function FacebookConfig({
       })
     } finally {
       setOauthLoading(false)
-    }
+  }
   }
 
   // OAuth: Create channel from selected page
@@ -325,7 +341,7 @@ export function FacebookConfig({
         variant: 'error',
       })
       return
-    }
+  }
 
     setIsSubmitting(true)
     try {
@@ -352,7 +368,7 @@ export function FacebookConfig({
       })
     } finally {
       setIsSubmitting(false)
-    }
+  }
   }
 
   return (

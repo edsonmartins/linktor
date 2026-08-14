@@ -41,17 +41,34 @@ import type { Channel } from '@/types'
 /**
  * Slack Configuration Schema
  */
-const slackConfigSchema = z.object({
+/**
+ * Segredos são exigidos apenas na CRIAÇÃO.
+ *
+ * A API nunca devolve credencial guardada, então ao editar esses campos abrem
+ * vazios e a tela mostra "••••••••", prometendo que o valor atual será mantido.
+ * Exigi-los no schema quebrava a promessa: era impossível salvar qualquer
+ * alteração — até renomear o canal — sem redigitar o segredo. Em branco, o
+ * backend mantém o guardado (service/channel.go: `if v == "" { continue }`).
+ */
+const slackConfigSchema = (isEditing = false) => z.object({
   name: z.string().min(1, 'Channel name is required'),
-  bot_token: z.string().min(1, 'Bot token is required'),
-  signing_secret: z.string().min(1, 'Signing secret is required'),
+  bot_token: z.string().optional(),
+  signing_secret: z.string().optional(),
   app_id: z.string().optional(),
   bot_user_id: z.string().optional(),
   webhook_url: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
   webhook_secret: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (isEditing) return // em branco = manter o segredo guardado
+  if (!data.bot_token) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Bot token is required', path: ['bot_token'] })
+  }
+  if (!data.signing_secret) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Signing secret is required', path: ['signing_secret'] })
+  }
 })
 
-type SlackConfigForm = z.infer<typeof slackConfigSchema>
+type SlackConfigForm = z.infer<ReturnType<typeof slackConfigSchema>>
 
 interface SlackConfigProps {
   channel?: Channel
@@ -72,9 +89,8 @@ export function SlackConfig({ channel, onSuccess, onCancel }: SlackConfigProps) 
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
 
   const isEditing = !!channel
-
   const form = useForm<SlackConfigForm>({
-    resolver: zodResolver(slackConfigSchema),
+    resolver: zodResolver(slackConfigSchema(isEditing)),
     defaultValues: {
       name: channel?.name || '',
       bot_token: '',
@@ -130,7 +146,7 @@ export function SlackConfig({ channel, onSuccess, onCancel }: SlackConfigProps) 
       })
     } finally {
       setIsSubmitting(false)
-    }
+  }
   }
 
   const testConnection = async () => {
@@ -142,7 +158,7 @@ export function SlackConfig({ channel, onSuccess, onCancel }: SlackConfigProps) 
         variant: 'error',
       })
       return
-    }
+  }
 
     setTestStatus('testing')
     try {
@@ -162,7 +178,7 @@ export function SlackConfig({ channel, onSuccess, onCancel }: SlackConfigProps) 
         description: t('checkCredentials'),
         variant: 'error',
       })
-    }
+  }
   }
 
   const copyToClipboard = async (text: string) => {
