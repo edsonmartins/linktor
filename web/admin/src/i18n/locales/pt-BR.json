@@ -135,7 +135,9 @@
     "optional": "Opcional",
     "channelNameRequired": "Nome do canal é obrigatório",
     "accessDeniedTitle": "Acesso negado",
-    "accessDeniedDescription": "Você não tem permissão para ver esta página. Contate um administrador se precisar de acesso."
+    "accessDeniedDescription": "Você não tem permissão para ver esta página. Contate um administrador se precisar de acesso.",
+    "username": "Usuário",
+    "password": "Senha"
   },
   "nav": {
     "dashboard": "Dashboard",

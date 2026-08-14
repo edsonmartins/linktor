@@ -409,7 +409,7 @@ function ChannelConfigSheet({
       case 'instagram':
         return <InstagramConfig {...commonProps} />
       case 'email':
-        return <EmailConfig channelId={channel?.id} onSuccess={handleSuccess} />
+        return <EmailConfig channelId={channel?.id} channel={channel} onSuccess={handleSuccess} />
       case 'rcs':
         return (
           <RCSConfig
