@@ -2191,5 +2191,18 @@
     "reasonUnsupported": "This sandbox channel type has no defined delivery semantics yet.",
     "reasonUnknown": "Local block (reason: {reason}).",
     "technicalDetail": "Technical detail"
+  },
+  "versions": {
+    "title": "Versions",
+    "description": "What's running right now, per component.",
+    "admin": "Admin panel",
+    "api": "API (backend)",
+    "unknown": "not reported",
+    "unreachable": "no response",
+    "refresh": "Refresh",
+    "copy": "Copy",
+    "inSync": "Admin and API are on the same version.",
+    "outOfSync": "Admin and API are on different versions — the deploy may have applied only partially.",
+    "noVersionReported": "This build does not report its version. It will show up after the next deploy."
   }
 }
