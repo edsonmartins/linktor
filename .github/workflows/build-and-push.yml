@@ -107,6 +107,12 @@ jobs:
       name: production
       url: https://app.linktor.dev
     steps:
+      # Histórico completo: o smoke test compara commits para saber se este
+      # deploy foi superado por um mais novo (ver abaixo).
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Compute deploy tag
         id: tag
         run: |
@@ -162,11 +168,26 @@ jobs:
           # Verifica que a VERSÃO NOVA subiu, não apenas que a API responde.
           #
           # A versão anterior deste passo consultava /health logo após despachar
-          # o deploy e recebia 200 do container ANTIGO, passando em 0,4s. Ele
-          # nunca observou o rollout: em 14/08 o webhook falhou, o deploy não
-          # aconteceu, e este passo teria dado verde do mesmo jeito.
+          # o deploy e recebia 200 do container ANTIGO, passando em 0,4s: um
+          # deploy que não aconteceu passava como sucesso.
+          #
+          # Ser SUPERADO é sucesso, não falha: o run-deploy.sh na VPS coalesce
+          # deploys com política "o último vence", então dois merges seguidos
+          # fazem o primeiro ser legitimamente descartado. Sem esta distinção,
+          # todo par de merges rápidos deixava o primeiro build vermelho.
           alvo="${{ steps.tag.outputs.tag }}"
           echo "aguardando a API reportar version=$alvo"
+
+          superado() {
+            # Só dá para comparar quando ambas as versões são shas de commit.
+            case "$1" in sha-*) ;; *) return 1 ;; esac
+            case "$alvo" in sha-*) ;; *) return 1 ;; esac
+            local implantado="${1#sha-}"
+            git cat-file -e "$implantado^{commit}" 2>/dev/null || return 1
+            # O nosso commit ser ancestral do implantado significa que veio algo
+            # mais novo depois — o deploy aconteceu, com versão posterior.
+            git merge-base --is-ancestor "$GITHUB_SHA" "$implantado" 2>/dev/null
+          }
 
           for i in $(seq 1 30); do
             atual=$(curl -fsS --max-time 10 https://api.linktor.dev/health 2>/dev/null \
@@ -174,6 +195,11 @@ jobs:
 
             if [ "$atual" = "$alvo" ]; then
               echo "rollout confirmado: version=$atual"
+              exit 0
+            fi
+
+            if [ -n "$atual" ] && superado "$atual"; then
+              echo "::notice::deploy superado por versão mais nova ($atual) — comportamento esperado"
               exit 0
             fi
 
