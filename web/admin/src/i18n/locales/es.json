@@ -1105,7 +1105,12 @@
       "openBusinessAppReconnect": "Abra WhatsApp Business App para reconectar",
       "importHistory": "Importar Historial",
       "importHistoryDesc": "Importar hasta 6 meses de historial de conversaciones de WhatsApp Business App"
-    }
+    },
+    "channelId": "ID del canal",
+    "copyChannelId": "Copiar ID del canal",
+    "channelIdCopied": "ID del canal copiado",
+    "copyFailed": "No se pudo copiar",
+    "copyFailedDesc": "Cópielo manualmente: el navegador bloqueó el acceso al portapapeles."
   },
   "bots": {
     "title": "Bots",
