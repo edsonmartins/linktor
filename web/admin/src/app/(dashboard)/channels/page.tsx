@@ -49,6 +49,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/clipboard'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { toastSuccess, toastError } from '@/hooks/use-toast'
@@ -140,39 +141,6 @@ function EnabledBadge({ enabled, tCommon }: { enabled: boolean; tCommon: (key: s
       {tCommon(enabled ? 'enabled' : 'disabled')}
     </Badge>
   )
-}
-
-/**
- * Copia texto para a área de transferência, com fallback.
- *
- * O fallback não é zelo excessivo: `navigator.clipboard` só existe em contexto
- * seguro (HTTPS ou localhost). Na instalação on-premises, servida por HTTP puro
- * numa rede interna, a API não existe e o botão falharia sem dizer nada.
- */
-async function copyText(text: string): Promise<boolean> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      return true
-    } catch {
-      // Permissão negada ou contexto inseguro — cai no fallback abaixo.
-    }
-  }
-
-  try {
-    const field = document.createElement('textarea')
-    field.value = text
-    field.setAttribute('readonly', '')
-    field.style.position = 'fixed'
-    field.style.opacity = '0'
-    document.body.appendChild(field)
-    field.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(field)
-    return ok
-  } catch {
-    return false
-  }
 }
 
 /**

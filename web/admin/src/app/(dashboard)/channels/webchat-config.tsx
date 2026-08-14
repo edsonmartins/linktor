@@ -30,6 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
 import { api, WEBHOOK_BASE_URL } from '@/lib/api'
+import { copyText } from '@/lib/clipboard'
 import type { Channel } from '@/types'
 
 const webchatConfigSchema = z.object({
@@ -202,7 +203,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
   }
 
   const copyEmbedCode = () => {
-    navigator.clipboard.writeText(buildEmbedCode(channel?.id || '{CHANNEL_ID}'))
+    void copyText(buildEmbedCode(channel?.id || '{CHANNEL_ID}'))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

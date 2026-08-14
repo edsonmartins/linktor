@@ -35,6 +35,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { api, WEBHOOK_BASE_URL } from '@/lib/api'
+import { copyText } from '@/lib/clipboard'
 import type { Channel } from '@/types'
 
 /**
@@ -161,8 +162,8 @@ export function TeamsConfig({ channel, onSuccess, onCancel }: TeamsConfigProps) 
     }
   }
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
+  const copyToClipboard = async (text: string) => {
+    if (!(await copyText(text))) return
     toast({
       title: t('copied'),
       description: t('copiedToClipboard', { label: t('webhookUrl') }),

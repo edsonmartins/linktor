@@ -61,6 +61,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { api, WEBHOOK_BASE_URL } from '@/lib/api'
+import { copyText } from '@/lib/clipboard'
 import type { Channel } from '@/types'
 
 /**
@@ -209,8 +210,8 @@ export function SMSConfig({
     }
   }
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
+  const copyToClipboard = async (text: string) => {
+    if (!(await copyText(text))) return
     toast({
       title: tCommon('copied'),
       description: t('copiedToClipboard'),
