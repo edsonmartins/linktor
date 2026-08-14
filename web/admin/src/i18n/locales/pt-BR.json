@@ -2196,5 +2196,18 @@
     "reasonUnsupported": "Este tipo de canal sandbox ainda não tem semântica de entrega definida.",
     "reasonUnknown": "Bloqueio local (motivo: {reason}).",
     "technicalDetail": "Detalhe técnico"
+  },
+  "versions": {
+    "title": "Versões",
+    "description": "O que está no ar agora, em cada parte do sistema.",
+    "admin": "Painel (admin)",
+    "api": "API (backend)",
+    "unknown": "não informada",
+    "unreachable": "sem resposta",
+    "refresh": "Atualizar",
+    "copy": "Copiar",
+    "inSync": "Painel e API estão na mesma versão.",
+    "outOfSync": "Painel e API estão em versões diferentes — o deploy pode ter aplicado só uma parte.",
+    "noVersionReported": "Esta build não informa a versão. Após o próximo deploy, ela aparece aqui."
   }
 }

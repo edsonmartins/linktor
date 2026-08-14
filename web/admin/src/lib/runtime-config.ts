@@ -31,6 +31,8 @@ export type RuntimeConfig = {
   apiUrl: string
   wsUrl: string
   webhookBaseUrl: string
+  /** Versão desta build do admin, para conferir o que está no ar. */
+  adminVersion: string
 }
 
 /**
@@ -41,6 +43,8 @@ export const RUNTIME_CONFIG_ATTRIBUTE = 'data-linktor-config'
 
 const BUILD_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1'
 const BUILD_WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8081/api/v1/ws'
+const BUILD_ADMIN_VERSION = ''
+
 const BUILD_WEBHOOK_BASE_URL =
   process.env.NEXT_PUBLIC_WEBHOOK_BASE_URL ||
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/v1\/?$/, '') ||
@@ -65,6 +69,9 @@ export function resolveRuntimeConfig(): RuntimeConfig {
 
   return {
     apiUrl,
+    // Vem da tag da imagem, injetada pelo compose. Vazio quando não
+    // configurado: é informação de operação, não contrato.
+    adminVersion: process.env.LINKTOR_ADMIN_VERSION || BUILD_ADMIN_VERSION,
     wsUrl: process.env.LINKTOR_ADMIN_WS_URL || BUILD_WS_URL,
     webhookBaseUrl: (
       process.env.LINKTOR_ADMIN_WEBHOOK_BASE_URL || derivedWebhookBase
@@ -120,3 +127,18 @@ export function getWsBaseUrl(): string {
  * channel screens and the WebChat embed snippet.
  */
 export const WEBHOOK_BASE_URL = configured('webhookBaseUrl', BUILD_WEBHOOK_BASE_URL)
+
+/** Versão desta build do admin (vazio quando não configurada). */
+export function getAdminVersion(): string {
+  return configured('adminVersion', BUILD_ADMIN_VERSION)
+}
+
+/**
+ * Origem pública da API, sem o /api/v1 — é onde vivem /health e /ready.
+ *
+ * Derivada da mesma fonte que getApiBaseUrl, e não de webhookBaseUrl: aquela é
+ * configurável à parte e pode legitimamente apontar para outro endereço.
+ */
+export function getApiOrigin(): string {
+  return getApiBaseUrl().replace(/\/api\/v1\/?$/, '')
+}

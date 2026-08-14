@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -15,6 +16,7 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  Info,
   ChevronLeft,
   ChevronRight,
   Bell,
@@ -37,6 +39,7 @@ import { SimpleTooltip } from '@/components/ui/tooltip'
 import { Separator } from '@/components/ui/separator'
 import { useAuthStore, useUser } from '@/stores/auth-store'
 import { useUIStore, useSidebarCollapsed, useUnreadCount } from '@/stores/ui-store'
+import { VersionsDialog } from './versions-dialog'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import { isAdmin } from '@/lib/rbac'
 
@@ -156,7 +159,9 @@ const bottomNavItems = [
  * Collapsible sidebar with navigation
  */
 export function Sidebar() {
+  const [versoesAbertas, setVersoesAbertas] = useState(false)
   const t = useTranslations('nav')
+  const tVersoes = useTranslations('versions')
   const pathname = usePathname()
   const user = useUser()
   const { logout } = useAuthStore()
@@ -322,6 +327,34 @@ export function Sidebar() {
         <div className={cn('mt-2', collapsed ? 'flex justify-center' : '')}>
           <LocaleSwitcher collapsed={collapsed} />
         </div>
+
+        {/* Versões no ar — responde "subiu ou não" sem entrar na VPS */}
+        <div className={cn('mt-1', collapsed ? 'flex justify-center' : '')}>
+          {collapsed ? (
+            <SimpleTooltip content={tVersoes('title')} side="right">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="w-full"
+                onClick={() => setVersoesAbertas(true)}
+                aria-label={tVersoes('title')}
+              >
+                <Info className="h-5 w-5" />
+              </Button>
+            </SimpleTooltip>
+          ) : (
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-3 text-muted-foreground"
+              onClick={() => setVersoesAbertas(true)}
+            >
+              <Info className="h-5 w-5" />
+              {tVersoes('title')}
+            </Button>
+          )}
+        </div>
+
+        <VersionsDialog open={versoesAbertas} onOpenChange={setVersoesAbertas} />
 
         {/* Logout button */}
         {collapsed ? (
