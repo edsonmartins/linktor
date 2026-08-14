@@ -16,6 +16,8 @@ import {
   Power,
   PowerOff,
   RefreshCw,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -141,6 +143,93 @@ function EnabledBadge({ enabled, tCommon }: { enabled: boolean; tCommon: (key: s
 }
 
 /**
+ * Copia texto para a área de transferência, com fallback.
+ *
+ * O fallback não é zelo excessivo: `navigator.clipboard` só existe em contexto
+ * seguro (HTTPS ou localhost). Na instalação on-premises, servida por HTTP puro
+ * numa rede interna, a API não existe e o botão falharia sem dizer nada.
+ */
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Permissão negada ou contexto inseguro — cai no fallback abaixo.
+    }
+  }
+
+  try {
+    const field = document.createElement('textarea')
+    field.value = text
+    field.setAttribute('readonly', '')
+    field.style.position = 'fixed'
+    field.style.opacity = '0'
+    document.body.appendChild(field)
+    field.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(field)
+    return ok
+  } catch {
+    return false
+  }
+}
+
+/**
+ * ID do canal com botão de copiar.
+ *
+ * O ID é exigido para configurar webhooks nos provedores e para abrir chamado
+ * de suporte, mas não aparecia em lugar nenhum da interface — só no banco.
+ */
+function ChannelIdRow({
+  id,
+  t,
+  className,
+}: {
+  id: string
+  t: (key: string) => string
+  className?: string
+}) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async (event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (!(await copyText(id))) {
+      toastError(t('copyFailed'), t('copyFailedDesc'))
+      return
+    }
+    setCopied(true)
+    toastSuccess(t('channelIdCopied'))
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className={cn('flex items-center gap-1.5 min-w-0', className)}>
+      <span className="text-[11px] text-muted-foreground shrink-0">{t('channelId')}</span>
+      {/* select-all deixa dar um clique e copiar à mão quando o botão não puder. */}
+      <code className="font-mono text-[11px] text-muted-foreground truncate select-all" title={id}>
+        {id}
+      </code>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 shrink-0"
+        onClick={handleCopy}
+        aria-label={t('copyChannelId')}
+        title={t('copyChannelId')}
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-primary" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
+      </Button>
+    </div>
+  )
+}
+
+/**
  * Channel Card Component
  */
 function ChannelCard({
@@ -231,6 +320,7 @@ function ChannelCard({
             {t(`types.${channel.type}`)}
           </Badge>
         </div>
+        <ChannelIdRow id={channel.id} t={t} className="mt-3 pt-3 border-t" />
       </CardContent>
     </Card>
   )
@@ -384,6 +474,8 @@ function ChannelConfigSheet({
               ? t('updateSettings', { channel: channelLabel })
               : t('setupNewChannel', { channel: channelLabel })}
           </SheetDescription>
+          {/* Só ao editar: canal novo ainda não tem ID. */}
+          {isEditing && channel && <ChannelIdRow id={channel.id} t={t} className="pt-1" />}
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {renderConfigComponent()}

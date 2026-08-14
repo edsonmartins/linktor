@@ -1110,7 +1110,12 @@
       "qualityRating": "Classificação de Qualidade",
       "coexistenceActiveAlert": "Mensagens enviadas pelo WhatsApp Business App serão sincronizadas com esta plataforma. Lembre-se de abrir o app pelo menos uma vez a cada 14 dias para manter a conexão.",
       "creatingChannel": "Criando canal e configurando webhooks..."
-    }
+    },
+    "channelId": "ID do canal",
+    "copyChannelId": "Copiar ID do canal",
+    "channelIdCopied": "ID do canal copiado",
+    "copyFailed": "Não foi possível copiar",
+    "copyFailedDesc": "Copie manualmente: o navegador bloqueou o acesso à área de transferência."
   },
   "bots": {
     "title": "Bots",
