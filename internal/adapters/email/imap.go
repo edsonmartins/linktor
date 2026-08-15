@@ -213,9 +213,39 @@ func (c *IMAPClient) readGreeting() error {
 	return nil
 }
 
+// quoteIMAP formata um argumento como quoted string do IMAP (RFC 3501 §4.3).
+//
+// Sem isto, qualquer valor com espaço vira dois argumentos para o servidor. O
+// caso que aparece na prática é a senha de app do Gmail, que o Google exibe em
+// quatro blocos separados por espaço: colada como está, o LOGIN falhava com uma
+// recusa genérica, sem indicar que o problema era de formatação. Pastas do
+// Gmail ("[Gmail]/Todos os e-mails") têm o mesmo problema no SELECT.
+func quoteIMAP(s string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
+}
+
+// imapArgSeguro recusa quebra de linha em valores vindos da configuração.
+//
+// Aspas resolvem espaço e barra, mas não CR/LF: dentro de uma quoted string
+// eles são inválidos, e o servidor passaria a ler o resto da linha como um
+// comando novo — uma senha bem escolhida injetaria comandos IMAP arbitrários.
+func imapArgSeguro(nome, valor string) error {
+	if strings.ContainsAny(valor, "\r\n") {
+		return fmt.Errorf("%s contém quebra de linha", nome)
+	}
+	return nil
+}
+
 // login authenticates with the IMAP server
 func (c *IMAPClient) login() error {
-	cmd := fmt.Sprintf("LOGIN %s %s", c.config.IMAPUsername, c.config.IMAPPassword)
+	if err := imapArgSeguro("usuário IMAP", c.config.IMAPUsername); err != nil {
+		return err
+	}
+	if err := imapArgSeguro("senha IMAP", c.config.IMAPPassword); err != nil {
+		return err
+	}
+
+	cmd := fmt.Sprintf("LOGIN %s %s", quoteIMAP(c.config.IMAPUsername), quoteIMAP(c.config.IMAPPassword))
 	response, err := c.sendCommand(cmd)
 	if err != nil {
 		return err
@@ -228,7 +258,11 @@ func (c *IMAPClient) login() error {
 
 // selectFolder selects an IMAP folder
 func (c *IMAPClient) selectFolder(folder string) error {
-	cmd := fmt.Sprintf("SELECT %s", folder)
+	if err := imapArgSeguro("pasta IMAP", folder); err != nil {
+		return err
+	}
+
+	cmd := fmt.Sprintf("SELECT %s", quoteIMAP(folder))
 	response, err := c.sendCommand(cmd)
 	if err != nil {
 		return err
