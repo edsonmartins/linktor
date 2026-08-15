@@ -60,6 +60,10 @@ export interface Channel {
   connection_status: ConnectionStatus
   environment?: ChannelEnvironment
   config: Record<string, unknown>
+  // Chaves de credencial que identificam a conta sem serem segredo (usuário de
+  // SMTP/IMAP). O resto de Credentials nunca sai da API — ver
+  // entity.IdentityCredentialKeys.
+  public_credentials?: Record<string, string>
   webhook_url?: string
   created_at: string
   updated_at: string

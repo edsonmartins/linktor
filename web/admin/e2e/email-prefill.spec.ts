@@ -19,6 +19,12 @@ const canal = {
     smtp_port: '587',
     smtp_encryption: 'tls',
   },
+  // Chaves de credencial que não são segredo — a API passou a devolvê-las para
+  // que dê para conferir com que conta o canal está gravado.
+  public_credentials: {
+    smtp_username: 'postmaster@alcada.org',
+    imap_username: 'canal.alcada@gmail.com',
+  },
   created_at: '2026-08-14T20:46:31Z',
   updated_at: '2026-08-14T20:57:00Z',
 }
@@ -54,4 +60,35 @@ test.describe('Edição de canal de e-mail', () => {
     await expect(page.locator('#from_email')).toHaveValue('alcada@exemplo.mailgun.org')
     await expect(page.locator('#name')).toHaveValue('Alcada')
   })
+})
+
+test('o usuário gravado aparece; a senha permanece em branco', async ({ page }) => {
+  await setupAuth(page)
+  await page.route('**/api/v1/channels**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: [canal],
+        meta: { page: 1, page_size: 20, total_items: 1 },
+      }),
+    })
+  )
+
+  await page.goto('/channels')
+  const card = page
+    .getByRole('heading', { name: 'Alcada' })
+    .locator('xpath=ancestor::div[contains(@class,"hover:border-primary/30")]')
+  await card.locator('button[aria-haspopup="menu"]').click()
+  await page.getByRole('menuitem', { name: /Configure|Configurar/i }).click()
+
+  await expect(page.locator('#smtp_username')).toHaveValue('postmaster@alcada.org')
+  // Senha continua em branco de propósito: a API não a devolve, e em branco
+  // significa "manter a guardada".
+  await expect(page.locator('#smtp_password')).toHaveValue('')
+
+  await page.getByRole('tab', { name: /Receiving|Recebimento/i }).click()
+  await expect(page.locator('#imap_username')).toHaveValue('canal.alcada@gmail.com')
+  await expect(page.locator('#imap_password')).toHaveValue('')
 })

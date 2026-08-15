@@ -250,6 +250,46 @@ func (h *ChannelHandler) testConnection(c *gin.Context, forcedType string) {
 	}
 
 	config := flattenChannelTestConfig(raw)
+
+	// Ao editar um canal existente, o formulário nunca reexibe os segredos
+	// guardados — então o que ele envia vem sem senha. Sem completar com o que
+	// está no banco, o teste ou reprova um canal que funciona, ou (pior) aprova
+	// sem autenticar nenhuma vez, porque provedores só autenticam quando há
+	// usuário E senha. Nos dois casos o resultado não diz nada sobre o canal.
+	//
+	// O valor digitado sempre vence o guardado: é assim que se testa uma
+	// credencial nova antes de salvar.
+	if channelID := stringFromMap(raw, "channel_id"); channelID != "" {
+		tenantID := middleware.MustGetTenantID(c)
+		if tenantID == "" {
+			return
+		}
+
+		stored, err := h.channelService.GetByID(c.Request.Context(), channelID)
+		// A comparação de tenant é feita aqui porque GetByID não recebe tenant:
+		// sem ela, um channel_id de outra conta viraria um oráculo de teste
+		// sobre credenciais alheias.
+		if err != nil || stored == nil || stored.TenantID != tenantID {
+			RespondNotFound(c, "Channel not found")
+			return
+		}
+
+		merged := make(map[string]string, len(stored.Config)+len(stored.Credentials)+len(config))
+		for k, v := range stored.Config {
+			merged[k] = v
+		}
+		for k, v := range stored.Credentials {
+			merged[k] = v
+		}
+		for k, v := range config {
+			if v == "" || v == entity.RedactedSecret {
+				continue // em branco significa "usa o que está guardado"
+			}
+			merged[k] = v
+		}
+		config = merged
+	}
+
 	if err := validateChannelTestConfig(channelType, config); err != nil {
 		RespondValidationError(c, err.Error(), nil)
 		return
