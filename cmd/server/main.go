@@ -668,11 +668,20 @@ func main() {
 	// disconnect so newly connected channels stream immediately.
 	mattermostManager := mattermost.NewManager(channelRepo, producer, mediaStore)
 
+	// Recebimento de e-mail: um polling IMAP por canal configurado. O adaptador
+	// de e-mail registrado acima cobre só o envio — ChannelService.Connect não
+	// instancia adaptador para canais que não são WhatsApp, então sem este
+	// gerenciador o canal recebe "connected" no banco e descarta toda resposta.
+	emailManager := email.NewManager(channelRepo, producer)
+
 	channelService.SetLifecycleHooks(service.ChannelLifecycleHooks{
 		OnConnected: func(ctx context.Context, channel *entity.Channel) {
 			registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
 			if channel.Type == entity.ChannelTypeMattermost {
 				mattermostManager.StartChannel(channel)
+			}
+			if channel.Type == entity.ChannelTypeEmail {
+				emailManager.StartChannel(channel)
 			}
 		},
 		OnUpdated: func(ctx context.Context, channel *entity.Channel) {
@@ -686,12 +695,21 @@ func main() {
 			} else if channel.Type == entity.ChannelTypeMattermost {
 				mattermostManager.StopChannel(channel.ID)
 			}
+			// Host, pasta ou senha do IMAP podem ter mudado: religa com a
+			// configuração nova (StartChannel encerra o polling anterior). Ele
+			// mesmo decide parar quando o canal fica sem IMAP ou desabilitado.
+			if channel.Type == entity.ChannelTypeEmail {
+				emailManager.StartChannel(channel)
+			}
 		},
 		OnDisconnected: func(ctx context.Context, channel *entity.Channel) {
 			outboundResolver.Invalidate(channel.ID)
 			unregisterWhatsAppAdvancedClient(channel.ID, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
 			if channel.Type == entity.ChannelTypeMattermost {
 				mattermostManager.StopChannel(channel.ID)
+			}
+			if channel.Type == entity.ChannelTypeEmail {
+				emailManager.StopChannel(channel.ID)
 			}
 		},
 		OnDeleted: func(ctx context.Context, channel *entity.Channel) {
@@ -973,6 +991,9 @@ func main() {
 		// the channel lifecycle hooks above.
 		if err := mattermostManager.Start(ctx); err != nil {
 			logger.Warn("Failed to start Mattermost listeners: " + err.Error())
+		}
+		if err := emailManager.Start(ctx); err != nil {
+			logger.Warn("email: falha ao iniciar o recebimento por IMAP: " + err.Error())
 		}
 
 		// Start the outbound delivery worker.

@@ -383,16 +383,20 @@ func liveEmailCheck(ctx context.Context, config map[string]string) (string, bool
 		return detail + " (recebimento por webhook, não verificável aqui)", true, nil
 	}
 
-	imapClient, err := email.NewIMAPClient(cfg)
+	// Mesmo leitor que roda em produção (email.Manager), e não um caminho
+	// paralelo: um teste que aprova por outro código não prova nada sobre o
+	// recebimento de verdade. Ele também abre a pasta, o que pega o erro mais
+	// comum depois da credencial — nome de pasta que não existe.
+	leitor, err := email.NewFetcher(cfg)
 	if err != nil {
 		return "", true, fmt.Errorf("recebimento (IMAP): %w", err)
 	}
-	if err := imapClient.Connect(ctx); err != nil {
+	naoLidas, err := leitor.Verificar(ctx)
+	if err != nil {
 		return "", true, fmt.Errorf("recebimento (IMAP em %s): %w", cfg.IMAPHost, err)
 	}
-	defer imapClient.Disconnect()
 
-	return detail + fmt.Sprintf(", recebimento ok via IMAP em %s", cfg.IMAPHost), true, nil
+	return detail + fmt.Sprintf(", recebimento ok via IMAP em %s (%d não lidas)", cfg.IMAPHost, naoLidas), true, nil
 }
 
 // Get godoc
