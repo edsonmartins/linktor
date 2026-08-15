@@ -179,6 +179,10 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
     if (!channel) return
 
     const cfg = (channel.config ?? {}) as Record<string, string>
+    // Usuário não é segredo, e vê-lo é o que permite conferir com que conta o
+    // canal está gravado. Senhas seguem em branco: a API não as devolve, e em
+    // branco significa "manter a guardada".
+    const publicas = channel.public_credentials ?? {}
     const numero = (v?: string) => (v ? Number(v) : undefined)
 
     reset({
@@ -187,6 +191,9 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
       from_email: cfg.from_email || '',
       from_name: cfg.from_name || '',
       reply_to: cfg.reply_to || '',
+
+      smtp_username: publicas.smtp_username || '',
+      imap_username: publicas.imap_username || '',
 
       smtp_host: cfg.smtp_host || '',
       smtp_port: numero(cfg.smtp_port),
@@ -314,6 +321,10 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
       // não uma frase genérica nossa.
       const res = await api.post<{ message?: string }>('/channels/test-email', {
         type: 'email',
+        // Ao editar, o backend completa o que o formulário não reexibe (as
+        // senhas) com o que está guardado — sem isto o teste aprovaria sem
+        // nunca ter autenticado.
+        channel_id: channelId,
         config,
         credentials,
       })

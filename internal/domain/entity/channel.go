@@ -46,6 +46,20 @@ var SensitiveConfigKeys = map[string]bool{
 	"password":              true,
 }
 
+// IdentityCredentialKeys lista as chaves de Credentials que identificam a conta
+// sem serem segredo — hoje, os nomes de usuário de SMTP e IMAP.
+//
+// Credentials inteiro é oculto na serialização (`json:"-"`), o que é certo para
+// senhas e tokens mas cobra caro nestas: o formulário de edição abre sempre em
+// branco, então não há como conferir com que usuário o canal está gravado, nem
+// confirmar que uma alteração pegou. Quem edita conclui que "não salvou" e
+// tenta de novo. Estas chaves voltam em public_credentials; o resto continua
+// invisível.
+var IdentityCredentialKeys = map[string]bool{
+	"smtp_username": true,
+	"imap_username": true,
+}
+
 // ChannelType represents the type of a channel
 type ChannelType string
 
@@ -178,7 +192,26 @@ func (c *Channel) MarshalJSON() ([]byte, error) {
 		}
 		clone.Config = redacted
 	}
-	return json.Marshal((*channelAlias)(&clone))
+
+	// Só as chaves de IdentityCredentialKeys atravessam; senhas e tokens
+	// permanecem invisíveis.
+	var publicas map[string]string
+	for k := range IdentityCredentialKeys {
+		if v := c.Credentials[k]; v != "" {
+			if publicas == nil {
+				publicas = make(map[string]string, len(IdentityCredentialKeys))
+			}
+			publicas[k] = v
+		}
+	}
+
+	return json.Marshal(struct {
+		*channelAlias
+		PublicCredentials map[string]string `json:"public_credentials,omitempty"`
+	}{
+		channelAlias:      (*channelAlias)(&clone),
+		PublicCredentials: publicas,
+	})
 }
 
 // NewChannel creates a new channel
