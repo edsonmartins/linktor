@@ -3,13 +3,11 @@ package email
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 )
 
@@ -19,12 +17,10 @@ type Adapter struct {
 
 	mu             sync.RWMutex
 	client         *Client
-	imapClient     *IMAPClient
 	messageHandler plugin.MessageHandler
 	statusHandler  plugin.StatusHandler
 	config         *Config
 	stopCh         chan struct{}
-	imapRunning    bool
 }
 
 // NewAdapter creates a new Email adapter
@@ -158,27 +154,9 @@ func (a *Adapter) Connect(ctx context.Context) error {
 	a.client = client
 	a.stopCh = make(chan struct{})
 
-	// Start IMAP polling if configured (SMTP provider). The hand-rolled IMAP
-	// fetch/parse path is not homologation-ready (it silently returns zero
-	// messages), so it is disabled by default: an SMTP+IMAP channel would look
-	// "connected" while dropping every inbound email. Opt in explicitly with
-	// LINKTOR_ENABLE_IMAP_INBOUND=true for experimental use; production inbound
-	// should use a hosted-webhook provider (Mailgun/SendGrid/SES/Postmark).
-	if a.config.Provider == ProviderSMTP && a.config.IMAPHost != "" {
-		if os.Getenv("LINKTOR_ENABLE_IMAP_INBOUND") == "true" {
-			imapClient, err := NewIMAPClient(a.config)
-			if err == nil {
-				if err := imapClient.Connect(ctx); err == nil {
-					a.imapClient = imapClient
-					go a.startIMAPPolling()
-				}
-			}
-		} else {
-			logger.Warn("email IMAP inbound is disabled (experimental); SMTP outbound only. " +
-				"Set LINKTOR_ENABLE_IMAP_INBOUND=true to enable, or use a hosted-webhook provider for inbound")
-		}
-	}
-
+	// O recebimento por IMAP é responsabilidade do Manager (manager.go), que
+	// mantém um polling por canal e sobrevive a mudanças de configuração. Este
+	// adaptador cuida só do envio.
 	a.SetConnected(true)
 	return nil
 }
@@ -190,12 +168,6 @@ func (a *Adapter) Disconnect(ctx context.Context) error {
 
 	if a.stopCh != nil {
 		close(a.stopCh)
-	}
-
-	if a.imapClient != nil {
-		a.imapClient.StopPolling()
-		a.imapClient.Disconnect()
-		a.imapClient = nil
 	}
 
 	a.client = nil
@@ -469,39 +441,6 @@ func (a *Adapter) convertToStatusCallback(status *StatusCallback) *plugin.Status
 	}
 }
 
-// startIMAPPolling starts the IMAP polling goroutine
-func (a *Adapter) startIMAPPolling() {
-	a.mu.Lock()
-	a.imapRunning = true
-	imapClient := a.imapClient
-	stopCh := a.stopCh
-	a.mu.Unlock()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		<-stopCh
-		cancel()
-	}()
-
-	imapClient.StartPolling(ctx, func(email *IncomingEmail) {
-		a.mu.RLock()
-		handler := a.messageHandler
-		a.mu.RUnlock()
-
-		if handler != nil {
-			inbound := a.convertToInboundMessage(email)
-			// Use the polling ctx so in-flight handling stops with the adapter.
-			handler(ctx, inbound)
-		}
-	})
-
-	a.mu.Lock()
-	a.imapRunning = false
-	a.mu.Unlock()
-}
-
 // GetConnectionStatus returns detailed connection status
 func (a *Adapter) GetConnectionStatus() *plugin.ConnectionStatus {
 	a.mu.RLock()
@@ -518,9 +457,6 @@ func (a *Adapter) GetConnectionStatus() *plugin.ConnectionStatus {
 			status.Metadata["provider"] = a.client.GetProviderName()
 		}
 		status.Metadata["from_email"] = a.config.FromEmail
-		if a.imapRunning {
-			status.Metadata["imap_polling"] = "active"
-		}
 	} else {
 		status.Status = "disconnected"
 	}
