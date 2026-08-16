@@ -139,16 +139,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 
-	attachments := make([]service.MessageAttachmentInput, 0, len(req.Attachments))
-	for _, a := range req.Attachments {
-		attachments = append(attachments, service.MessageAttachmentInput{
-			URL:       a.URL,
-			Type:      a.Type,
-			Filename:  a.Filename,
-			MimeType:  a.MimeType,
-			SizeBytes: a.SizeBytes,
-		})
-	}
+	attachments := toAttachmentInputs(req.Attachments)
 
 	input := &service.SendMessageInput{
 		TenantID:       tenantID,

@@ -32,6 +32,18 @@ const MaxIdempotencyKeyLength = 255
 // any single send, and short enough that a retry is not blocked for long.
 const abandonedReservationAge = 5 * time.Minute
 
+// directMediaContentTypes are the content types the direct route can deliver
+// beyond text. Each is carried entirely by its attachments, so the route needs
+// no payload model of its own for them — which is exactly why location,
+// contact, template, interactive, poll and reaction are absent.
+var directMediaContentTypes = map[string]bool{
+	string(entity.ContentTypeImage):    true,
+	string(entity.ContentTypeVideo):    true,
+	string(entity.ContentTypeAudio):    true,
+	string(entity.ContentTypeDocument): true,
+	string(entity.ContentTypeSticker):  true,
+}
+
 // DirectSendInput is a channel+recipient send that does not require the caller
 // to know a conversation: the identity, contact and conversation are resolved
 // (or created) inside the tenant before the message is persisted and published.
@@ -45,6 +57,11 @@ type DirectSendInput struct {
 	// on the message so a direct send is attributable like any other.
 	SenderID string
 	Metadata map[string]string
+	// Attachments carries already-uploaded media, exactly as the conversation
+	// route does. Without it the direct route could only send text, which forced
+	// an integrator with no conversation in hand to keep a second messaging stack
+	// alive just for images and audio.
+	Attachments []MessageAttachmentInput
 }
 
 // DirectSendResult is the canonical Linktor answer to a direct send.
@@ -90,17 +107,40 @@ func (s *MessageService) SendDirect(ctx context.Context, input *DirectSendInput)
 	}
 
 	contentType := strings.TrimSpace(input.ContentType)
+	hasAttachments := len(input.Attachments) > 0
 	if contentType == "" {
-		contentType = string(entity.ContentTypeText)
+		// An attachment with no declared type is a document: it is the one kind
+		// every transport can carry, so guessing it degrades presentation at
+		// worst, never delivery.
+		if hasAttachments {
+			contentType = string(entity.ContentTypeDocument)
+		} else {
+			contentType = string(entity.ContentTypeText)
+		}
 	}
-	// Only text for now: every other content type needs media handling the
-	// direct route does not model yet, and silently degrading it to text would
-	// deliver the wrong thing.
+	// Media types are allowed, but only with something to deliver. The types left
+	// out (location, contact, template, interactive, poll, reaction) need
+	// structured payloads this route does not model, and silently degrading them
+	// to text would deliver the wrong thing.
 	if contentType != string(entity.ContentTypeText) {
-		return nil, errors.Validation("content_type must be \"text\"")
+		if !directMediaContentTypes[contentType] {
+			return nil, errors.Validation(
+				"content_type must be \"text\" or one of: image, video, audio, document, sticker")
+		}
+		if !hasAttachments {
+			// Without this the message goes out declared as an image carrying
+			// nothing — the recipient gets an empty bubble and the send still
+			// reports success.
+			return nil, errors.Validation("attachments are required for content_type \"" + contentType + "\"")
+		}
 	}
-	if strings.TrimSpace(input.Content) == "" {
+	if strings.TrimSpace(input.Content) == "" && !hasAttachments {
 		return nil, errors.Validation("text is required")
+	}
+	for i, a := range input.Attachments {
+		if strings.TrimSpace(a.URL) == "" {
+			return nil, errors.Validation("attachments[" + strconv.Itoa(i) + "].url is required")
+		}
 	}
 
 	// Channel must belong to the tenant. A channel from another tenant is
@@ -203,6 +243,7 @@ func (s *MessageService) sendDirectReserved(
 		ContentType: contentType,
 		Content:     input.Content,
 		Metadata:    metadata,
+		Attachments: input.Attachments,
 	})
 	if err != nil {
 		return nil, err

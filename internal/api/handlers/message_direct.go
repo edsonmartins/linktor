@@ -23,6 +23,10 @@ type DirectSendRequest struct {
 	// name as POST /conversations/{id}/messages. Text wins when both are set.
 	Content  string            `json:"content"`
 	Metadata map[string]string `json:"metadata"`
+	// Attachments uses the same shape as POST /conversations/{id}/messages, so a
+	// caller that already uploads media for one route needs no second format for
+	// the other.
+	Attachments []MessageAttachmentReq `json:"attachments"`
 }
 
 // body returns the message text, preferring "text" over the "content" alias.
@@ -31,6 +35,26 @@ func (r *DirectSendRequest) body() string {
 		return r.Text
 	}
 	return r.Content
+}
+
+// toAttachmentInputs converts the wire form of an attachment to the service
+// form. Shared by both send routes so the two cannot drift into accepting
+// different fields for the same JSON shape.
+func toAttachmentInputs(reqs []MessageAttachmentReq) []service.MessageAttachmentInput {
+	if len(reqs) == 0 {
+		return nil
+	}
+	out := make([]service.MessageAttachmentInput, 0, len(reqs))
+	for _, a := range reqs {
+		out = append(out, service.MessageAttachmentInput{
+			URL:       a.URL,
+			Type:      a.Type,
+			Filename:  a.Filename,
+			MimeType:  a.MimeType,
+			SizeBytes: a.SizeBytes,
+		})
+	}
+	return out
 }
 
 // DirectSendResponse is the canonical Linktor answer to a direct send.
@@ -151,6 +175,7 @@ func (h *MessageHandler) SendDirect(c *gin.Context) {
 		Content:     req.body(),
 		SenderID:    persistableSenderID(c.GetString(middleware.UserIDKey)),
 		Metadata:    req.Metadata,
+		Attachments: toAttachmentInputs(req.Attachments),
 	})
 	if err != nil {
 		RespondError(c, err)

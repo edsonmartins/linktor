@@ -166,7 +166,16 @@ func TestDirectSend_InvalidBody_Returns400(t *testing.T) {
 		{"sem texto", map[string]interface{}{"channel_id": "channel-1", "to": "+5511999999999"}},
 		{"texto em branco", map[string]interface{}{"channel_id": "channel-1", "to": "+5511999999999", "text": "  "}},
 		{"content_type não suportado", map[string]interface{}{
-			"channel_id": "channel-1", "to": "+5511999999999", "text": "oi", "content_type": "image",
+			"channel_id": "channel-1", "to": "+5511999999999", "text": "oi", "content_type": "location",
+		}},
+		// Mídia declarada sem nada para entregar: sem esta recusa a mensagem sai
+		// anunciada como imagem carregando vazio, e o envio ainda reporta sucesso.
+		{"mídia sem anexo", map[string]interface{}{
+			"channel_id": "channel-1", "to": "+5511999999999", "text": "olha isso", "content_type": "image",
+		}},
+		{"anexo sem url", map[string]interface{}{
+			"channel_id": "channel-1", "to": "+5511999999999", "content_type": "image",
+			"attachments": []map[string]interface{}{{"type": "image", "mime_type": "image/png"}},
 		}},
 	}
 
@@ -311,6 +320,63 @@ func TestDirectSend_ContentAliasIsAccepted(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, w.Code)
 	data := directSendData(t, resp)
 	assert.Equal(t, "via alias", d.messages.Messages[data["id"].(string)].Content)
+}
+
+func TestDirectSend_MediaWithAttachmentGoesOut(t *testing.T) {
+	d := setupDirectSend()
+	seedConnectedChannel(d.channels, "channel-1", "tenant-1", entity.ChannelTypeWhatsApp)
+
+	w, resp := postDirectSend(d, map[string]interface{}{
+		"channel_id":   "channel-1",
+		"to":           "+5511999999999",
+		"content_type": "image",
+		"text":         "segue o comprovante",
+		"attachments": []map[string]interface{}{{
+			"url":        "https://arquivos.exemplo/comprovante.png",
+			"type":       "image",
+			"filename":   "comprovante.png",
+			"mime_type":  "image/png",
+			"size_bytes": 2048,
+		}},
+	})
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	data := directSendData(t, resp)
+
+	message := d.messages.Messages[data["id"].(string)]
+	require.NotNil(t, message)
+	assert.Equal(t, entity.ContentTypeImage, message.ContentType)
+	// A legenda acompanha a mídia; não vira mensagem separada.
+	assert.Equal(t, "segue o comprovante", message.Content)
+	require.Len(t, message.Attachments, 1)
+	assert.Equal(t, "https://arquivos.exemplo/comprovante.png", message.Attachments[0].URL)
+	assert.Equal(t, "image/png", message.Attachments[0].MimeType)
+
+	require.Len(t, d.producer.OutboundMessages, 1)
+	out := d.producer.OutboundMessages[0]
+	assert.Equal(t, "image", out.ContentType)
+	require.Len(t, out.Attachments, 1)
+	assert.Equal(t, "https://arquivos.exemplo/comprovante.png", out.Attachments[0].URL)
+}
+
+// Anexo sem content_type vira "document": é o único tipo que todo transporte
+// carrega, então errar aqui piora a apresentação, nunca a entrega.
+func TestDirectSend_AttachmentWithoutContentTypeBecomesDocument(t *testing.T) {
+	d := setupDirectSend()
+	seedConnectedChannel(d.channels, "channel-1", "tenant-1", entity.ChannelTypeWhatsApp)
+
+	w, resp := postDirectSend(d, map[string]interface{}{
+		"channel_id": "channel-1",
+		"to":         "+5511999999999",
+		"attachments": []map[string]interface{}{{
+			"url":      "https://arquivos.exemplo/boleto.pdf",
+			"filename": "boleto.pdf",
+		}},
+	})
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	data := directSendData(t, resp)
+	assert.Equal(t, entity.ContentTypeDocument, d.messages.Messages[data["id"].(string)].ContentType)
 }
 
 func TestDirectSend_ReusesExistingContactAndConversation(t *testing.T) {
