@@ -970,7 +970,21 @@ func main() {
 		// stream, signs with a fresh timestamp and performs the HTTP POST with
 		// NATS-driven retry + DLQ. Splitting enqueue from delivery makes the
 		// pipeline crash-safe: an event is never lost between receipt and delivery.
-		webhookDeliveryWorker := infrawebhook.NewDeliveryWorker(infrawebhook.NewWebhookProducer(), channelRepo)
+		// A consumer on the same host commonly terminates TLS with a self-signed
+		// certificate. Go's default client rejects it, and the failure is silent
+		// on the consumer's side — the request never arrives, so its logs show
+		// nothing and the operator investigates the wrong end. The exception is
+		// limited to loopback, where no network path exists on which the
+		// connection could be intercepted. Off by default.
+		var producerOpts []infrawebhook.Option
+		if os.Getenv("LINKTOR_WEBHOOK_INSECURE_LOOPBACK") == "true" {
+			producerOpts = append(producerOpts, infrawebhook.WithInsecureLoopbackTLS())
+			logger.Warn("Webhook: TLS verification disabled for loopback destinations " +
+				"(LINKTOR_WEBHOOK_INSECURE_LOOPBACK=true). Other destinations are unaffected.")
+		}
+
+		webhookDeliveryWorker := infrawebhook.NewDeliveryWorker(
+			infrawebhook.NewWebhookProducer(producerOpts...), channelRepo)
 		if err := consumer.SubscribeWebhooks(ctx, webhookDeliveryWorker.Handle); err != nil {
 			logger.Warn("Failed to start webhook delivery worker: " + err.Error())
 		} else {
