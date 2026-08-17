@@ -308,7 +308,15 @@ type GroupParticipant struct {
 
 // ContactInfo represents a contact
 type ContactInfo struct {
-	JID           types.JID `json:"jid"`
+	JID types.JID `json:"jid"`
+	// Phone is the resolved phone number, digits only, no leading "+".
+	//
+	// Empty means the number is unknown — the contact is addressed only by LID
+	// and the LID→PN mapping is not in the device store. Empty is a real
+	// answer, not a missing field: a caller matching these against a customer
+	// database must keep "no phone" apart from "no match", or a resolution
+	// failure will read as the contact simply not being a customer.
+	Phone         string    `json:"phone,omitempty"`
 	FullName      string    `json:"full_name"`
 	PushName      string    `json:"push_name"`
 	BusinessName  string    `json:"business_name,omitempty"`
