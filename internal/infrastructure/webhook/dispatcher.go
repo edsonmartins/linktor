@@ -156,14 +156,16 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 		return nil
 	}
 
+	senderType, direction := authorship(p)
+
 	data := InboundData{
 		Message: InboundMessagePayload{
 			ID:          p.str("message_id"),
-			Direction:   "inbound",
+			Direction:   direction,
 			ContentType: p.str("content_type"),
 			Content:     buildContent(p),
 			SenderID:    p.str("sender_id"),
-			SenderType:  string(entity.SenderTypeContact),
+			SenderType:  senderType,
 			Metadata:    inboundMetadata(p),
 			Mentions:    inboundMentions(p),
 			Reaction:    d.reactionOf(ctx, p),
@@ -177,6 +179,30 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 	}
 
 	return d.deliver(ctx, channel, TypeMessageReceived, event.TenantID, dedupKey(p.str("message_id"), "received"), data)
+}
+
+// authorship says who wrote the message and which way it travelled.
+//
+// It used to be a constant pair — "contact" and "inbound" — which held for as
+// long as everything arriving was the customer talking. It stopped holding when
+// the paired phone stayed in the operator's hand: what they type there reaches
+// this same path, and stamping it "contact" hands the integrator the operator's
+// words as if the customer had said them. That is not a visible failure; it is a
+// plausible transcript with the sides swapped, and it is what any downstream
+// analysis learns from.
+//
+// An event without the field is one queued before this shipped, or a channel
+// that has no notion of an operator device — "contact"/"inbound" is right for
+// both, so the absent case keeps the old behaviour exactly.
+func authorship(p eventPayload) (senderType, direction string) {
+	st := strings.TrimSpace(p.str("sender_type"))
+	if st == "" {
+		st = string(entity.SenderTypeContact)
+	}
+	if st == string(entity.SenderTypeContact) {
+		return st, "inbound"
+	}
+	return st, "outbound"
 }
 
 // correlationKeys are the metadata keys that *constitute* a correlation: an

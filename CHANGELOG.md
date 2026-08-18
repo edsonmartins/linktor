@@ -23,6 +23,12 @@ de chamadas (`internal/voip`), aproveitando código do projeto wacalls-chat.
   efêmeras, view-once (v1/v2/v2ext), device-sent, editadas e protocol antes de
   classificar; fallback de texto para anúncios CTWA (matchedText), live-location
   e contacts-array; flag de edição.
+- **O webhook diz de quem é a fala:** `message.senderType` e `message.direction`
+  passam a carregar o valor real em vez das constantes `"contact"` / `"inbound"`.
+  Era o buraco que sobrava do item abaixo — a mensagem do operador entrava na
+  conversa e saía para o integrador carimbada como se fosse do cliente. Evento
+  sem `sender_type` (enfileirado antes desta versão, ou canal sem aparelho de
+  operador) mantém `contact`/`inbound` exatamente como antes.
 - **Mensagens enviadas do próprio aparelho entram na conversa:** o inbound
   descartava tudo com `IsFromMe`, tratando como eco do que o Linktor mandou.
   Mas o celular pareado continua na mão do operador, e o que ele digita ali

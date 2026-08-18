@@ -633,3 +633,93 @@ func TestDispatcherDeliveryIDIsDeterministic(t *testing.T) {
 		t.Errorf("unexpected deterministic id: %q", pub.deliveries[0].ID)
 	}
 }
+
+// Authorship used to be a constant pair — "contact"/"inbound" — which held only
+// while everything arriving was the customer talking. On a channel whose device
+// stays in the operator's hand it stops holding, and the failure is silent: a
+// plausible transcript with the sides swapped.
+
+func TestDispatcherInboundFromOperatorIsNotTheContact(t *testing.T) {
+	pub := &recordingPublisher{}
+	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+
+	err := d.handle(context.Background(), &nats.Event{
+		Type:     nats.EventMessageReceived,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"message_id":   "m-op",
+			"channel_id":   "ch-1",
+			"content_type": "text",
+			"content":      "consigo dividir em duas vezes",
+			"sender_id":    "5521999998888",
+			"sender_type":  "user",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	data := inboundOf(t, pub)
+	if data.Message.SenderType != "user" {
+		t.Errorf("senderType = %q, want the operator's own type", data.Message.SenderType)
+	}
+	if data.Message.Direction != "outbound" {
+		t.Errorf("direction = %q, want outbound — it left us toward the customer", data.Message.Direction)
+	}
+}
+
+func TestDispatcherInboundFromContactStaysInbound(t *testing.T) {
+	pub := &recordingPublisher{}
+	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+
+	err := d.handle(context.Background(), &nats.Event{
+		Type:     nats.EventMessageReceived,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"message_id":   "m-c",
+			"channel_id":   "ch-1",
+			"content_type": "text",
+			"content":      "já te envio o comprovante",
+			"sender_id":    "5524999194577",
+			"sender_type":  "contact",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	data := inboundOf(t, pub)
+	if data.Message.SenderType != "contact" || data.Message.Direction != "inbound" {
+		t.Errorf("got %q/%q, want contact/inbound",
+			data.Message.SenderType, data.Message.Direction)
+	}
+}
+
+func TestDispatcherInboundWithoutSenderTypeKeepsOldBehaviour(t *testing.T) {
+	// An event queued before this shipped, or a channel with no notion of an
+	// operator device. Both are the customer talking, and both must keep
+	// producing exactly the envelope integrators already parse.
+	pub := &recordingPublisher{}
+	d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+
+	err := d.handle(context.Background(), &nats.Event{
+		Type:     nats.EventMessageReceived,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"message_id":   "m-legado",
+			"channel_id":   "ch-1",
+			"content_type": "text",
+			"content":      "bom dia",
+			"sender_id":    "5521988887777",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	data := inboundOf(t, pub)
+	if data.Message.SenderType != "contact" || data.Message.Direction != "inbound" {
+		t.Errorf("got %q/%q, want contact/inbound for an event without sender_type",
+			data.Message.SenderType, data.Message.Direction)
+	}
+}

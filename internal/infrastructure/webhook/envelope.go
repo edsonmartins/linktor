@@ -93,13 +93,18 @@ type GroupPayload struct {
 
 // InboundMessagePayload is the normalized message inside InboundData.
 type InboundMessagePayload struct {
-	ID          string            `json:"id"`
-	Direction   string            `json:"direction"` // always "inbound"
-	ContentType string            `json:"contentType"`
-	Content     MessageContent    `json:"content"`
-	SenderID    string            `json:"senderId,omitempty"`
-	SenderType  string            `json:"senderType"` // "contact"
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	ID string `json:"id"`
+	// Direction is "inbound" when the contact wrote it and "outbound" when our
+	// own side did — which happens on channels whose device stays in the
+	// operator's hand and reaches Linktor through the same receive path.
+	Direction   string         `json:"direction"`
+	ContentType string         `json:"contentType"`
+	Content     MessageContent `json:"content"`
+	SenderID    string         `json:"senderId,omitempty"`
+	// SenderType is "contact", "user", "bot" or "system". Anything other than
+	// "contact" means the message came from our side, not the customer's.
+	SenderType string            `json:"senderType"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 	// Mentions carries the JIDs mentioned in this message (absent when none). In a
 	// group, a direct mention of the manager lets the consumer skip the debounce.
 	Mentions []string `json:"mentions,omitempty"`

@@ -393,6 +393,11 @@ func (uc *ReceiveMessageUseCase) buildMessageReceivedOutboxEvent(tenantID string
 		"external_id":     message.ExternalID,
 		"sender_id":       message.Metadata["sender_id"],
 		"sender_name":     message.Metadata["sender_name"],
+		// Quem escreveu. Inbound quase sempre é o contato, mas num canal cujo
+		// aparelho segue na mão do operador não é sempre, e o dispatcher não tem
+		// como saber sozinho. Sem isto ele carimba "contact" em tudo, e o
+		// integrador recebe a fala do operador como se fosse a do cliente.
+		"sender_type": string(message.SenderType),
 		// Grupo (quando o adaptador marca): o consumidor thread-eia pela conversa de
 		// grupo; sender_id acima continua sendo o indivíduo que falou. Vazio em 1:1.
 		"is_group": message.Metadata["is_group"],
