@@ -797,6 +797,78 @@ func (c *Client) DownloadMedia(ctx context.Context, msg any) ([]byte, error) {
 	return client.Download(ctx, downloadable)
 }
 
+// GetAllContacts returns the address book stored on the paired device.
+//
+// This is the agent's own WhatsApp contact list — the numbers they saved by
+// hand, which is exactly where the useful phone tends to live when the CRM is
+// out of date.
+//
+// Two properties matter to whoever consumes this:
+//
+// Phone is resolved, not assumed. WhatsApp is migrating identities to opaque
+// LID JIDs that carry no phone number. For those we go through ResolvePN; when
+// the mapping is unknown the entry still comes back, with Phone empty. An empty
+// phone is a distinct outcome from "not a customer", and callers are expected
+// to keep them apart — collapsing the two hides a technical failure behind what
+// looks like a data one.
+//
+// Groups and broadcast lists are excluded. They are not people, and a group JID
+// would never match a customer record anyway.
+func (c *Client) GetAllContacts(ctx context.Context) ([]ContactInfo, error) {
+	c.mu.RLock()
+	client := c.client
+	c.mu.RUnlock()
+
+	if client == nil {
+		return nil, ErrClientNotReady
+	}
+
+	stored, err := client.Store.Contacts.GetAllContacts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read device contacts: %w", err)
+	}
+
+	contacts := make([]ContactInfo, 0, len(stored))
+	for jid, info := range stored {
+		if entry, keep := contactEntry(jid, info, c.ResolvePN(ctx, jid)); keep {
+			contacts = append(contacts, entry)
+		}
+	}
+
+	return contacts, nil
+}
+
+// contactEntry decides what a single stored contact becomes.
+//
+// Split out from GetAllContacts so the two rules that carry consequence — which
+// JIDs are people, and when a phone number is actually known — are testable
+// without a paired device.
+func contactEntry(jid types.JID, info types.ContactInfo, resolved types.JID) (ContactInfo, bool) {
+	// Groups and broadcast lists are not people. A group JID would never match
+	// a customer record, and letting them through would inflate the "unmatched"
+	// pile with entries nobody can act on.
+	if jid.Server == types.GroupServer || jid.Server == types.BroadcastServer {
+		return ContactInfo{}, false
+	}
+
+	entry := ContactInfo{
+		JID:          jid,
+		FullName:     info.FullName,
+		PushName:     info.PushName,
+		BusinessName: info.BusinessName,
+	}
+
+	// For a plain phone JID the user part IS the number. For a LID it is an
+	// opaque id, so Phone is only filled when the resolution actually gave back
+	// a phone-number JID — otherwise we would be publishing an internal
+	// identifier as if it were a phone.
+	if !isLID(resolved) {
+		entry.Phone = resolved.User
+	}
+
+	return entry, true
+}
+
 // GetContactInfo gets information about a contact
 func (c *Client) GetContactInfo(ctx context.Context, jid types.JID) (*ContactInfo, error) {
 	c.mu.RLock()

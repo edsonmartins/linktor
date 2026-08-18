@@ -316,6 +316,24 @@ func (a *Adapter) GetDeviceInfo() *DeviceInfo {
 	return a.client.GetDeviceInfo()
 }
 
+// GetAllContacts returns the address book of the paired device.
+//
+// Entries whose phone could not be resolved come back with Phone empty rather
+// than dropped: the caller needs to see how much of the address book is
+// LID-only, and silently discarding those would make an import look complete
+// when it is not.
+func (a *Adapter) GetAllContacts(ctx context.Context) ([]ContactInfo, error) {
+	a.mu.RLock()
+	client := a.client
+	a.mu.RUnlock()
+
+	if client == nil {
+		return nil, ErrClientNotReady
+	}
+
+	return client.GetAllContacts(ctx)
+}
+
 // SendMessage sends a message via WhatsApp
 func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) (*plugin.SendResult, error) {
 	a.mu.RLock()
