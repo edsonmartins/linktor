@@ -33,44 +33,112 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Palette: lime-on-near-black, ported from the Cargorix shadcn template.
+   Values are the template's own hex tokens converted to HSL triples so the
+   existing `hsl(var(--x))` bindings in tailwind.config.ts keep working. */
 @layer base {
+  /* Light theme — the app ships dark (see <html class="dark">), but the full
+     light set is kept so a theme toggle only needs to drop the class. */
   :root {
-    /* Terminal Dark Theme */
-    --background: 180 3% 10%;
-    --foreground: 180 5% 90%;
+    --background: 0 0% 100%;
+    --foreground: 200 14% 4%;
 
-    --card: 180 3% 14%;
-    --card-foreground: 180 5% 90%;
+    --card: 0 0% 100%;
+    --card-foreground: 200 14% 4%;
 
-    --popover: 180 3% 12%;
-    --popover-foreground: 180 5% 90%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 14% 4%;
 
-    /* Terminal Green as primary */
-    --primary: 150 70% 55%;
-    --primary-foreground: 180 3% 10%;
+    /* Signature lime */
+    --primary: 79 100% 45%;
+    --primary-foreground: 86 71% 19%;
 
-    --secondary: 180 3% 18%;
-    --secondary-foreground: 180 5% 85%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 10%;
 
-    --muted: 180 3% 20%;
-    --muted-foreground: 180 5% 60%;
+    --muted: 180 8% 95%;
+    --muted-foreground: 191 9% 45%;
 
-    --accent: 180 70% 55%;
-    --accent-foreground: 180 3% 10%;
+    --accent: 100 39% 95%;
+    --accent-foreground: 92 43% 16%;
 
-    /* Coral for destructive */
-    --destructive: 5 80% 65%;
-    --destructive-foreground: 180 5% 98%;
+    --destructive: 355 100% 45%;
+    --destructive-foreground: 0 0% 100%;
 
-    /* Yellow for warnings */
-    --warning: 45 90% 60%;
-    --warning-foreground: 180 3% 10%;
+    --warning: 40 63% 48%;
+    --warning-foreground: 200 14% 4%;
 
-    --border: 180 3% 22%;
-    --input: 180 3% 18%;
-    --ring: 150 70% 55%;
+    --border: 192 10% 90%;
+    --input: 192 10% 90%;
+    --ring: 80 96% 37%;
 
-    --radius: 0.5rem;
+    --chart-1: 81 76% 46%;
+    --chart-2: 137 44% 48%;
+    --chart-3: 178 100% 30%;
+    --chart-4: 40 63% 48%;
+    --chart-5: 225 28% 54%;
+
+    --sidebar: 180 20% 98%;
+    --sidebar-foreground: 200 14% 4%;
+    --sidebar-primary: 84 100% 32%;
+    --sidebar-primary-foreground: 78 92% 95%;
+    --sidebar-accent: 180 8% 95%;
+    --sidebar-accent-foreground: 197 14% 10%;
+    --sidebar-border: 192 10% 90%;
+    --sidebar-ring: 192 8% 64%;
+
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    --background: 200 14% 4%;
+    --foreground: 180 20% 98%;
+
+    --card: 197 14% 10%;
+    --card-foreground: 180 20% 98%;
+
+    --popover: 197 14% 10%;
+    --popover-foreground: 180 20% 98%;
+
+    /* Signature lime */
+    --primary: 83 100% 40%;
+    --primary-foreground: 90 100% 5%;
+
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 193 12% 15%;
+    --muted-foreground: 192 8% 64%;
+
+    --accent: 96 13% 15%;
+    --accent-foreground: 97 28% 91%;
+
+    --destructive: 359 100% 70%;
+    --destructive-foreground: 200 14% 4%;
+
+    --warning: 39 67% 55%;
+    --warning-foreground: 200 14% 4%;
+
+    /* The template uses white at 10%/15%; these are the flattened equivalents
+       over the card surface, since the bindings here are alpha-less. */
+    --border: 197 7% 19%;
+    --input: 197 6% 23%;
+    --ring: 80 96% 37%;
+
+    --chart-1: 82 68% 50%;
+    --chart-2: 136 45% 54%;
+    --chart-3: 177 65% 41%;
+    --chart-4: 39 67% 55%;
+    --chart-5: 225 56% 70%;
+
+    --sidebar: 197 14% 10%;
+    --sidebar-foreground: 180 20% 98%;
+    --sidebar-primary: 83 100% 40%;
+    --sidebar-primary-foreground: 89 88% 10%;
+    --sidebar-accent: 193 12% 15%;
+    --sidebar-accent-foreground: 180 20% 98%;
+    --sidebar-border: 197 7% 19%;
+    --sidebar-ring: 191 9% 45%;
   }
 }
 
@@ -123,10 +191,9 @@
     @apply inline-block w-2 h-5 bg-primary ml-1 animate-blink;
   }
 
-  /* Card with terminal border */
+  /* Card surface — a single hairline border, no doubled ring */
   .terminal-card {
-    @apply bg-card border border-border rounded-lg;
-    box-shadow: 0 0 0 1px hsl(var(--border));
+    @apply bg-card border border-border rounded-xl;
   }
 
   /* Glow effect for primary elements */
@@ -182,7 +249,7 @@
 @layer utilities {
   /* Text gradient for headings */
   .text-gradient {
-    @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-primary to-chart-3 bg-clip-text text-transparent;
   }
 
   /* Hover glow effect */

@@ -15,7 +15,14 @@ interface EscalationsChartProps {
   data: EscalationAnalytics[]
 }
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+const COLORS = [
+  'hsl(var(--chart-1))',
+  'hsl(var(--chart-2))',
+  'hsl(var(--chart-3))',
+  'hsl(var(--chart-4))',
+  'hsl(var(--chart-5))',
+  'hsl(var(--destructive))',
+]
 
 const REASON_KEYS: Record<string, string> = {
   low_confidence: 'lowConfidence',
@@ -52,7 +59,7 @@ export function EscalationsChart({ data }: EscalationsChartProps) {
                 cy="50%"
                 labelLine={false}
                 outerRadius={80}
-                fill="#8884d8"
+                fill="hsl(var(--chart-1))"
                 dataKey="value"
                 label={({ name, percent }) =>
                   `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`
