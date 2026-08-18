@@ -440,3 +440,35 @@ func TestMessageNormalizer_NormalizeAttachments(t *testing.T) {
 		assert.NotNil(t, result[1].Metadata) // nil metadata initialized
 	})
 }
+
+func TestMessageNormalizer_InboundFromTheOperatorsOwnDevice(t *testing.T) {
+	// WhatsApp delivers what the operator typed on the paired phone through the
+	// inbound path, like anything else the channel receives. Storing it as the
+	// contact's would put the operator's words in the customer's mouth, and the
+	// transcript would read as the customer negotiating with themselves.
+	normalizer := NewMessageNormalizer()
+
+	msg := &nats.InboundMessage{
+		ID:          "msg-op",
+		ContentType: "text",
+		Content:     "Consigo dividir em duas vezes",
+		Metadata:    map[string]string{"is_from_me": "true"},
+	}
+
+	result := normalizer.NormalizeInbound(msg)
+
+	assert.Equal(t, entity.SenderTypeUser, result.SenderType)
+}
+
+func TestMessageNormalizer_InboundDefaultsToTheContact(t *testing.T) {
+	normalizer := NewMessageNormalizer()
+
+	semFlag := normalizer.NormalizeInbound(&nats.InboundMessage{ContentType: "text"})
+	flagFalsa := normalizer.NormalizeInbound(&nats.InboundMessage{
+		ContentType: "text",
+		Metadata:    map[string]string{"is_from_me": "false"},
+	})
+
+	assert.Equal(t, entity.SenderTypeContact, semFlag.SenderType)
+	assert.Equal(t, entity.SenderTypeContact, flagFalsa.SenderType)
+}

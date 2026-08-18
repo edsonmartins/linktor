@@ -35,6 +35,10 @@ type Adapter struct {
 	stopCh            chan struct{}
 	eventLoopDone     chan struct{}
 
+	// Ids of messages this client sent, so their echo can be told apart from
+	// what the operator typed on the paired phone. See own_messages.go.
+	sent *sentRegistry
+
 	// Native calling (VoIP) — isolated from the messaging event loop.
 	callGateway   *CallGateway
 	callHandler   CallHandler
@@ -85,6 +89,7 @@ func NewAdapter() *Adapter {
 	return &Adapter{
 		BaseAdapter: plugin.NewBaseAdapter(plugin.ChannelTypeWhatsApp, info),
 		config:      &Config{},
+		sent:        newSentRegistry(),
 	}
 }
 
@@ -492,6 +497,10 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 		}, nil
 	}
 
+	// Remember the id before returning: the echo can arrive while the caller is
+	// still handling this result, and an unrecorded echo is a duplicate message.
+	a.sent.remember(resp.MessageID, time.Now())
+
 	return &plugin.SendResult{
 		Success:    true,
 		ExternalID: resp.MessageID,
@@ -606,7 +615,11 @@ func (a *Adapter) EditMessage(ctx context.Context, chat, messageID, newText stri
 	if client == nil || !client.IsConnected() {
 		return nil, ErrClientNotReady
 	}
-	return client.EditMessage(ctx, chat, messageID, newText)
+	resp, err := client.EditMessage(ctx, chat, messageID, newText)
+	if err == nil && resp != nil {
+		a.sent.remember(resp.MessageID, time.Now())
+	}
+	return resp, err
 }
 
 // RevokeMessage deletes a message for everyone. Pass an empty sender to revoke
@@ -619,7 +632,11 @@ func (a *Adapter) RevokeMessage(ctx context.Context, chat, sender, messageID str
 	if client == nil || !client.IsConnected() {
 		return nil, ErrClientNotReady
 	}
-	return client.RevokeMessage(ctx, chat, sender, messageID)
+	resp, err := client.RevokeMessage(ctx, chat, sender, messageID)
+	if err == nil && resp != nil {
+		a.sent.remember(resp.MessageID, time.Now())
+	}
+	return resp, err
 }
 
 // SendTypingIndicator sends a typing indicator
@@ -805,6 +822,15 @@ func (a *Adapter) eventLoop() {
 							v.SenderPN = pn
 						}
 					}
+					// On a message the operator typed on the phone the sender is
+					// this account, so the counterpart to key the conversation on
+					// is the chat. Resolve that side too, or an @lid chat would
+					// open a second conversation alongside the customer's.
+					if v.IsFromMe && isLID(v.ChatJID) {
+						if pn := client.ResolvePN(ctx, v.ChatJID); pn.User != "" && !isLID(pn) {
+							v.ChatPN = pn
+						}
+					}
 					inbound := convertToInboundMessage(v)
 					// Eagerly download+decrypt inbound media so the encrypted
 					// CDN blob becomes usable bytes for the application.
@@ -868,8 +894,15 @@ func (a *Adapter) eventLoop() {
 // Skips our own echoes and, per the channel config, group messages
 // (ignore_groups) and status/story broadcasts (ignore_status). All flags default
 // off, so by default every inbound flows.
+//
+// IsFromMe alone is not an echo. The paired phone stays in its owner's hand, and
+// whatever they type there arrives here with the same flag as the echo of a send
+// Linktor made. Discarding on the flag threw away one whole side of every
+// conversation — the operator's — leaving the application with the customer
+// talking to nobody. What identifies a real echo is the message id: we know the
+// ids we handed out, and only those are ours to drop.
 func (a *Adapter) shouldForwardInbound(v *IncomingMessage) bool {
-	if v.IsFromMe {
+	if v.IsFromMe && a.sent.isOurs(v.ExternalID, time.Now()) {
 		return false
 	}
 	if a.config != nil {
@@ -900,6 +933,17 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 		senderID = msg.SenderPN.User
 	}
 
+	// A message the operator typed on the phone is authored by this account, so
+	// its sender identifies nobody downstream: contact and conversation are keyed
+	// off this field, and the account's own number would file the message under a
+	// conversation with itself. The counterpart is the chat.
+	if msg.IsFromMe {
+		senderID = msg.ChatJID.User
+		if msg.ChatPN.User != "" {
+			senderID = msg.ChatPN.User
+		}
+	}
+
 	inbound := &plugin.InboundMessage{
 		ID:          uuid.New().String(),
 		ExternalID:  msg.ExternalID,
@@ -927,6 +971,22 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 		inbound.Metadata["sender_pn"] = msg.SenderPN.String()
 		if isLID(msg.SenderJID) {
 			inbound.Metadata["lid"] = msg.SenderJID.String()
+		}
+	}
+
+	// Mark authorship. Without it the operator's own message would be stored as
+	// something the customer said — a transcript that reads as the customer
+	// negotiating with themselves, and worse than not having the message at all.
+	if msg.IsFromMe {
+		inbound.Metadata["is_from_me"] = "true"
+		inbound.Metadata["operator_jid"] = msg.SenderJID.String()
+		// The push name on such a message is the operator's, and downstream uses
+		// SenderName to name the contact the message is filed under — which here
+		// is the customer. Leaving it would relabel the customer with the
+		// operator's name; the operator's name goes somewhere it means that.
+		if inbound.SenderName != "" {
+			inbound.Metadata["operator_name"] = inbound.SenderName
+			inbound.SenderName = ""
 		}
 	}
 

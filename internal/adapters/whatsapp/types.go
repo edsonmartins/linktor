@@ -185,6 +185,11 @@ type IncomingMessage struct {
 	// resolved to, when available. Empty when SenderJID is already a phone JID
 	// or the LID could not be resolved.
 	SenderPN types.JID `json:"sender_pn,omitempty"`
+
+	// ChatPN holds the phone-number JID a hidden-user (@lid) ChatJID was resolved
+	// to. Only filled for IsFromMe messages, where the conversation's counterpart
+	// is the chat and not the sender — the sender there is the account itself.
+	ChatPN types.JID `json:"chat_pn,omitempty"`
 }
 
 // Attachment represents a media attachment
@@ -316,14 +321,14 @@ type ContactInfo struct {
 	// answer, not a missing field: a caller matching these against a customer
 	// database must keep "no phone" apart from "no match", or a resolution
 	// failure will read as the contact simply not being a customer.
-	Phone         string    `json:"phone,omitempty"`
-	FullName      string    `json:"full_name"`
-	PushName      string    `json:"push_name"`
-	BusinessName  string    `json:"business_name,omitempty"`
-	ProfilePicURL string    `json:"profile_pic_url,omitempty"`
-	Status        string    `json:"status,omitempty"`
-	IsBlocked     bool      `json:"is_blocked"`
-	IsBusiness    bool      `json:"is_business"`
+	Phone         string `json:"phone,omitempty"`
+	FullName      string `json:"full_name"`
+	PushName      string `json:"push_name"`
+	BusinessName  string `json:"business_name,omitempty"`
+	ProfilePicURL string `json:"profile_pic_url,omitempty"`
+	Status        string `json:"status,omitempty"`
+	IsBlocked     bool   `json:"is_blocked"`
+	IsBusiness    bool   `json:"is_business"`
 }
 
 // MediaType represents the type of media

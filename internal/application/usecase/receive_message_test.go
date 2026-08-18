@@ -811,6 +811,60 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, 6, conv.UnreadCount)
 	})
 
+	t.Run("Operator's Own Device Message Does Not Raise Unread", func(t *testing.T) {
+		// WhatsApp delivers what the operator typed on the paired phone through
+		// this same path. They were in the conversation when they wrote it, so
+		// counting their own words as unread would push the conversation back up
+		// the queue as if the customer were waiting.
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		existingContact := &entity.Contact{
+			ID:       "contact-1",
+			TenantID: "tenant-1",
+			Name:     "Test User",
+			Phone:    "+5511888888888",
+			Identities: []*entity.ContactIdentity{
+				{
+					ID:          "id-1",
+					ContactID:   "contact-1",
+					ChannelType: "whatsapp",
+					Identifier:  "+5511888888888",
+				},
+			},
+			CustomFields: make(map[string]string),
+			Tags:         []string{},
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		f.contactRepo.Contacts[existingContact.ID] = existingContact
+
+		existingConv := &entity.Conversation{
+			ID:          "conv-1",
+			TenantID:    "tenant-1",
+			ChannelID:   "ch-1",
+			ContactID:   "contact-1",
+			Status:      entity.ConversationStatusOpen,
+			Priority:    entity.ConversationPriorityNormal,
+			UnreadCount: 5,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+		f.conversationRepo.Conversations[existingConv.ID] = existingConv
+
+		inbound := makeInbound("ch-1", "tenant-1")
+		inbound.Metadata["is_from_me"] = "true"
+
+		output, err := f.uc.Execute(ctx, inbound)
+		require.NoError(t, err)
+		require.NotNil(t, output)
+
+		assert.Equal(t, entity.SenderTypeUser, output.Message.SenderType,
+			"the message is stored as ours, not as something the customer said")
+		assert.Equal(t, 5, f.conversationRepo.Conversations["conv-1"].UnreadCount)
+	})
+
 	t.Run("Event Payload Verification - MessageReceived", func(t *testing.T) {
 		f := newReceiveMessageFixture()
 		channel := makeChannel("ch-1", "tenant-1")

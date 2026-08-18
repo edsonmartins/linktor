@@ -150,9 +150,14 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 		}
 	}
 
-	// Update conversation
-	if err := uc.conversationRepo.IncrementUnreadCount(ctx, conversation.ID); err != nil {
-		// Log error but don't fail
+	// Update conversation. Unread counts what is waiting on us to read, so a
+	// message our own operator typed on the paired device does not raise it —
+	// they were there, and marking their own words unread would send the
+	// conversation back to the top of the queue for no reason.
+	if message.IsFromContact() {
+		if err := uc.conversationRepo.IncrementUnreadCount(ctx, conversation.ID); err != nil {
+			// Log error but don't fail
+		}
 	}
 
 	// Reopen conversation if it was resolved
