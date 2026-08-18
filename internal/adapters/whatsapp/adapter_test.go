@@ -275,12 +275,55 @@ func (suite *AdapterTestSuite) TestShouldForwardInbound_IgnoreGroups() {
 	off := &Adapter{config: &Config{IgnoreGroups: false}}
 	group := &IncomingMessage{IsGroup: true}
 	direct := &IncomingMessage{IsGroup: false}
-	mine := &IncomingMessage{IsGroup: false, IsFromMe: true}
 
 	assert.False(suite.T(), on.shouldForwardInbound(group), "ignore_groups → grupo não é encaminhado")
 	assert.True(suite.T(), on.shouldForwardInbound(direct), "1:1 flui mesmo com ignore_groups")
 	assert.True(suite.T(), off.shouldForwardInbound(group), "sem ignore_groups, grupo flui (padrão)")
-	assert.False(suite.T(), off.shouldForwardInbound(mine), "eco próprio nunca é encaminhado")
+}
+
+func (suite *AdapterTestSuite) TestShouldForwardInbound_EcoNossoNaoVolta() {
+	a := &Adapter{config: &Config{}, sent: newSentRegistry()}
+	a.sent.remember("eco-1", time.Now())
+
+	eco := &IncomingMessage{ExternalID: "eco-1", IsFromMe: true}
+
+	assert.False(suite.T(), a.shouldForwardInbound(eco),
+		"o que o próprio Linktor enviou volta como eco e seria mensagem duplicada")
+}
+
+func (suite *AdapterTestSuite) TestShouldForwardInbound_OperadorNoAparelhoEntra() {
+	// O caso que motivou a correção: o cobrador responde pelo celular pareado.
+	// Chega com IsFromMe igual ao eco, mas o Linktor nunca enviou esse id — e
+	// descartar pelo flag apagava metade de toda conversa.
+	a := &Adapter{config: &Config{}, sent: newSentRegistry()}
+
+	doAparelho := &IncomingMessage{ExternalID: "digitada-no-celular", IsFromMe: true}
+
+	assert.True(suite.T(), a.shouldForwardInbound(doAparelho),
+		"mensagem digitada no aparelho não é eco de nada — precisa entrar")
+}
+
+func (suite *AdapterTestSuite) TestConvertToInboundMessage_DoAparelhoVaiParaAConversaDoCliente() {
+	// Contato e conversa são resolvidos pelo SenderID. Numa mensagem do operador
+	// o remetente é a própria conta: usá-lo abriria uma conversa da empresa com
+	// ela mesma, e a fala do cobrador não apareceria onde o cliente está.
+	msg := &IncomingMessage{
+		ExternalID:  "m-1",
+		SenderJID:   types.NewJID("5521888887777", types.DefaultUserServer),
+		ChatJID:     types.NewJID("5511999999999", types.DefaultUserServer),
+		SenderName:  "Cobrador Rio Quality",
+		Text:        "Bom dia, consegue ver o boleto?",
+		IsFromMe:    true,
+		MessageType: "text",
+	}
+
+	result := convertToInboundMessage(msg)
+
+	assert.Equal(suite.T(), "5511999999999", result.SenderID, "a conversa é a do cliente")
+	assert.Equal(suite.T(), "true", result.Metadata["is_from_me"])
+	assert.Empty(suite.T(), result.SenderName,
+		"o pushName aqui é do operador e renomearia o contato do cliente")
+	assert.Equal(suite.T(), "Cobrador Rio Quality", result.Metadata["operator_name"])
 }
 
 func (suite *AdapterTestSuite) TestShouldForwardInbound_IgnoreStatus() {

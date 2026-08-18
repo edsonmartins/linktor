@@ -47,7 +47,7 @@ func (n *MessageNormalizer) NormalizeInbound(msg *nats.InboundMessage) *Normaliz
 		ChannelType:    msg.ChannelType,
 		ConversationID: msg.ConversationID,
 		ContactID:      msg.ContactID,
-		SenderType:     entity.SenderTypeContact,
+		SenderType:     inboundSenderType(msg),
 		ContentType:    contentType,
 		Content:        content,
 		Metadata:       msg.Metadata,
@@ -61,6 +61,21 @@ func (n *MessageNormalizer) NormalizeInbound(msg *nats.InboundMessage) *Normaliz
 	}
 
 	return normalized
+}
+
+// inboundSenderType says who wrote an inbound message.
+//
+// Inbound normally means the contact wrote it, and that is the default. The
+// exception is a channel whose device stays in the operator's hand: WhatsApp
+// delivers what the operator typed on the phone through the same inbound path,
+// flagged is_from_me. Filing that under the contact would put the operator's
+// words in the customer's mouth — so it is stored as what it is, a message from
+// our side that we learned about instead of having sent.
+func inboundSenderType(msg *nats.InboundMessage) entity.SenderType {
+	if msg.Metadata["is_from_me"] == "true" {
+		return entity.SenderTypeUser
+	}
+	return entity.SenderTypeContact
 }
 
 // ToEntity converts a normalized message to a domain entity

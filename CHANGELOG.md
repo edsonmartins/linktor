@@ -23,6 +23,14 @@ de chamadas (`internal/voip`), aproveitando código do projeto wacalls-chat.
   efêmeras, view-once (v1/v2/v2ext), device-sent, editadas e protocol antes de
   classificar; fallback de texto para anúncios CTWA (matchedText), live-location
   e contacts-array; flag de edição.
+- **Mensagens enviadas do próprio aparelho entram na conversa:** o inbound
+  descartava tudo com `IsFromMe`, tratando como eco do que o Linktor mandou.
+  Mas o celular pareado continua na mão do operador, e o que ele digita ali
+  chega com o mesmo flag — metade de cada conversa era jogada fora. Eco agora é
+  identificado pelo id que o próprio Linktor emitiu (registro com TTL); o resto
+  é encaminhado com `is_from_me` em metadata, gravado como `sender_type: user`,
+  endereçado à conversa do cliente (e não à conta consigo mesma) e sem elevar o
+  não-lido.
 - **Edit / revoke / forward** de mensagens. `SupportsForwarding=true`.
 - **Resolução LID↔PN:** senders com identidade `@lid` resolvidos para número de
   telefone no inbound (cache TTL), com o LID preservado em metadata; avatar com
