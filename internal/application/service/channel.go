@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -940,6 +943,48 @@ func (s *ChannelService) isCurrentLoginEpoch(channelID string, epoch uint64) boo
 	s.loginMu.Lock()
 	defer s.loginMu.Unlock()
 	return s.loginEpochs[channelID] == epoch
+}
+
+// GenerateBridgeToken generates (or rotates) the bridge token for a channel
+// and stores it encrypted in its credentials. Returns the plaintext token once:
+// the bridge agent configures with it and the gateway validates it at connect.
+func (s *ChannelService) GenerateBridgeToken(ctx context.Context, tenantID, channelID string) (string, error) {
+	if _, err := s.GetByTenantAndID(ctx, tenantID, channelID); err != nil {
+		return "", err
+	}
+	token, err := randomBridgeToken()
+	if err != nil {
+		return "", err
+	}
+	channel, err := s.repo.FindByID(ctx, channelID)
+	if err != nil {
+		return "", err
+	}
+	if channel.Credentials == nil {
+		channel.Credentials = map[string]string{}
+	}
+	channel.Credentials["bridge_token"] = token
+	channel.UpdatedAt = time.Now()
+	if err := s.repo.Update(ctx, channel); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func randomBridgeToken() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := io.ReadFull(rand.Reader, buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+// UpdateBridgeConnectionStatus reflects a bridge's reported connection state
+// onto the channel, reusing the same status/notify path as QR pairing. It is
+// called by the gateway WS handler when a bridge connects or disconnects.
+func (s *ChannelService) UpdateBridgeConnectionStatus(ctx context.Context, channelID string, status entity.ConnectionStatus) error {
+	s.updateChannelConnectionStatus(channelID, status)
+	return nil
 }
 
 // updateChannelConnectionStatus updates only the connection status in the database

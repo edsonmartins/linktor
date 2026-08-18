@@ -170,6 +170,11 @@ type Channel struct {
 	// legacy HSM integrations or customers provisioning their own Cloud API
 	// apps do. We fetch it lazily via TemplateService.FetchNamespace.
 	MessageTemplateNamespace string `json:"message_template_namespace,omitempty"`
+
+	// BridgeHealth, when present, is the health snapshot of the channel's
+	// Linktor Bridge (online/stale/last_seen/session). Populated by the API
+	// handler from the gateway hub; empty for channels without a bridge.
+	BridgeHealth json.RawMessage `json:"bridge_health,omitempty"`
 }
 
 // MarshalJSON redacts sensitive Config values (access tokens, app secrets,

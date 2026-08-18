@@ -7,8 +7,49 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
-Features de operação inspiradas na análise do whatomate + subsistema de entrega
-outbound que as torna funcionais ponta-a-ponta. Tudo com backend, testes e UI.
+### Bridge de WhatsApp (gateway em device)
+
+Novo subsistema `internal/gateway` que permite hospedar a sessão WhatsApp
+Multi-Device **no device do usuário** (Android/PC) e conectar de volta ao
+Linktor via WebSocket — resolvendo o bloqueio de localização/geolocalização de
+APIs não-oficiais.
+
+- **`Hub` de bridges**: mantém `channelID → bridge` conectada; roteia outbound
+  com ack correlacionado (`correlation_id`, timeout 60s).
+- **`RemoteAdapter`**: implementa `plugin.ChannelAdapter`; registrado por canal
+  no registry global enquanto a bridge está online, então o `outbound.Worker`
+  resolve o envio pelo device sem mudanças no pipeline de entrega.
+- **Inbound reutiliza o pipeline**: `internal/gateway` publica mensagens
+  recebidas no subject `linktor.messages.inbound.<tipo>` (consumidor wildcard já
+  existente processa sem alterações).
+- **Endpoints**:
+  - `POST /api/v1/channels/:id/bridge-token` (admin/owner) — gera/rotaciona o
+    token do canal, armazenado cifrado em `credentials.bridge_token`.
+  - `GET /api/v1/gateways/ws?channel_id=..&token=..` — conexão da bridge
+    (autenticada pelo token do canal, não por JWT).
+- **Escopo atual**: texto outbound/inbound. Mídia, interativos e reações sobre a
+  bridge ficam como próximos milestones (falha permanente até lá).
+- **Heartbeat e saúde da bridge**: frame de aplicação `ping`/`pong` (a bridge
+  envia status + timestamp a cada 20s; o servidor registra `last_seen`).
+  `GET /api/v1/channels/:id/bridge-health` expõe `online`, `platform`, `version`,
+  `connected_at`, `last_seen_ping`, `stale` (sem heartbeat > 90s) e o último
+  status da sessão reportado pelo device.
+- **Saúde embutida na API de canais**: `GET /api/v1/channels` e
+  `GET /api/v1/channels/:id` retornam `bridge_health` inline (quando há bridge)
+  para o admin ver online/stale/last_seen sem chamada extra.
+- **Identidade de contato no inbound da bridge**: `sender_id` só com os dígitos
+  (JID.User) + `sender_jid`/`chat_jid` em metadata, igual ao adapter embutido;
+  `sender_name` (pushName) propagado para o contato não nascer como
+  "Unknown Contact".
+
+Protocolo documentado em `bridges/docs/PROTOCOL.md` (repo bridges).
+
+### Próximos milestones (bridge)
+
+- Mídia (imagem/documento/vídeo/áudio) e interativos (botões/listas) pelo protocolo;
+- UX de registro: criar canal + gerar token direto no admin;
+- Rehost de mídia inbound no device → object storage;
+- Teste E2E ao vivo com device real.
 
 ### Canais — WhatsApp não-oficial (whatsmeow)
 

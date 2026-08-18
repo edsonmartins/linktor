@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -27,6 +28,11 @@ type ChannelHandler struct {
 	channelService *service.ChannelService
 	producer       nats.Publisher
 	audit          *service.AuditService
+	// bridgeHealth, when set, returns the sanitized health snapshot of a
+	// channel's Linktor Bridge for admin visibility (populated from the gateway
+	// hub; nil/absent for channels without a bridge). It is injected at
+	// composition time to avoid coupling the handler to the gateway package.
+	bridgeHealth func(channelID string) json.RawMessage
 }
 
 // NewChannelHandler creates a new channel handler
@@ -35,6 +41,22 @@ func NewChannelHandler(channelService *service.ChannelService, producer nats.Pub
 		channelService: channelService,
 		producer:       producer,
 		audit:          audit,
+	}
+}
+
+// SetBridgeHealth wires the bridge health provider into the handler so
+// List/Get responses can carry the live bridge snapshot inline.
+func (h *ChannelHandler) SetBridgeHealth(provider func(channelID string) json.RawMessage) {
+	h.bridgeHealth = provider
+}
+
+// attachBridgeHealth populates channel.BridgeHealth when a provider is wired.
+func (h *ChannelHandler) attachBridgeHealth(channel *entity.Channel) {
+	if h.bridgeHealth == nil || channel == nil {
+		return
+	}
+	if raw := h.bridgeHealth(channel.ID); len(raw) > 0 {
+		channel.BridgeHealth = raw
 	}
 }
 
@@ -130,6 +152,7 @@ func (h *ChannelHandler) List(c *gin.Context) {
 
 	display := make([]*entity.Channel, len(channels))
 	for i, ch := range channels {
+		h.attachBridgeHealth(ch)
 		display[i] = withDisplayConfig(ch)
 	}
 	RespondSuccess(c, display)
@@ -429,6 +452,7 @@ func (h *ChannelHandler) Get(c *gin.Context) {
 		return
 	}
 
+	h.attachBridgeHealth(channel)
 	RespondSuccess(c, withDisplayConfig(channel))
 }
 
@@ -721,6 +745,37 @@ func (h *ChannelHandler) ListDeviceContacts(c *gin.Context) {
 		"total":        len(contacts),
 		"withoutPhone": withoutPhone,
 	})
+}
+
+// GenerateBridgeToken godoc
+// @Summary      Generate a bridge token for a channel
+// @Description  Generates or rotates the token a Linktor Bridge device uses to
+//
+//	connect to this channel's gateway. Returns it once; the bridge
+//	agent is configured with it and the gateway validates it.
+//
+// @Tags         channels
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Success      200 {object} Response{data=object{bridge_token=string}}
+// @Failure      401 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id}/bridge-token [post]
+func (h *ChannelHandler) GenerateBridgeToken(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+	token, err := h.channelService.GenerateBridgeToken(c.Request.Context(), tenantID, c.Param("id"))
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	h.audit.Record(c.Request.Context(), tenantID, CurrentActor(c),
+		"channel.bridge_token_generated", "channel", c.Param("id"), nil)
+	RespondSuccess(c, gin.H{"bridge_token": token})
 }
 
 // Disconnect godoc

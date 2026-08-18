@@ -64,6 +64,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -103,6 +104,7 @@ import (
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/application/usecase"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/gateway"
 	"github.com/msgfy/linktor/internal/infrastructure/config"
 	"github.com/msgfy/linktor/internal/infrastructure/database"
 	"github.com/msgfy/linktor/internal/infrastructure/metrics"
@@ -629,6 +631,24 @@ func main() {
 	channelHandler := handlers.NewChannelHandler(channelService, producer, auditService)
 	groupHandler := handlers.NewGroupHandler(producer, channelService)
 
+	// Bridge gateway: Linktor Bridge devices (Android/desktop) host the WhatsApp
+	// session locally and connect back here over WebSocket. The gateway validates
+	// the per-channel bridge token, registers a remote adapter so the unified
+	// outbound worker routes through the device, and feeds inbound/status into
+	// the platform pipeline.
+	gatewayHub := gateway.NewHub()
+	gatewayHandler := gateway.NewHandler(gatewayHub, channelRepo, producer, channelService, plugin.GetGlobalRegistry())
+
+	// Expose bridge health inline on channel List/Get responses so the admin UI
+	// sees online/stale/last_seen without extra calls.
+	channelHandler.SetBridgeHealth(func(channelID string) json.RawMessage {
+		info, err := json.Marshal(gatewayHandler.HealthForChannel(channelID))
+		if err != nil {
+			return nil
+		}
+		return info
+	})
+
 	// Create tenant service and handler
 	tenantService := service.NewTenantService(tenantRepo, userRepo, channelRepo, contactRepo)
 	tenantHandler := handlers.NewTenantHandler(tenantService)
@@ -1110,6 +1130,10 @@ func main() {
 	// WebSocket endpoint for WebChat
 	router.GET("/ws/:channelId", webchatHandler.WebSocketHandler)
 
+	// WebSocket endpoint for Linktor Bridge devices. Authenticated by the bridge
+	// token in the query string (channel_id + token), not by JWT.
+	router.GET("/api/v1/gateways/ws", gin.WrapH(gatewayHandler))
+
 	// API routes
 	api := router.Group("/api/v1")
 	{
@@ -1311,6 +1335,18 @@ func main() {
 				channels.POST("/:id/pair", channelHandler.RequestPairCode)
 				channels.POST("/:id/passkey/response", channelHandler.SubmitPasskeyResponse)
 				channels.POST("/:id/disconnect", channelHandler.Disconnect)
+				channels.POST("/:id/bridge-token", authMiddleware.RequireRole("admin", "owner"), channelHandler.GenerateBridgeToken)
+				channels.GET("/:id/bridge-health", func(c *gin.Context) {
+					tenantID := middleware.MustGetTenantID(c)
+					if tenantID == "" {
+						return
+					}
+					if _, err := channelService.GetByTenantAndID(c.Request.Context(), tenantID, c.Param("id")); err != nil {
+						handlers.RespondError(c, err)
+						return
+					}
+					c.JSON(http.StatusOK, gatewayHandler.HealthForChannel(c.Param("id")))
+				})
 				// A agenda do aparelho pareado. Antes das rotas genéricas de
 				// `/:id`, como as demais específicas deste bloco.
 				channels.GET("/:id/contacts", channelHandler.ListDeviceContacts)

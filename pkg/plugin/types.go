@@ -11,6 +11,7 @@ const (
 	ChannelTypeWebChat          ChannelType = "webchat"
 	ChannelTypeWhatsApp         ChannelType = "whatsapp"
 	ChannelTypeWhatsAppOfficial ChannelType = "whatsapp_official"
+	ChannelTypeWhatsAppRemote   ChannelType = "whatsapp_remote"
 	ChannelTypeTelegram         ChannelType = "telegram"
 	ChannelTypeSMS              ChannelType = "sms"
 	ChannelTypeRCS              ChannelType = "rcs"
