@@ -42,7 +42,13 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-const COLORS = ['#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#3B82F6']
+const COLORS = [
+  'hsl(var(--chart-1))',
+  'hsl(var(--chart-2))',
+  'hsl(var(--chart-3))',
+  'hsl(var(--chart-4))',
+  'hsl(var(--chart-5))',
+]
 
 interface StatCardProps {
   title: string

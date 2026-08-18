@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 /**
  * Card variants - Plugin Pattern adapters
  */
-const cardVariants = cva('rounded-lg border bg-card text-card-foreground', {
+const cardVariants = cva('rounded-xl border bg-card text-card-foreground', {
   variants: {
     variant: {
       default: 'border-border shadow-sm',

@@ -10,7 +10,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Terminal Theme Colors
+        // shadcn semantic tokens (see app/globals.css)
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
@@ -48,19 +48,43 @@ const config: Config = {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
-        // Terminal specific
+        chart: {
+          1: 'hsl(var(--chart-1))',
+          2: 'hsl(var(--chart-2))',
+          3: 'hsl(var(--chart-3))',
+          4: 'hsl(var(--chart-4))',
+          5: 'hsl(var(--chart-5))',
+        },
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          primary: 'hsl(var(--sidebar-primary))',
+          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
+          accent: 'hsl(var(--sidebar-accent))',
+          'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+          border: 'hsl(var(--sidebar-border))',
+          ring: 'hsl(var(--sidebar-ring))',
+        },
+        // Accent aliases kept under the historical `terminal-*` names so the
+        // components that use them keep working; they now ride the chart
+        // tokens, so they follow the theme instead of being hard-coded.
         terminal: {
-          green: 'hsl(150, 70%, 55%)',
-          cyan: 'hsl(180, 70%, 55%)',
-          yellow: 'hsl(45, 90%, 60%)',
-          coral: 'hsl(5, 80%, 65%)',
-          purple: 'hsl(280, 70%, 65%)',
+          green: 'hsl(var(--chart-1))',
+          cyan: 'hsl(var(--chart-3))',
+          yellow: 'hsl(var(--chart-4))',
+          coral: 'hsl(var(--destructive))',
+          purple: 'hsl(var(--chart-5))',
         },
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
+        // Mirrors the template's scale, which grows off --radius (10px)
+        // rather than Tailwind's fixed defaults.
         sm: 'calc(var(--radius) - 4px)',
+        md: 'calc(var(--radius) - 2px)',
+        lg: 'var(--radius)',
+        xl: 'calc(var(--radius) * 1.4)',
+        '2xl': 'calc(var(--radius) * 1.8)',
+        '3xl': 'calc(var(--radius) * 2.6)',
       },
       fontFamily: {
         // Maple Mono is the primary typeface. It is monospaced, so keep

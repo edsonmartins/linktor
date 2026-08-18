@@ -39,16 +39,16 @@ export function ConversationsChart({ data }: ConversationsChartProps) {
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="colorResolved" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  <stop offset="5%" stopColor="hsl(var(--chart-2))" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="hsl(var(--chart-2))" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="colorEscalated" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                  <stop offset="5%" stopColor="hsl(var(--chart-4))" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="hsl(var(--chart-4))" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -75,7 +75,7 @@ export function ConversationsChart({ data }: ConversationsChartProps) {
                 type="monotone"
                 dataKey="total_conversations"
                 name={t('total')}
-                stroke="#3b82f6"
+                stroke="hsl(var(--chart-1))"
                 fillOpacity={1}
                 fill="url(#colorTotal)"
               />
@@ -83,7 +83,7 @@ export function ConversationsChart({ data }: ConversationsChartProps) {
                 type="monotone"
                 dataKey="resolved_by_bot"
                 name={t('resolvedByBot')}
-                stroke="#10b981"
+                stroke="hsl(var(--chart-2))"
                 fillOpacity={1}
                 fill="url(#colorResolved)"
               />
@@ -91,7 +91,7 @@ export function ConversationsChart({ data }: ConversationsChartProps) {
                 type="monotone"
                 dataKey="escalated"
                 name={t('escalated')}
-                stroke="#f59e0b"
+                stroke="hsl(var(--chart-4))"
                 fillOpacity={1}
                 fill="url(#colorEscalated)"
               />
