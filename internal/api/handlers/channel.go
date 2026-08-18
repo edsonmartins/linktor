@@ -677,6 +677,52 @@ func (h *ChannelHandler) SubmitPasskeyResponse(c *gin.Context) {
 	RespondSuccess(c, gin.H{"status": "accepted"})
 }
 
+// ListDeviceContacts godoc
+// @Summary      List the paired device's address book
+// @Description  Returns the WhatsApp contacts saved on the device paired to this channel. Contacts addressed only by LID come back with an empty phone instead of being dropped — "no phone" and "no match" are different answers.
+// @Tags         channels
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Channel ID"
+// @Success      200 {object} Response
+// @Failure      404 {object} Response
+// @Failure      409 {object} Response
+// @Router       /channels/{id}/contacts [get]
+func (h *ChannelHandler) ListDeviceContacts(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		RespondValidationError(c, "Channel ID is required", nil)
+		return
+	}
+
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	contacts, err := h.channelService.ListDeviceContacts(c.Request.Context(), tenantID, id)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	// withoutPhone travels with the payload instead of being left for the
+	// caller to count. It is the number that says whether this import can be
+	// trusted, and a consumer that has to derive it usually does not.
+	withoutPhone := 0
+	for _, ct := range contacts {
+		if ct.Phone == "" {
+			withoutPhone++
+		}
+	}
+
+	RespondSuccess(c, gin.H{
+		"contacts":     contacts,
+		"total":        len(contacts),
+		"withoutPhone": withoutPhone,
+	})
+}
+
 // Disconnect godoc
 // @Summary      Disconnect channel
 // @Description  Disconnect a channel to stop receiving messages

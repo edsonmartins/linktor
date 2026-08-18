@@ -1311,6 +1311,9 @@ func main() {
 				channels.POST("/:id/pair", channelHandler.RequestPairCode)
 				channels.POST("/:id/passkey/response", channelHandler.SubmitPasskeyResponse)
 				channels.POST("/:id/disconnect", channelHandler.Disconnect)
+				// A agenda do aparelho pareado. Antes das rotas genéricas de
+				// `/:id`, como as demais específicas deste bloco.
+				channels.GET("/:id/contacts", channelHandler.ListDeviceContacts)
 				// A rota de envio a grupo (POST /:id/groups/:groupId/messages) é
 				// registrada fora deste grupo, com messages:send — ver acima.
 				// WhatsApp Coexistence routes

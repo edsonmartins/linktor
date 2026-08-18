@@ -710,6 +710,87 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 	}
 }
 
+// DeviceContact is one entry of a paired device's address book.
+//
+// Phone empty means the number is unknown: WhatsApp addressed the contact only
+// by LID and the LID→PN mapping is not in the device store. It is a real
+// outcome, not a missing field — a caller matching these against its own
+// records must keep "no phone" apart from "no match", or a resolution failure
+// reads as the contact simply not being theirs.
+type DeviceContact struct {
+	JID          string `json:"jid"`
+	Phone        string `json:"phone,omitempty"`
+	FullName     string `json:"fullName,omitempty"`
+	PushName     string `json:"pushName,omitempty"`
+	BusinessName string `json:"businessName,omitempty"`
+}
+
+// ListDeviceContacts returns the address book of the device paired to a
+// WhatsApp channel.
+//
+// On a company handset the saved contacts are corporate data, and they are
+// where the number that actually gets answered tends to live when the CRM is
+// stale. Reading them out is also what stops that knowledge from leaving with
+// whoever carries the phone.
+//
+// Requires a live session: the address book lives in the whatsmeow store of the
+// running client, and a channel that is not connected has nothing to read.
+func (s *ChannelService) ListDeviceContacts(
+	ctx context.Context, tenantID, channelID string,
+) ([]DeviceContact, error) {
+
+	channel, err := s.repo.FindByID(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	if channel == nil || channel.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeNotFound, "channel not found")
+	}
+	if s.registry == nil {
+		return nil, errors.New(errors.ErrCodeInternal, "channel registry not configured")
+	}
+
+	pluginAdapter, err := s.registry.GetAdapterByChannelID(channelID)
+	if err != nil || pluginAdapter == nil {
+		return nil, errors.New(errors.ErrCodeConflict,
+			"no live WhatsApp session for this channel; start the connection again")
+	}
+	waAdapter, ok := pluginAdapter.(*whatsapp.Adapter)
+	if !ok {
+		return nil, errors.New(errors.ErrCodeConflict, "channel is not a WhatsApp session")
+	}
+
+	stored, err := waAdapter.GetAllContacts(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to read device contacts")
+	}
+
+	contacts := make([]DeviceContact, 0, len(stored))
+	withoutPhone := 0
+	for _, c := range stored {
+		if c.Phone == "" {
+			withoutPhone++
+		}
+		contacts = append(contacts, DeviceContact{
+			JID:          c.JID.String(),
+			Phone:        c.Phone,
+			FullName:     c.FullName,
+			PushName:     c.PushName,
+			BusinessName: c.BusinessName,
+		})
+	}
+
+	// How much of the address book is LID-only is the number that decides
+	// whether an import can be trusted. Logging it here means nobody has to
+	// discover it by finding half the contacts unmatched downstream.
+	logger.Info("Read device address book",
+		zap.String("channel_id", channelID),
+		zap.Int("contacts", len(contacts)),
+		zap.Int("without_phone", withoutPhone))
+
+	return contacts, nil
+}
+
 // SubmitPasskeyResponse completes passkey-based linking for a WhatsApp channel.
 // It forwards the WebAuthn assertion (the owner signed the challenge from
 // ConnectResult.PasskeyChallenge in their browser via the Linktor passkey
