@@ -81,6 +81,33 @@ padrão** (ICE/DTLS/SRTP, OPUS) via `github.com/pion/webrtc/v4`.
   o caminho ponta-a-ponta contra a Meta exige número com calling habilitado e só
   se confirma em teste ao vivo.
 
+### Segurança — prazo e revogação na URL de mídia
+
+Pedido do VendaX Core (18/09/2026). O proxy `/api/v1/media/<key>` resolveu a URL
+que quebrava depois de gravada, mas ficou sem prazo e sem revogação — mais
+durável que a pré-assinada que substituiu. Agora é durável **e** com prazo:
+
+- **URL assinada:** `?exp=<unix>&sig=<hex hmac-sha256(key + "." + exp)>` com
+  `MEDIA_SIGNING_SECRET`, validade de dias (`MEDIA_URL_TTL`, padrão 7d). Continua
+  carregando em `<img>` sem cabeçalho nem sessão. Vencida → **410**; assinatura
+  inválida → 403. O cache do navegador fica limitado à validade restante.
+- **A URL gravada não muda:** segue sem assinatura, como referência. A assinatura
+  é aplicada na saída — respostas de `GET /conversations/:id/messages` e
+  `GET /messages/:id`, eventos `new_message` do WebSocket e o envio ao provedor
+  (que busca a mídia sem sessão). Webhooks de saída mantêm a referência.
+- **`POST /api/v1/media/sign`:** até 100 `keys`/`urls` do próprio tenant por
+  chamada (`conversations:read`); para quem guarda a referência e assina na
+  leitura. Chave de outro tenant responde "not found", sem oráculo.
+- **`POST /api/v1/media/revoke`:** bloqueia uma `key` ou um prefixo de tenant/canal
+  (`attachments/<tenant>/`, `inbound/<tipo>/<canal>/`), inclusive URLs já
+  assinadas → 403. Lista em Redis, sem TTL; admin/owner ou API key com
+  `conversations:write`.
+- **Sessão do dono:** o Admin continua abrindo mídia do próprio tenant pelo cookie
+  de sessão, sem assinatura.
+- **Transição:** URLs sem assinatura seguem respondendo 200 (com `Deprecation:
+  true`) até `MEDIA_UNSIGNED_UNTIL`; depois, 401. Sem a variável, a janela fica
+  aberta — a data de corte é combinada, nunca implícita.
+
 ### Segurança / Correções (hardening dos conectores Teams/Slack/Mattermost)
 
 - **Teams — exfiltração de token bloqueada:** o `serviceUrl` recebido na Activity

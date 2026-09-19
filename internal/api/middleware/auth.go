@@ -106,6 +106,30 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 	}
 }
 
+// OptionalAuthenticate identifies the caller when it carries valid credentials
+// (Bearer, session cookie or X-API-Key) and otherwise lets the request through
+// anonymously. For public routes that grant more to a known tenant, like the
+// media proxy serving the admin's own <img> tags from its session cookie.
+func (m *AuthMiddleware) OptionalAuthenticate() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if token := extractToken(c); token != "" {
+			if claims, err := m.authService.ValidateAccessToken(token); err == nil {
+				c.Set(TenantIDKey, claims.TenantID)
+				c.Set(UserIDKey, claims.UserID)
+				c.Set(UserRoleKey, claims.Role)
+			}
+		} else if apiKey := c.GetHeader(APIKeyHeader); apiKey != "" && m.apiKeyService != nil {
+			if key, err := m.apiKeyService.Authenticate(c.Request.Context(), apiKey); err == nil {
+				c.Set(TenantIDKey, key.TenantID)
+				c.Set(UserIDKey, apiKeyUserID(key))
+				c.Set(UserRoleKey, APIKeyRole)
+				c.Set(ScopesKey, key.Scopes)
+			}
+		}
+		c.Next()
+	}
+}
+
 // apiKeyUserID returns the acting user id for an API-key request: the key's bound
 // user when present, otherwise a stable synthetic id derived from the key.
 func apiKeyUserID(key *entity.APIKey) string {

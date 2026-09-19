@@ -47,12 +47,18 @@ type Worker struct {
 	resolver     *Resolver
 	campaignRepo repository.CampaignRepository // optional; nil disables campaign tracking
 	limiter      *channelLimiter
-	logs         ChannelLogger // optional; nil disables channel activity logging
+	logs         ChannelLogger       // optional; nil disables channel activity logging
+	signMediaURL func(string) string // optional; nil sends media URLs as stored
 }
 
 // SetChannelLogger attaches a ChannelLogger that records delivery activity to
 // the observability log store. Optional; if never set, channel logging is off.
 func (w *Worker) SetChannelLogger(l ChannelLogger) { w.logs = l }
+
+// SetMediaURLSigner signs our own media-proxy URLs before they are handed to a
+// provider, which fetches them without any session. Optional; the stored
+// message keeps the unsigned reference either way.
+func (w *Worker) SetMediaURLSigner(sign func(string) string) { w.signMediaURL = sign }
 
 // logActivity forwards a channel log entry when a logger is configured. Nil-safe
 // so callers need no guard.
@@ -133,6 +139,10 @@ func (w *Worker) handle(ctx context.Context, raw *nats.OutboundMessage) error {
 	}
 
 	msg := translate(raw)
+	if media, ok := msg.Content.(Media); ok && w.signMediaURL != nil && media.URL != "" {
+		media.URL = w.signMediaURL(media.URL)
+		msg.Content = media
+	}
 
 	sender, err := w.resolver.For(ctx, msg.ChannelID)
 	if err != nil {

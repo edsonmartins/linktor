@@ -88,7 +88,7 @@ func (h *MessageHandler) List(c *gin.Context) {
 		return
 	}
 
-	RespondWithMeta(c, messages, &MetaResponse{
+	RespondWithMeta(c, withSignedMediaList(messages), &MetaResponse{
 		Page:       1,
 		PageSize:   50,
 		TotalItems: total,
@@ -162,7 +162,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	// an open conversation updates live for everyone, not just the sender.
 	BroadcastNewMessage(tenantID, conversationID, message)
 
-	RespondCreated(c, message)
+	RespondCreated(c, withSignedMedia(message))
 }
 
 // Get godoc
@@ -195,7 +195,7 @@ func (h *MessageHandler) Get(c *gin.Context) {
 		return
 	}
 
-	RespondSuccess(c, message)
+	RespondSuccess(c, withSignedMedia(message))
 }
 
 // SendReaction godoc
