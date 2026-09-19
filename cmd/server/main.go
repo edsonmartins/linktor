@@ -428,6 +428,11 @@ func main() {
 	outboundResolver.Register(outbound.NewPluginSenderFactory("webchat", plugin.GetGlobalRegistry()))
 	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp", plugin.GetGlobalRegistry()))
 	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp_unofficial", plugin.GetGlobalRegistry()))
+	// Signed media URLs: stored message URLs stay the durable reference; the
+	// signature is added on the way out to readers and providers.
+	mediaSigner := buildMediaSigner()
+	handlers.SetMediaURLSigner(mediaSigner)
+
 	var outboundWorker *outbound.Worker
 	if consumer != nil && producer != nil {
 		// 80 msg/s/channel ~ WhatsApp Cloud API default throughput tier.
@@ -436,6 +441,9 @@ func main() {
 		// observability log store so the admin channel-log viewer shows why a
 		// message did or did not reach the channel.
 		outboundWorker.SetChannelLogger(channelActivityLogger{svc: observabilityService, source: entity.LogSourceChannel})
+		if mediaSigner != nil {
+			outboundWorker.SetMediaURLSigner(mediaSigner.SignURL)
+		}
 	}
 
 	// Enable automatic conversation routing on inbound messages.
@@ -603,7 +611,15 @@ func main() {
 	webhookHandler.SetTypingDeps(contactRepo, conversationRepo, messageService)
 	messageHandler := handlers.NewMessageHandler(messageService)
 	attachmentHandler := handlers.NewAttachmentHandler(mediaStore)
-	mediaHandler := handlers.NewMediaHandler(mediaStore)
+	mediaAccess := handlers.MediaAccess{
+		Signer:        mediaSigner,
+		UnsignedUntil: mediaUnsignedUntil(),
+		Channels:      channelRepo,
+	}
+	if rateLimiter != nil { // rateRedis is live
+		mediaAccess.Revocations = storageLib.NewMediaRevocations(rateRedis)
+	}
+	mediaHandler := handlers.NewMediaHandler(mediaStore, mediaAccess)
 
 	// Create flow handler
 	flowHandler := handlers.NewFlowHandler(flowService)
@@ -1129,9 +1145,12 @@ func main() {
 		// WebChat widget config (no auth required)
 		api.GET("/webchat/:channelId/config", webchatHandler.GetWidgetConfig)
 
-		// Media proxy (no session): streams stored attachments by opaque key so
-		// message URLs stay stable and never expire (vs presigned S3 links).
-		api.GET("/media/*key", mediaHandler.Serve)
+		// Media proxy: streams stored attachments by opaque key so message URLs
+		// stay stable (vs presigned S3 links). No session required: a signed URL
+		// (?exp=&sig=) authorizes an <img> tag on its own; a session/API key of
+		// the owning tenant also does; bare legacy URLs only during the
+		// MEDIA_UNSIGNED_UNTIL transition. See handlers.MediaHandler.
+		api.GET("/media/*key", authMiddleware.OptionalAuthenticate(), mediaHandler.Serve)
 
 		// Webhook routes (auth via signature verification)
 		webhooks := api.Group("/webhooks")
@@ -1220,6 +1239,11 @@ func main() {
 				}
 				c.JSON(http.StatusOK, gin.H{"token": tok, "expires_in": int(webchat.DefaultWidgetTokenTTL.Seconds())})
 			})
+
+			// Media URLs: issue signed (expiring) URLs for stored media, and
+			// revoke a key or a tenant/channel prefix for good.
+			protected.POST("/media/sign", authMiddleware.RequireScope(middleware.ScopeConversationsRead), mediaHandler.Sign)
+			protected.POST("/media/revoke", authMiddleware.RequireRole("admin", "owner", middleware.APIKeyRole), authMiddleware.RequireScope(middleware.ScopeConversationsWrite), auditMw.Record(), mediaHandler.Revoke)
 
 			// Tenant/Organization
 			protected.GET("/tenant", tenantHandler.Get)

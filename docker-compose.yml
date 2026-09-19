@@ -123,6 +123,10 @@ services:
       MINIO_SECRET_KEY: ${LINKTOR_MINIO_SECRET_KEY:-linktor123}
       MINIO_BUCKET: ${LINKTOR_MINIO_BUCKET:-linktor-media}
       MINIO_USE_SSL: ${LINKTOR_MINIO_USE_SSL:-false}
+      # Signed media URLs (?exp=&sig=). Empty secret = legacy unsigned URLs.
+      MEDIA_SIGNING_SECRET: ${LINKTOR_MEDIA_SIGNING_SECRET:-}
+      MEDIA_URL_TTL: ${LINKTOR_MEDIA_URL_TTL:-168h}
+      MEDIA_UNSIGNED_UNTIL: ${LINKTOR_MEDIA_UNSIGNED_UNTIL:-}
     ports:
       - "${LINKTOR_API_PORT:-8081}:${LINKTOR_API_PORT:-8081}"
     volumes:

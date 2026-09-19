@@ -12,6 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/msgfy/linktor/internal/api/middleware"
+	"github.com/msgfy/linktor/internal/domain/entity"
 )
 
 const (
@@ -440,6 +441,9 @@ func GetAgentHub() *AgentHub {
 
 // BroadcastNewMessage broadcasts a new message to all agents in a tenant
 func BroadcastNewMessage(tenantID, conversationID string, message interface{}) {
+	if m, ok := message.(*entity.Message); ok {
+		message = withSignedMedia(m)
+	}
 	hub := GetAgentHub()
 	hub.BroadcastToTenant(tenantID, &WSMessage{
 		Type: WSEventNewMessage,
