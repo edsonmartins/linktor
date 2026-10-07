@@ -546,6 +546,9 @@ func TestDispatcherEnqueuesConversationLifecycle(t *testing.T) {
 		{nats.EventConversationResolved, TypeConversationResolved, false},
 		{nats.EventConversationReopened, TypeConversationReopened, false},
 		{nats.EventConversationEscalated, TypeConversationEscalated, false},
+		// Apagar acontece uma vez por conversa, então o id é determinístico
+		// (dedup no stream), como na criação.
+		{nats.EventConversationDeleted, TypeConversationDeleted, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.wantType, func(t *testing.T) {

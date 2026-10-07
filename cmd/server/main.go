@@ -1259,6 +1259,15 @@ func main() {
 				conversations.POST("", conversationHandler.Create)
 				conversations.GET("/:id", conversationHandler.Get)
 				conversations.PUT("/:id", conversationHandler.Update)
+				// Exclusão é irreversível e leva as mensagens por cascata, então
+				// não basta o escopo do grupo: agente não apaga (seu papel tem
+				// read+update em conversations), e a chamada fica no log de
+				// auditoria. O grupo audita só esta rota — auditar o grupo todo
+				// registraria cada mensagem enviada.
+				conversations.DELETE("/:id",
+					authMiddleware.RequireRole("admin", "owner", "supervisor", middleware.APIKeyRole),
+					auditMw.Record(),
+					conversationHandler.Delete)
 				conversations.POST("/:id/assign", conversationHandler.Assign)
 				conversations.POST("/:id/resolve", conversationHandler.Resolve)
 				conversations.POST("/:id/reopen", conversationHandler.Reopen)

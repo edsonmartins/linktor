@@ -925,3 +925,77 @@ func TestUpdate_ChangeStatus_Returns200(t *testing.T) {
 		t.Fatalf("expected status 'pending', got %v", data["status"])
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Delete
+// ---------------------------------------------------------------------------
+
+func TestDelete_ExistingConversation_Returns204(t *testing.T) {
+	handler, convRepo, _, _ := setupConversationHandler()
+
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
+
+	c, w := newAuthContext()
+	c.Params = []gin.Param{{Key: "id", Value: "conv-1"}}
+	c.Request = httptest.NewRequest(http.MethodDelete, "/conversations/conv-1", nil)
+
+	handler.Delete(c)
+
+	// 204 não escreve corpo, então o status fica no writer do gin, não no
+	// recorder — é como os outros handlers sem conteúdo são verificados aqui.
+	if c.Writer.Status() != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d; body: %s", c.Writer.Status(), w.Body.String())
+	}
+	if _, found := convRepo.Conversations["conv-1"]; found {
+		t.Fatal("expected conversation to be gone from the repo")
+	}
+}
+
+// A conversa de outro tenant responde 404 e continua no lugar.
+func TestDelete_OtherTenant_Returns404(t *testing.T) {
+	handler, convRepo, _, _ := setupConversationHandler()
+
+	seedConversation(convRepo, "conv-1", "tenant-2", entity.ConversationStatusOpen)
+
+	c, w := newAuthContext()
+	c.Params = []gin.Param{{Key: "id", Value: "conv-1"}}
+	c.Request = httptest.NewRequest(http.MethodDelete, "/conversations/conv-1", nil)
+
+	handler.Delete(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d; body: %s", w.Code, w.Body.String())
+	}
+	if _, found := convRepo.Conversations["conv-1"]; !found {
+		t.Fatal("expected the other tenant's conversation to survive")
+	}
+}
+
+func TestDelete_NotFound_Returns404(t *testing.T) {
+	handler, _, _, _ := setupConversationHandler()
+
+	c, w := newAuthContext()
+	c.Params = []gin.Param{{Key: "id", Value: "nonexistent"}}
+	c.Request = httptest.NewRequest(http.MethodDelete, "/conversations/nonexistent", nil)
+
+	handler.Delete(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", w.Code)
+	}
+}
+
+func TestDelete_NoTenantID_Returns401(t *testing.T) {
+	handler, _, _, _ := setupConversationHandler()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: "conv-1"}}
+	c.Request = httptest.NewRequest(http.MethodDelete, "/conversations/conv-1", nil)
+
+	handler.Delete(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", w.Code)
+	}
+}

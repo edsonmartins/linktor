@@ -386,3 +386,36 @@ func (s *ConversationService) ReopenForTenant(ctx context.Context, tenantID, id 
 
 	return s.Reopen(ctx, conversation.ID)
 }
+
+// Delete permanently removes a conversation. The schema cascades from it, so the
+// messages, attachments and tags of the conversation go with it — there is no
+// undo and no soft-delete tombstone. Callers that only want it out of the agent's
+// way should resolve it instead.
+//
+// The conversation is loaded before the delete so the lifecycle event can carry
+// its identity (channel, contact, status): after the row is gone there is nothing
+// left to read it from.
+func (s *ConversationService) Delete(ctx context.Context, id string) error {
+	conversation, err := s.conversationRepo.FindByID(ctx, id)
+	if err != nil {
+		return errors.New(errors.ErrCodeConversationNotFound, "conversation not found")
+	}
+
+	if err := s.conversationRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+
+	s.publishLifecycleEvent(ctx, nats.EventConversationDeleted, conversation)
+
+	return nil
+}
+
+// DeleteForTenant deletes a conversation only if it belongs to the tenant.
+func (s *ConversationService) DeleteForTenant(ctx context.Context, tenantID, id string) error {
+	conversation, err := s.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return err
+	}
+
+	return s.Delete(ctx, conversation.ID)
+}

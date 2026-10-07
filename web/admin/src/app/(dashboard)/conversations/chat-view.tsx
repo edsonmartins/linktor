@@ -23,6 +23,7 @@ import {
   Loader2,
   FileText,
   Download,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,6 +41,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Dialog,
   DialogContent,
@@ -64,6 +75,7 @@ import { cn, formatDate, formatRelativeTime } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { useUser } from '@/stores/auth-store'
+import { useUIStore } from '@/stores/ui-store'
 import { useToast } from '@/hooks/use-toast'
 import {
   useWebSocketContext,
@@ -272,8 +284,12 @@ interface ChatHeaderProps {
   onEscalate: () => void
   onResolveOrReopen: () => void
   onViewEscalationContext: () => void
+  onDelete: () => void
   isResolving: boolean
   isEscalatingContextLoading: boolean
+  // Só papéis que a API aceita em DELETE /conversations/:id veem o item —
+  // mostrá-lo a um agente renderia um 403 depois da confirmação.
+  canDelete: boolean
 }
 
 function ChatHeader({
@@ -282,8 +298,10 @@ function ChatHeader({
   onEscalate,
   onResolveOrReopen,
   onViewEscalationContext,
+  onDelete,
   isResolving,
   isEscalatingContextLoading,
+  canDelete,
 }: ChatHeaderProps) {
   const t = useTranslations('conversations')
   const isResolved = conversation.status === 'resolved'
@@ -356,6 +374,18 @@ function ChatHeader({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem disabled>{t('snooze')}</DropdownMenuItem>
+            {canDelete && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {t('deleteConversation')}
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -849,6 +879,7 @@ interface ChatViewProps {
 
 export function ChatView({ conversationId }: ChatViewProps) {
   const t = useTranslations('conversations')
+  const tCommon = useTranslations('common')
   const queryClient = useQueryClient()
   const user = useUser()
   const { toast } = useToast()
@@ -857,6 +888,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false)
   const [escalateDialogOpen, setEscalateDialogOpen] = useState(false)
   const [escalationContextOpen, setEscalationContextOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const setActiveConversation = useUIStore((state) => state.setActiveConversation)
+  // Espelha o gate da rota: admin, owner e supervisor apagam; agente não.
+  const canDelete = ['admin', 'owner', 'supervisor'].includes(user?.role ?? '')
 
   // WebSocket integration
   const { connectionState, subscribe, sendTyping } = useWebSocketContext()
@@ -955,6 +990,27 @@ export function ChatView({ conversationId }: ChatViewProps) {
     },
     onError: (error: Error) => {
       toast({ title: 'Failed to update conversation', description: error.message, variant: 'error' })
+    },
+  })
+
+  const deleteConversation = useMutation({
+    mutationFn: () => api.delete(`/conversations/${conversationId}`),
+    onSuccess: () => {
+      setDeleteDialogOpen(false)
+      // A conversa aberta deixou de existir: sai da seleção antes de invalidar,
+      // senão o painel tenta recarregar um id que agora dá 404.
+      setActiveConversation(null)
+      queryClient.removeQueries({ queryKey: queryKeys.conversations.detail(conversationId) })
+      queryClient.removeQueries({ queryKey: queryKeys.messages.list(conversationId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all })
+      toast({ title: t('conversationDeleted') })
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t('deleteConversationFailed'),
+        description: error.message,
+        variant: 'error',
+      })
     },
   })
 
@@ -1092,8 +1148,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
           await refetchEscalationContext()
           setEscalationContextOpen(true)
         }}
+        onDelete={() => setDeleteDialogOpen(true)}
         isResolving={resolveConversation.isPending || reopenConversation.isPending}
         isEscalatingContextLoading={isEscalationContextLoading}
+        canDelete={canDelete}
       />
 
       {/* Connection status indicator */}
@@ -1199,6 +1257,44 @@ export function ChatView({ conversationId }: ChatViewProps) {
         context={escalationContext}
         isLoading={isEscalationContextLoading}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('deleteConversation')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('deleteConversationDescription', {
+                name:
+                  (conversation.contact?.name && conversation.contact.name !== 'Unknown'
+                    ? conversation.contact.name
+                    : '') ||
+                  conversation.contact?.phone ||
+                  t('unknownContact'),
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteConversation.isPending}>
+              {tCommon('cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                // Mantém o diálogo aberto enquanto a chamada corre: fechar na
+                // hora esconderia o erro, e o fechamento vem no onSuccess.
+                event.preventDefault()
+                deleteConversation.mutate()
+              }}
+              disabled={deleteConversation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteConversation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              {tCommon('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
