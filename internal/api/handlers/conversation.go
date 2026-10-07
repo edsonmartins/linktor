@@ -211,6 +211,40 @@ func (h *ConversationHandler) Update(c *gin.Context) {
 	RespondSuccess(c, conversation)
 }
 
+// Delete godoc
+// @Summary      Delete conversation
+// @Description  Permanently deletes a conversation and, by cascade, its messages. There is no undo — to take a conversation out of the queue without losing the history, resolve it instead.
+// @Tags         conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Conversation ID"
+// @Success      204 "No Content"
+// @Failure      400 {object} Response
+// @Failure      401 {object} Response
+// @Failure      403 {object} Response
+// @Failure      404 {object} Response
+// @Router       /conversations/{id} [delete]
+func (h *ConversationHandler) Delete(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+
+	id := c.Param("id")
+	if id == "" {
+		RespondValidationError(c, "Conversation ID is required", nil)
+		return
+	}
+
+	if err := h.conversationService.DeleteForTenant(c.Request.Context(), tenantID, id); err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	RespondNoContent(c)
+}
+
 // AssignRequest represents an assign conversation request
 type AssignRequest struct {
 	UserID string `json:"user_id" binding:"required"`

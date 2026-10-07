@@ -102,6 +102,7 @@ const (
 	EventConversationResolved  = "conversation.resolved"
 	EventConversationReopened  = "conversation.reopened"
 	EventConversationEscalated = "conversation.escalated"
+	EventConversationDeleted   = "conversation.deleted"
 
 	EventContactCreated = "contact.created"
 	EventContactUpdated = "contact.updated"

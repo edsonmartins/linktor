@@ -143,6 +143,8 @@ func (d *Dispatcher) handle(ctx context.Context, event *nats.Event) error {
 		return d.dispatchConversation(ctx, event, TypeConversationReopened)
 	case nats.EventConversationEscalated:
 		return d.dispatchConversation(ctx, event, TypeConversationEscalated)
+	case nats.EventConversationDeleted:
+		return d.dispatchConversation(ctx, event, TypeConversationDeleted)
 	}
 	return nil
 }
@@ -380,11 +382,11 @@ func (d *Dispatcher) dispatchConversation(ctx context.Context, event *nats.Event
 		ChannelType:    channelType(channel, p),
 	}
 
-	// Only creation is one-shot; assign/resolve/reopen/escalate can legitimately
-	// repeat for the same conversation, so those mint a fresh id (no dedup) to
-	// avoid collapsing distinct occurrences at the stream.
+	// Creation and deletion are one-shot; assign/resolve/reopen/escalate can
+	// legitimately repeat for the same conversation, so those mint a fresh id
+	// (no dedup) to avoid collapsing distinct occurrences at the stream.
 	dedup := ""
-	if eventType == TypeConversationCreated {
+	if eventType == TypeConversationCreated || eventType == TypeConversationDeleted {
 		dedup = dedupKey(p.str("conversation_id"), eventType)
 	}
 	return d.deliver(ctx, channel, eventType, event.TenantID, dedup, data)

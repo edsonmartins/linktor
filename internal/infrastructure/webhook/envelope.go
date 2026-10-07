@@ -49,6 +49,7 @@ const (
 	TypeConversationResolved  = "conversation.resolved"
 	TypeConversationReopened  = "conversation.reopened"
 	TypeConversationEscalated = "conversation.escalated"
+	TypeConversationDeleted   = "conversation.deleted"
 )
 
 // Envelope is the top-level `linktor-channel-v1` event.

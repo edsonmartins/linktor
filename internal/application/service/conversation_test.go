@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/infrastructure/nats"
+	"github.com/msgfy/linktor/pkg/errors"
 	"github.com/msgfy/linktor/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -177,4 +179,73 @@ func TestConversationService_Assign_RejectsEmptyUser(t *testing.T) {
 
 	_, err := svc.Assign(context.Background(), conv.ID, "")
 	assert.Error(t, err)
+}
+
+func TestConversationService_Delete(t *testing.T) {
+	svc, convRepo := setupConversationTest()
+
+	conv, _ := svc.Create(context.Background(), &CreateConversationInput{
+		TenantID:  "tenant1",
+		ContactID: "contact1",
+		ChannelID: "channel1",
+	})
+
+	err := svc.Delete(context.Background(), conv.ID)
+	require.NoError(t, err)
+	assert.NotContains(t, convRepo.Conversations, conv.ID)
+}
+
+func TestConversationService_Delete_NotFound(t *testing.T) {
+	svc, _ := setupConversationTest()
+
+	err := svc.Delete(context.Background(), "nope")
+	require.Error(t, err)
+	assert.Equal(t, errors.ErrCodeConversationNotFound, errors.GetAppError(err).Code)
+}
+
+// A conversa de outro tenant não é apagada: o acesso cruzado responde o mesmo
+// 404 de inexistente, para não revelar que o id existe em outro lugar.
+func TestConversationService_DeleteForTenant_OtherTenant(t *testing.T) {
+	svc, convRepo := setupConversationTest()
+
+	conv, _ := svc.Create(context.Background(), &CreateConversationInput{
+		TenantID:  "tenant1",
+		ContactID: "contact1",
+		ChannelID: "channel1",
+	})
+
+	err := svc.DeleteForTenant(context.Background(), "tenant2", conv.ID)
+	require.Error(t, err)
+	assert.Equal(t, errors.ErrCodeConversationNotFound, errors.GetAppError(err).Code)
+	assert.Contains(t, convRepo.Conversations, conv.ID)
+}
+
+// O evento sai com a identidade da conversa que acabou de ser apagada — depois
+// do delete não há mais linha de onde ler canal, contato e status.
+func TestConversationService_Delete_PublishesEvent(t *testing.T) {
+	convRepo := testutil.NewMockConversationRepository()
+	contactRepo := testutil.NewMockContactRepository()
+	channelRepo := testutil.NewMockChannelRepository()
+	contactRepo.Contacts["contact1"] = &entity.Contact{ID: "contact1", TenantID: "tenant1", Name: "Test"}
+	channelRepo.Channels["channel1"] = &entity.Channel{ID: "channel1", TenantID: "tenant1", Type: entity.ChannelTypeWhatsApp}
+	producer := testutil.NewMockProducer()
+	svc := NewConversationService(convRepo, contactRepo, channelRepo, producer)
+
+	conv, err := svc.Create(context.Background(), &CreateConversationInput{
+		TenantID:  "tenant1",
+		ContactID: "contact1",
+		ChannelID: "channel1",
+	})
+	require.NoError(t, err)
+	producer.Events = nil
+
+	require.NoError(t, svc.DeleteForTenant(context.Background(), "tenant1", conv.ID))
+
+	require.Len(t, producer.Events, 1)
+	event := producer.Events[0]
+	assert.Equal(t, nats.EventConversationDeleted, event.Type)
+	assert.Equal(t, "tenant1", event.TenantID)
+	assert.Equal(t, conv.ID, event.Payload["conversation_id"])
+	assert.Equal(t, "channel1", event.Payload["channel_id"])
+	assert.Equal(t, "contact1", event.Payload["contact_id"])
 }
