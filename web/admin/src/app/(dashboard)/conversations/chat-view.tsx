@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Send,
   Paperclip,
@@ -91,6 +91,10 @@ import type {
   MessageStatus,
   User as AppUser,
 } from '@/types'
+
+// Quantas mensagens por página do histórico. Enche uma janela alta sem fazer
+// a primeira pintura esperar por uma conversa de mil mensagens.
+const MESSAGES_PAGE_SIZE = 30
 
 /**
  * Message Status Icon
@@ -213,6 +217,15 @@ interface MessageBubbleProps {
 }
 
 function MessageBubble({ message, isOwn }: MessageBubbleProps) {
+  const t = useTranslations('conversations')
+  // Nem toda mensagem recebida tem o que mostrar: figurinhas, enquetes,
+  // atualizações de status e outros tipos que o conector ainda não traduz
+  // chegam sem texto e sem anexo. Sem isto a bolha saía vazia — um retângulo
+  // cinza sem explicação, que é como a tela estava.
+  const semConteudoVisivel =
+    !message.content?.trim() &&
+    (!message.attachments || message.attachments.length === 0)
+
   return (
     <div
       className={cn(
@@ -240,8 +253,14 @@ function MessageBubble({ message, isOwn }: MessageBubbleProps) {
               ))}
             </div>
           )}
-          {message.content && (
-            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          {semConteudoVisivel ? (
+            <p className="text-sm italic text-muted-foreground">
+              {t('unsupportedMessage')}
+            </p>
+          ) : (
+            message.content && (
+              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+            )
           )}
         </div>
         {message.reactions && message.reactions.length > 0 && (
@@ -883,7 +902,15 @@ export function ChatView({ conversationId }: ChatViewProps) {
   const queryClient = useQueryClient()
   const user = useUser()
   const { toast } = useToast()
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  // Perto do fim? Então mensagem nova empurra a leitura para baixo. Longe, não:
+  // quem está lendo o histórico não quer ser arrastado a cada chegada.
+  const isAtBottomRef = useRef(true)
+  // Medidas de antes de inserir páginas antigas acima, para devolver a leitura
+  // ao mesmo ponto depois que o conteúdo entra.
+  const olderAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null)
+  const lastMessageIdRef = useRef<string | null>(null)
+  const paintedConversationRef = useRef<string | null>(null)
   const [typingUsers, setTypingUsers] = useState<{ user_id: string; user_name: string }[]>([])
   const [assignDialogOpen, setAssignDialogOpen] = useState(false)
   const [escalateDialogOpen, setEscalateDialogOpen] = useState(false)
@@ -902,19 +929,37 @@ export function ChatView({ conversationId }: ChatViewProps) {
     queryFn: () => api.get<Conversation>(`/conversations/${conversationId}`),
   })
 
-  // Fetch messages
-  const { data: messagesData, isLoading: messagesLoading } = useQuery({
+  // Histórico por cursor: a conversa abre com a última página e vai buscando
+  // as anteriores conforme se rola para cima, como no WhatsApp. Carregar tudo
+  // de uma vez custava segundos nas conversas longas — e as maiores aqui
+  // passam de mil mensagens.
+  const {
+    data: messagesData,
+    isLoading: messagesLoading,
+    hasNextPage: hasOlderMessages,
+    isFetchingNextPage: isLoadingOlder,
+    fetchNextPage: fetchOlderMessages,
+  } = useInfiniteQuery({
     queryKey: queryKeys.messages.list(conversationId),
-    queryFn: () =>
-      api.getEnvelope<Message[]>(`/conversations/${conversationId}/messages`),
+    queryFn: ({ pageParam }) =>
+      api.getEnvelope<Message[]>(`/conversations/${conversationId}/messages`, {
+        limit: String(MESSAGES_PAGE_SIZE),
+        ...(pageParam ? { before: pageParam } : {}),
+      }),
+    initialPageParam: '',
+    // A ausência de cursor é a resposta dizendo que acabou; é o que desliga o
+    // "carregar mais" sem a tela ter de adivinhar por página vazia.
+    getNextPageParam: (lastPage) => lastPage.meta?.next_cursor || undefined,
   })
 
-  // The API returns the latest N messages newest-first (created_at desc, id desc)
-  // so pagination fetches the most recent window. Reverse for display so the
-  // thread reads chronologically — oldest at top, newest at the bottom. Reverse
-  // (not a created_at sort) preserves the backend's stable id tiebreaker for
-  // messages sharing a second.
-  const messages = [...(messagesData?.data || [])].reverse()
+  // Cada página vem da mais nova para a mais antiga, e as páginas seguem a
+  // mesma direção. Invertendo a concatenação inteira, a thread lê
+  // cronologicamente. Inverter (em vez de ordenar por created_at) preserva o
+  // desempate por id que o backend aplica às mensagens do mesmo segundo.
+  const messages = useMemo(
+    () => (messagesData?.pages ?? []).flatMap((page) => page.data ?? []).reverse(),
+    [messagesData]
+  )
 
   const { data: users = [] } = useQuery({
     queryKey: queryKeys.users.list({ status: 'active' }),
@@ -933,6 +978,10 @@ export function ChatView({ conversationId }: ChatViewProps) {
   })
 
   const invalidateConversation = useCallback(() => {
+    // Revalidar o histórico recarrega as páginas já abertas, cada uma com o
+    // cursor que a trouxe. É seguro justamente por ser cursor: os limites não
+    // deslizam quando chega mensagem nova, então nada se duplica nem some —
+    // o que aconteceria com paginação por offset.
     queryClient.invalidateQueries({
       queryKey: queryKeys.messages.list(conversationId),
     })
@@ -1081,14 +1130,69 @@ export function ChatView({ conversationId }: ChatViewProps) {
   // every scrollable ancestor (the dashboard <main>), shifting the whole page up
   // and leaving a blank gap. Key on stable primitives so it doesn't refire on the
   // messages array identity churn during refetch.
-  useEffect(() => {
-    const viewport = messagesEndRef.current?.closest(
-      '[data-radix-scroll-area-viewport]'
-    ) as HTMLElement | null | undefined
-    if (viewport) {
-      viewport.scrollTop = viewport.scrollHeight
+  // Rolar para cima até perto do topo busca a página anterior. O limiar é uma
+  // tela antes do fim do conteúdo, para a página chegar antes de a rolagem
+  // esbarrar e travar.
+  const handleViewportScroll = useCallback(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+
+    const distanciaDoFim = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+    isAtBottomRef.current = distanciaDoFim < 80
+
+    if (viewport.scrollTop < 200 && hasOlderMessages && !isLoadingOlder) {
+      olderAnchorRef.current = {
+        scrollHeight: viewport.scrollHeight,
+        scrollTop: viewport.scrollTop,
+      }
+      fetchOlderMessages()
     }
-  }, [conversationId, messages.length])
+  }, [hasOlderMessages, isLoadingOlder, fetchOlderMessages])
+
+  // Trocar de conversa zera o que era verdade sobre a anterior.
+  useEffect(() => {
+    isAtBottomRef.current = true
+    lastMessageIdRef.current = null
+    olderAnchorRef.current = null
+  }, [conversationId])
+
+  // Antes da pintura, para o olho não ver o salto. São três situações
+  // distintas e excludentes: página antiga entrou acima (devolve a posição),
+  // conversa abriu (vai para o fim) e mensagem nova chegou (só acompanha se a
+  // leitura já estava no fim).
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+
+    const ancora = olderAnchorRef.current
+    if (ancora) {
+      // A âncora só se gasta quando o conteúdo de fato cresceu. Entre pedir a
+      // página e ela chegar há outras pinturas (o próprio estado de carregando
+      // provoca uma); consumir a âncora numa delas devolveria a posição que já
+      // está correta e deixaria a restauração de verdade sem referência — que
+      // era por que a leitura saltava para o topo ao buscar o histórico.
+      const cresceu = viewport.scrollHeight - ancora.scrollHeight
+      if (cresceu > 0) {
+        viewport.scrollTop = ancora.scrollTop + cresceu
+        olderAnchorRef.current = null
+      }
+      return
+    }
+
+    if (messages.length === 0) return
+
+    const ultimaMensagemID = messages[messages.length - 1].id
+    const primeiraPinturaDaConversa = paintedConversationRef.current !== conversationId
+    const chegouMensagem = ultimaMensagemID !== lastMessageIdRef.current
+
+    if (primeiraPinturaDaConversa || (chegouMensagem && isAtBottomRef.current)) {
+      viewport.scrollTop = viewport.scrollHeight
+      isAtBottomRef.current = true
+    }
+
+    paintedConversationRef.current = conversationId
+    lastMessageIdRef.current = ultimaMensagemID
+  }, [messages, conversationId])
 
   if (conversationLoading) {
     return (
@@ -1178,16 +1282,30 @@ export function ChatView({ conversationId }: ChatViewProps) {
         </div>
       )}
 
-      <ScrollArea className="flex-1 min-h-0 bg-background">
+      <ScrollArea
+        className="flex-1 min-h-0 bg-background"
+        viewportRef={viewportRef}
+        onViewportScroll={handleViewportScroll}
+      >
         <div className="p-4 space-y-1">
-          {/* Date separator */}
-          <div className="flex items-center gap-4">
-            <Separator className="flex-1" />
-            <span className="text-xs text-muted-foreground">
-              {formatDate(conversation.created_at)}
-            </span>
-            <Separator className="flex-1" />
-          </div>
+          {isLoadingOlder && (
+            <div className="flex justify-center py-2">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+          {/* A data de abertura só marca o topo quando o topo é mesmo o começo.
+              Com histórico ainda por carregar ela mentiria sobre o que vem
+              acima. */}
+          {!hasOlderMessages && !messagesLoading && (
+            <div className="flex items-center gap-4">
+              <Separator className="flex-1" />
+              <span className="text-xs text-muted-foreground">
+                {formatDate(conversation.created_at)}
+              </span>
+              <Separator className="flex-1" />
+            </div>
+          )}
 
           {messagesLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
@@ -1206,10 +1324,13 @@ export function ChatView({ conversationId }: ChatViewProps) {
               <MessageBubble
                 key={message.id}
                 message={message}
-                isOwn={
-                  message.sender_type === 'user' &&
-                  message.sender_id === user?.id
-                }
+                // O lado é o da conversa, não o do autor: tudo que saiu do
+                // negócio fica à direita, venha de outro agente, de um bot ou
+                // do próprio celular pareado. Comparar com o usuário logado
+                // jogava a conversa inteira para a esquerda — as mensagens
+                // importadas do aparelho chegam sem sender_id, e nenhuma
+                // batia.
+                isOwn={message.sender_type !== 'contact'}
               />
             ))
           ) : (
@@ -1218,8 +1339,6 @@ export function ChatView({ conversationId }: ChatViewProps) {
               <p className="text-xs">{t('startByMessage')}</p>
             </div>
           )}
-
-          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 

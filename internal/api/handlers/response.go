@@ -30,6 +30,10 @@ type MetaResponse struct {
 	TotalItems int64 `json:"total_items"`
 	HasNext    bool  `json:"has_next"`
 	HasPrev    bool  `json:"has_previous"`
+	// NextCursor continua a listagem onde esta página parou, nos recursos que
+	// paginam por cursor em vez de página (o histórico da conversa). Ausente
+	// quando não há o que continuar, ou quando o recurso pagina por número.
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // RespondSuccess sends a success response

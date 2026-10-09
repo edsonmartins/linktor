@@ -28,6 +28,12 @@ type MetaResponse = {
   total_items: number
   has_next: boolean
   has_previous: boolean
+  /**
+   * Continua a listagem onde esta resposta parou, nos recursos que paginam por
+   * cursor em vez de página (o histórico da conversa). Ausente quando não há
+   * mais nada a buscar — é esse silêncio que diz à tela para parar de pedir.
+   */
+  next_cursor?: string
 }
 
 type ApiEnvelope<T> = {

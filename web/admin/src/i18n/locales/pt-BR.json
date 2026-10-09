@@ -225,6 +225,7 @@
     "resolveConversation": "Resolver conversa",
     "assignToAgent": "Atribuir a agente",
     "snooze": "Adiar",
+    "unsupportedMessage": "Mensagem sem conteúdo exibível",
     "deleteConversation": "Excluir conversa",
     "deleteConversationDescription": "Excluir a conversa com {name}? As mensagens, os anexos e o histórico vão com ela. Esta ação não pode ser desfeita — para tirá-la da fila sem perder o histórico, resolva a conversa.",
     "conversationDeleted": "Conversa excluída",

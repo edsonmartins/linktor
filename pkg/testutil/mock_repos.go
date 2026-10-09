@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -565,6 +566,46 @@ func (m *MockMessageRepository) FindByConversation(ctx context.Context, conversa
 		}
 	}
 	return result, int64(len(result)), nil
+}
+
+// FindPageByConversation espelha a paginação por cursor do Postgres: ordena a
+// conversa por (created_at, id) decrescente e devolve o trecho anterior ao
+// cursor. Sem a ordenação, o mapa do mock devolveria as mensagens em ordem
+// aleatória e os testes de paginação passariam ou falhariam por sorteio.
+func (m *MockMessageRepository) FindPageByConversation(ctx context.Context, conversationID string, before *repository.MessageCursor, limit int) ([]*entity.Message, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
+
+	var ordered []*entity.Message
+	for _, msg := range m.Messages {
+		if msg.ConversationID == conversationID {
+			ordered = append(ordered, msg)
+		}
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if !ordered[i].CreatedAt.Equal(ordered[j].CreatedAt) {
+			return ordered[i].CreatedAt.After(ordered[j].CreatedAt)
+		}
+		return ordered[i].ID > ordered[j].ID
+	})
+
+	var page []*entity.Message
+	for _, msg := range ordered {
+		if before != nil {
+			olderThanCursor := msg.CreatedAt.Before(before.CreatedAt) ||
+				(msg.CreatedAt.Equal(before.CreatedAt) && msg.ID < before.ID)
+			if !olderThanCursor {
+				continue
+			}
+		}
+		page = append(page, msg)
+		if limit > 0 && len(page) == limit {
+			break
+		}
+	}
+
+	return page, nil
 }
 
 func (m *MockMessageRepository) Update(ctx context.Context, message *entity.Message) error {

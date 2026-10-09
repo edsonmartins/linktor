@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 )
@@ -29,13 +32,53 @@ func setupMessageTest() *MessageService {
 	return NewMessageService(msgRepo, convRepo, channelRepo, contactRepo, nil) // nil producer for unit tests
 }
 
-func TestMessageService_ListByConversation(t *testing.T) {
+func TestMessageService_ListPage_EmptyConversation(t *testing.T) {
 	svc := setupMessageTest()
 
-	messages, count, err := svc.ListByConversation(context.Background(), "conv1", nil)
+	page, err := svc.ListPageByConversationForTenant(context.Background(), "tenant1", "conv1", nil, 0)
 	assert.NoError(t, err)
-	assert.Empty(t, messages)
-	assert.Equal(t, int64(0), count)
+	assert.Empty(t, page.Messages)
+	assert.False(t, page.HasMore)
+}
+
+// A página pede uma mensagem além do limite para saber se há mais — e essa
+// sobra não pode vazar para quem chamou.
+func TestMessageService_ListPage_TrimsTheProbeRow(t *testing.T) {
+	svc := setupMessageTest()
+	msgRepo := svc.messageRepo.(*testutil.MockMessageRepository)
+
+	base := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("m-%d", i)
+		msgRepo.Messages[id] = &entity.Message{
+			ID:             id,
+			ConversationID: "conv1",
+			SenderType:     entity.SenderTypeContact,
+			ContentType:    entity.ContentTypeText,
+			Content:        "oi",
+			CreatedAt:      base.Add(time.Duration(i) * time.Minute),
+		}
+	}
+
+	page, err := svc.ListPageByConversationForTenant(context.Background(), "tenant1", "conv1", nil, 2)
+	assert.NoError(t, err)
+	assert.Len(t, page.Messages, 2)
+	assert.True(t, page.HasMore)
+	assert.Equal(t, "m-4", page.Messages[0].ID, "a página começa pela mais nova")
+
+	ultima, err := svc.ListPageByConversationForTenant(context.Background(), "tenant1", "conv1",
+		&repository.MessageCursor{CreatedAt: page.Messages[1].CreatedAt, ID: page.Messages[1].ID}, 10)
+	assert.NoError(t, err)
+	assert.Len(t, ultima.Messages, 3)
+	assert.False(t, ultima.HasMore)
+}
+
+// Conversa de outro tenant não entrega página nenhuma.
+func TestMessageService_ListPage_OtherTenant(t *testing.T) {
+	svc := setupMessageTest()
+
+	_, err := svc.ListPageByConversationForTenant(context.Background(), "tenant2", "conv1", nil, 0)
+	assert.Error(t, err)
 }
 
 func TestMessageService_Send(t *testing.T) {

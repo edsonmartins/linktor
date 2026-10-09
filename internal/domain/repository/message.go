@@ -7,6 +7,16 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 )
 
+// MessageCursor marks a position in a conversation's thread. It carries the
+// same pair the ordering uses — created_at plus id — because inbound messages
+// inherit the provider timestamp at second precision and several can share one
+// created_at; the id breaks the tie so a page boundary never lands inside a
+// group of equal timestamps, dropping or repeating rows.
+type MessageCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
 // MessageRepository defines the interface for message persistence
 type MessageRepository interface {
 	// Create creates a new message
@@ -32,6 +42,13 @@ type MessageRepository interface {
 
 	// FindByConversation finds messages for a conversation with pagination
 	FindByConversation(ctx context.Context, conversationID string, params *ListParams) ([]*entity.Message, int64, error)
+
+	// FindPageByConversation returns one page of the conversation, newest first,
+	// starting just before the cursor (nil = the newest messages). Keyset
+	// pagination: the thread is read from the bottom up and OFFSET would both
+	// re-scan everything above each page and shift under messages arriving
+	// mid-scroll.
+	FindPageByConversation(ctx context.Context, conversationID string, before *MessageCursor, limit int) ([]*entity.Message, error)
 
 	// LastInboundAt returns when the contact last messaged in the conversation
 	// (max created_at with sender_type=contact), or nil if they never did. It

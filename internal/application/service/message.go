@@ -107,23 +107,56 @@ func NewMessageService(
 	}
 }
 
-// ListByConversation returns all messages for a conversation
-func (s *MessageService) ListByConversation(ctx context.Context, conversationID string, params *repository.ListParams) ([]*entity.Message, int64, error) {
-	if params == nil {
-		params = repository.NewListParams()
-		params.PageSize = 50
-		params.SortBy = "created_at"
-		params.SortDir = "desc"
-	}
-	return s.messageRepo.FindByConversation(ctx, conversationID, params)
+// MessagePage is one window of a conversation's thread, newest first.
+type MessagePage struct {
+	Messages []*entity.Message
+	// HasMore reports whether older messages exist before the last one here.
+	HasMore bool
 }
 
-// ListByConversationForTenant returns messages only when the conversation belongs to the tenant.
-func (s *MessageService) ListByConversationForTenant(ctx context.Context, tenantID, conversationID string, params *repository.ListParams) ([]*entity.Message, int64, error) {
+// maxMessagePageSize caps what a caller can ask for in one page.
+const maxMessagePageSize = 100
+
+// defaultMessagePageSize is what the chat screen loads per scroll — enough to
+// fill a tall window without making the first paint wait on a long thread.
+const defaultMessagePageSize = 30
+
+// ListPageByConversationForTenant returns one page of a conversation, newest
+// first, ending just before the cursor (nil = the newest messages).
+//
+// It asks the repository for one row beyond the page to learn whether older
+// messages exist. The alternative — COUNT(*) on every scroll — costs a full
+// index scan of the conversation to answer a question the client only needs as
+// a yes or no.
+func (s *MessageService) ListPageByConversationForTenant(
+	ctx context.Context,
+	tenantID, conversationID string,
+	before *repository.MessageCursor,
+	limit int,
+) (*MessagePage, error) {
 	if _, err := s.getConversationForTenant(ctx, tenantID, conversationID); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	return s.ListByConversation(ctx, conversationID, params)
+
+	if limit <= 0 {
+		limit = defaultMessagePageSize
+	}
+	if limit > maxMessagePageSize {
+		limit = maxMessagePageSize
+	}
+
+	messages, err := s.messageRepo.FindPageByConversation(ctx, conversationID, before, limit+1)
+	if err != nil {
+		return nil, err
+	}
+
+	page := &MessagePage{Messages: messages}
+	if len(messages) > limit {
+		page.Messages = messages[:limit]
+		page.HasMore = true
+	}
+
+	return page, nil
 }
 
 // toOutboundAttachments maps persisted attachments to the NATS outbound shape so
