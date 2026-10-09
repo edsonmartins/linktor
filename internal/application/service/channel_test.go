@@ -742,3 +742,44 @@ func TestChannelService_Update_PreservesRedactedSecret(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "rotated-token", updated2.Config["access_token"])
 }
+
+// As opções do canal precisam chegar ao adapter. Montar o mapa à mão deixava
+// ignore_status, ignore_groups e as demais pelo caminho: marcar a opção no
+// painel gravava no banco e não mudava nada no que entrava.
+func TestWhatsAppAdapterConfig_LevaAsOpcoesDoCanal(t *testing.T) {
+	channel := &entity.Channel{
+		ID: "ch-1",
+		Config: map[string]string{
+			"ignore_status":      "true",
+			"ignore_groups":      "true",
+			"device_name":        "Cobrador RQ",
+			"always_online":      "true",
+			"reject_call":        "true",
+			"proxy_host":         "10.0.0.9",
+			"auto_read_messages": "true",
+		},
+	}
+
+	config := whatsappAdapterConfig(channel)
+
+	for chave, esperado := range channel.Config {
+		assert.Equal(t, esperado, config[chave], "a opção %q tem de chegar ao adapter", chave)
+	}
+}
+
+// O id e o caminho do banco da sessão são do servidor: o que estiver gravado
+// no canal não os sobrescreve.
+func TestWhatsAppAdapterConfig_DerivadosMandamSobreOCanal(t *testing.T) {
+	channel := &entity.Channel{
+		ID: "ch-1",
+		Config: map[string]string{
+			"channel_id":    "outro-id",
+			"database_path": "/etc/passwd",
+		},
+	}
+
+	config := whatsappAdapterConfig(channel)
+
+	assert.Equal(t, "ch-1", config["channel_id"])
+	assert.Equal(t, "storages/whatsapp_ch-1.db", config["database_path"])
+}
