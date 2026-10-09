@@ -153,6 +153,11 @@ func convertMessage(evt *events.Message) *IncomingMessage {
 		IsGroup:    evt.Info.IsGroup,
 		IsEdit:     edited,
 		RawMessage: content,
+		// Guardados antes de classificar. Quando nenhum formato conhecido
+		// casa, é só isto que sobra para dizer o que chegou.
+		InfoType:      evt.Info.Type,
+		InfoCategory:  evt.Info.Category,
+		InfoMediaType: evt.Info.MediaType,
 	}
 
 	// Extract text content

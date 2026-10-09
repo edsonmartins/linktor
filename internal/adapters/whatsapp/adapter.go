@@ -905,6 +905,15 @@ func (a *Adapter) shouldForwardInbound(v *IncomingMessage) bool {
 	if v.IsFromMe && a.sent.isOurs(v.ExternalID, time.Now()) {
 		return false
 	}
+	// Sem texto, sem mídia e sem formato reconhecido não há mensagem: é
+	// manutenção do protocolo ou um tipo que ainda não traduzimos. Entrava no
+	// fio como bolha vazia. O log é o que resta para saber o que eram — o
+	// payload bruto não é persistido, e sem ele a pergunta "que tipos são
+	// esses?" não tem resposta.
+	if v.nothingToShow() {
+		a.logDiscardedInbound(v)
+		return false
+	}
 	if a.config != nil {
 		if v.IsGroup && a.config.IgnoreGroups {
 			return false
@@ -916,12 +925,34 @@ func (a *Adapter) shouldForwardInbound(v *IncomingMessage) bool {
 	return true
 }
 
+// logDiscardedInbound registra, uma linha por descarte, o que o whatsmeow sabia
+// do envelope. O Adapter não tem logger próprio; o do cliente é o que existe.
+func (a *Adapter) logDiscardedInbound(v *IncomingMessage) {
+	a.mu.RLock()
+	client := a.client
+	a.mu.RUnlock()
+	if client == nil || client.logger == nil {
+		return
+	}
+	client.logger.Infof(
+		"inbound sem nada a exibir, descartado: chat=%s grupo=%t info_type=%q categoria=%q media_type=%q",
+		v.ChatJID, v.IsGroup, v.InfoType, v.InfoCategory, v.InfoMediaType)
+}
+
 // atoiOr parses s as an int, falling back to def on any error/empty.
 func atoiOr(s string, def int) int {
 	if n, err := strconv.Atoi(s); err == nil {
 		return n
 	}
 	return def
+}
+
+// putIfNotEmpty grava a chave só quando há valor, para não poluir o metadata
+// com campos vazios.
+func putIfNotEmpty(m map[string]string, key, value string) {
+	if value != "" {
+		m[key] = value
+	}
 }
 
 // convertToInboundMessage converts an IncomingMessage to plugin.InboundMessage
@@ -958,6 +989,14 @@ func convertToInboundMessage(msg *IncomingMessage) *plugin.InboundMessage {
 			"is_group":   fmt.Sprintf("%t", msg.IsGroup),
 			"msg_type":   msg.MessageType,
 		},
+	}
+
+	// Chegou com conteúdo, mas sem formato reconhecido (texto num envelope que
+	// não sabemos nomear). Vai etiquetado para que não vire mistério no banco.
+	if msg.MessageType == "" {
+		putIfNotEmpty(inbound.Metadata, "wa_info_type", msg.InfoType)
+		putIfNotEmpty(inbound.Metadata, "wa_info_category", msg.InfoCategory)
+		putIfNotEmpty(inbound.Metadata, "wa_info_media_type", msg.InfoMediaType)
 	}
 
 	// Menções (@fulano): sinal de que alguém foi cobrado diretamente — em grupo, é
