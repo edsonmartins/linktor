@@ -421,6 +421,27 @@ func (s *ChannelService) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// whatsappAdapterConfig monta o mapa que o adapter do WhatsApp recebe.
+//
+// Copiar a config do canal inteira, em vez de escolher chaves à mão, é o que
+// faz as opções da tela valerem. O Initialize do adapter lê ignore_status,
+// ignore_groups, always_online, auto_read_messages, reject_call, proxy_* e
+// outras — mas o mapa era montado com channel_id, database_path e device_name,
+// e só. Nenhuma das demais chegava até lá: marcar "ignorar status" no painel
+// gravava no banco e não mudava nada, e stories continuavam entrando como
+// mensagem.
+func whatsappAdapterConfig(channel *entity.Channel) map[string]string {
+	config := make(map[string]string, len(channel.Config)+2)
+	for key, value := range channel.Config {
+		config[key] = value
+	}
+	// Derivados daqui, e não do que estiver gravado no canal: o caminho da
+	// sessão é do servidor, não do usuário.
+	config["channel_id"] = channel.ID
+	config["database_path"] = fmt.Sprintf("storages/whatsapp_%s.db", channel.ID)
+	return config
+}
+
 // UpdateEnabled updates the channel enabled state
 func (s *ChannelService) UpdateEnabled(ctx context.Context, id string, enabled bool) (*entity.Channel, error) {
 	channel, err := s.repo.FindByID(ctx, id)
@@ -552,15 +573,7 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 	adapter := whatsapp.NewAdapter()
 
 	// Configure adapter
-	config := map[string]string{
-		"channel_id":    channel.ID,
-		"database_path": fmt.Sprintf("storages/whatsapp_%s.db", channel.ID),
-	}
-
-	// Add device name from channel config if available
-	if deviceName, ok := channel.Config["device_name"]; ok && deviceName != "" {
-		config["device_name"] = deviceName
-	}
+	config := whatsappAdapterConfig(channel)
 
 	// Initialize adapter
 	if err := adapter.Initialize(config); err != nil {
@@ -1287,14 +1300,7 @@ func (s *ChannelService) RequestPairCode(ctx context.Context, id string, phoneNu
 	// Create new adapter instance
 	adapter := whatsapp.NewAdapter()
 
-	config := map[string]string{
-		"channel_id":    channel.ID,
-		"database_path": fmt.Sprintf("storages/whatsapp_%s.db", channel.ID),
-	}
-
-	if deviceName, ok := channel.Config["device_name"]; ok && deviceName != "" {
-		config["device_name"] = deviceName
-	}
+	config := whatsappAdapterConfig(channel)
 
 	// Initialize adapter
 	if err := adapter.Initialize(config); err != nil {
@@ -1352,14 +1358,7 @@ func (s *ChannelService) reconnectWhatsAppChannel(ctx context.Context, channel *
 	// Create adapter instance
 	adapter := whatsapp.NewAdapter()
 
-	config := map[string]string{
-		"channel_id":    channel.ID,
-		"database_path": fmt.Sprintf("storages/whatsapp_%s.db", channel.ID),
-	}
-
-	if deviceName, ok := channel.Config["device_name"]; ok && deviceName != "" {
-		config["device_name"] = deviceName
-	}
+	config := whatsappAdapterConfig(channel)
 
 	// Initialize adapter
 	if err := adapter.Initialize(config); err != nil {
