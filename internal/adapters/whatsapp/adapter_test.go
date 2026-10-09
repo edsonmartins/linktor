@@ -273,8 +273,8 @@ func (suite *AdapterTestSuite) TestConvertToInboundMessage_GroupMessage() {
 func (suite *AdapterTestSuite) TestShouldForwardInbound_IgnoreGroups() {
 	on := &Adapter{config: &Config{IgnoreGroups: true}}
 	off := &Adapter{config: &Config{IgnoreGroups: false}}
-	group := &IncomingMessage{IsGroup: true}
-	direct := &IncomingMessage{IsGroup: false}
+	group := &IncomingMessage{IsGroup: true, Text: "bom dia", MessageType: "text"}
+	direct := &IncomingMessage{IsGroup: false, Text: "bom dia", MessageType: "text"}
 
 	assert.False(suite.T(), on.shouldForwardInbound(group), "ignore_groups → grupo não é encaminhado")
 	assert.True(suite.T(), on.shouldForwardInbound(direct), "1:1 flui mesmo com ignore_groups")
@@ -297,7 +297,8 @@ func (suite *AdapterTestSuite) TestShouldForwardInbound_OperadorNoAparelhoEntra(
 	// descartar pelo flag apagava metade de toda conversa.
 	a := &Adapter{config: &Config{}, sent: newSentRegistry()}
 
-	doAparelho := &IncomingMessage{ExternalID: "digitada-no-celular", IsFromMe: true}
+	doAparelho := &IncomingMessage{
+		ExternalID: "digitada-no-celular", IsFromMe: true, Text: "já verifico", MessageType: "text"}
 
 	assert.True(suite.T(), a.shouldForwardInbound(doAparelho),
 		"mensagem digitada no aparelho não é eco de nada — precisa entrar")
@@ -329,8 +330,10 @@ func (suite *AdapterTestSuite) TestConvertToInboundMessage_DoAparelhoVaiParaACon
 func (suite *AdapterTestSuite) TestShouldForwardInbound_IgnoreStatus() {
 	on := &Adapter{config: &Config{IgnoreStatus: true}}
 	off := &Adapter{config: &Config{IgnoreStatus: false}}
-	status := &IncomingMessage{ChatJID: types.NewJID("status", types.BroadcastServer)}
-	direct := &IncomingMessage{ChatJID: types.NewJID("5511999999999", types.DefaultUserServer)}
+	status := &IncomingMessage{
+		ChatJID: types.NewJID("status", types.BroadcastServer), Text: "story", MessageType: "text"}
+	direct := &IncomingMessage{
+		ChatJID: types.NewJID("5511999999999", types.DefaultUserServer), Text: "oi", MessageType: "text"}
 
 	assert.False(suite.T(), on.shouldForwardInbound(status), "ignore_status → story/status não é encaminhado")
 	assert.True(suite.T(), on.shouldForwardInbound(direct), "1:1 flui com ignore_status")
@@ -701,4 +704,54 @@ func (suite *AdapterTestSuite) TestIsBlockedIP() {
 	assert.True(suite.T(), isBlockedIP(net.ParseIP("::1")))
 	assert.False(suite.T(), isBlockedIP(net.ParseIP("8.8.8.8")))
 	assert.False(suite.T(), isBlockedIP(net.ParseIP("1.1.1.1")))
+}
+
+func (suite *AdapterTestSuite) TestShouldForwardInbound_SemNadaParaMostrar() {
+	a := &Adapter{config: &Config{}, sent: newSentRegistry()}
+
+	// Manutenção do protocolo e formatos não traduzidos: chegam sem texto,
+	// sem anexo e sem tipo. Entravam no fio como bolha vazia.
+	semNada := &IncomingMessage{ChatJID: types.NewJID("5511999999999", types.DefaultUserServer)}
+	textoVazio := &IncomingMessage{MessageType: "text", Text: "   "}
+
+	assert.False(suite.T(), a.shouldForwardInbound(semNada),
+		"sem texto, sem mídia e sem tipo não é mensagem")
+	assert.False(suite.T(), a.shouldForwardInbound(textoVazio),
+		"texto só de espaços também não tem o que mostrar")
+}
+
+func (suite *AdapterTestSuite) TestShouldForwardInbound_SemTextoMasComConteudo() {
+	a := &Adapter{config: &Config{}, sent: newSentRegistry()}
+
+	// Estas também chegam sem texto, e precisam passar: trazem payload próprio.
+	comAnexo := &IncomingMessage{MessageType: "image", Attachments: []Attachment{{Type: "image"}}}
+	reacao := &IncomingMessage{MessageType: "reaction", Reaction: &Reaction{Emoji: "❤️"}}
+	local := &IncomingMessage{MessageType: "location"}
+	contato := &IncomingMessage{MessageType: "contact"}
+
+	assert.True(suite.T(), a.shouldForwardInbound(comAnexo), "imagem sem legenda é mensagem")
+	assert.True(suite.T(), a.shouldForwardInbound(reacao), "reação é mensagem")
+	assert.True(suite.T(), a.shouldForwardInbound(local), "localização é mensagem")
+	assert.True(suite.T(), a.shouldForwardInbound(contato), "contato compartilhado é mensagem")
+}
+
+func (suite *AdapterTestSuite) TestConvertToInboundMessage_EtiquetaOEnvelopeDesconhecido() {
+	// Passou pela classificação sem casar com nenhum formato, mas tem texto —
+	// vai adiante etiquetado, para não virar mistério no banco.
+	msg := &IncomingMessage{
+		ExternalID:    "msg-x",
+		SenderJID:     types.NewJID("5511999999999", types.DefaultUserServer),
+		ChatJID:       types.NewJID("5511999999999", types.DefaultUserServer),
+		Text:          "veio por um envelope estranho",
+		InfoType:      "text",
+		InfoCategory:  "peer",
+		InfoMediaType: "",
+	}
+
+	result := convertToInboundMessage(msg)
+
+	assert.Equal(suite.T(), "text", result.Metadata["wa_info_type"])
+	assert.Equal(suite.T(), "peer", result.Metadata["wa_info_category"])
+	_, temVazio := result.Metadata["wa_info_media_type"]
+	assert.False(suite.T(), temVazio, "campo vazio não vira chave no metadata")
 }

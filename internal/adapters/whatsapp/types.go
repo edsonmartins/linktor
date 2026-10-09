@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"go.mau.fi/whatsmeow"
@@ -171,6 +172,13 @@ type IncomingMessage struct {
 	MessageType string       `json:"message_type"`
 	RawMessage  any          `json:"raw_message,omitempty"`
 
+	// O que o whatsmeow diz do envelope, antes de qualquer classificação
+	// nossa. Só serve quando a classificação falha: é a única pista do que
+	// era o payload, já que o bruto não é persistido.
+	InfoType      string `json:"info_type,omitempty"`
+	InfoCategory  string `json:"info_category,omitempty"`
+	InfoMediaType string `json:"info_media_type,omitempty"`
+
 	// SelectedID is set for interactive replies (native-flow button/list or
 	// template button) to the id of the option the user tapped; Text holds its
 	// display text.
@@ -190,6 +198,29 @@ type IncomingMessage struct {
 	// to. Only filled for IsFromMe messages, where the conversation's counterpart
 	// is the chat and not the sender — the sender there is the account itself.
 	ChatPN types.JID `json:"chat_pn,omitempty"`
+}
+
+// nothingToShow reports whether the message carries nothing a person could
+// read: no text, no media, and no payload the converter recognised.
+//
+// O WhatsApp entrega mais do que conversa. Entre as mensagens vêm as de
+// manutenção do protocolo — distribuição de chave, ajuste de mensagem
+// temporária, apagar para todos — e os formatos que esta versão ainda não
+// traduz. Nenhuma tem texto nem anexo, e gravá-las enchia o fio de bolhas
+// vazias: na instalação onde isso apareceu, 10.110 das 33.239 mensagens.
+//
+// Reação, localização e contato ficam de fora da regra de propósito: também
+// chegam sem texto, mas trazem payload próprio e significam algo para quem lê.
+func (m *IncomingMessage) nothingToShow() bool {
+	if len(m.Attachments) > 0 || strings.TrimSpace(m.Text) != "" {
+		return false
+	}
+	switch m.MessageType {
+	case "", "text":
+		return true
+	default:
+		return false
+	}
 }
 
 // Attachment represents a media attachment
