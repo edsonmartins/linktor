@@ -224,6 +224,7 @@
     "resolveConversation": "Resolver conversación",
     "assignToAgent": "Asignar a agente",
     "snooze": "Posponer",
+    "unsupportedMessage": "Mensaje sin contenido que mostrar",
     "deleteConversation": "Eliminar conversación",
     "deleteConversationDescription": "¿Eliminar la conversación con {name}? Sus mensajes, adjuntos e historial se van con ella. Esta acción no se puede deshacer — para quitarla de la cola sin perder el historial, resuélvela.",
     "conversationDeleted": "Conversación eliminada",

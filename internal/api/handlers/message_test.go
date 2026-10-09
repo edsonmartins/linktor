@@ -2,15 +2,19 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/pkg/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -98,7 +102,9 @@ func TestMessageList_ValidConversationID_Returns200(t *testing.T) {
 	resp := parseMessageResponse(t, w)
 	assert.True(t, resp.Success)
 	require.NotNil(t, resp.Meta)
-	assert.Equal(t, int64(2), resp.Meta.TotalItems)
+	assert.Equal(t, 2, resp.Meta.PageSize)
+	assert.False(t, resp.Meta.HasNext)
+	assert.Empty(t, resp.Meta.NextCursor, "sem mais nada atrás, não se emite cursor")
 
 	dataSlice, ok := resp.Data.([]interface{})
 	require.True(t, ok, "expected data to be a slice")
@@ -619,4 +625,168 @@ func TestMessageSend_ReservedMetadata_Returns400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Empty(t, msgRepo.Messages)
 	assert.Empty(t, producer.OutboundMessages)
+}
+
+// ---------------------------------------------------------------------------
+// List — paginação por cursor
+// ---------------------------------------------------------------------------
+
+// seedMessageAt adiciona uma mensagem com created_at explícito, para controlar
+// a ordem (e os empates) que a paginação precisa respeitar.
+func seedMessageAt(repo *testutil.MockMessageRepository, id, conversationID string, at time.Time) *entity.Message {
+	msg := seedMessage(repo, id, conversationID)
+	msg.CreatedAt = at
+	return msg
+}
+
+// listPage chama o handler e devolve os ids da página, na ordem, mais o meta.
+func listPage(t *testing.T, handler *MessageHandler, conversationID, before string, limit int) ([]string, *MetaResponse) {
+	t.Helper()
+
+	url := "/conversations/" + conversationID + "/messages?limit=" + strconv.Itoa(limit)
+	if before != "" {
+		url += "&before=" + before
+	}
+
+	c, w := newMessageAuthContext()
+	c.Params = gin.Params{{Key: "id", Value: conversationID}}
+	c.Request = httptest.NewRequest(http.MethodGet, url, nil)
+
+	handler.List(c)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Meta *MetaResponse `json:"meta"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	ids := make([]string, 0, len(resp.Data))
+	for _, m := range resp.Data {
+		ids = append(ids, m.ID)
+	}
+	return ids, resp.Meta
+}
+
+// Percorre a conversa inteira de página em página, como a tela faz ao rolar
+// para cima: cada página traz as mais novas que restam, sem repetir nem pular.
+func TestMessageList_CursorWalksWholeThread(t *testing.T) {
+	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
+
+	base := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	for i := 1; i <= 5; i++ {
+		seedMessageAt(msgRepo, fmt.Sprintf("msg-%d", i), "conv-1", base.Add(time.Duration(i)*time.Minute))
+	}
+
+	page1, meta1 := listPage(t, handler, "conv-1", "", 2)
+	assert.Equal(t, []string{"msg-5", "msg-4"}, page1, "a primeira página são as mais novas")
+	require.NotNil(t, meta1)
+	assert.True(t, meta1.HasNext)
+	require.NotEmpty(t, meta1.NextCursor)
+	assert.False(t, meta1.HasPrev, "sem cursor na entrada, não há página anterior")
+
+	page2, meta2 := listPage(t, handler, "conv-1", meta1.NextCursor, 2)
+	assert.Equal(t, []string{"msg-3", "msg-2"}, page2)
+	require.NotNil(t, meta2)
+	assert.True(t, meta2.HasNext)
+	assert.True(t, meta2.HasPrev)
+
+	page3, meta3 := listPage(t, handler, "conv-1", meta2.NextCursor, 2)
+	assert.Equal(t, []string{"msg-1"}, page3)
+	require.NotNil(t, meta3)
+	assert.False(t, meta3.HasNext, "acabou a conversa")
+	assert.Empty(t, meta3.NextCursor)
+
+	vistos := append(append(page1, page2...), page3...)
+	assert.Len(t, vistos, 5, "nenhuma mensagem repetida ou perdida nas três páginas")
+}
+
+// Mensagens que chegam no mesmo segundo compartilham created_at: o id é o que
+// impede a fronteira da página de cair no meio do empate, repetindo uma e
+// escondendo outra.
+func TestMessageList_CursorHandlesTimestampTies(t *testing.T) {
+	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
+
+	mesmoInstante := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	for _, id := range []string{"msg-a", "msg-b", "msg-c", "msg-d"} {
+		seedMessageAt(msgRepo, id, "conv-1", mesmoInstante)
+	}
+
+	page1, meta1 := listPage(t, handler, "conv-1", "", 2)
+	require.NotNil(t, meta1)
+	require.True(t, meta1.HasNext)
+
+	page2, _ := listPage(t, handler, "conv-1", meta1.NextCursor, 2)
+
+	todas := append(append([]string{}, page1...), page2...)
+	assert.ElementsMatch(t, []string{"msg-a", "msg-b", "msg-c", "msg-d"}, todas)
+}
+
+// Um cursor ilegível é erro do cliente. Começar do zero em silêncio faria um
+// botão quebrado parecer o fim da conversa.
+func TestMessageList_InvalidCursor_Returns400(t *testing.T) {
+	handler, _, convRepo, _, _, _ := setupMessageHandler()
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
+
+	c, w := newMessageAuthContext()
+	c.Params = gin.Params{{Key: "id", Value: "conv-1"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/conversations/conv-1/messages?before=nao-e-cursor", nil)
+
+	handler.List(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// O limite pedido não pode virar um pedido da conversa inteira.
+func TestMessageList_LimitIsCapped(t *testing.T) {
+	handler, msgRepo, convRepo, _, _, _ := setupMessageHandler()
+	seedConversation(convRepo, "conv-1", "tenant-1", entity.ConversationStatusOpen)
+
+	base := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 120; i++ {
+		seedMessageAt(msgRepo, fmt.Sprintf("msg-%03d", i), "conv-1", base.Add(time.Duration(i)*time.Second))
+	}
+
+	ids, meta := listPage(t, handler, "conv-1", "", 500)
+	assert.Len(t, ids, 100, "o teto é 100 por página")
+	require.NotNil(t, meta)
+	assert.True(t, meta.HasNext)
+}
+
+func TestMessageCursor_RoundTrip(t *testing.T) {
+	original := repository.MessageCursor{
+		CreatedAt: time.Date(2026, 10, 9, 12, 34, 56, 789000000, time.UTC),
+		ID:        "6f1c0a3e-0000-4000-8000-000000000001",
+	}
+
+	decoded, err := decodeMessageCursor(encodeMessageCursor(original))
+	require.NoError(t, err)
+	require.NotNil(t, decoded)
+	assert.True(t, original.CreatedAt.Equal(decoded.CreatedAt))
+	assert.Equal(t, original.ID, decoded.ID)
+}
+
+func TestMessageCursor_EmptyMeansNewest(t *testing.T) {
+	decoded, err := decodeMessageCursor("")
+	require.NoError(t, err)
+	assert.Nil(t, decoded, "sem cursor = começar pelas mais novas")
+}
+
+func TestMessageCursor_Rejects(t *testing.T) {
+	casos := map[string]string{
+		"não é base64":    "@@@",
+		"sem separador":   base64.RawURLEncoding.EncodeToString([]byte("2026-10-09T12:00:00Z")),
+		"sem id":          base64.RawURLEncoding.EncodeToString([]byte("2026-10-09T12:00:00Z|")),
+		"data impossível": base64.RawURLEncoding.EncodeToString([]byte("ontem|msg-1")),
+	}
+	for nome, cursor := range casos {
+		t.Run(nome, func(t *testing.T) {
+			_, err := decodeMessageCursor(cursor)
+			assert.Error(t, err)
+		})
+	}
 }

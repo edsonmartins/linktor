@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
+	"github.com/msgfy/linktor/internal/domain/repository"
 )
 
 // MessageHandler handles message endpoints
@@ -58,15 +61,16 @@ type TypingIndicatorRequest struct {
 
 // List godoc
 // @Summary      List messages
-// @Description  Returns all messages for a conversation
+// @Description  Returns one page of the conversation, newest first. Pass the meta.next_cursor of a response as `before` to get the page of older messages that precedes it; meta.has_more says whether that page exists.
 // @Tags         messages
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path string true "Conversation ID"
-// @Param        page query int false "Page number" default(1)
-// @Param        page_size query int false "Page size" default(50)
+// @Param        limit query int false "Messages per page (max 100)" default(30)
+// @Param        before query string false "Cursor from a previous response's meta.next_cursor"
 // @Success      200 {object} Response{data=[]entity.Message,meta=MetaResponse}
+// @Failure      400 {object} Response
 // @Failure      401 {object} Response
 // @Failure      404 {object} Response
 // @Router       /conversations/{id}/messages [get]
@@ -82,17 +86,43 @@ func (h *MessageHandler) List(c *gin.Context) {
 		return
 	}
 
-	messages, total, err := h.messageService.ListByConversationForTenant(c.Request.Context(), tenantID, conversationID, nil)
+	limit := 0 // 0 deixa o serviço aplicar o padrão
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	before, err := decodeMessageCursor(c.Query("before"))
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 
-	RespondWithMeta(c, withSignedMediaList(messages), &MetaResponse{
-		Page:       1,
-		PageSize:   50,
-		TotalItems: total,
-	})
+	page, err := h.messageService.ListPageByConversationForTenant(
+		c.Request.Context(), tenantID, conversationID, before, limit)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	meta := &MetaResponse{
+		PageSize: len(page.Messages),
+		HasNext:  page.HasMore,
+		HasPrev:  before != nil,
+	}
+	// O cursor aponta para a mensagem mais antiga desta página: é dela que a
+	// próxima continua. Sem mais nada atrás, não se emite cursor — assim o
+	// cliente para de pedir pelo que a resposta diz, não por tentativa.
+	if page.HasMore && len(page.Messages) > 0 {
+		oldest := page.Messages[len(page.Messages)-1]
+		meta.NextCursor = encodeMessageCursor(repository.MessageCursor{
+			CreatedAt: oldest.CreatedAt,
+			ID:        oldest.ID,
+		})
+	}
+
+	RespondWithMeta(c, withSignedMediaList(page.Messages), meta)
 }
 
 // Send godoc

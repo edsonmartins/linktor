@@ -225,6 +225,7 @@
     "resolveConversation": "Resolve conversation",
     "assignToAgent": "Assign to agent",
     "snooze": "Snooze",
+    "unsupportedMessage": "Message with no displayable content",
     "deleteConversation": "Delete conversation",
     "deleteConversationDescription": "Delete the conversation with {name}? Its messages, attachments and history go with it. This action cannot be undone — to take it out of the queue without losing the history, resolve it instead.",
     "conversationDeleted": "Conversation deleted",

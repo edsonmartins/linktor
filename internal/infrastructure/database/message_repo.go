@@ -299,6 +299,64 @@ func (r *MessageRepository) FindByConversation(ctx context.Context, conversation
 	return messages, total, nil
 }
 
+// FindPageByConversation returns one page of the conversation, newest first,
+// starting just before the cursor (nil = the newest messages).
+//
+// Keyset, not OFFSET: the thread is read from the bottom up, page after page,
+// and OFFSET would make each page re-scan everything above it — the deepest
+// scroll paying the highest price, on the biggest conversations. It also skips
+// or repeats rows when a message arrives mid-scroll, which is exactly what
+// happens in a live chat. The `(created_at, id)` pair is the same one the
+// ordering uses, so the cursor lands between two rows and never on a tie.
+func (r *MessageRepository) FindPageByConversation(ctx context.Context, conversationID string, before *repository.MessageCursor, limit int) ([]*entity.Message, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+
+	var cursorAt any
+	var cursorID any
+	if before != nil {
+		cursorAt = before.CreatedAt
+		cursorID = before.ID
+	}
+
+	query := `
+		SELECT id, conversation_id, sender_type, sender_id, content_type, content,
+		       metadata, status, external_id, error_message, sent_at, delivered_at,
+		       read_at, created_at, reactions
+		FROM messages
+		WHERE conversation_id = $1
+		  AND ($2::timestamptz IS NULL OR (created_at, id) < ($2::timestamptz, $3::uuid))
+		ORDER BY created_at DESC, id DESC
+		LIMIT $4
+	`
+
+	rows, err := r.db.Pool.Query(ctx, query, conversationID, cursorAt, cursorID, limit)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to query messages")
+	}
+	defer rows.Close()
+
+	var messages []*entity.Message
+	for rows.Next() {
+		message, err := r.scanMessageFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate messages")
+	}
+
+	if err := r.attachAttachments(ctx, messages); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
+}
+
 // attachAttachments loads attachments for every message in one query (ANY($1))
 // and assigns them, avoiding an N+1 per-message lookup.
 func (r *MessageRepository) attachAttachments(ctx context.Context, messages []*entity.Message) error {

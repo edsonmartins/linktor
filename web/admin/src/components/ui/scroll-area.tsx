@@ -11,14 +11,27 @@ import { cn } from '@/lib/utils'
 
 const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root> & {
+    /**
+     * O elemento que de fato rola. Quem precisa ler ou escrever scrollTop —
+     * carregar histórico ao chegar no topo, manter a posição ao inserir
+     * conteúdo acima — depende dele; a Root é só o contêiner, e alcançar o
+     * viewport por querySelector a partir de um filho é frágil.
+     */
+    viewportRef?: React.Ref<HTMLDivElement>
+    onViewportScroll?: React.UIEventHandler<HTMLDivElement>
+  }
+>(({ className, children, viewportRef, onViewportScroll, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
     ref={ref}
     className={cn('relative overflow-hidden', className)}
     {...props}
   >
-    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+    <ScrollAreaPrimitive.Viewport
+      ref={viewportRef}
+      onScroll={onViewportScroll}
+      className="h-full w-full rounded-[inherit]"
+    >
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollBar />
