@@ -87,7 +87,8 @@ var roundTripCases = []roundTripCase{
 	{
 		entity: "Conversation",
 		exceptions: map[string]string{
-			"LastMessageAt": "calculado por subquery sobre messages no SELECT; não é coluna própria",
+			"LastMessageAt": "coluna própria, mas escrita pelo gatilho messages_touch_conversation_activity quando chega mensagem; o repo nunca a grava",
+			"LastMessage":   "recorte da última mensagem, montado na listagem (LATERAL) para a linha da caixa; nunca persistido — idem Contact",
 			"Contact":       "relação expandida pela camada de API (List/Get) para o front; nunca persistida — o repo grava só colunas próprias",
 			"Channel":       "relação expandida pela camada de API (List/Get) para o front; nunca persistida — idem Contact",
 		},

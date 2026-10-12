@@ -4,10 +4,13 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/domain/repository"
 )
 
 // seedConversationGraph inserts the minimal tenant/channel/contact rows a
@@ -149,5 +152,188 @@ func assertStringSet(t *testing.T, label string, got, want []string) {
 		if !wantSet[g] {
 			t.Fatalf("%s: unexpected value %q (want %v, got %v)", label, g, want, got)
 		}
+	}
+}
+
+// A listagem paginada contra o Postgres de verdade: a ordem é a da atividade,
+// o cursor percorre a caixa sem repetir, a prévia vem junto e a busca estreita.
+// O teste unitário usa mock e não vê o SQL — CTE materializado, LATERAL e
+// comparação de tupla só se provam aqui.
+func TestConversationPage_KeysetOrderingAndPreview(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewPostgresDB(testDBConfig(t))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+	if err := db.RunMigrations(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	repo := NewConversationRepository(db)
+	msgRepo := NewMessageRepository(db)
+	tenantID, channelID, contactID := seedConversationGraph(t, ctx, db)
+
+	base := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+
+	// Cinco conversas criadas na mesma ordem, mas com atividade invertida: a
+	// primeira criada é a que recebeu a mensagem mais recente. Se a ordenação
+	// ainda fosse por created_at ou updated_at, a lista sairia ao contrário.
+	ids := make([]string, 5)
+	for i := 0; i < 5; i++ {
+		conv := entity.NewConversation(tenantID, contactID, channelID)
+		conv.ID = uuid.New().String()
+		if err := repo.Create(ctx, conv); err != nil {
+			t.Fatalf("create conversa %d: %v", i, err)
+		}
+		ids[i] = conv.ID
+
+		msg := &entity.Message{
+			ID:             uuid.New().String(),
+			ConversationID: conv.ID,
+			SenderType:     entity.SenderTypeContact,
+			ContentType:    entity.ContentTypeText,
+			Content:        fmt.Sprintf("fala da conversa %d", i),
+			Status:         entity.MessageStatusDelivered,
+			CreatedAt:      base.Add(time.Duration(5-i) * time.Minute),
+		}
+		if err := msgRepo.Create(ctx, msg); err != nil {
+			t.Fatalf("create mensagem %d: %v", i, err)
+		}
+	}
+
+	// O gatilho precisa ter gravado a marca de atividade; sem ela a ordenação
+	// cai de volta para a criação e a caixa mente.
+	primeira, err := repo.FindByID(ctx, ids[0])
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if primeira.LastMessageAt == nil {
+		t.Fatal("o gatilho não gravou last_message_at")
+	}
+	if !primeira.LastMessageAt.Equal(base.Add(5 * time.Minute)) {
+		t.Fatalf("marca de atividade errada: %v", primeira.LastMessageAt)
+	}
+
+	vistas := map[string]bool{}
+	var ordem []string
+	var cursor *repository.ConversationCursor
+	for passo := 0; passo < 4; passo++ {
+		pagina, err := repo.FindPageByTenant(ctx, tenantID, cursor, 2, nil)
+		if err != nil {
+			t.Fatalf("página %d: %v", passo, err)
+		}
+		if len(pagina) == 0 {
+			break
+		}
+		for _, c := range pagina {
+			if vistas[c.ID] {
+				t.Fatalf("conversa %s repetida entre páginas", c.ID)
+			}
+			vistas[c.ID] = true
+			ordem = append(ordem, c.ID)
+			if c.LastMessage == nil {
+				t.Fatalf("conversa %s veio sem a prévia da última mensagem", c.ID)
+			}
+		}
+		ultima := pagina[len(pagina)-1]
+		at := ultima.CreatedAt
+		if ultima.LastMessageAt != nil {
+			at = *ultima.LastMessageAt
+		}
+		cursor = &repository.ConversationCursor{ActivityAt: at, ID: ultima.ID}
+	}
+
+	if len(ordem) != 5 {
+		t.Fatalf("esperava as 5 conversas, vieram %d", len(ordem))
+	}
+	if ordem[0] != ids[0] {
+		t.Fatal("a conversa com a mensagem mais recente tem de abrir a lista")
+	}
+	if ordem[4] != ids[4] {
+		t.Fatal("a conversa mais parada tem de fechar a lista")
+	}
+
+	// A prévia é a última mensagem daquela conversa, não a de outra.
+	pagina, err := repo.FindPageByTenant(ctx, tenantID, nil, 1, nil)
+	if err != nil {
+		t.Fatalf("primeira página: %v", err)
+	}
+	if pagina[0].LastMessage.Content != "fala da conversa 0" {
+		t.Fatalf("prévia errada: %q", pagina[0].LastMessage.Content)
+	}
+
+	// Busca pelo contato: o nome semeado é "contact".
+	achadas, err := repo.FindPageByTenant(ctx, tenantID, nil, 10, map[string]interface{}{"search": "ontac"})
+	if err != nil {
+		t.Fatalf("busca: %v", err)
+	}
+	if len(achadas) != 5 {
+		t.Fatalf("a busca pelo nome do contato devia achar as 5, achou %d", len(achadas))
+	}
+	nenhuma, err := repo.FindPageByTenant(ctx, tenantID, nil, 10, map[string]interface{}{"search": "zzz-ninguem"})
+	if err != nil {
+		t.Fatalf("busca vazia: %v", err)
+	}
+	if len(nenhuma) != 0 {
+		t.Fatalf("termo sem dono devia achar nada, achou %d", len(nenhuma))
+	}
+
+	total, err := repo.CountByTenantFiltered(ctx, tenantID, nil)
+	if err != nil {
+		t.Fatalf("contagem: %v", err)
+	}
+	if total != 5 {
+		t.Fatalf("total esperado 5, veio %d", total)
+	}
+}
+
+// Mensagem antiga gravada depois (importação de histórico) não pode puxar a
+// marca de atividade para trás.
+func TestConversationActivity_OlderMessageDoesNotRewind(t *testing.T) {
+	ctx := context.Background()
+	db, err := NewPostgresDB(testDBConfig(t))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer db.Close()
+	if err := db.RunMigrations(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	repo := NewConversationRepository(db)
+	msgRepo := NewMessageRepository(db)
+	tenantID, channelID, contactID := seedConversationGraph(t, ctx, db)
+
+	conv := entity.NewConversation(tenantID, contactID, channelID)
+	conv.ID = uuid.New().String()
+	if err := repo.Create(ctx, conv); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	recente := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	antiga := recente.Add(-72 * time.Hour)
+
+	for _, quando := range []time.Time{recente, antiga} {
+		msg := &entity.Message{
+			ID:             uuid.New().String(),
+			ConversationID: conv.ID,
+			SenderType:     entity.SenderTypeContact,
+			ContentType:    entity.ContentTypeText,
+			Content:        "oi",
+			Status:         entity.MessageStatusDelivered,
+			CreatedAt:      quando,
+		}
+		if err := msgRepo.Create(ctx, msg); err != nil {
+			t.Fatalf("create mensagem: %v", err)
+		}
+	}
+
+	atual, err := repo.FindByID(ctx, conv.ID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if atual.LastMessageAt == nil || !atual.LastMessageAt.Equal(recente) {
+		t.Fatalf("a marca andou para trás: %v", atual.LastMessageAt)
 	}
 }
