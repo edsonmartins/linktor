@@ -212,6 +212,8 @@
     "transferTo": "Transfer to",
     "markAsResolved": "Mark as resolved",
     "noConversations": "No conversations found",
+    "showingOfTotal": "Showing {shown} of {total}",
+    "allLoaded": "{total} conversations",
     "filterByStatus": "Filter by Status",
     "filterByChannel": "Filter by Channel",
     "allChannels": "All channels",

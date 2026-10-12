@@ -212,6 +212,8 @@
     "transferTo": "Transferir para",
     "markAsResolved": "Marcar como resolvida",
     "noConversations": "Nenhuma conversa encontrada",
+    "showingOfTotal": "Mostrando {shown} de {total}",
+    "allLoaded": "{total} conversas",
     "filterByStatus": "Filtrar por Status",
     "filterByChannel": "Filtrar por Canal",
     "allChannels": "Todos os canais",

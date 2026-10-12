@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/pkg/testutil"
 )
 
@@ -997,5 +999,156 @@ func TestDelete_NoTenantID_Returns401(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status 401, got %d", w.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// List — paginação por cursor, busca e teto de página
+// ---------------------------------------------------------------------------
+
+// listConversations chama o handler e devolve os ids da página mais o meta.
+func listConversations(t *testing.T, handler *ConversationHandler, query string) ([]string, *MetaResponse) {
+	t.Helper()
+
+	c, w := newAuthContext()
+	c.Request = httptest.NewRequest(http.MethodGet, "/conversations?"+query, nil)
+
+	handler.List(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Meta *MetaResponse `json:"meta"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("resposta ilegível: %v", err)
+	}
+	ids := make([]string, 0, len(resp.Data))
+	for _, c := range resp.Data {
+		ids = append(ids, c.ID)
+	}
+	return ids, resp.Meta
+}
+
+func seedConversationWithActivity(repo *testutil.MockConversationRepository, id, tenantID string, at time.Time) {
+	conv := seedConversation(repo, id, tenantID, entity.ConversationStatusOpen)
+	conv.CreatedAt = at
+	conv.UpdatedAt = at
+	conv.LastMessageAt = &at
+}
+
+// A caixa inteira é alcançável pela rolagem. Antes, a listagem devolvia 20 e
+// ignorava qualquer pedido de mais — com mil conversas, novecentas e oitenta
+// não tinham como aparecer.
+func TestConversationList_CursorReachesEveryConversation(t *testing.T) {
+	handler, convRepo, _, _ := setupConversationHandler()
+	base := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	for i := 1; i <= 7; i++ {
+		seedConversationWithActivity(convRepo, fmt.Sprintf("conv-%d", i), "tenant-1", base.Add(time.Duration(i)*time.Minute))
+	}
+
+	vistas := map[string]bool{}
+	query := "limit=3"
+	for passo := 0; passo < 5; passo++ {
+		ids, meta := listConversations(t, handler, query)
+		if meta == nil {
+			t.Fatal("sem meta")
+		}
+		for _, id := range ids {
+			if vistas[id] {
+				t.Fatalf("conversa %s repetida entre páginas", id)
+			}
+			vistas[id] = true
+		}
+		if passo == 0 {
+			if ids[0] != "conv-7" {
+				t.Fatalf("a mais ativa abre a lista; veio %s", ids[0])
+			}
+			if meta.TotalItems != 7 {
+				t.Fatalf("total esperado 7, veio %d", meta.TotalItems)
+			}
+		}
+		if !meta.HasNext {
+			if meta.NextCursor != "" {
+				t.Fatal("sem próxima página não se emite cursor")
+			}
+			break
+		}
+		if meta.NextCursor == "" {
+			t.Fatal("has_next verdadeiro exige cursor")
+		}
+		query = "limit=3&before=" + meta.NextCursor
+	}
+
+	if len(vistas) != 7 {
+		t.Fatalf("esperava as 7 conversas, vi %d", len(vistas))
+	}
+}
+
+// O termo de busca chega ao filtro. A tela já o enviava; o handler o descartava.
+func TestConversationList_SearchIsApplied(t *testing.T) {
+	handler, convRepo, _, _ := setupConversationHandler()
+	base := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	seedConversationWithActivity(convRepo, "da-maria", "tenant-1", base)
+	convRepo.Conversations["da-maria"].Subject = "Maria"
+	seedConversationWithActivity(convRepo, "do-joao", "tenant-1", base.Add(time.Minute))
+	convRepo.Conversations["do-joao"].Subject = "João"
+
+	ids, meta := listConversations(t, handler, "search=maria")
+
+	if len(ids) != 1 || ids[0] != "da-maria" {
+		t.Fatalf("esperava só a conversa da Maria, veio %v", ids)
+	}
+	if meta.TotalItems != 1 {
+		t.Fatalf("o total também respeita a busca; veio %d", meta.TotalItems)
+	}
+}
+
+func TestConversationList_InvalidCursor_Returns400(t *testing.T) {
+	handler, _, _, _ := setupConversationHandler()
+
+	c, w := newAuthContext()
+	c.Request = httptest.NewRequest(http.MethodGet, "/conversations?before=nao-e-cursor", nil)
+
+	handler.List(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("esperava 400, veio %d", w.Code)
+	}
+}
+
+func TestConversationList_LimitIsCapped(t *testing.T) {
+	handler, convRepo, _, _ := setupConversationHandler()
+	base := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < 120; i++ {
+		seedConversationWithActivity(convRepo, fmt.Sprintf("conv-%03d", i), "tenant-1", base.Add(time.Duration(i)*time.Second))
+	}
+
+	ids, meta := listConversations(t, handler, "limit=500")
+
+	if len(ids) != 100 {
+		t.Fatalf("o teto é 100 por página; vieram %d", len(ids))
+	}
+	if !meta.HasNext {
+		t.Fatal("com 120 conversas e teto de 100, há próxima página")
+	}
+}
+
+func TestConversationCursor_RoundTrip(t *testing.T) {
+	original := repository.ConversationCursor{
+		ActivityAt: time.Date(2026, 10, 12, 9, 30, 0, 123000000, time.UTC),
+		ID:         "0f2c0a3e-0000-4000-8000-000000000001",
+	}
+
+	decoded, err := decodeConversationCursor(encodeConversationCursor(original))
+	if err != nil {
+		t.Fatalf("round-trip falhou: %v", err)
+	}
+	if !decoded.ActivityAt.Equal(original.ActivityAt) || decoded.ID != original.ID {
+		t.Fatalf("o cursor não voltou igual: %+v", decoded)
 	}
 }

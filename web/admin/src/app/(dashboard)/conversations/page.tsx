@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
-import { Search, Filter, MessageSquare, Plus, RefreshCw } from 'lucide-react'
+import { Search, Filter, MessageSquare, Plus, RefreshCw, Loader2 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -117,6 +117,10 @@ function ConversationItem({ conversation, isActive, onClick, t }: ConversationIt
   )
 }
 
+// Quantas conversas por página da caixa. Enche uma tela alta sem fazer a
+// primeira pintura esperar pela caixa inteira.
+const CONVERSATIONS_PAGE_SIZE = 30
+
 /**
  * Conversations Page
  */
@@ -125,11 +129,19 @@ export default function ConversationsPage() {
   const tCommon = useTranslations('common')
   const tEnv = useTranslations('environment')
   const [searchQuery, setSearchQuery] = useState('')
+  // A busca vai ao servidor; esperar a digitação parar evita uma consulta por
+  // tecla sobre a caixa inteira.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | 'all'>('all')
   // Default "all": sandbox conversations stay discoverable and the mandatory
   // badge is what prevents reading them as real (decisão WP-H).
   const [environmentFilter, setEnvironmentFilter] = useState<'all' | 'production' | 'sandbox'>('all')
   const [channelFilter, setChannelFilter] = useState<string>('all')
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300)
+    return () => clearTimeout(id)
+  }, [searchQuery])
+
   const activeConversationId = useActiveConversation()
   const setActiveConversation = useUIStore((s) => s.setActiveConversation)
 
@@ -187,25 +199,55 @@ export default function ConversationsPage() {
     queryFn: () => api.get<Channel[]>('/channels'),
   })
 
-  // Fetch conversations. Status/environment/channel filters are applied by the
-  // BACKEND (query params), never in memory here (WP-H).
-  const { data, isLoading, refetch, isFetching } = useQuery({
+  // Busca e filtros são aplicados pelo BACKEND (query params), nunca em memória
+  // aqui (WP-H). A caixa vem por página, da conversa mais ativa para a mais
+  // parada, e a rolagem busca as seguintes — antes a tela recebia as 20
+  // primeiras e não havia como chegar às demais.
+  const {
+    data,
+    isLoading,
+    refetch,
+    isFetching,
+    hasNextPage: hasMoreConversations,
+    isFetchingNextPage: isLoadingMoreConversations,
+    fetchNextPage: fetchMoreConversations,
+  } = useInfiniteQuery({
     queryKey: queryKeys.conversations.list({
-      search: searchQuery,
+      search: debouncedSearch,
       status: statusFilter,
       environment: environmentFilter,
       channel_id: channelFilter,
     }),
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       api.getEnvelope<Conversation[]>('/conversations', {
-        ...(searchQuery && { search: searchQuery }),
+        limit: String(CONVERSATIONS_PAGE_SIZE),
+        ...(pageParam ? { before: pageParam } : {}),
+        ...(debouncedSearch && { search: debouncedSearch }),
         ...(statusFilter !== 'all' && { status: statusFilter }),
         ...(environmentFilter !== 'all' && { environment: environmentFilter }),
         ...(channelFilter !== 'all' && { channel_id: channelFilter }),
       }),
+    initialPageParam: '',
+    getNextPageParam: (lastPage) => lastPage.meta?.next_cursor || undefined,
   })
 
-  const conversations = data?.data ?? []
+  const conversations = useMemo(
+    () => (data?.pages ?? []).flatMap((page) => page.data ?? []),
+    [data]
+  )
+  const totalConversations = data?.pages?.[0]?.meta?.total_items ?? 0
+
+  // Chegar perto do fim da lista traz a página seguinte.
+  const handleListScroll = useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      const el = event.currentTarget
+      const faltaRolar = el.scrollHeight - el.scrollTop - el.clientHeight
+      if (faltaRolar < 300 && hasMoreConversations && !isLoadingMoreConversations) {
+        fetchMoreConversations()
+      }
+    },
+    [hasMoreConversations, isLoadingMoreConversations, fetchMoreConversations]
+  )
   const selectedChannel = channels.find((ch) => ch.id === channelFilter)
 
   return (
@@ -338,7 +380,7 @@ export default function ConversationsPage() {
         </div>
 
         {/* Conversation List */}
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea className="min-h-0 flex-1" onViewportScroll={handleListScroll}>
           <div className="p-2 space-y-1">
             {isLoading ? (
               // Loading skeletons
@@ -368,6 +410,22 @@ export default function ConversationsPage() {
                 <p className="mt-2 text-sm">{t('noConversations')}</p>
                 <p className="text-xs">{t('adjustFilters')}</p>
               </div>
+            )}
+
+            {isLoadingMoreConversations && (
+              <div className="flex justify-center py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
+            {/* Quantas há ao todo, e quantas já desceram: sem isso não dá para
+                saber se a caixa acabou ou se a rolagem parou. */}
+            {!isLoading && conversations.length > 0 && (
+              <p className="py-3 text-center text-[11px] text-muted-foreground">
+                {hasMoreConversations
+                  ? t('showingOfTotal', { shown: conversations.length, total: totalConversations })
+                  : t('allLoaded', { total: conversations.length })}
+              </p>
             )}
           </div>
         </ScrollArea>
