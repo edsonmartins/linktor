@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"io/fs"
 	"os"
+	"strconv"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -27,9 +28,22 @@ func testDBConfig(t *testing.T) *config.DatabaseConfig {
 		}
 		return def
 	}
+	port := 5432
+	if v := os.Getenv("LINKTOR_DATABASE_PORT"); v != "" {
+		p, err := strconv.Atoi(v)
+		if err != nil {
+			t.Fatalf("LINKTOR_DATABASE_PORT inválida: %q", v)
+		}
+		port = p
+	}
+
+	// A porta era a única configuração fixa aqui, e isso não é inócuo: numa
+	// máquina com outro Postgres na 5432, o teste conecta nele em silêncio e
+	// passa — foi o que aconteceu ao conferir a migração 00020, que rodou
+	// contra o banco de outro projeto em vez do container recém-criado.
 	return &config.DatabaseConfig{
 		Host:         getenv("LINKTOR_DATABASE_HOST", "localhost"),
-		Port:         5432,
+		Port:         port,
 		User:         getenv("LINKTOR_DATABASE_USER", "linktor"),
 		Password:     getenv("LINKTOR_DATABASE_PASSWORD", "linktor"),
 		Database:     getenv("LINKTOR_DATABASE_DATABASE", "linktor"),
