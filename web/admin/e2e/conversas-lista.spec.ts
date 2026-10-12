@@ -187,6 +187,22 @@ test.describe('Lista de conversas', () => {
     expect(comBusca.length).toBeLessThan(4)
   })
 
+  test('mídia sem legenda é anunciada pelo tipo, não como caixa vazia', async ({ page }) => {
+    const caixa = construirCaixa()
+    // Áudio e documento chegam sem texto — é a natureza deles.
+    caixa[0].last_message = { ...caixa[0].last_message, content: '', content_type: 'audio' }
+    caixa[1].last_message = { ...caixa[1].last_message, content: '', content_type: 'document' }
+
+    await setupAuth(page, 'admin')
+    await mockCaixaPaginada(page, caixa, [])
+
+    await page.goto('/conversations')
+
+    await expect(page.getByText('🎤 Audio')).toBeVisible()
+    await expect(page.getByText('📄 Document')).toBeVisible()
+    await expect(page.getByText('No messages yet')).toHaveCount(0)
+  })
+
   test('cada linha mostra a última mensagem, não "ainda sem mensagens"', async ({ page }) => {
     await setupAuth(page, 'admin')
     await mockCaixaPaginada(page, construirCaixa(), [])

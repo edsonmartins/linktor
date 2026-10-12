@@ -37,6 +37,44 @@ interface ConversationItemProps {
   t: (key: string) => string
 }
 
+/**
+ * O que a linha da conversa mostra como última fala.
+ *
+ * Áudio, imagem, documento e localização chegam sem texto — é a natureza
+ * deles. Caindo no "ainda sem mensagens", a linha dizia que a conversa estava
+ * vazia quando o que havia era um áudio recém-recebido. Sem texto, anuncia-se
+ * o tipo, como em qualquer mensageiro.
+ */
+function previaDaConversa(
+  conversation: Conversation,
+  t: (key: string) => string
+): string {
+  const ultima = conversation.last_message
+  if (!ultima) return t('noMessagesYet')
+
+  const texto = ultima.content?.trim()
+  if (texto) return truncate(texto, 50)
+
+  switch (ultima.content_type) {
+    case 'image':
+      return t('previewImage')
+    case 'video':
+      return t('previewVideo')
+    case 'audio':
+      return t('previewAudio')
+    case 'document':
+      return t('previewDocument')
+    case 'sticker':
+      return t('previewSticker')
+    case 'location':
+      return t('previewLocation')
+    case 'contact':
+      return t('previewContact')
+    default:
+      return t('unsupportedMessage')
+  }
+}
+
 function ConversationItem({ conversation, isActive, onClick, t }: ConversationItemProps) {
   const statusVariant: Record<ConversationStatus, 'success' | 'warning' | 'info' | 'secondary'> = {
     open: 'success',
@@ -103,9 +141,7 @@ function ConversationItem({ conversation, isActive, onClick, t }: ConversationIt
           />
         </div>
         <p className="mt-1 text-xs text-muted-foreground truncate">
-          {conversation.last_message?.content
-            ? truncate(conversation.last_message.content, 50)
-            : t('noMessagesYet')}
+          {previaDaConversa(conversation, t)}
         </p>
       </div>
       {conversation.unread_count && conversation.unread_count > 0 && (
