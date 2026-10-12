@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
@@ -754,4 +758,50 @@ func (suite *AdapterTestSuite) TestConvertToInboundMessage_EtiquetaOEnvelopeDesc
 	assert.Equal(suite.T(), "peer", result.Metadata["wa_info_category"])
 	_, temVazio := result.Metadata["wa_info_media_type"]
 	assert.False(suite.T(), temVazio, "campo vazio não vira chave no metadata")
+}
+
+// O diagnóstico do descarte precisa SAIR. A primeira versão logava pelo logger
+// do whatsmeow, criado com o nível do canal — WARN por omissão —, então a linha
+// em Infof nunca foi impressa: o recurso foi ao ar invisível, e só se descobriu
+// ao procurar os tipos no log e não achar nada. Este teste lê a saída de fato.
+func (suite *AdapterTestSuite) TestDescarteSaiNoLog() {
+	t := suite.T()
+
+	original := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	defer func() {
+		os.Stderr = original
+		_ = logger.Init("info", "json")
+	}()
+
+	// O logger resolve o destino ao ser construído, então o Init vem depois da
+	// troca do os.Stderr.
+	require.NoError(t, logger.Init("info", "json"))
+
+	a := &Adapter{config: &Config{ChannelID: "ch-1"}, sent: newSentRegistry()}
+	semNada := &IncomingMessage{
+		ChatJID:       types.NewJID("120363160974792767", types.GroupServer),
+		IsGroup:       true,
+		InfoType:      "text",
+		InfoCategory:  "peer",
+		InfoMediaType: "",
+	}
+
+	assert.False(t, a.shouldForwardInbound(semNada))
+
+	// Sync num pipe devolve "bad file descriptor" — o zap tenta fsync onde não
+	// cabe. O fechamento é o que garante que tudo foi escrito.
+	_ = logger.Sync()
+	require.NoError(t, w.Close())
+	saida, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	linha := string(saida)
+	assert.Contains(t, linha, "inbound sem nada a exibir")
+	assert.Contains(t, linha, `"info_type":"text"`)
+	assert.Contains(t, linha, `"info_category":"peer"`)
+	assert.Contains(t, linha, `"channel_id":"ch-1"`)
+	assert.Contains(t, linha, `"grupo":true`)
 }
