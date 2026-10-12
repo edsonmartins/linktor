@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/msgfy/linktor/pkg/plugin"
 	"go.mau.fi/whatsmeow/types"
+	"go.uber.org/zap"
 )
 
 // ConnectionHandler is called when connection state changes
@@ -926,17 +928,26 @@ func (a *Adapter) shouldForwardInbound(v *IncomingMessage) bool {
 }
 
 // logDiscardedInbound registra, uma linha por descarte, o que o whatsmeow sabia
-// do envelope. O Adapter não tem logger próprio; o do cliente é o que existe.
+// do envelope — a única pista de que tipos são esses, já que o payload bruto
+// não é persistido.
+//
+// Pelo logger da aplicação, e não pelo do whatsmeow: aquele é criado com o
+// nível do canal, que por omissão é WARN, então a linha em Infof simplesmente
+// não saía. O diagnóstico foi ao ar invisível, e só se descobriu ao procurar
+// os tipos e não achar nada.
 func (a *Adapter) logDiscardedInbound(v *IncomingMessage) {
-	a.mu.RLock()
-	client := a.client
-	a.mu.RUnlock()
-	if client == nil || client.logger == nil {
-		return
+	channelID := ""
+	if a.config != nil {
+		channelID = a.config.ChannelID
 	}
-	client.logger.Infof(
-		"inbound sem nada a exibir, descartado: chat=%s grupo=%t info_type=%q categoria=%q media_type=%q",
-		v.ChatJID, v.IsGroup, v.InfoType, v.InfoCategory, v.InfoMediaType)
+	logger.Info("whatsapp: inbound sem nada a exibir, descartado",
+		zap.String("channel_id", channelID),
+		zap.String("chat_jid", v.ChatJID.String()),
+		zap.Bool("grupo", v.IsGroup),
+		zap.String("info_type", v.InfoType),
+		zap.String("info_category", v.InfoCategory),
+		zap.String("info_media_type", v.InfoMediaType),
+	)
 }
 
 // atoiOr parses s as an int, falling back to def on any error/empty.
