@@ -1,10 +1,10 @@
 -- +goose Up
--- Índice para a paginação por cursor do histórico da conversa. A tela de
--- mensagens pede uma página por vez com `(created_at, id) < (cursor)` e ordena
--- por `created_at DESC, id DESC` — o mesmo par que desempata mensagens que
--- chegam no mesmo segundo. O índice existente é só por conversation_id, o que
--- obriga o Postgres a ordenar a conversa inteira para devolver 30 linhas: numa
--- conversa de 1.500 mensagens isso é um sort a cada rolagem.
+-- OBSOLETA: este índice duplica idx_messages_conversation_created_id, criado
+-- pela 00010 com as mesmas colunas e direções. A 00020 o remove. Mantida como
+-- está porque migração aplicada não se reescreve — quem já rodou a 00018 tem o
+-- índice, e é a 00020 que o desfaz.
+--
+-- Índice para a paginação por cursor do histórico da conversa.
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_keyset
     ON messages(conversation_id, created_at DESC, id DESC);
 
