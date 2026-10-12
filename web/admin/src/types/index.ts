@@ -118,6 +118,14 @@ export interface ContactIdentity {
 }
 
 // Conversation
+export interface ConversationMessagePreview {
+  id: string
+  content: string
+  content_type: MessageContentType
+  sender_type: 'contact' | 'user' | 'system' | 'bot'
+  created_at: string
+}
+
 export interface Conversation {
   id: string
   tenant_id: string
@@ -136,7 +144,12 @@ export interface Conversation {
   contact?: Contact
   channel?: Channel
   assigned_user?: User
-  last_message?: Message
+  /**
+   * Última mensagem da conversa, trazida pela listagem para a linha poder
+   * mostrar o que foi dito por último. É um recorte — nem anexos nem reações —,
+   * por isso não é um Message inteiro.
+   */
+  last_message?: ConversationMessagePreview
   unread_count?: number
 }
 

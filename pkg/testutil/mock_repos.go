@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -390,6 +391,99 @@ func (m *MockConversationRepository) ResetUnreadCount(ctx context.Context, id st
 	}
 	conv.UnreadCount = 0
 	return nil
+}
+
+// FindPageByTenant espelha a paginação por cursor do Postgres: ordena por
+// atividade (última mensagem, ou a criação quando não há nenhuma) e devolve o
+// trecho posterior ao cursor. Sem a ordenação, o mapa do mock devolveria as
+// conversas em ordem aleatória e os testes de paginação passariam por sorteio.
+func (m *MockConversationRepository) FindPageByTenant(ctx context.Context, tenantID string, before *repository.ConversationCursor, limit int, filters map[string]interface{}) ([]*entity.Conversation, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
+
+	atividade := func(c *entity.Conversation) time.Time {
+		if c.LastMessageAt != nil {
+			return *c.LastMessageAt
+		}
+		return c.CreatedAt
+	}
+
+	var ordenadas []*entity.Conversation
+	for _, c := range m.Conversations {
+		if c.TenantID != tenantID || !mockConversationMatches(c, filters) {
+			continue
+		}
+		ordenadas = append(ordenadas, c)
+	}
+	sort.Slice(ordenadas, func(i, j int) bool {
+		ai, aj := atividade(ordenadas[i]), atividade(ordenadas[j])
+		if !ai.Equal(aj) {
+			return ai.After(aj)
+		}
+		return ordenadas[i].ID > ordenadas[j].ID
+	})
+
+	var page []*entity.Conversation
+	for _, c := range ordenadas {
+		if before != nil {
+			a := atividade(c)
+			abaixoDoCursor := a.Before(before.ActivityAt) ||
+				(a.Equal(before.ActivityAt) && c.ID < before.ID)
+			if !abaixoDoCursor {
+				continue
+			}
+		}
+		page = append(page, c)
+		if limit > 0 && len(page) == limit {
+			break
+		}
+	}
+	return page, nil
+}
+
+// CountByTenantFiltered conta o que a listagem devolveria.
+func (m *MockConversationRepository) CountByTenantFiltered(ctx context.Context, tenantID string, filters map[string]interface{}) (int64, error) {
+	if m.ReturnError != nil {
+		return 0, m.ReturnError
+	}
+	var total int64
+	for _, c := range m.Conversations {
+		if c.TenantID == tenantID && mockConversationMatches(c, filters) {
+			total++
+		}
+	}
+	return total, nil
+}
+
+// mockConversationMatches aplica os mesmos filtros que o SQL aplica.
+func mockConversationMatches(c *entity.Conversation, filters map[string]interface{}) bool {
+	if status, ok := filters["status"].(string); ok && status != "" && string(c.Status) != status {
+		return false
+	}
+	if channelID, ok := filters["channel_id"].(string); ok && channelID != "" && c.ChannelID != channelID {
+		return false
+	}
+	if contactID, ok := filters["contact_id"].(string); ok && contactID != "" && c.ContactID != contactID {
+		return false
+	}
+	if env, ok := filters["environment"].(string); ok && env != "" && string(c.Environment) != env {
+		return false
+	}
+	if assignee, ok := filters["assigned_user_id"].(string); ok && assignee != "" {
+		if c.AssignedUserID == nil || *c.AssignedUserID != assignee {
+			return false
+		}
+	}
+	// A busca do SQL casa com o contato; o mock não tem contatos à mão, então
+	// casa com o assunto — o bastante para o teste afirmar que o termo foi
+	// levado adiante, e não silenciosamente ignorado.
+	if search, ok := filters["search"].(string); ok && search != "" {
+		if !strings.Contains(strings.ToLower(c.Subject), strings.ToLower(search)) {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *MockConversationRepository) Delete(ctx context.Context, id string) error {

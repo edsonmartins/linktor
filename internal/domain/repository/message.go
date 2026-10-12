@@ -17,6 +17,14 @@ type MessageCursor struct {
 	ID        string
 }
 
+// ConversationCursor marks a position in the conversation list. ActivityAt is
+// coalesce(last_message_at, created_at) — a conversa sem mensagem nenhuma se
+// ordena pela criação —, e o id desempata as que compartilham a marca.
+type ConversationCursor struct {
+	ActivityAt time.Time
+	ID         string
+}
+
 // MessageRepository defines the interface for message persistence
 type MessageRepository interface {
 	// Create creates a new message
@@ -122,6 +130,14 @@ type ConversationRepository interface {
 
 	// ResetUnreadCount resets the unread message count to zero
 	ResetUnreadCount(ctx context.Context, id string) error
+
+	// FindPageByTenant returns one page of the tenant's conversations, most
+	// recent activity first, starting just before the cursor (nil = the top).
+	// Each conversation carries its last message as a preview.
+	FindPageByTenant(ctx context.Context, tenantID string, before *ConversationCursor, limit int, filters map[string]interface{}) ([]*entity.Conversation, error)
+
+	// CountByTenantFiltered counts what a listing with these filters returns.
+	CountByTenantFiltered(ctx context.Context, tenantID string, filters map[string]interface{}) (int64, error)
 
 	// Delete deletes a conversation
 	Delete(ctx context.Context, id string) error

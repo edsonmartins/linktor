@@ -35,6 +35,9 @@ type ConversationFilters struct {
 	AssignedTo string
 	ChannelID  string
 	ContactID  string
+	// Search casa com nome, telefone ou e-mail do contato — é por quem o
+	// atendente procura ao abrir a caixa.
+	Search string
 	// Environment filters by the denormalized channel environment
 	// ("production" | "sandbox", INV-018). Empty means no filter (all).
 	Environment string
@@ -86,46 +89,102 @@ func (s *ConversationService) publishLifecycleEvent(ctx context.Context, eventTy
 	})
 }
 
-// List returns all conversations for a tenant
-func (s *ConversationService) List(ctx context.Context, tenantID string, filters *ConversationFilters, params *repository.ListParams) ([]*entity.Conversation, int64, error) {
-	if params == nil {
-		params = repository.NewListParams()
-		params.SortBy = "updated_at"
-	}
+// ConversationPage is one window of the conversation list, most recent
+// activity first.
+type ConversationPage struct {
+	Conversations []*entity.Conversation
+	// HasMore reports whether older conversations exist after the last one here.
+	HasMore bool
+	// Total is how many conversations match the filters. Só vem na primeira
+	// página: contar a cada rolagem custaria varrer a caixa inteira para
+	// responder um número que a tela já mostrou.
+	Total int64
+}
 
-	// Apply filters to ListParams
-	if filters != nil {
-		if filters.Status != "" {
-			params.Filters["status"] = filters.Status
-		}
-		if filters.AssignedTo != "" {
-			params.Filters["assigned_user_id"] = filters.AssignedTo
-		}
-		if filters.ChannelID != "" {
-			params.Filters["channel_id"] = filters.ChannelID
-		}
-		if filters.ContactID != "" {
-			params.Filters["contact_id"] = filters.ContactID
-		}
-		if filters.Environment != "" {
-			// Validate at the edge so an arbitrary value never reaches the
-			// query as a filter key (it is parameterized anyway, but an
-			// invalid environment should read as a caller mistake, not as
-			// "no results").
-			if env, ok := entity.ParseChannelEnvironment(filters.Environment); ok {
-				params.Filters["environment"] = string(env)
-			} else {
-				return nil, 0, errors.Validation("invalid environment filter: " + filters.Environment)
-			}
-		}
-	}
+const (
+	defaultConversationPageSize = 30
+	maxConversationPageSize     = 100
+)
 
-	conversations, total, err := s.conversationRepo.FindByTenant(ctx, tenantID, params)
+// filterMap traduz os filtros da API para as chaves que o repositório conhece.
+func (f *ConversationFilters) filterMap() (map[string]interface{}, error) {
+	filters := map[string]interface{}{}
+	if f == nil {
+		return filters, nil
+	}
+	if f.Status != "" {
+		filters["status"] = f.Status
+	}
+	if f.AssignedTo != "" {
+		filters["assigned_user_id"] = f.AssignedTo
+	}
+	if f.ChannelID != "" {
+		filters["channel_id"] = f.ChannelID
+	}
+	if f.ContactID != "" {
+		filters["contact_id"] = f.ContactID
+	}
+	if f.Search != "" {
+		filters["search"] = f.Search
+	}
+	if f.Environment != "" {
+		// Validado na borda para que um valor arbitrário não chegue à consulta
+		// como filtro, e para que erro de quem chama não se pareça com "não há
+		// resultado".
+		env, ok := entity.ParseChannelEnvironment(f.Environment)
+		if !ok {
+			return nil, errors.Validation("invalid environment filter: " + f.Environment)
+		}
+		filters["environment"] = string(env)
+	}
+	return filters, nil
+}
+
+// ListPage returns one page of the tenant's conversations, most recent activity
+// first, ending just before the cursor (nil = the top of the list).
+//
+// Pede uma linha além do limite para saber se há mais, em vez de contar a cada
+// rolagem.
+func (s *ConversationService) ListPage(
+	ctx context.Context,
+	tenantID string,
+	filters *ConversationFilters,
+	before *repository.ConversationCursor,
+	limit int,
+) (*ConversationPage, error) {
+	filterMap, err := filters.filterMap()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	s.enrichConversations(ctx, conversations)
-	return conversations, total, nil
+
+	if limit <= 0 {
+		limit = defaultConversationPageSize
+	}
+	if limit > maxConversationPageSize {
+		limit = maxConversationPageSize
+	}
+
+	conversations, err := s.conversationRepo.FindPageByTenant(ctx, tenantID, before, limit+1, filterMap)
+	if err != nil {
+		return nil, err
+	}
+
+	page := &ConversationPage{Conversations: conversations}
+	if len(conversations) > limit {
+		page.Conversations = conversations[:limit]
+		page.HasMore = true
+	}
+
+	if before == nil {
+		total, err := s.conversationRepo.CountByTenantFiltered(ctx, tenantID, filterMap)
+		if err != nil {
+			return nil, err
+		}
+		page.Total = total
+	}
+
+	s.enrichConversations(ctx, page.Conversations)
+	return page, nil
 }
 
 // enrichConversations populates each conversation's Contact and Channel relation

@@ -110,7 +110,7 @@ func (r *ConversationRepository) FindByID(ctx context.Context, id string) (*enti
 	query := `
 		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
 		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
-		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
+		       c.last_message_at,
 		       c.tags, c.metadata, c.environment
 		FROM conversations c
 		WHERE c.id = $1
@@ -152,7 +152,7 @@ func (r *ConversationRepository) FindOpenByContactAndChannel(ctx context.Context
 	query := `
 		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
 		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
-		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
+		       c.last_message_at,
 		       c.tags, c.metadata, c.environment
 		FROM conversations c
 		WHERE c.contact_id = $1 AND c.channel_id = $2 AND c.status IN ('open', 'pending')
@@ -353,11 +353,10 @@ func (r *ConversationRepository) findWithFilter(ctx context.Context, whereClause
 		return nil, 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to count conversations")
 	}
 
-	// Get conversations with last_message_at computed via subquery
 	query := fmt.Sprintf(`
 		SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
 		       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
-		       (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
+		       c.last_message_at,
 		       c.tags, c.metadata, c.environment
 		FROM conversations c
 		WHERE %s
@@ -387,6 +386,155 @@ func (r *ConversationRepository) findWithFilter(ctx context.Context, whereClause
 	}
 
 	return conversations, total, nil
+}
+
+// FindPageByTenant returns one page of the tenant's conversations, most recent
+// activity first, starting just before the cursor (nil = the top of the list).
+//
+// Keyset sobre coalesce(last_message_at, created_at) — a mesma expressão do
+// índice idx_conversations_tenant_activity. Com OFFSET, cada página reescaneia
+// e reordena tudo acima dela, e mensagem nova no meio da rolagem faz a lista
+// deslizar: a conversa que subiu reaparece na página seguinte, e a que desceu
+// some. O id desempata conversas com a mesma marca de atividade.
+//
+// A prévia da última mensagem vem por LATERAL, aplicado só às linhas da página:
+// sem isso a tela precisaria de uma chamada por conversa para mostrar a última
+// linha de cada uma.
+func (r *ConversationRepository) FindPageByTenant(
+	ctx context.Context,
+	tenantID string,
+	before *repository.ConversationCursor,
+	limit int,
+	filters map[string]interface{},
+) ([]*entity.Conversation, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+
+	whereClause, args := applyConversationFilters("c.tenant_id = $1", []interface{}{tenantID}, filters)
+
+	if before != nil {
+		args = append(args, before.ActivityAt, before.ID)
+		whereClause += fmt.Sprintf(
+			" AND (COALESCE(c.last_message_at, c.created_at), c.id) < ($%d::timestamptz, $%d::uuid)",
+			len(args)-1, len(args))
+	}
+
+	args = append(args, limit)
+	// A página é escolhida primeiro, e só então cada linha dela busca a sua
+	// última mensagem. O LATERAL direto sobre a tabela parecia equivalente, mas
+	// o EXPLAIN mostrou o contrário: ele rodava para todas as conversas do
+	// tenant antes do ORDER BY — 1.012 buscas para devolver 30. MATERIALIZED
+	// impede o Postgres de voltar a juntar os dois passos.
+	query := fmt.Sprintf(`
+		WITH pagina AS MATERIALIZED (
+			SELECT c.id, c.tenant_id, c.channel_id, c.contact_id, c.assignee_id, c.status, c.priority,
+			       c.subject, c.unread_count, c.first_reply_at, c.resolved_at, c.created_at, c.updated_at,
+			       c.last_message_at, c.tags, c.metadata, c.environment
+			FROM conversations c
+			WHERE %s
+			ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC
+			LIMIT $%d
+		)
+		SELECT p.id, p.tenant_id, p.channel_id, p.contact_id, p.assignee_id, p.status, p.priority,
+		       p.subject, p.unread_count, p.first_reply_at, p.resolved_at, p.created_at, p.updated_at,
+		       p.last_message_at,
+		       p.tags, p.metadata, p.environment,
+		       ultima.id, ultima.content, ultima.content_type, ultima.sender_type, ultima.created_at
+		FROM pagina p
+		LEFT JOIN LATERAL (
+			SELECT m.id, m.content, m.content_type, m.sender_type, m.created_at
+			FROM messages m
+			WHERE m.conversation_id = p.id
+			ORDER BY m.created_at DESC, m.id DESC
+			LIMIT 1
+		) ultima ON true
+		ORDER BY COALESCE(p.last_message_at, p.created_at) DESC, p.id DESC
+	`, whereClause, len(args))
+
+	rows, err := r.db.Pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to query conversations")
+	}
+	defer rows.Close()
+
+	var conversations []*entity.Conversation
+	for rows.Next() {
+		conversation, err := r.scanConversationWithPreview(rows)
+		if err != nil {
+			return nil, err
+		}
+		conversations = append(conversations, conversation)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to iterate conversations")
+	}
+
+	return conversations, nil
+}
+
+// CountByTenantFiltered counts the conversations a listing would return.
+func (r *ConversationRepository) CountByTenantFiltered(ctx context.Context, tenantID string, filters map[string]interface{}) (int64, error) {
+	whereClause, args := applyConversationFilters("c.tenant_id = $1", []interface{}{tenantID}, filters)
+
+	var total int64
+	query := fmt.Sprintf("SELECT COUNT(*) FROM conversations c WHERE %s", whereClause)
+	if err := r.db.Pool.QueryRow(ctx, query, args...).Scan(&total); err != nil {
+		return 0, errors.Wrap(err, errors.ErrCodeInternal, "failed to count conversations")
+	}
+	return total, nil
+}
+
+// scanConversationWithPreview reads a conversation row that carries its last
+// message beside it (LEFT JOIN LATERAL): tudo nulo quando a conversa não tem
+// nenhuma mensagem.
+func (r *ConversationRepository) scanConversationWithPreview(rows pgx.Rows) (*entity.Conversation, error) {
+	var c entity.Conversation
+	var assigneeID, subject *string
+	var status, priority, environment string
+	var tags []string
+	var metadata []byte
+
+	var msgID, msgContent, msgContentType, msgSenderType *string
+	var msgCreatedAt *time.Time
+
+	err := rows.Scan(
+		&c.ID, &c.TenantID, &c.ChannelID, &c.ContactID, &assigneeID, &status, &priority,
+		&subject, &c.UnreadCount, &c.FirstReplyAt, &c.ResolvedAt, &c.CreatedAt, &c.UpdatedAt,
+		&c.LastMessageAt,
+		&tags, &metadata, &environment,
+		&msgID, &msgContent, &msgContentType, &msgSenderType, &msgCreatedAt,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to scan conversation")
+	}
+
+	c.AssignedUserID = assigneeID
+	if subject != nil {
+		c.Subject = *subject
+	}
+	c.Status = entity.ConversationStatus(status)
+	c.Priority = entity.ConversationPriority(priority)
+	c.Environment = entity.ChannelEnvironment(environment)
+	c.Tags = tags
+	if len(metadata) > 0 {
+		_ = json.Unmarshal(metadata, &c.Metadata)
+	}
+
+	if msgID != nil {
+		c.LastMessage = &entity.MessagePreview{
+			ID:          *msgID,
+			Content:     derefString(msgContent),
+			ContentType: entity.ContentType(derefString(msgContentType)),
+			SenderType:  entity.SenderType(derefString(msgSenderType)),
+		}
+		if msgCreatedAt != nil {
+			c.LastMessage.CreatedAt = *msgCreatedAt
+		}
+	}
+
+	return &c, nil
 }
 
 func (r *ConversationRepository) scanConversation(row pgx.Row) (*entity.Conversation, error) {
@@ -492,7 +640,14 @@ func applyConversationFilters(whereClause string, args []interface{}, filters ma
 		args = append(args, priority)
 		whereClause += fmt.Sprintf(" AND c.priority = $%d", len(args))
 	}
-	if assigneeID, ok := filters["assignee_id"].(string); ok && assigneeID != "" {
+	// O serviço grava "assigned_user_id"; esta função lia "assignee_id" e o
+	// filtro de responsável nunca chegou a filtrar nada. Aceita as duas, porque
+	// a coluna se chama assignee_id e o nome vaza em chamadas diretas.
+	assigneeID, ok := filters["assigned_user_id"].(string)
+	if !ok || assigneeID == "" {
+		assigneeID, ok = filters["assignee_id"].(string)
+	}
+	if ok && assigneeID != "" {
 		if assigneeID == "unassigned" {
 			whereClause += " AND c.assignee_id IS NULL"
 		} else {
@@ -507,6 +662,16 @@ func applyConversationFilters(whereClause string, args []interface{}, filters ma
 	if channelID, ok := filters["channel_id"].(string); ok && channelID != "" {
 		args = append(args, channelID)
 		whereClause += fmt.Sprintf(" AND c.channel_id = $%d", len(args))
+	}
+	// Busca pelo contato: é por quem o atendente procura. EXISTS em vez de JOIN
+	// para não multiplicar linhas nem mudar a forma da consulta quando o termo
+	// vem vazio.
+	if search, ok := filters["search"].(string); ok && search != "" {
+		args = append(args, "%"+search+"%")
+		whereClause += fmt.Sprintf(
+			" AND EXISTS (SELECT 1 FROM contacts ct WHERE ct.id = c.contact_id"+
+				" AND (ct.name ILIKE $%d OR ct.phone ILIKE $%d OR ct.email ILIKE $%d))",
+			len(args), len(args), len(args))
 	}
 	return whereClause, args
 }

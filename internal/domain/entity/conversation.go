@@ -75,6 +75,22 @@ type Conversation struct {
 	// handler/service enriched the conversation.
 	Contact *Contact `json:"contact,omitempty"`
 	Channel *Channel `json:"channel,omitempty"`
+	// LastMessage is the newest message of the conversation, carried by the
+	// listing so each row can show what was last said without one request per
+	// conversation. Nil in detail responses and in conversations with no
+	// messages.
+	LastMessage *MessagePreview `json:"last_message,omitempty"`
+}
+
+// MessagePreview is the slice of a message a conversation row shows: enough to
+// render the line, and nothing that would make the listing carry whole message
+// bodies, attachments and reactions for every conversation on screen.
+type MessagePreview struct {
+	ID          string      `json:"id"`
+	Content     string      `json:"content"`
+	ContentType ContentType `json:"content_type"`
+	SenderType  SenderType  `json:"sender_type"`
+	CreatedAt   time.Time   `json:"created_at"`
 }
 
 // NewConversation creates a new conversation

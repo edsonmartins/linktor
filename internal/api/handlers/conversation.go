@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/application/usecase"
+	"github.com/msgfy/linktor/internal/domain/repository"
 )
 
 // ConversationHandler handles conversation endpoints
@@ -54,30 +58,51 @@ func (h *ConversationHandler) List(c *gin.Context) {
 		return
 	}
 
-	// Parse query parameters
-	status := c.Query("status")
-	assignedTo := c.Query("assigned_to")
-	channelID := c.Query("channel_id")
-	environment := c.Query("environment") // "" = all; "production" | "sandbox"
-
 	filters := &service.ConversationFilters{
-		Status:      status,
-		AssignedTo:  assignedTo,
-		ChannelID:   channelID,
-		Environment: environment,
+		Status:      c.Query("status"),
+		AssignedTo:  c.Query("assigned_to"),
+		ChannelID:   c.Query("channel_id"),
+		Environment: c.Query("environment"), // "" = all; "production" | "sandbox"
+		Search:      strings.TrimSpace(c.Query("search")),
 	}
 
-	conversations, total, err := h.conversationService.List(c.Request.Context(), tenantID, filters, nil)
+	limit := 0 // 0 deixa o serviço aplicar o padrão
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	before, err := decodeConversationCursor(c.Query("before"))
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 
-	RespondWithMeta(c, conversations, &MetaResponse{
-		Page:       1,
-		PageSize:   20,
-		TotalItems: total,
-	})
+	page, err := h.conversationService.ListPage(c.Request.Context(), tenantID, filters, before, limit)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+
+	meta := &MetaResponse{
+		PageSize:   len(page.Conversations),
+		TotalItems: page.Total,
+		HasNext:    page.HasMore,
+		HasPrev:    before != nil,
+	}
+	// O cursor aponta para a última conversa desta página: é dela que a
+	// próxima continua. Sem mais nada abaixo, nenhum cursor é emitido — e é
+	// esse silêncio que diz à tela para parar de pedir.
+	if page.HasMore && len(page.Conversations) > 0 {
+		ultima := page.Conversations[len(page.Conversations)-1]
+		meta.NextCursor = encodeConversationCursor(repository.ConversationCursor{
+			ActivityAt: conversationActivityAt(ultima),
+			ID:         ultima.ID,
+		})
+	}
+
+	RespondWithMeta(c, page.Conversations, meta)
 }
 
 // Create godoc
