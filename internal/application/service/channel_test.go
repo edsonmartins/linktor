@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -741,6 +742,43 @@ func TestChannelService_Update_PreservesRedactedSecret(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "rotated-token", updated2.Config["access_token"])
+}
+
+func TestChannelService_Connect_RunsPreparerAndPersistsWhatItSets(t *testing.T) {
+	svc, repo, _ := newChannelService()
+	created, err := svc.Create(context.Background(), &CreateChannelInput{
+		TenantID: "tenant1", Type: "telegram", Name: "Bot",
+		Credentials: map[string]string{"bot_token": "123:abc"},
+	})
+	require.NoError(t, err)
+
+	svc.SetConnectPreparer(entity.ChannelTypeTelegram, func(_ context.Context, ch *entity.Channel) error {
+		ch.Credentials["secret_token"] = "generated"
+		return nil
+	})
+	_, err = svc.Connect(context.Background(), created.ID)
+	require.NoError(t, err)
+
+	stored := repo.Channels[created.ID]
+	assert.Equal(t, entity.ConnectionStatusConnected, stored.ConnectionStatus)
+	assert.Equal(t, "generated", stored.Credentials["secret_token"])
+}
+
+func TestChannelService_Connect_PreparerFailureKeepsChannelDisconnected(t *testing.T) {
+	svc, repo, _ := newChannelService()
+	created, err := svc.Create(context.Background(), &CreateChannelInput{
+		TenantID: "tenant1", Type: "telegram", Name: "Bot",
+		Credentials: map[string]string{"bot_token": "bad"},
+	})
+	require.NoError(t, err)
+
+	svc.SetConnectPreparer(entity.ChannelTypeTelegram, func(context.Context, *entity.Channel) error {
+		return fmt.Errorf("invalid bot token: getMe: Unauthorized")
+	})
+	_, err = svc.Connect(context.Background(), created.ID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Unauthorized")
+	assert.Equal(t, entity.ConnectionStatusDisconnected, repo.Channels[created.ID].ConnectionStatus)
 }
 
 // As opções do canal precisam chegar ao adapter. Montar o mapa à mão deixava

@@ -29,6 +29,11 @@ func (SenderFactory) New(creds map[string]string) (outbound.Sender, error) {
 		VerifyToken:     creds["verify_token"],
 		InstagramID:     creds["instagram_id"],
 	}
+	// Channels created through /oauth/channels store the page token under
+	// access_token; accept it so they can send, not only receive.
+	if cfg.PageAccessToken == "" {
+		cfg.PageAccessToken = creds["access_token"]
+	}
 	if cfg.PageAccessToken == "" {
 		return nil, fmt.Errorf("page_access_token is required")
 	}

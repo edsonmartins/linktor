@@ -338,7 +338,7 @@ func (h *PaymentsHandler) GetCustomerPayments(c *gin.Context) {
 // @Failure      500 {object} Response
 // @Router       /webhooks/payments/{channelId} [post]
 func (h *PaymentsHandler) HandleWebhook(c *gin.Context) {
-	channelID := c.Param("id")
+	channelID := c.Param("channelId")
 
 	client, ok := h.getClient(channelID)
 	if !ok {

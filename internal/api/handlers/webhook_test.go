@@ -1241,3 +1241,24 @@ func TestWebhookTelegram_CallbackQuery(t *testing.T) {
 	assert.Equal(t, "7654321098", msg.Metadata["sender_id"])
 	assert.Equal(t, "8123456789", msg.Metadata["chat_id"])
 }
+
+// ---------------------------------------------------------------------------
+// Meta verify token lookup
+// ---------------------------------------------------------------------------
+
+func TestMetaVerifyTokenMatches(t *testing.T) {
+	// The admin's manual forms store the token in config, OAuth in credentials.
+	fromConfig := &entity.Channel{Config: map[string]string{"verify_token": "cfg-token"}}
+	assert.True(t, metaVerifyTokenMatches(fromConfig, "cfg-token"))
+	assert.False(t, metaVerifyTokenMatches(fromConfig, "other"))
+
+	both := &entity.Channel{
+		Config:      map[string]string{"verify_token": "cfg-token"},
+		Credentials: map[string]string{"verify_token": "cred-token"},
+	}
+	assert.True(t, metaVerifyTokenMatches(both, "cred-token"))
+	assert.False(t, metaVerifyTokenMatches(both, "cfg-token"))
+
+	// A channel without a token must not accept an empty hub.verify_token.
+	assert.False(t, metaVerifyTokenMatches(&entity.Channel{}, ""))
+}

@@ -53,6 +53,14 @@ func (d *WebhookDedup) Middleware(channelKey string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		// Only event deliveries are deduplicated. A GET is a provider handshake
+		// (Meta hub.challenge) with an empty body: hashing it would make every
+		// verification after the first one answer "duplicate" instead of the
+		// challenge.
+		if c.Request.Method != http.MethodPost {
+			c.Next()
+			return
+		}
 
 		eventID := extractEventID(c)
 		if eventID == "" {
@@ -66,7 +74,9 @@ func (d *WebhookDedup) Middleware(channelKey string) gin.HandlerFunc {
 			eventID = hex.EncodeToString(sum[:])
 		}
 
-		key := d.prefix + channelKey + ":" + eventID
+		// The request path carries the channel id, so two channels that receive
+		// the same payload (or share an event id) do not shadow each other.
+		key := d.prefix + channelKey + ":" + c.Request.URL.Path + ":" + eventID
 
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 250*time.Millisecond)
 		defer cancel()
@@ -88,11 +98,13 @@ func (d *WebhookDedup) Middleware(channelKey string) gin.HandlerFunc {
 		c.Header("X-Webhook-Dedup", "fresh")
 		c.Next()
 
-		// If the handler failed (5xx), release the dedup key so the provider's
-		// retry actually re-runs the handler. Otherwise the key we just set would
-		// short-circuit every retry as a duplicate and the event would be lost —
-		// defeating handlers that return 5xx specifically to force a retry.
-		if c.Writer.Status() >= http.StatusInternalServerError {
+		// If the handler did not accept the event (4xx or 5xx), release the dedup
+		// key so a retry actually re-runs the handler. Otherwise the key we just
+		// set would short-circuit every retry as a duplicate and the event would
+		// be lost — defeating handlers that return 5xx specifically to force a
+		// retry, and hiding a rejected delivery (bad signature, channel not yet
+		// configured) behind a 200 once the cause is fixed.
+		if c.Writer.Status() >= http.StatusBadRequest {
 			delCtx, delCancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 			defer delCancel()
 			d.redis.Del(delCtx, key)
@@ -102,13 +114,17 @@ func (d *WebhookDedup) Middleware(channelKey string) gin.HandlerFunc {
 
 // extractEventID returns the first non-empty value from a known set of headers
 // commonly used by webhook providers to carry a unique event identifier.
+//
+// Only headers that change per delivery belong here. Telegram's
+// X-Telegram-Bot-Api-Secret-Token is a per-channel constant, so using it as an
+// event id made every update after the first one a "duplicate"; Telegram
+// deliveries fall back to the body hash, which includes update_id.
 func extractEventID(c *gin.Context) string {
 	headers := []string{
 		"X-Hub-Signature-256",
 		"X-Webhook-Id",
 		"X-Event-Id",
 		"X-Twilio-Idempotency-Token",
-		"X-Telegram-Bot-Api-Secret-Token",
 		"Idempotency-Key",
 	}
 	for _, h := range headers {

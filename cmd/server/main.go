@@ -690,6 +690,24 @@ func main() {
 	// gerenciador o canal recebe "connected" no banco e descarta toda resposta.
 	emailManager := email.NewManager(channelRepo, producer)
 
+	// Telegram só entrega updates a um webhook registrado: conectar o canal
+	// valida o token, gera o secret_token e aponta o bot para cá. Sem isto o
+	// canal ficava "connected" no banco e nenhuma mensagem chegava.
+	telegramWebhooks := telegram.NewWebhookRegistrar()
+	channelService.SetConnectPreparer(entity.ChannelTypeTelegram, func(ctx context.Context, ch *entity.Channel) error {
+		return prepareTelegramChannel(ctx, telegramWebhooks, ch)
+	})
+	unregisterTelegram := func(ch *entity.Channel) {
+		if ch.Type != entity.ChannelTypeTelegram || ch.Credentials["bot_token"] == "" {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := telegramWebhooks.Unregister(ctx, ch.Credentials["bot_token"]); err != nil {
+			logger.Warn("telegram: deleteWebhook failed for channel " + ch.ID + ": " + err.Error())
+		}
+	}
+
 	channelService.SetLifecycleHooks(service.ChannelLifecycleHooks{
 		OnConnected: func(ctx context.Context, channel *entity.Channel) {
 			registerWhatsAppAdvancedClient(channel, paymentRepo, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
@@ -720,6 +738,7 @@ func main() {
 		},
 		OnDisconnected: func(ctx context.Context, channel *entity.Channel) {
 			outboundResolver.Invalidate(channel.ID)
+			unregisterTelegram(channel)
 			unregisterWhatsAppAdvancedClient(channel.ID, whatsappAnalyticsHandler, paymentsHandler, callingHandler, ctwaHandler)
 			if channel.Type == entity.ChannelTypeMattermost {
 				mattermostManager.StopChannel(channel.ID)
@@ -730,6 +749,7 @@ func main() {
 		},
 		OnDeleted: func(ctx context.Context, channel *entity.Channel) {
 			outboundResolver.Invalidate(channel.ID)
+			unregisterTelegram(channel)
 			if channel.Type == entity.ChannelTypeMattermost {
 				mattermostManager.StopChannel(channel.ID)
 			}

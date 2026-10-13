@@ -128,6 +128,20 @@ func toPluginMessage(msg *Message) *plugin.OutboundMessage {
 		if c.Filename != "" {
 			out.Metadata["filename"] = c.Filename
 		}
+		// Plugin adapters (webchat) deliver msg.Attachments, not the metadata
+		// keys above; without this the client received only the caption.
+		if c.URL != "" {
+			out.Attachments = []*plugin.Attachment{{
+				Type:     string(c.Type),
+				URL:      c.URL,
+				Filename: c.Filename,
+			}}
+		}
+	case Interactive:
+		// Plugin adapters have no interactive controls: fall back to the body
+		// text so the message is not delivered empty.
+		out.ContentType = plugin.ContentTypeText
+		out.Content = c.Body
 	default:
 		out.ContentType = plugin.ContentTypeText
 	}

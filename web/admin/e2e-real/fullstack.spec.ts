@@ -1342,7 +1342,7 @@ test.describe('Admin Full Stack', () => {
     const sheet = page.getByRole('dialog')
     await expect(sheet).toBeVisible()
     await sheet.getByRole('tab', { name: /Webhook/i }).click()
-    await expect(sheet.getByText(`/api/v1/webhooks/whatsapp_official/${createdChannel.id}`)).toBeVisible()
+    await expect(sheet.getByText(`/api/v1/webhooks/whatsapp/${createdChannel.id}`)).toBeVisible()
 
     await deleteChannelByID(request, createdChannel.id)
   })

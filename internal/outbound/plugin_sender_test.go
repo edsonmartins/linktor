@@ -113,6 +113,31 @@ func TestToPluginMessageMedia(t *testing.T) {
 	}
 }
 
+// Plugin adapters deliver msg.Attachments; media that only rode in the metadata reached the
+// webchat client as a bare caption.
+func TestToPluginMessageMediaCarriesAttachment(t *testing.T) {
+	out := toPluginMessage(&Message{
+		To:      "s",
+		Content: Media{Type: MediaDocument, URL: "https://x/y.pdf", Filename: "y.pdf"},
+	})
+	if len(out.Attachments) != 1 {
+		t.Fatalf("expected one attachment, got %+v", out.Attachments)
+	}
+	if a := out.Attachments[0]; a.Type != "document" || a.URL != "https://x/y.pdf" || a.Filename != "y.pdf" {
+		t.Fatalf("attachment mapping wrong: %+v", a)
+	}
+}
+
+func TestToPluginMessageInteractiveFallsBackToBody(t *testing.T) {
+	out := toPluginMessage(&Message{
+		To:      "s",
+		Content: Interactive{Body: "Escolha", Buttons: []InteractiveButton{{ID: "1", Title: "Sim"}}},
+	})
+	if out.ContentType != plugin.ContentTypeText || out.Content != "Escolha" {
+		t.Fatalf("interactive mapping wrong: %+v", out)
+	}
+}
+
 // reactingAdapter also implements the optional plugin.ReactionSender capability.
 type reactingAdapter struct {
 	*fakeAdapter

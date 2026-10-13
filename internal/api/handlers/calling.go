@@ -387,7 +387,7 @@ func (h *CallingHandler) GetCallRecording(c *gin.Context) {
 // @Failure      500 {object} Response
 // @Router       /webhooks/calls/{channelId} [post]
 func (h *CallingHandler) HandleWebhook(c *gin.Context) {
-	channelID := c.Param("id")
+	channelID := c.Param("channelId")
 
 	client, ok := h.getClient(channelID)
 	if !ok {

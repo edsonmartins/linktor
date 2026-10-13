@@ -97,6 +97,24 @@ type ChannelService struct {
 	// cannot demote a channel a newer pairing already connected.
 	loginMu     sync.Mutex
 	loginEpochs map[string]uint64
+	// connectPreparers run on Connect, before a non-WhatsApp channel is marked
+	// connected, to do what "connected" means for that provider (e.g. register
+	// the Telegram webhook). See SetConnectPreparer.
+	connectPreparers map[entity.ChannelType]ConnectPreparer
+}
+
+// ConnectPreparer readies a channel with its provider on Connect. It may set
+// Config/Credentials on the channel (e.g. a generated webhook secret); they are
+// persisted before the channel is marked connected. An error fails the connect
+// and is shown to the user, so it must not carry secrets.
+type ConnectPreparer func(ctx context.Context, channel *entity.Channel) error
+
+// SetConnectPreparer registers the preparer for a channel type.
+func (s *ChannelService) SetConnectPreparer(t entity.ChannelType, fn ConnectPreparer) {
+	if s.connectPreparers == nil {
+		s.connectPreparers = map[entity.ChannelType]ConnectPreparer{}
+	}
+	s.connectPreparers[t] = fn
 }
 
 // NewChannelService creates a new channel service
@@ -513,7 +531,16 @@ func (s *ChannelService) Connect(ctx context.Context, id string) (*ConnectResult
 	}
 
 	logger.Info("Using default connect handler (not WhatsApp)")
-	// Default behavior for other channels - mark as connected
+	if prepare := s.connectPreparers[channel.Type]; prepare != nil {
+		if err := prepare(ctx, channel); err != nil {
+			s.logLifecycle(ctx, entity.LogLevelError, channel.TenantID, channel.ID, "Falha ao conectar o canal: "+err.Error())
+			return nil, errors.New(errors.ErrCodeValidation, "failed to connect channel: "+err.Error())
+		}
+		if err := s.repo.Update(ctx, channel); err != nil {
+			return nil, err
+		}
+	}
+	// Mark as connected
 	channel.ConnectionStatus = entity.ConnectionStatusConnected
 	channel.UpdatedAt = time.Now()
 

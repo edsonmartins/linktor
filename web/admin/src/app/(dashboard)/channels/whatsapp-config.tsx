@@ -235,7 +235,7 @@ export function WhatsAppConfig({
   const isSandbox = isEditing ? channel?.environment === 'sandbox' : watchEnvironment === 'sandbox'
 
   const webhookUrl = channel
-    ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/whatsapp_official/${channel.id}`
+    ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/whatsapp/${channel.id}`
     : t('willBeGenerated')
 
   const paymentsStatsQuery = useQuery({

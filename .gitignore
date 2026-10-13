@@ -63,7 +63,7 @@ web/admin/playwright-report/
 web/admin/test-results/
 web/landing/.next/
 web/landing/out/
-server
+/server
 
 # Test
 coverage/
