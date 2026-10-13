@@ -112,6 +112,8 @@ services:
       LINKTOR_JWT_SECRET: change-me-in-development
       # Local dev is plain http, so auth cookies must not require HTTPS.
       LINKTOR_JWT_COOKIE_SECURE: "false"
+      # Demo login password; empty = random, printed once in the backend log.
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       BASE_URL: ${LINKTOR_BASE_URL:-http://localhost:${LINKTOR_API_PORT:-8081}}
       VRE_UPLOAD_DIR: /app/uploads/vre
       # Inbound media store (re-hosts Slack url_private / Mattermost files so

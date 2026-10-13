@@ -820,12 +820,13 @@ linktor/
 
 ## Instalação
 
+Há dois jeitos de rodar: tudo em Docker (mais rápido para conhecer o sistema) ou infraestrutura em Docker com backend e admin rodando na máquina (para desenvolver).
+
 ### Pré-requisitos
 
-- Go 1.25+
-- Node.js 20+
-- Docker & Docker Compose
-- Make (opcional, mas recomendado)
+- Docker e Docker Compose
+- Go 1.25+ e Node.js 20+ (só para o modo de desenvolvimento)
+- Make (opcional)
 
 ### 1. Clone o repositório
 
@@ -834,14 +835,32 @@ git clone https://github.com/msgfy/linktor.git
 cd linktor
 ```
 
-### 2. Inicie o ambiente local
+### 2. Crie o arquivo `.env`
 
 ```bash
 cp .env.example .env
+```
+
+O `.env.example` já funciona como está para desenvolvimento local. O backend lê o `.env` da raiz ao iniciar, e o `docker compose` usa o mesmo arquivo para portas e URLs. A lista completa de variáveis está em [Exemplo de `.env`](#exemplo-de-env).
+
+### 3A. Rodar tudo em Docker
+
+```bash
 docker compose up --build
 ```
 
-Se as portas locais já estiverem ocupadas, ajuste no `.env` antes de subir:
+Isso sobe:
+
+- **PostgreSQL** (`LINKTOR_POSTGRES_PORT`, padrão `5432`): banco de dados principal
+- **Redis** (`LINKTOR_REDIS_PORT`, padrão `6379`): rate limit e deduplicação de webhooks
+- **NATS** (`LINKTOR_NATS_PORT`, padrão `4222`; monitoramento em `LINKTOR_NATS_MONITOR_PORT`, padrão `8222`): fila de mensagens
+- **MinIO** (`LINKTOR_MINIO_PORT` e `LINKTOR_MINIO_CONSOLE_PORT`, padrões `9000` e `9001`): armazenamento de mídia
+- **API** (`LINKTOR_API_PORT`, padrão `8081`): backend Go
+- **Admin** (`LINKTOR_ADMIN_PORT`, padrão `3000`): frontend Next.js
+
+Dentro do Compose, banco, Redis, NATS e JWT do backend são fixos no `docker-compose.yml`; do `.env` ele usa as portas, `LINKTOR_BASE_URL`, `LINKTOR_MINIO_*`, `LINKTOR_MEDIA_*`, `SEED_ADMIN_PASSWORD` e `NEXT_PUBLIC_*`.
+
+Se alguma porta já estiver ocupada, ajuste no `.env` antes de subir, mantendo as URLs coerentes com a porta da API:
 
 ```bash
 LINKTOR_API_PORT=18081
@@ -856,106 +875,40 @@ NEXT_PUBLIC_WS_URL=ws://localhost:18081/api/v1/ws
 NEXT_PUBLIC_WEBHOOK_BASE_URL=http://localhost:18081
 ```
 
-Isso inicia:
-- **PostgreSQL** (`LINKTOR_POSTGRES_PORT`, default `5432`) - Banco de dados principal
-- **Redis** (`LINKTOR_REDIS_PORT`, default `6379`) - Cache e sessions
-- **NATS** (`LINKTOR_NATS_PORT`, default `4222`; monitoring `LINKTOR_NATS_MONITOR_PORT`, default `8222`) - Message broker
-- **MinIO** (`LINKTOR_MINIO_PORT`, `LINKTOR_MINIO_CONSOLE_PORT`; defaults `9000`, `9001`) - Object storage
-- **API** (`LINKTOR_API_PORT`, default `8081`) - Backend Go
-- **Admin Dashboard** (`LINKTOR_ADMIN_PORT`, default `3000`) - Frontend Next.js
+### 3B. Rodar em modo de desenvolvimento
 
-### 3. Configure as variáveis de ambiente
+Suba só a infraestrutura no Docker:
 
 ```bash
-cp .env.example .env
+docker compose up -d postgres redis nats minio
 ```
 
-Edite `.env` com suas credenciais, ou configure via `config.yaml`:
-
-```yaml
-server:
-  port: 8081
-  host: "0.0.0.0"
-  mode: "debug"  # ou "release" para produção
-  shutdown_timeout: 30
-
-database:
-  host: "localhost"
-  port: 5432
-  user: "linktor"
-  password: "linktor"
-  name: "linktor"
-  max_open_conns: 25
-  max_idle_conns: 5
-
-redis:
-  host: "localhost"
-  port: 6379
-  db: 0
-
-nats:
-  url: "nats://localhost:4222"
-  cluster_id: "linktor-cluster"
-
-jwt:
-  secret: "sua-chave-secreta-muito-segura-aqui"
-  access_token_ttl: 15    # minutos
-  refresh_token_ttl: 168  # horas (7 dias)
-
-crypto:
-  # Chave para cifrar credenciais/tokens dos canais em repouso (AES-256-GCM).
-  # Em release: obrigatória, >= 32 chars e diferente do jwt.secret.
-  # Override: LINKTOR_CRYPTO_ENCRYPTION_KEY
-  encryption_key: "outra-chave-forte-distinta-do-jwt"
-  # Rotação: mantenha aqui a(s) chave(s) antiga(s) até re-encriptar tudo via
-  # POST /api/v1/channels/reencrypt, depois remova.
-  previous_keys: []
-
-log:
-  level: "debug"
-  format: "console"  # ou "json"
-```
-
-Configure também as variáveis de AI providers:
+Inicie o backend em um terminal. As migrations rodam sozinhas na inicialização, e fora do modo `release` o primeiro boot cria os dados de demonstração:
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
-export OLLAMA_BASE_URL="http://localhost:11434"
+go run ./cmd/server
+# ou: make run
 ```
 
-### 4. Execute as migrations
-
-As migrations são executadas automaticamente ao iniciar o servidor, ou manualmente:
-
-```bash
-make db-migrate
-```
-
-### 5. Inicie o backend
-
-```bash
-# Com Make
-make run-dev
-
-# Ou diretamente
-go run cmd/server/main.go
-```
-
-### 6. Inicie o frontend
+Inicie o admin em outro terminal:
 
 ```bash
 cd web/admin
+cp .env.example .env.local
 npm install
 npm run dev
 ```
 
-### 7. Acesse o sistema
+O `web/admin/.env.local` precisa de `NEXT_PUBLIC_API_URL` e `NEXT_PUBLIC_WS_URL` apontando para o backend; os valores do exemplo já apontam para `localhost:8081`.
 
-- **Admin Dashboard**: http://localhost:3000
+Para rodar os testes do backend: `make test`.
+
+### 4. Acesse o sistema
+
+- **Admin**: http://localhost:3000
 - **API**: http://localhost:8081
 - **NATS Monitoring**: http://localhost:8222
-- **MinIO Console**: http://localhost:9001
+- **MinIO Console**: http://localhost:9001 (usuário `linktor`, senha `linktor123`)
 
 Se você alterou as portas no `.env`, use esses valores aqui também.
 
@@ -963,9 +916,191 @@ Se você alterou as portas no `.env`, use esses valores aqui também.
 
 ```
 Email: admin@demo.com
-Senha: admin123
-Tenant: default
+Senha: o valor de SEED_ADMIN_PASSWORD (admin123 no .env.example)
 ```
+
+A senha é definida no primeiro boot, quando o banco ainda está vazio. Sem `SEED_ADMIN_PASSWORD` ela é aleatória e aparece uma única vez no log do backend (`docker compose logs backend | grep "Password"`). Para trocar depois, apague o volume do banco (`docker compose down -v`) e suba de novo.
+
+### Recebendo webhooks dos canais
+
+Provedores como Meta, Telegram, Twilio e Slack só chamam URLs HTTPS públicas. Em desenvolvimento, abra um túnel para a porta da API (ngrok, Cloudflare Tunnel) e coloque a URL do túnel em `BASE_URL`, `LINKTOR_BASE_URL` e `NEXT_PUBLIC_WEBHOOK_BASE_URL`. Depois reinicie o backend e o admin.
+
+### Exemplo de `.env`
+
+Este é o conteúdo do `.env.example`, com todas as variáveis lidas pelo backend, pelo `docker compose` e pelo admin. Para desenvolvimento local basta copiar; as linhas comentadas são opcionais.
+
+```bash
+# Linktor — variáveis de ambiente
+# Copie para .env (cp .env.example .env). O backend lê este arquivo ao iniciar
+# (go run ./cmd/server) e o docker compose o usa para portas e URLs.
+# Os valores abaixo funcionam como estão para desenvolvimento local.
+# Linhas comentadas são opcionais.
+
+# ── Servidor ────────────────────────────────────────────────────────────────
+LINKTOR_SERVER_PORT=8081
+LINKTOR_SERVER_HOST=0.0.0.0
+# debug | release. Em release: JWT secret e chave de criptografia fortes são
+# obrigatórios, webhooks sem segredo são recusados e o seed demo não roda.
+LINKTOR_SERVER_MODE=debug
+#LINKTOR_SERVER_SHUTDOWN_TIMEOUT=30
+LINKTOR_LOG_LEVEL=debug
+LINKTOR_LOG_FORMAT=console
+# Versão exibida em /health
+#LINKTOR_VERSION=dev
+
+# ── URL pública ─────────────────────────────────────────────────────────────
+# Origem pública da API. Usada no registro do webhook do Telegram, no OAuth da
+# Meta e nas URLs de mídia. Para receber webhooks de provedores, troque pela URL
+# HTTPS do túnel (ngrok, Cloudflare Tunnel) ou do servidor.
+BASE_URL=http://localhost:8081
+# Mesmo valor, lido pelo docker compose e repassado ao container como BASE_URL.
+LINKTOR_BASE_URL=http://localhost:8081
+
+# ── Portas publicadas pelo docker compose ───────────────────────────────────
+LINKTOR_API_PORT=8081
+LINKTOR_ADMIN_PORT=3000
+LINKTOR_POSTGRES_PORT=5432
+LINKTOR_REDIS_PORT=6379
+LINKTOR_NATS_PORT=4222
+LINKTOR_NATS_MONITOR_PORT=8222
+LINKTOR_MINIO_PORT=9000
+LINKTOR_MINIO_CONSOLE_PORT=9001
+
+# ── PostgreSQL ──────────────────────────────────────────────────────────────
+LINKTOR_DATABASE_HOST=localhost
+LINKTOR_DATABASE_PORT=5432
+LINKTOR_DATABASE_USER=linktor
+LINKTOR_DATABASE_PASSWORD=linktor
+LINKTOR_DATABASE_DATABASE=linktor
+LINKTOR_DATABASE_SSL_MODE=disable
+#LINKTOR_DATABASE_MAX_OPEN_CONNS=50
+#LINKTOR_DATABASE_MAX_IDLE_CONNS=10
+#LINKTOR_DATABASE_MAX_LIFETIME=5
+
+# ── Redis ───────────────────────────────────────────────────────────────────
+# Rate limit e deduplicação de webhooks.
+LINKTOR_REDIS_HOST=localhost
+LINKTOR_REDIS_PORT=6379
+LINKTOR_REDIS_PASSWORD=
+#LINKTOR_REDIS_DB=0
+# String de conexão; tem precedência sobre host/porta acima.
+#REDIS_URL=redis://localhost:6379
+
+# ── NATS JetStream ──────────────────────────────────────────────────────────
+LINKTOR_NATS_URL=nats://localhost:4222
+# Réplicas dos streams. Mantenha 1 em servidor único; 3 só em cluster NATS.
+#LINKTOR_NATS_STREAM_REPLICAS=1
+
+# ── Autenticação e criptografia ─────────────────────────────────────────────
+# Em release: mínimo de 32 caracteres. Gere com: openssl rand -base64 48
+LINKTOR_JWT_SECRET=change-me-in-development
+#LINKTOR_JWT_ACCESS_TOKEN_TTL=15
+#LINKTOR_JWT_REFRESH_TOKEN_TTL=168
+# Os tokens vão em cookies HttpOnly. Em http local precisa ser false, senão o
+# navegador descarta o cookie; em produção (HTTPS) use true.
+LINKTOR_JWT_COOKIE_SECURE=false
+#LINKTOR_JWT_COOKIE_DOMAIN=
+#LINKTOR_JWT_COOKIE_SAME_SITE=lax
+# Chave que cifra as credenciais dos canais em repouso (AES-256-GCM).
+# Em release: mínimo de 32 caracteres e diferente do JWT secret.
+LINKTOR_CRYPTO_ENCRYPTION_KEY=change-me-in-development-crypto-key
+
+# ── Dados de demonstração ───────────────────────────────────────────────────
+# Fora do modo release o primeiro boot cria admin@demo.com e agent@demo.com.
+# Sem esta variável a senha é aleatória e aparece uma única vez no log do backend.
+SEED_ADMIN_PASSWORD=admin123
+# Força o seed demo também em release.
+#LINKTOR_SEED_DEMO=true
+# Apaga os dados existentes antes de recriar o seed. Destrutivo.
+#SEED_RESET_DESTRUCTIVE=true
+
+# ── Armazenamento de mídia ──────────────────────────────────────────────────
+# MinIO/S3 para a mídia recebida dos canais. Sem MINIO_ENDPOINT a mídia fica com
+# a URL do provedor (que costuma exigir autenticação) ou usa o diretório local.
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=linktor
+MINIO_SECRET_KEY=linktor123
+MINIO_BUCKET=linktor-media
+MINIO_USE_SSL=false
+#MINIO_REGION=
+# Os mesmos valores para o docker compose, que os repassa ao container.
+#LINKTOR_MINIO_ENDPOINT=minio:9000
+#LINKTOR_MINIO_ACCESS_KEY=linktor
+#LINKTOR_MINIO_SECRET_KEY=linktor123
+#LINKTOR_MINIO_BUCKET=linktor-media
+#LINKTOR_MINIO_USE_SSL=false
+# Alternativa sem MinIO: diretório local.
+#MEDIA_UPLOAD_DIR=./uploads/media
+#MEDIA_UPLOAD_BASE_URL=
+# Base pública das URLs de mídia (padrão: BASE_URL).
+#MEDIA_PUBLIC_BASE_URL=
+# URLs de mídia assinadas (?exp=&sig=). Sem segredo, saem sem assinatura.
+#MEDIA_SIGNING_SECRET=
+#MEDIA_URL_TTL=168h
+# Data limite para URLs antigas sem assinatura (RFC 3339 ou AAAA-MM-DD).
+# Combine com os integradores (VendaX) antes de definir.
+#MEDIA_UNSIGNED_UNTIL=
+# Equivalentes lidos pelo docker compose.
+#LINKTOR_MEDIA_SIGNING_SECRET=
+#LINKTOR_MEDIA_URL_TTL=168h
+#LINKTOR_MEDIA_UNSIGNED_UNTIL=
+
+# ── Segurança de webhooks, CORS e WebSocket ─────────────────────────────────
+# Exige assinatura nos webhooks também em debug (release sempre exige).
+#LINKTOR_REQUIRE_WEBHOOK_SECRETS=true
+# Origens CORS permitidas, separadas por vírgula. Vazio aceita só localhost.
+#LINKTOR_CORS_ALLOWED_ORIGINS=https://app.example.com
+# Origens que podem abrir WebSocket (admin e widget do WebChat).
+#LINKTOR_WS_ALLOWED_ORIGINS=https://app.example.com
+# Aceita somente a lista acima (recusa localhost) e recusa Origin vazio.
+#LINKTOR_WS_ENFORCE_ORIGIN=true
+#LINKTOR_WS_ALLOW_EMPTY_ORIGIN=false
+# Permite webhook de saída para consumidor local com certificado autoassinado.
+#LINKTOR_WEBHOOK_INSECURE_LOOPBACK=true
+
+# ── Canais ──────────────────────────────────────────────────────────────────
+# Tipos de canal que podem ser criados/conectados, separados por vírgula.
+# Sem a variável, todos são permitidos. Valores: webchat, whatsapp,
+# whatsapp_official, whatsapp_unofficial, telegram, instagram, facebook, sms,
+# rcs, email, voice, teams, slack, mattermost, direto.
+#LINKTOR_ENABLED_CHANNEL_TYPES=whatsapp_official,whatsapp_unofficial,telegram,webchat,facebook,instagram,sms,email
+# WhatsApp oficial: janela de 24 h e status do template. off | dry_run | enforce
+# (padrão dry_run: só registra em log).
+#LINKTOR_WA_WINDOW_ENFORCEMENT=dry_run
+#LINKTOR_WA_TEMPLATE_ENFORCEMENT=dry_run
+# App Secret da Meta usado no Embedded Signup. Para vários apps, use o sufixo
+# com o App ID: WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET_<APP_ID>.
+#WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET=
+# Sobrescreve a URL da Graph API (mock local: make mock-whatsapp-up).
+#LINKTOR_GRAPH_API_URL=http://localhost:4010
+# Ponte com o VendaX Core. Exige Linktor e Core no mesmo servidor NATS.
+#LINKTOR_VENDAX_BRIDGE_ENABLED=true
+
+# ── Provedores de IA (opcionais) ────────────────────────────────────────────
+OPENAI_API_KEY=
+#OPENAI_ORG_ID=
+#OPENAI_DEFAULT_MODEL=
+ANTHROPIC_API_KEY=
+#ANTHROPIC_DEFAULT_MODEL=
+OLLAMA_BASE_URL=
+#OLLAMA_DEFAULT_MODEL=
+
+# ── VRE (Visual Response Engine) ────────────────────────────────────────────
+#VRE_UPLOAD_DIR=./uploads/vre
+#VRE_UPLOAD_BASE_URL=
+#VRE_TEMPLATES_PATH=./templates
+
+# ── Admin (Next.js) ─────────────────────────────────────────────────────────
+# Lidas pelo docker compose no build da imagem do admin. Rodando o admin fora do
+# Docker (npm run dev), coloque estas três em web/admin/.env.local.
+NEXT_PUBLIC_API_URL=http://localhost:8081/api/v1
+NEXT_PUBLIC_WS_URL=ws://localhost:8081/api/v1/ws
+# Base das URLs de webhook mostradas nas telas de canal e do snippet do WebChat.
+# Deve ser a origem pública da API (a mesma de BASE_URL).
+NEXT_PUBLIC_WEBHOOK_BASE_URL=http://localhost:8081
+```
+
+Em vez de variáveis `LINKTOR_*`, o backend também aceita um `config.yaml` na raiz, em `./config` ou em `/etc/linktor`, com as mesmas chaves em formato aninhado (`LINKTOR_DATABASE_HOST` vira `database.host`). Variáveis de ambiente têm precedência sobre o arquivo.
 
 ---
 

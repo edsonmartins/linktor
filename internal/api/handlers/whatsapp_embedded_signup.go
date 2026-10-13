@@ -324,7 +324,7 @@ func (h *WhatsAppEmbeddedSignupHandler) CompleteEmbeddedSignup(c *gin.Context) {
 	}
 
 	// Build webhook URL
-	webhookURL := h.baseURL + "/api/v1/webhooks/whatsapp_official/{channel_id}"
+	webhookURL := h.baseURL + "/api/v1/webhooks/whatsapp/{channel_id}"
 
 	// Determine coexistence status
 	coexStatus := "inactive"
@@ -417,7 +417,7 @@ func (h *WhatsAppEmbeddedSignupHandler) CreateCoexistenceChannel(c *gin.Context)
 	}
 
 	// Build webhook URL with actual channel ID
-	webhookURL := h.baseURL + "/api/v1/webhooks/whatsapp_official/" + channel.ID
+	webhookURL := h.baseURL + "/api/v1/webhooks/whatsapp/" + channel.ID
 
 	c.JSON(http.StatusCreated, gin.H{
 		"channel":      channel,

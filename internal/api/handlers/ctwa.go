@@ -509,7 +509,7 @@ func (h *CTWAHandler) GetDashboard(c *gin.Context) {
 // @Failure      500 {object} Response
 // @Router       /webhooks/ctwa/{channelId} [post]
 func (h *CTWAHandler) ProcessReferralWebhook(c *gin.Context) {
-	channelID := c.Param("id")
+	channelID := c.Param("channelId")
 
 	client, ok := h.getClient(channelID)
 	if !ok {

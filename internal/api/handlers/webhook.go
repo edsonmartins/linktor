@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -492,7 +493,7 @@ func (h *WebhookHandler) FacebookWebhook(c *gin.Context) {
 
 	// Get app secret from credentials
 	appSecret := channel.Credentials["app_secret"]
-	verifyToken := channel.Credentials["verify_token"]
+	verifyToken := metaVerifyToken(channel)
 	if appSecret == "" && h.requireWebhookSecrets {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
 		return
@@ -571,7 +572,7 @@ func (h *WebhookHandler) InstagramWebhook(c *gin.Context) {
 
 	// Get app secret from credentials
 	appSecret := channel.Credentials["app_secret"]
-	verifyToken := channel.Credentials["verify_token"]
+	verifyToken := metaVerifyToken(channel)
 	if appSecret == "" && h.requireWebhookSecrets {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "webhook secret not configured"})
 		return
@@ -670,9 +671,7 @@ func (h *WebhookHandler) handleWhatsAppVerification(c *gin.Context) {
 		return
 	}
 
-	verifyToken := channel.Credentials["verify_token"]
-
-	if mode == "subscribe" && token == verifyToken {
+	if mode == "subscribe" && metaVerifyTokenMatches(channel, token) {
 		c.String(http.StatusOK, challenge)
 		return
 	}
@@ -1624,14 +1623,33 @@ func slackFileType(mimetype string) string {
 	}
 }
 
+// metaVerifyToken returns the hub.verify_token configured for a Meta channel.
+// OAuth and embedded signup store it in credentials; the manual forms in the
+// admin store it in config, so both are honoured.
+func metaVerifyToken(channel *entity.Channel) string {
+	if token := channel.Credentials["verify_token"]; token != "" {
+		return token
+	}
+	return channel.Config["verify_token"]
+}
+
+// metaVerifyTokenMatches reports whether token is the channel's verify token.
+// A channel without one never matches, so an empty hub.verify_token cannot
+// pass the handshake.
+func metaVerifyTokenMatches(channel *entity.Channel, token string) bool {
+	expected := metaVerifyToken(channel)
+	if expected == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
+}
+
 func (h *WebhookHandler) handleFacebookVerification(c *gin.Context, channel *entity.Channel) {
 	mode := c.Query("hub.mode")
 	token := c.Query("hub.verify_token")
 	challenge := c.Query("hub.challenge")
 
-	verifyToken := channel.Credentials["verify_token"]
-
-	if mode == "subscribe" && token == verifyToken {
+	if mode == "subscribe" && metaVerifyTokenMatches(channel, token) {
 		c.String(http.StatusOK, challenge)
 		return
 	}
@@ -1644,9 +1662,7 @@ func (h *WebhookHandler) handleInstagramVerification(c *gin.Context, channel *en
 	token := c.Query("hub.verify_token")
 	challenge := c.Query("hub.challenge")
 
-	verifyToken := channel.Credentials["verify_token"]
-
-	if mode == "subscribe" && token == verifyToken {
+	if mode == "subscribe" && metaVerifyTokenMatches(channel, token) {
 		c.String(http.StatusOK, challenge)
 		return
 	}
@@ -1890,6 +1906,12 @@ func (h *WebhookHandler) processRCSMessage(ctx context.Context, channel *entity.
 	metadata := map[string]string{
 		"sender_phone": msg.SenderPhone,
 		"agent_id":     msg.AgentID,
+	}
+	// sender_id/phone identify the contact; without them every message falls
+	// back to its own id and opens a new contact and conversation.
+	if msg.SenderPhone != "" {
+		metadata["sender_id"] = msg.SenderPhone
+		metadata["phone"] = msg.SenderPhone
 	}
 
 	// Add suggestion/postback data

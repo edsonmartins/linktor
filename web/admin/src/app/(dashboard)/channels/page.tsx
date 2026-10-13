@@ -15,6 +15,8 @@ import {
   Trash2,
   Power,
   PowerOff,
+  Plug,
+  Unplug,
   RefreshCw,
   Copy,
   Check,
@@ -206,6 +208,7 @@ function ChannelCard({
   tCommon,
   onConfigure,
   onToggleStatus,
+  onToggleConnection,
   onDelete,
 }: {
   channel: Channel
@@ -213,9 +216,13 @@ function ChannelCard({
   tCommon: (key: string) => string
   onConfigure: () => void
   onToggleStatus: () => void
+  onToggleConnection: () => void
   onDelete: () => void
 }) {
   const iconConfig = channelIcons[channel.type] || channelIcons.webchat
+  // The QR channel pairs inside its own config sheet; every other type connects here.
+  const connectsFromMenu = channel.type !== 'whatsapp'
+  const isConnected = channel.connection_status === 'connected'
 
   return (
     <Card className="hover:border-primary/30 transition-colors">
@@ -271,6 +278,21 @@ function ChannelCard({
                   </>
                 )}
               </DropdownMenuItem>
+              {connectsFromMenu && (
+                <DropdownMenuItem onClick={onToggleConnection}>
+                  {isConnected ? (
+                    <>
+                      <Unplug className="h-4 w-4 mr-2" />
+                      {t('disconnect')}
+                    </>
+                  ) : (
+                    <>
+                      <Plug className="h-4 w-4 mr-2" />
+                      {t('connect')}
+                    </>
+                  )}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive" onClick={onDelete}>
                 <Trash2 className="h-4 w-4 mr-2" />
@@ -508,6 +530,22 @@ export default function ChannelsPage() {
     },
   })
 
+  // Connect/disconnect mutation
+  const toggleConnectionMutation = useMutation({
+    mutationFn: ({ id, connect }: { id: string; connect: boolean }) =>
+      api.post(`/channels/${id}/${connect ? 'connect' : 'disconnect'}`),
+    onSuccess: (_data, { connect }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.channels.all })
+      toastSuccess(
+        t(connect ? 'channelConnected' : 'channelDisconnected'),
+        t(connect ? 'channelConnectedDesc' : 'channelDisconnectedDesc')
+      )
+    },
+    onError: (error: Error) => {
+      toastError(tCommon('error'), error.message)
+    },
+  })
+
   // Handlers
   const handleAddChannel = (type: ChannelType) => {
     setSelectedChannelType(type)
@@ -523,6 +561,13 @@ export default function ChannelsPage() {
 
   const handleToggleEnabled = (channel: Channel) => {
     toggleEnabledMutation.mutate({ id: channel.id, enabled: !channel.enabled })
+  }
+
+  const handleToggleConnection = (channel: Channel) => {
+    toggleConnectionMutation.mutate({
+      id: channel.id,
+      connect: channel.connection_status !== 'connected',
+    })
   }
 
   const handleDeleteChannel = (channel: Channel) => {
@@ -594,6 +639,7 @@ export default function ChannelsPage() {
                   tCommon={tCommon}
                   onConfigure={() => handleConfigureChannel(channel)}
                   onToggleStatus={() => handleToggleEnabled(channel)}
+                  onToggleConnection={() => handleToggleConnection(channel)}
                   onDelete={() => handleDeleteChannel(channel)}
                 />
               ))}
