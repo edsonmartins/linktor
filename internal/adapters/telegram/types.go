@@ -37,8 +37,10 @@ const (
 
 // IncomingMessage represents a normalized incoming message from Telegram
 type IncomingMessage struct {
-	MessageID     int64
-	ChatID        int64
+	MessageID int64
+	ChatID    int64
+	// ChatType is Telegram's chat type: "private", "group" or "supergroup".
+	ChatType      string
 	FromUserID    int64
 	FromUsername  string
 	FromFirstName string
@@ -120,20 +122,25 @@ func ExtractIncomingMessage(update *tgbotapi.Update) *IncomingMessage {
 		return nil
 	}
 
-	// Only process private chats (not groups or channels)
-	if msg.Chat.Type != "private" {
+	// Private chats and groups are conversations; channel posts are broadcasts
+	// with no one to answer, so they are ignored.
+	if msg.Chat == nil || msg.Chat.IsChannel() {
 		return nil
 	}
 
 	incoming := &IncomingMessage{
-		MessageID:     int64(msg.MessageID),
-		ChatID:        msg.Chat.ID,
-		FromUserID:    msg.From.ID,
-		FromUsername:  msg.From.UserName,
-		FromFirstName: msg.From.FirstName,
-		FromLastName:  msg.From.LastName,
-		Timestamp:     time.Unix(int64(msg.Date), 0),
-		IsEdited:      isEdited,
+		MessageID: int64(msg.MessageID),
+		ChatID:    msg.Chat.ID,
+		ChatType:  msg.Chat.Type,
+		Timestamp: time.Unix(int64(msg.Date), 0),
+		IsEdited:  isEdited,
+	}
+	// From is absent when a group admin posts anonymously.
+	if msg.From != nil {
+		incoming.FromUserID = msg.From.ID
+		incoming.FromUsername = msg.From.UserName
+		incoming.FromFirstName = msg.From.FirstName
+		incoming.FromLastName = msg.From.LastName
 	}
 
 	// Handle reply
@@ -153,6 +160,8 @@ func ExtractIncomingMessage(update *tgbotapi.Update) *IncomingMessage {
 		// Get the largest photo (last in array)
 		photo := msg.Photo[len(msg.Photo)-1]
 		incoming.MediaFileID = photo.FileID
+		// Telegram re-encodes every photo as JPEG and sends no mime for it.
+		incoming.MediaMimeType = "image/jpeg"
 		incoming.MediaFileSize = int64(photo.FileSize)
 		incoming.Caption = msg.Caption
 
@@ -188,7 +197,13 @@ func ExtractIncomingMessage(update *tgbotapi.Update) *IncomingMessage {
 	case msg.Sticker != nil:
 		incoming.MessageType = MessageTypeSticker
 		incoming.MediaFileID = msg.Sticker.FileID
+		incoming.MediaMimeType = "image/webp"
+		if msg.Sticker.IsAnimated {
+			incoming.MediaMimeType = "application/x-tgsticker"
+		}
 		incoming.MediaFileSize = int64(msg.Sticker.FileSize)
+		// The emoji the sticker stands for doubles as its caption.
+		incoming.Caption = msg.Sticker.Emoji
 
 	case msg.Location != nil:
 		incoming.MessageType = MessageTypeLocation
@@ -209,6 +224,7 @@ func ExtractIncomingMessage(update *tgbotapi.Update) *IncomingMessage {
 	case msg.VideoNote != nil:
 		incoming.MessageType = MessageTypeVideoNote
 		incoming.MediaFileID = msg.VideoNote.FileID
+		incoming.MediaMimeType = "video/mp4"
 		incoming.MediaFileSize = int64(msg.VideoNote.FileSize)
 
 	default:

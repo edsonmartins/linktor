@@ -1243,6 +1243,132 @@ func TestWebhookTelegram_CallbackQuery(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// 20. Telegram Webhook - media, location, contact, groups, edits, service updates
+// ---------------------------------------------------------------------------
+
+// postTelegramUpdate delivers one update for channel "ch-tg" and returns the
+// producer so the test can inspect what reached the queue.
+func postTelegramUpdate(t *testing.T, update map[string]interface{}) *testutil.MockProducer {
+	t.Helper()
+	handler, channelRepo, producer, _ := setupWebhookTest()
+	channelRepo.Channels["ch-tg"] = &entity.Channel{
+		ID:               "ch-tg",
+		TenantID:         "tenant-1",
+		Type:             entity.ChannelTypeTelegram,
+		Enabled:          true,
+		ConnectionStatus: entity.ConnectionStatusConnected,
+		Credentials:      map[string]string{},
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body, _ := json.Marshal(update)
+	req := httptest.NewRequest(http.MethodPost, "/webhook/telegram/ch-tg", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+	c.Params = []gin.Param{{Key: "channelId", Value: "ch-tg"}}
+
+	handler.TelegramWebhook(c)
+	require.Equal(t, http.StatusOK, w.Code)
+	return producer
+}
+
+// telegramMessage builds a private-chat update from user 99001 with the given
+// message fields on top.
+func telegramMessage(fields map[string]interface{}) map[string]interface{} {
+	msg := map[string]interface{}{
+		"message_id": 678,
+		"from":       map[string]interface{}{"id": int64(99001), "first_name": "Bob"},
+		"chat":       map[string]interface{}{"id": int64(99001), "type": "private"},
+	}
+	for k, v := range fields {
+		msg[k] = v
+	}
+	return map[string]interface{}{"update_id": 1, "message": msg}
+}
+
+func TestWebhookTelegram_PhotoCarriesJPEGMime(t *testing.T) {
+	msgs := postTelegramUpdate(t, telegramMessage(map[string]interface{}{
+		"caption": "look",
+		"photo": []map[string]interface{}{
+			{"file_id": "small", "file_size": 10},
+			{"file_id": "big", "file_size": 87210},
+		},
+	})).InboundMessages
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "image", msgs[0].ContentType)
+	assert.Equal(t, "look", msgs[0].Content)
+	require.Len(t, msgs[0].Attachments, 1)
+	assert.Equal(t, "big", msgs[0].Attachments[0].URL)
+	assert.Equal(t, "image/jpeg", msgs[0].Attachments[0].MimeType)
+	assert.Equal(t, int64(87210), msgs[0].Attachments[0].SizeBytes)
+}
+
+func TestWebhookTelegram_Sticker(t *testing.T) {
+	msgs := postTelegramUpdate(t, telegramMessage(map[string]interface{}{
+		"sticker": map[string]interface{}{"file_id": "stk", "emoji": "😀"},
+	})).InboundMessages
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "image", msgs[0].ContentType)
+	assert.Equal(t, "😀", msgs[0].Content)
+	assert.Equal(t, "true", msgs[0].Metadata["is_sticker"])
+	require.Len(t, msgs[0].Attachments, 1)
+	assert.Equal(t, "image/webp", msgs[0].Attachments[0].MimeType)
+}
+
+func TestWebhookTelegram_Location(t *testing.T) {
+	msgs := postTelegramUpdate(t, telegramMessage(map[string]interface{}{
+		"location": map[string]interface{}{"latitude": -23.55052, "longitude": -46.633308},
+	})).InboundMessages
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "location", msgs[0].ContentType)
+	assert.Equal(t, "-23.550520,-46.633308", msgs[0].Content)
+	assert.Equal(t, "-23.550520", msgs[0].Metadata["latitude"])
+	assert.Equal(t, "-46.633308", msgs[0].Metadata["longitude"])
+}
+
+func TestWebhookTelegram_Contact(t *testing.T) {
+	msgs := postTelegramUpdate(t, telegramMessage(map[string]interface{}{
+		"contact": map[string]interface{}{"phone_number": "+5511999990000", "first_name": "Ana", "last_name": "Lima"},
+	})).InboundMessages
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "contact", msgs[0].ContentType)
+	assert.Equal(t, "+5511999990000", msgs[0].Content)
+	assert.Equal(t, "Ana", msgs[0].Metadata["contact_first_name"])
+	assert.Equal(t, "Lima", msgs[0].Metadata["contact_last_name"])
+}
+
+func TestWebhookTelegram_GroupKeepsSenderAndFlagsGroup(t *testing.T) {
+	msgs := postTelegramUpdate(t, telegramMessage(map[string]interface{}{
+		"chat": map[string]interface{}{"id": int64(-5432190195), "type": "supergroup"},
+		"text": "hello group",
+	})).InboundMessages
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "99001", msgs[0].Metadata["sender_id"])
+	assert.Equal(t, "true", msgs[0].Metadata["is_group"])
+	assert.Equal(t, "-5432190195", msgs[0].Metadata["chat_jid"])
+}
+
+func TestWebhookTelegram_EditedMessageIsFlagged(t *testing.T) {
+	update := telegramMessage(map[string]interface{}{"text": "fixed text"})
+	update["edited_message"] = update["message"]
+	delete(update, "message")
+
+	msgs := postTelegramUpdate(t, update).InboundMessages
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "678", msgs[0].ExternalID)
+	assert.Equal(t, "fixed text", msgs[0].Content)
+	assert.Equal(t, "true", msgs[0].Metadata["edited"])
+}
+
+func TestWebhookTelegram_ServiceUpdateIsIgnored(t *testing.T) {
+	msgs := postTelegramUpdate(t, telegramMessage(map[string]interface{}{
+		"new_chat_members": []map[string]interface{}{{"id": int64(42), "first_name": "Bot", "is_bot": true}},
+	})).InboundMessages
+	assert.Empty(t, msgs)
+}
+
+// ---------------------------------------------------------------------------
 // Meta verify token lookup
 // ---------------------------------------------------------------------------
 

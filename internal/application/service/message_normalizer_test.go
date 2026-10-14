@@ -177,7 +177,7 @@ func TestMessageNormalizer_ToEntity(t *testing.T) {
 		assert.Equal(t, entity.SenderTypeContact, message.SenderType)
 		assert.Equal(t, entity.ContentTypeText, message.ContentType)
 		assert.Equal(t, "Hello", message.Content)
-		assert.Equal(t, entity.MessageStatusPending, message.Status)
+		assert.Equal(t, entity.MessageStatusDelivered, message.Status)
 		assert.Equal(t, "ext-1", message.ExternalID)
 		assert.Equal(t, ts, message.CreatedAt)
 		require.Len(t, message.Attachments, 1)

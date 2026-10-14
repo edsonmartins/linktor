@@ -112,32 +112,38 @@ func TestExtractIncomingMessage_CallbackQueryNilMessage(t *testing.T) {
 	assert.Nil(t, msg)
 }
 
-func TestExtractIncomingMessage_GroupChatIgnored(t *testing.T) {
-	update := &tgbotapi.Update{
-		Message: &tgbotapi.Message{
-			MessageID: 1,
-			From:      newUser(1, "u", "U", ""),
-			Chat:      &tgbotapi.Chat{ID: 10, Type: "group"},
-			Date:      int(time.Now().Unix()),
-			Text:      "group message",
-		},
+func TestExtractIncomingMessage_GroupChat(t *testing.T) {
+	for _, chatType := range []string{"group", "supergroup"} {
+		update := &tgbotapi.Update{
+			Message: &tgbotapi.Message{
+				MessageID: 1,
+				From:      newUser(1, "u", "U", ""),
+				Chat:      &tgbotapi.Chat{ID: -10, Type: chatType},
+				Date:      int(time.Now().Unix()),
+				Text:      "group message",
+			},
+		}
+		msg := ExtractIncomingMessage(update)
+		require.NotNil(t, msg, chatType)
+		assert.Equal(t, chatType, msg.ChatType)
+		assert.Equal(t, int64(-10), msg.ChatID)
+		assert.Equal(t, int64(1), msg.FromUserID)
 	}
-	msg := ExtractIncomingMessage(update)
-	assert.Nil(t, msg)
 }
 
-func TestExtractIncomingMessage_SupergroupChatIgnored(t *testing.T) {
+func TestExtractIncomingMessage_AnonymousGroupAdmin(t *testing.T) {
 	update := &tgbotapi.Update{
 		Message: &tgbotapi.Message{
 			MessageID: 1,
-			From:      newUser(1, "u", "U", ""),
-			Chat:      &tgbotapi.Chat{ID: 10, Type: "supergroup"},
+			Chat:      &tgbotapi.Chat{ID: -10, Type: "supergroup"},
 			Date:      int(time.Now().Unix()),
-			Text:      "supergroup message",
+			Text:      "posted without from",
 		},
 	}
 	msg := ExtractIncomingMessage(update)
-	assert.Nil(t, msg)
+	require.NotNil(t, msg)
+	assert.Equal(t, int64(0), msg.FromUserID)
+	assert.Equal(t, "posted without from", msg.Text)
 }
 
 func TestExtractIncomingMessage_ChannelChatIgnored(t *testing.T) {
@@ -290,6 +296,7 @@ func TestExtractIncomingMessage_Sticker(t *testing.T) {
 			Sticker: &tgbotapi.Sticker{
 				FileID:   "stk1",
 				FileSize: 25000,
+				Emoji:    "😀",
 			},
 		},
 	}
@@ -298,7 +305,12 @@ func TestExtractIncomingMessage_Sticker(t *testing.T) {
 	require.NotNil(t, msg)
 	assert.Equal(t, MessageTypeSticker, msg.MessageType)
 	assert.Equal(t, "stk1", msg.MediaFileID)
+	assert.Equal(t, "image/webp", msg.MediaMimeType)
+	assert.Equal(t, "😀", msg.Caption)
 	assert.Equal(t, int64(25000), msg.MediaFileSize)
+
+	update.Message.Sticker.IsAnimated = true
+	assert.Equal(t, "application/x-tgsticker", ExtractIncomingMessage(update).MediaMimeType)
 }
 
 func TestExtractIncomingMessage_Location(t *testing.T) {

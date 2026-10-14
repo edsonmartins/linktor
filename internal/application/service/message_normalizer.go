@@ -88,10 +88,12 @@ func (n *MessageNormalizer) ToEntity(msg *NormalizedMessage) *entity.Message {
 		ContentType:    msg.ContentType,
 		Content:        msg.Content,
 		Metadata:       msg.Metadata,
-		Status:         entity.MessageStatusPending,
-		ExternalID:     msg.ExternalID,
-		Attachments:    msg.Attachments,
-		CreatedAt:      msg.Timestamp,
+		// An inbound message is already in our hands: "delivered" is its state
+		// until an agent reads it. "pending" belongs to outbound still to leave.
+		Status:      entity.MessageStatusDelivered,
+		ExternalID:  msg.ExternalID,
+		Attachments: msg.Attachments,
+		CreatedAt:   msg.Timestamp,
 	}
 
 	if message.Metadata == nil {

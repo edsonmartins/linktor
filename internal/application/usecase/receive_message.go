@@ -19,6 +19,9 @@ type ReceiveMessageOutput struct {
 	Conversation *entity.Conversation
 	Contact      *entity.Contact
 	IsNew        bool
+	// Edited is set when the inbound was an edit applied to an existing
+	// message rather than a new one.
+	Edited bool
 }
 
 // ReceiveMessageUseCase handles receiving messages from channels
@@ -94,7 +97,13 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 		existing, err := uc.messageRepo.FindByExternalID(ctx, inbound.ExternalID)
 		if err == nil && existing != nil {
 			existingConversation, convErr := uc.conversationRepo.FindByID(ctx, existing.ConversationID)
-			if convErr != nil || existingConversation.ChannelID == channel.ID {
+			sameChannel := convErr == nil && existingConversation.ChannelID == channel.ID
+			// Providers keep the original id on an edit, so it lands here instead
+			// of as a new message: apply it to what we stored.
+			if sameChannel && inbound.Metadata["edited"] == "true" {
+				return uc.applyEdit(ctx, existing, existingConversation, inbound)
+			}
+			if convErr != nil || sameChannel {
 				return nil, errors.New(errors.ErrCodeConflict, "message already exists")
 			}
 		}
@@ -172,6 +181,34 @@ func (uc *ReceiveMessageUseCase) Execute(ctx context.Context, inbound *nats.Inbo
 		Conversation: conversation,
 		Contact:      contact,
 		IsNew:        isNewConversation,
+	}, nil
+}
+
+// applyEdit rewrites a stored message with the edited content. Without this an
+// edit was dropped as a duplicate and the agent kept reading the old text.
+func (uc *ReceiveMessageUseCase) applyEdit(ctx context.Context, message *entity.Message, conversation *entity.Conversation, inbound *nats.InboundMessage) (*ReceiveMessageOutput, error) {
+	now := time.Now()
+	message.Content = inbound.Content
+	message.IsEdited = true
+	message.EditedAt = &now
+	// IsEdited/EditedAt have no column; metadata is what gets stored, so the
+	// marker lives there too (the same key the adapters set on the inbound).
+	if message.Metadata == nil {
+		message.Metadata = map[string]string{}
+	}
+	message.Metadata["edited"] = "true"
+	if err := uc.messageRepo.Update(ctx, message); err != nil {
+		return nil, err
+	}
+	contact, err := uc.contactRepo.FindByID(ctx, conversation.ContactID)
+	if err != nil {
+		return nil, err
+	}
+	return &ReceiveMessageOutput{
+		Message:      message,
+		Conversation: conversation,
+		Contact:      contact,
+		Edited:       true,
 	}, nil
 }
 

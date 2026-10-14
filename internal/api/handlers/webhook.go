@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/adapters/email"
 	"github.com/msgfy/linktor/internal/adapters/facebook"
@@ -26,6 +27,7 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/slack"
 	"github.com/msgfy/linktor/internal/adapters/sms"
 	"github.com/msgfy/linktor/internal/adapters/teams"
+	"github.com/msgfy/linktor/internal/adapters/telegram"
 	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	appservice "github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -257,28 +259,32 @@ func (h *WebhookHandler) TelegramWebhook(c *gin.Context) {
 		return
 	}
 
-	var update TelegramUpdate
-	if err := c.ShouldBindJSON(&update); err != nil {
+	body, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+	update, err := telegram.ParseWebhook(body)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
 	}
 
 	switch {
-	case update.Message != nil:
-		if err := h.processTelegramMessage(c.Request.Context(), channel, update.Message); err != nil {
-			// Log error but continue
-		}
-	case update.EditedMessage != nil:
-		// Treat an edited message like a fresh inbound so downstream sees the
-		// updated content; flag it so consumers can dedupe/annotate if needed.
-		if err := h.processTelegramMessage(c.Request.Context(), channel, update.EditedMessage); err != nil {
-			// Log error but continue
-		}
 	case update.CallbackQuery != nil:
 		// Inline-keyboard button taps arrive as callback queries, not messages;
 		// route them through the same inbound pipeline carrying callback_data.
 		if err := h.processTelegramCallback(c.Request.Context(), channel, update.CallbackQuery); err != nil {
 			// Log error but continue
+		}
+	default:
+		// Messages and edits share the adapter's parser. An edit keeps the
+		// original message id and carries the "edited" flag; the receive path
+		// applies it to the stored message instead of treating it as a duplicate.
+		if msg := telegram.ExtractIncomingMessage(update); msg != nil {
+			if err := h.processTelegramMessage(c.Request.Context(), channel, msg); err != nil {
+				// Log error but continue
+			}
 		}
 	}
 
@@ -1071,62 +1077,69 @@ func (h *WebhookHandler) processWhatsAppStatus(ctx context.Context, channel *ent
 	h.publishStatusUpdate(ctx, update)
 }
 
-func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *entity.Channel, msg *TelegramMessage) error {
-	contentType := "text"
+// processTelegramMessage normalizes a parsed Telegram message (or edit) into the
+// inbound pipeline. Media travels as a file_id attachment that the inbound
+// consumer resolves and re-hosts; location and contact go as text content plus
+// metadata, the same shape the WhatsApp adapter produces.
+func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *entity.Channel, msg *telegram.IncomingMessage) error {
+	contentType := telegramContentType(msg.MessageType)
 	content := msg.Text
-	var attachments []nats.AttachmentData
-
-	if msg.Photo != nil && len(msg.Photo) > 0 {
-		contentType = "image"
+	if content == "" {
 		content = msg.Caption
-		// Get largest photo
-		photo := msg.Photo[len(msg.Photo)-1]
-		attachments = append(attachments, nats.AttachmentData{
-			Type: "image",
-			URL:  photo.FileID,
-		})
-	} else if msg.Document != nil {
-		contentType = "document"
-		content = msg.Caption
-		attachments = append(attachments, nats.AttachmentData{
-			Type:     "document",
-			URL:      msg.Document.FileID,
-			Filename: msg.Document.FileName,
-			MimeType: msg.Document.MimeType,
-		})
-	} else if msg.Voice != nil {
-		contentType = "audio"
-		attachments = append(attachments, nats.AttachmentData{
-			Type:     "audio",
-			URL:      msg.Voice.FileID,
-			MimeType: msg.Voice.MimeType,
-		})
-	} else if msg.Video != nil {
-		contentType = "video"
-		content = msg.Caption
-		attachments = append(attachments, nats.AttachmentData{
-			Type:     "video",
-			URL:      msg.Video.FileID,
-			MimeType: msg.Video.MimeType,
-		})
-	} else if msg.Location != nil {
-		contentType = "location"
 	}
 
-	senderID := ""
-	senderName := ""
-	if msg.From != nil {
-		senderID = strconv.FormatInt(msg.From.ID, 10)
-		senderName = msg.From.FirstName
-		if msg.From.LastName != "" {
-			senderName += " " + msg.From.LastName
-		}
+	// A group admin posting anonymously has no user; the chat stands in so the
+	// message still lands on one contact instead of a new one per message.
+	senderID := msg.FromUserID
+	if senderID == 0 {
+		senderID = msg.ChatID
 	}
-
 	metadata := map[string]string{
-		"sender_id":   senderID,
-		"sender_name": senderName,
-		"chat_id":     strconv.FormatInt(msg.Chat.ID, 10),
+		"sender_id":   strconv.FormatInt(senderID, 10),
+		"sender_name": strings.TrimSpace(msg.FromFirstName + " " + msg.FromLastName),
+		"chat_id":     strconv.FormatInt(msg.ChatID, 10),
+	}
+	if msg.ChatType != "private" {
+		// Same contract as WhatsApp groups: the person stays the contact
+		// (sender_id); the chat is the key consumers thread the group by.
+		metadata["is_group"] = "true"
+		metadata["chat_jid"] = metadata["chat_id"]
+	}
+	if msg.IsEdited {
+		metadata["edited"] = "true"
+	}
+	if msg.ReplyToMsgID != nil {
+		metadata["reply_to_id"] = strconv.FormatInt(*msg.ReplyToMsgID, 10)
+	}
+
+	var attachments []nats.AttachmentData
+	switch {
+	case msg.MediaFileID != "":
+		attachments = []nats.AttachmentData{{
+			Type:      contentType,
+			URL:       msg.MediaFileID,
+			Filename:  msg.MediaFileName,
+			MimeType:  msg.MediaMimeType,
+			SizeBytes: msg.MediaFileSize,
+		}}
+		if msg.MessageType == telegram.MessageTypeSticker {
+			metadata["is_sticker"] = "true"
+		}
+	case msg.Location != nil:
+		content = fmt.Sprintf("%f,%f", msg.Location.Latitude, msg.Location.Longitude)
+		metadata["latitude"] = fmt.Sprintf("%f", msg.Location.Latitude)
+		metadata["longitude"] = fmt.Sprintf("%f", msg.Location.Longitude)
+	case msg.Contact != nil:
+		content = msg.Contact.PhoneNumber
+		metadata["contact_phone"] = msg.Contact.PhoneNumber
+		metadata["contact_first_name"] = msg.Contact.FirstName
+		metadata["contact_last_name"] = msg.Contact.LastName
+	}
+
+	// Service updates (someone joined, title changed…) have nothing to show;
+	// they used to reach the agent as blank text bubbles.
+	if content == "" && len(attachments) == 0 {
+		return nil
 	}
 
 	inbound := &nats.InboundMessage{
@@ -1134,7 +1147,7 @@ func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *en
 		TenantID:    channel.TenantID,
 		ChannelID:   channel.ID,
 		ChannelType: "telegram",
-		ExternalID:  strconv.FormatInt(int64(msg.MessageID), 10),
+		ExternalID:  strconv.FormatInt(msg.MessageID, 10),
 		ContentType: contentType,
 		Content:     content,
 		Metadata:    metadata,
@@ -1145,20 +1158,38 @@ func (h *WebhookHandler) processTelegramMessage(ctx context.Context, channel *en
 	return h.publishInbound(ctx, inbound)
 }
 
+// telegramContentType maps the adapter's message types onto the pipeline's
+// content types. Stickers are images (as on WhatsApp) and video notes videos.
+func telegramContentType(t telegram.MessageType) string {
+	switch t {
+	case telegram.MessageTypePhoto, telegram.MessageTypeSticker:
+		return "image"
+	case telegram.MessageTypeVideo, telegram.MessageTypeVideoNote:
+		return "video"
+	case telegram.MessageTypeAudio, telegram.MessageTypeVoice:
+		return "audio"
+	case telegram.MessageTypeDocument:
+		return "document"
+	case telegram.MessageTypeLocation:
+		return "location"
+	case telegram.MessageTypeContact:
+		return "contact"
+	default:
+		return "text"
+	}
+}
+
 // processTelegramCallback normalizes an inline-keyboard button tap
 // (update.callback_query) into an inbound event carrying the button's
 // callback_data. Without this, taps on interactive keyboards would never reach
 // the system. Sender/chat IDs are formatted as decimal strings (see the int64
 // handling in processTelegramMessage) so contact/status correlation stays intact.
-func (h *WebhookHandler) processTelegramCallback(ctx context.Context, channel *entity.Channel, cb *TelegramCallbackQuery) error {
+func (h *WebhookHandler) processTelegramCallback(ctx context.Context, channel *entity.Channel, cb *tgbotapi.CallbackQuery) error {
 	senderID := ""
 	senderName := ""
 	if cb.From != nil {
 		senderID = strconv.FormatInt(cb.From.ID, 10)
-		senderName = cb.From.FirstName
-		if cb.From.LastName != "" {
-			senderName += " " + cb.From.LastName
-		}
+		senderName = strings.TrimSpace(cb.From.FirstName + " " + cb.From.LastName)
 	}
 
 	metadata := map[string]string{
@@ -1169,7 +1200,7 @@ func (h *WebhookHandler) processTelegramCallback(ctx context.Context, channel *e
 		"is_callback":       "true",
 	}
 	// The originating message carries the chat the keyboard lives in.
-	if cb.Message != nil {
+	if cb.Message != nil && cb.Message.Chat != nil {
 		metadata["chat_id"] = strconv.FormatInt(cb.Message.Chat.ID, 10)
 		metadata["callback_message_id"] = strconv.FormatInt(int64(cb.Message.MessageID), 10)
 	}
@@ -2287,72 +2318,6 @@ type WhatsAppStatus struct {
 		Title   string `json:"title"`
 		Message string `json:"message"`
 	} `json:"errors,omitempty"`
-}
-
-// Telegram types
-type TelegramUpdate struct {
-	UpdateID      int                    `json:"update_id"`
-	Message       *TelegramMessage       `json:"message,omitempty"`
-	EditedMessage *TelegramMessage       `json:"edited_message,omitempty"`
-	CallbackQuery *TelegramCallbackQuery `json:"callback_query,omitempty"`
-}
-
-// TelegramCallbackQuery is an inline-keyboard button tap. Data holds the
-// button's callback_data; Message is the message the keyboard was attached to.
-type TelegramCallbackQuery struct {
-	ID   string `json:"id"`
-	From *struct {
-		ID        int64  `json:"id"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		Username  string `json:"username"`
-	} `json:"from,omitempty"`
-	Message *TelegramMessage `json:"message,omitempty"`
-	Data    string           `json:"data,omitempty"`
-}
-
-type TelegramMessage struct {
-	MessageID int `json:"message_id"`
-	From      *struct {
-		ID        int64  `json:"id"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		Username  string `json:"username"`
-	} `json:"from,omitempty"`
-	Chat struct {
-		ID   int64  `json:"id"`
-		Type string `json:"type"`
-	} `json:"chat"`
-	Text    string `json:"text,omitempty"`
-	Caption string `json:"caption,omitempty"`
-	Photo   []struct {
-		FileID   string `json:"file_id"`
-		Width    int    `json:"width"`
-		Height   int    `json:"height"`
-		FileSize int    `json:"file_size"`
-	} `json:"photo,omitempty"`
-	Document *struct {
-		FileID   string `json:"file_id"`
-		FileName string `json:"file_name"`
-		MimeType string `json:"mime_type"`
-		FileSize int    `json:"file_size"`
-	} `json:"document,omitempty"`
-	Voice *struct {
-		FileID   string `json:"file_id"`
-		Duration int    `json:"duration"`
-		MimeType string `json:"mime_type"`
-	} `json:"voice,omitempty"`
-	Video *struct {
-		FileID   string `json:"file_id"`
-		Width    int    `json:"width"`
-		Height   int    `json:"height"`
-		Duration int    `json:"duration"`
-		MimeType string `json:"mime_type"`
-	} `json:"video,omitempty"`
-	Location *struct {
-		Latitude  float64 `json:"latitude"`
-		Longitude float64 `json:"longitude"`
-	} `json:"location,omitempty"`
 }
 
 // Generic webhook types

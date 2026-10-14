@@ -454,6 +454,18 @@ func BroadcastNewMessage(tenantID, conversationID string, message interface{}) {
 	}, "")
 }
 
+// BroadcastMessageUpdated pushes an edited message so an open conversation
+// shows the new text in place instead of a second bubble.
+func BroadcastMessageUpdated(tenantID, conversationID string, message *entity.Message) {
+	GetAgentHub().BroadcastToTenant(tenantID, &WSMessage{
+		Type: WSEventMessageUpdated,
+		Payload: WSNewMessagePayload{
+			ConversationID: conversationID,
+			Message:        withSignedMedia(message),
+		},
+	}, "")
+}
+
 // BroadcastConversationUpdate broadcasts a conversation update
 func BroadcastConversationUpdate(tenantID string, conversation interface{}) {
 	hub := GetAgentHub()

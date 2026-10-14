@@ -139,7 +139,7 @@ func TestHandleWebhook_InvalidJSON(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to parse webhook")
 }
 
-func TestHandleWebhook_NonPrivateChat(t *testing.T) {
+func TestHandleWebhook_ChannelPost(t *testing.T) {
 	adapter := NewAdapter()
 	ctx := context.Background()
 
@@ -149,15 +149,16 @@ func TestHandleWebhook_NonPrivateChat(t *testing.T) {
 		return nil
 	})
 
-	// Group chat message - should be ignored (ExtractIncomingMessage returns nil)
+	// Channel posts are broadcasts, not conversations: ignored
+	// (ExtractIncomingMessage returns nil). Groups are handled.
 	payload := map[string]interface{}{
 		"update_id": 1,
 		"message": map[string]interface{}{
 			"message_id": 1,
 			"from":       map[string]interface{}{"id": 1, "first_name": "U"},
-			"chat":       map[string]interface{}{"id": 10, "type": "group"},
+			"chat":       map[string]interface{}{"id": 10, "type": "channel"},
 			"date":       time.Now().Unix(),
-			"text":       "group msg",
+			"text":       "channel post",
 		},
 	}
 	body, _ := json.Marshal(payload)
