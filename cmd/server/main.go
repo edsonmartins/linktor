@@ -960,6 +960,12 @@ func main() {
 			// updates live. Without this the admin WebSocket only carried presence/
 			// typing and inbound messages appeared only after a manual refetch.
 			if out != nil && out.Message != nil {
+				if out.Edited {
+					// The contact corrected an earlier message: refresh it on
+					// screen, but do not give the bot another turn over it.
+					handlers.BroadcastMessageUpdated(msg.TenantID, out.Message.ConversationID, out.Message)
+					return nil
+				}
 				handlers.BroadcastNewMessage(msg.TenantID, out.Message.ConversationID, out.Message)
 			}
 			maybeTriggerBot(ctx, botRepo, producer, out)

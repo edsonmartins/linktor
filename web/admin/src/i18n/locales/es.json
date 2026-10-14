@@ -484,7 +484,7 @@
       "missingCredentials": "Credenciales faltantes",
       "enterCredentialsFirst": "Por favor ingrese el token de acceso y el ID del número de teléfono primero",
       "connectionSuccess": "Conexión exitosa",
-      "credentialsValid": "Las credenciales de WhatsApp son válidas",
+      "credentialsValid": "Las credenciales son válidas",
       "connectionFailed": "Conexión fallida",
       "checkCredentials": "No se pudo conectar a la API de WhatsApp. Por favor verifique sus credenciales.",
       "webhookUrl": "URL del Webhook",

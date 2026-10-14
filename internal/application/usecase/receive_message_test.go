@@ -84,6 +84,31 @@ func makeInbound(channelID, tenantID string) *nats.InboundMessage {
 func TestReceiveMessageUseCase(t *testing.T) {
 	ctx := context.Background()
 
+	t.Run("Edit updates the stored message instead of being dropped", func(t *testing.T) {
+		f := newReceiveMessageFixture()
+		channel := makeChannel("ch-1", "tenant-1")
+		f.channelRepo.Channels[channel.ID] = channel
+
+		first, err := f.uc.Execute(ctx, makeInbound("ch-1", "tenant-1"))
+		require.NoError(t, err)
+
+		// Same external id as the original, flagged as an edit by the adapter.
+		edit := makeInbound("ch-1", "tenant-1")
+		edit.Content = "Hello, edited!"
+		edit.Metadata["edited"] = "true"
+
+		out, err := f.uc.Execute(ctx, edit)
+		require.NoError(t, err)
+		assert.True(t, out.Edited)
+		assert.Equal(t, first.Message.ID, out.Message.ID)
+		assert.Equal(t, "Hello, edited!", out.Message.Content)
+		assert.True(t, out.Message.IsEdited)
+		require.NotNil(t, out.Message.EditedAt)
+		assert.Equal(t, "true", out.Message.Metadata["edited"])
+		assert.Equal(t, first.Conversation.ID, out.Conversation.ID)
+		assert.Len(t, f.messageRepo.Messages, 1)
+	})
+
 	t.Run("Happy Path - New Contact + New Conversation", func(t *testing.T) {
 		f := newReceiveMessageFixture()
 		channel := makeChannel("ch-1", "tenant-1")
@@ -114,7 +139,7 @@ func TestReceiveMessageUseCase(t *testing.T) {
 		assert.Equal(t, entity.ContentTypeText, output.Message.ContentType)
 		assert.Equal(t, "Hello, world!", output.Message.Content)
 		assert.Equal(t, entity.SenderTypeContact, output.Message.SenderType)
-		assert.Equal(t, entity.MessageStatusPending, output.Message.Status)
+		assert.Equal(t, entity.MessageStatusDelivered, output.Message.Status)
 		assert.Equal(t, "ext-123", output.Message.ExternalID)
 
 		// IsNew should be true (new conversation)

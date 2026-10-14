@@ -107,10 +107,7 @@ func rehostBase64Attachment(ctx context.Context, store storage.Client, msg *nats
 	if err != nil {
 		return false
 	}
-	contentType := att.MimeType
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
+	contentType := contentTypeOf(att.MimeType)
 	url, err := store.Upload(ctx, inboundMediaKey(msg, contentType, att.Filename), data, contentType)
 	if err != nil {
 		logger.Warn("inbound media re-host (base64) failed: " + err.Error())
@@ -160,13 +157,7 @@ func rehostRemoteAttachment(ctx context.Context, store storage.Client, msg *nats
 		return false
 	}
 
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = att.MimeType
-	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
+	contentType := contentTypeOf(resp.Header.Get("Content-Type"), att.MimeType)
 
 	url, err := store.Upload(ctx, inboundMediaKey(msg, contentType, att.Filename), data, contentType)
 	if err != nil {
@@ -236,16 +227,11 @@ func rehostTelegramAttachment(ctx context.Context, store storage.Client, msg *na
 		return false
 	}
 
-	contentType := att.MimeType
-	if contentType == "" {
-		contentType = fileResp.Header.Get("Content-Type")
-	}
-	if contentType == "" {
-		contentType = mime.TypeByExtension(extensionForMime("", info.Result.FilePath))
-	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
+	contentType := contentTypeOf(
+		att.MimeType,
+		fileResp.Header.Get("Content-Type"),
+		mime.TypeByExtension(extensionForMime("", info.Result.FilePath)),
+	)
 
 	// Use the Telegram file_path's extension for a friendlier stored key.
 	stored, err := store.Upload(ctx, inboundMediaKey(msg, contentType, info.Result.FilePath), data, contentType)
@@ -259,6 +245,20 @@ func rehostTelegramAttachment(ctx context.Context, store storage.Client, msg *na
 		att.SizeBytes = int64(len(data))
 	}
 	return true
+}
+
+// contentTypeOf picks the first candidate that actually identifies the media.
+// Empty values and the generic application/octet-stream are skipped: Telegram's
+// file server (and some CDNs) label everything octet-stream, which used to beat
+// the better hints that came after it, so a photo ended up stored and served
+// as a nameless binary.
+func contentTypeOf(candidates ...string) string {
+	for _, c := range candidates {
+		if c != "" && c != "application/octet-stream" {
+			return c
+		}
+	}
+	return "application/octet-stream"
 }
 
 // alreadyRehosted reports whether a URL already points at our media proxy.

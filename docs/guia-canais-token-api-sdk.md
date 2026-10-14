@@ -54,7 +54,8 @@ Cada API key carrega **scopes** no formato `recurso:ação`, **agora aplicados**
 
 - `channels:read` — `GET /channels…` · `channels:write` — criar/editar/remover/`connect`/`pair`/`disconnect`.
 - `messages:send` — `POST /messages/send`, `POST /conversations/:id/messages` e `POST /channels/:id/groups/:groupId/messages`. Enviar mensagem **não** concede permissão de editar canais: a rota de grupo exige este scope, não `channels:write`.
-- `contacts:read|write`, `conversations:read|write` — vocabulário reservado (ainda não aplicado nessas rotas).
+- `conversations:read|write` — tudo sob `/conversations`: `GET` exige `read`, os demais métodos exigem `write`. Isso se soma ao scope da rota: para responder por `POST /conversations/:id/messages` a chave precisa de `messages:send` **e** `conversations:write`.
+- `contacts:read|write` — vocabulário reservado (ainda não aplicado nessas rotas).
 - Curingas: `*` (tudo) e `recurso:*`; `recurso:write` implica `recurso:read`.
 - Chaves criadas **antes** dos scopes existirem operam como `["*"]` (sem quebra).
 
