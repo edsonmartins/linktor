@@ -831,7 +831,7 @@ Há dois jeitos de rodar: tudo em Docker (mais rápido para conhecer o sistema) 
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/msgfy/linktor.git
+git clone https://github.com/edsonmartins/linktor.git
 cd linktor
 ```
 
@@ -1695,53 +1695,7 @@ type Capabilities struct {
 
 ### Criando um Novo Adapter
 
-1. Copie o template: `cp -r plugins/template plugins/meu-canal`
-2. Implemente a interface `ChannelAdapter`
-3. Compile como plugin: `go build -buildmode=plugin`
-4. Registre no sistema
-5. Adicione documentação
-
-Exemplo simplificado:
-
-```go
-package main
-
-import (
-    "context"
-    "github.com/hashicorp/go-plugin"
-    "github.com/msgfy/linktor/pkg/adapters"
-)
-
-type MeuCanalAdapter struct {
-    config map[string]any
-}
-
-func (a *MeuCanalAdapter) Name() string { return "Meu Canal" }
-func (a *MeuCanalAdapter) Type() string { return "meu_canal" }
-func (a *MeuCanalAdapter) Version() string { return "1.0.0" }
-
-func (a *MeuCanalAdapter) SendMessage(ctx context.Context, msg *types.Message) (*adapters.SendResult, error) {
-    // Implementar envio
-    return &adapters.SendResult{
-        ExternalID: "msg_123",
-        Status:     "sent",
-    }, nil
-}
-
-// ... implementar outros métodos
-
-func main() {
-    plugin.Serve(&plugin.ServeConfig{
-        HandshakeConfig: adapters.Handshake,
-        Plugins: map[string]plugin.Plugin{
-            "channel_adapter": &adapters.ChannelAdapterPlugin{
-                Impl: &MeuCanalAdapter{},
-            },
-        },
-        GRPCServer: plugin.DefaultGRPCServer,
-    })
-}
-```
+O passo a passo para adicionar um canal (envio, recebimento, tipo de canal e tela no admin) está em [CONTRIBUTING.md](CONTRIBUTING.md#adicionando-um-canal).
 
 ---
 
@@ -2023,7 +1977,7 @@ go tool cover -html=coverage.out
 
 ## Contribuição
 
-Contribuições são bem-vindas! Por favor, leia nosso guia de contribuição antes de submeter PRs.
+Contribuições são bem-vindas! Antes de abrir um PR, leia o [guia de contribuição](CONTRIBUTING.md): ele cobre ambiente, testes, padrão de commits e a assinatura DCO (`git commit -s`).
 
 ### Desenvolvimento Local
 
@@ -2070,15 +2024,13 @@ chore: atualiza dependências
 
 ### Criando um Novo Channel Adapter
 
-1. Copie template: `cp -r plugins/template plugins/meu-canal`
-2. Implemente `ChannelAdapter` interface
-3. Adicione testes
-4. Adicione documentação em `docs/plugins/`
-5. Adicione exemplo em `examples/`
+Veja [Adicionando um canal](CONTRIBUTING.md#adicionando-um-canal) no guia de contribuição.
 
 ---
 
 ## Licenciamento
+
+O código deste repositório é distribuído sob a [Apache License 2.0](LICENSE). Contribuições são aceitas nos mesmos termos.
 
 ### Core (Apache 2.0)
 - msgfy engine
@@ -2098,8 +2050,7 @@ chore: atualiza dependências
 
 ## Suporte e Comunidade
 
-- **GitHub Issues**: [github.com/msgfy/linktor/issues](https://github.com/msgfy/linktor/issues)
-- **GitHub Discussions**: [github.com/msgfy/linktor/discussions](https://github.com/msgfy/linktor/discussions)
+- **GitHub Issues**: [github.com/edsonmartins/linktor/issues](https://github.com/edsonmartins/linktor/issues)
 - **Discord**: discord.gg/linktor
 - **Documentação**: [docs.linktor.io](https://docs.linktor.io)
 - **Email**: hello@linktor.io

@@ -1,0 +1,40 @@
+name: dco
+
+# Confere o Signed-off-by (Developer Certificate of Origin) em cada commit de
+# PR para a main. PRs abertos pelo dono do repositório ficam de fora: o DCO é a
+# declaração de quem contribui de fora sobre o direito de enviar o código.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: DCO
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.author_association != 'OWNER'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verificar Signed-off-by
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          for sha in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            if ! git log -1 --format='%(trailers:key=Signed-off-by,valueonly)' "$sha" | grep -q .; then
+              echo "::error::Commit $(git log -1 --format='%h %s' "$sha") sem Signed-off-by"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Assine os commits com: git rebase --signoff $BASE && git push --force-with-lease"
+            exit 1
+          fi
+          echo "Todos os commits estão assinados."
