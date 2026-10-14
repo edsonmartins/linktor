@@ -1,8 +1,9 @@
 name: dco
 
 # Confere o Signed-off-by (Developer Certificate of Origin) em cada commit de
-# PR para a main. PRs abertos pelo dono do repositório ficam de fora: o DCO é a
-# declaração de quem contribui de fora sobre o direito de enviar o código.
+# PR para a main. PRs do time (dono, membros e colaboradores do repositório)
+# ficam de fora: o DCO é a declaração de quem contribui de fora sobre o direito
+# de enviar o código.
 on:
   pull_request:
     branches: [main]
@@ -14,9 +15,9 @@ jobs:
   dco:
     name: DCO
     runs-on: ubuntu-latest
-    if: github.event.pull_request.author_association != 'OWNER'
+    if: ${{ !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
