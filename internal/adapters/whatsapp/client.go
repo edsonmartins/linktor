@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -258,6 +259,41 @@ func (c *Client) SubmitPasskeyResponse(ctx context.Context, assertion *types.Web
 	return cli.SendPasskeyResponse(ctx, assertion)
 }
 
+// pairDisplayNamePattern é o formato que o WhatsApp aceita para o nome mostrado
+// no celular ao parear por código: "Navegador (Sistema)".
+var pairDisplayNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z ]* \([A-Za-z][A-Za-z ]*\)$`)
+
+// pairDisplayName devolve o nome a mandar no pedido de código de pareamento.
+//
+// O WhatsApp valida esse nome e responde 400 a qualquer coisa fora de
+// "Navegador (Sistema)". O nome do dispositivo do Linktor é "Linktor" por
+// padrão — e era ele que ia aqui, então todo pedido de código falhava, fosse
+// qual fosse o telefone. O nome configurado continua valendo onde é livre.
+func pairDisplayName(deviceName string) string {
+	if pairDisplayNamePattern.MatchString(deviceName) {
+		return deviceName
+	}
+	return "Chrome (Linux)"
+}
+
+// waitForLoginSocket espera o websocket ficar conectado e mais um segundo,
+// como a documentação do whatsmeow recomenda antes de PairPhone. Limita-se a
+// dez segundos e ao contexto de quem pediu.
+func waitForLoginSocket(ctx context.Context, connected func() bool) {
+	deadline := time.Now().Add(10 * time.Second)
+	for !connected() && time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+	}
+}
+
 // LoginWithPairCode initiates phone number pairing
 func (c *Client) LoginWithPairCode(ctx context.Context, phoneNumber string) (*PairCodeResponse, error) {
 	c.mu.Lock()
@@ -284,8 +320,13 @@ func (c *Client) LoginWithPairCode(ctx context.Context, phoneNumber string) (*Pa
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
+	// whatsmeow: o pedido de código só vale com o websocket de login pronto —
+	// "espere o primeiro *events.QR, ou durma um segundo depois do Connect".
+	// Pedido logo depois do Connect pode chegar antes disso e falhar.
+	waitForLoginSocket(ctx, c.client.IsConnected)
+
 	// Request pairing code
-	code, err := c.client.PairPhone(ctx, phoneNumber, true, whatsmeow.PairClientChrome, c.config.DeviceName)
+	code, err := c.client.PairPhone(ctx, phoneNumber, true, whatsmeow.PairClientChrome, pairDisplayName(c.config.DeviceName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pair code: %w", err)
 	}
