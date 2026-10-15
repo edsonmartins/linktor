@@ -6,6 +6,9 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -698,6 +701,40 @@ func (suite *AdapterTestSuite) TestFetchMediaFromURL_RejectsNonHTTPScheme() {
 	_, err := fetchMediaFromURL(context.Background(), "file:///etc/passwd")
 	assert.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "scheme")
+}
+
+func (suite *AdapterTestSuite) TestFetchMediaFromURL_TrustedPrivateHost() {
+	// An on-premise storage on the LAN, trusted by the operator: the media is
+	// fetched. Without the entry the same URL is refused as before.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("boleto"))
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+
+	suite.T().Setenv(mediaFetchAllowedHostsEnv, "")
+	_, err := fetchMediaFromURL(context.Background(), srv.URL+"/boleto.pdf")
+	assert.Error(suite.T(), err, "sem a lista, o host privado continua recusado")
+
+	suite.T().Setenv(mediaFetchAllowedHostsEnv, " outro.lan , "+u.Host+" ")
+	data, err := fetchMediaFromURL(context.Background(), srv.URL+"/boleto.pdf")
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), "boleto", string(data))
+}
+
+func (suite *AdapterTestSuite) TestTrustedMediaHost_MatchesPortOnlyWhenGiven() {
+	parse := func(s string) *url.URL { u, _ := url.Parse(s); return u }
+
+	suite.T().Setenv(mediaFetchAllowedHostsEnv, "192.168.0.214:9000")
+	assert.True(suite.T(), trustedMediaHost(parse("http://192.168.0.214:9000/b/o.pdf")))
+	assert.False(suite.T(), trustedMediaHost(parse("http://192.168.0.214:5432/")), "a porta listada é a única liberada")
+	assert.False(suite.T(), trustedMediaHost(parse("http://169.254.169.254/latest/meta-data/")))
+
+	suite.T().Setenv(mediaFetchAllowedHostsEnv, "Storage.LAN")
+	assert.True(suite.T(), trustedMediaHost(parse("http://storage.lan:9000/x")), "sem porta, vale o host em qualquer porta")
+
+	suite.T().Setenv(mediaFetchAllowedHostsEnv, "")
+	assert.False(suite.T(), trustedMediaHost(parse("http://192.168.0.214:9000/x")))
 }
 
 func (suite *AdapterTestSuite) TestIsBlockedIP() {
