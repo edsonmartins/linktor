@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -1279,6 +1280,14 @@ func fetchMediaFromURL(ctx context.Context, rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("media URL is missing a host")
 	}
 
+	// Hosts the operator explicitly trusts skip the private-address check: an
+	// on-premise deployment whose systems talk over the LAN (e.g. the object
+	// storage of an integrated system at 192.168.0.10:9000) would otherwise have
+	// every media URL refused, and the message would sit in "pending" forever.
+	if trustedMediaHost(parsed) {
+		return doFetchMedia(ctx, rawURL)
+	}
+
 	// Resolve the host and reject any address that is not publicly routable.
 	ips, err := net.LookupIP(host)
 	if err != nil {
@@ -1290,6 +1299,11 @@ func fetchMediaFromURL(ctx context.Context, rawURL string) ([]byte, error) {
 		}
 	}
 
+	return doFetchMedia(ctx, rawURL)
+}
+
+// doFetchMedia performs the bounded GET once the destination has been vetted.
+func doFetchMedia(ctx context.Context, rawURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create media request: %w", err)
@@ -1315,6 +1329,39 @@ func fetchMediaFromURL(ctx context.Context, rawURL string) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// mediaFetchAllowedHostsEnv lists hosts the operator trusts for outbound media
+// even though they resolve to private addresses. Comma-separated; an entry with
+// a port ("192.168.0.10:9000") matches only that port, one without a port
+// ("storage.lan") matches the host on any port. Empty (the default) keeps the
+// SSRF guard exactly as it was.
+const mediaFetchAllowedHostsEnv = "MEDIA_FETCH_ALLOWED_HOSTS"
+
+// trustedMediaHost reports whether the URL's host is on the operator's list.
+// Read on every call so a deployment can change it without a code change, and
+// tests can set it per case.
+func trustedMediaHost(u *url.URL) bool {
+	list := os.Getenv(mediaFetchAllowedHostsEnv)
+	if strings.TrimSpace(list) == "" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	hostPort := strings.ToLower(u.Host)
+	for _, entry := range strings.Split(list, ",") {
+		entry = strings.ToLower(strings.TrimSpace(entry))
+		if entry == "" {
+			continue
+		}
+		if strings.Contains(entry, ":") {
+			if entry == hostPort {
+				return true
+			}
+		} else if entry == host {
+			return true
+		}
+	}
+	return false
 }
 
 // isBlockedIP reports whether an IP must not be fetched from, to prevent SSRF
