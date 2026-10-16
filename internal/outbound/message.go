@@ -64,6 +64,10 @@ type Media struct {
 	MediaID  string
 	Caption  string
 	Filename string
+	// MimeType é o tipo do arquivo ("image/jpeg"). Sem ele o WhatsApp recebia
+	// imagem com Mimetype vazio, e a imagem não chegava ao destinatário — o
+	// documento passava porque o cliente do WhatsApp tolera tipo vazio nele.
+	MimeType string
 }
 
 func (Media) Kind() Kind { return KindMedia }

@@ -387,7 +387,7 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 					Error:   err.Error(),
 				}, nil
 			}
-			resp, err = client.SendImageMessage(ctx, msg.RecipientID, mediaData, att.MimeType, msg.Content)
+			resp, err = client.SendImageMessage(ctx, msg.RecipientID, mediaData, mediaMimeType(att.MimeType, mediaData), msg.Content)
 		} else {
 			return &plugin.SendResult{
 				Success: false,
@@ -408,7 +408,7 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 					Error:   err.Error(),
 				}, nil
 			}
-			resp, err = client.SendVideoMessage(ctx, msg.RecipientID, mediaData, att.MimeType, msg.Content)
+			resp, err = client.SendVideoMessage(ctx, msg.RecipientID, mediaData, mediaMimeType(att.MimeType, mediaData), msg.Content)
 		} else {
 			return &plugin.SendResult{
 				Success: false,
@@ -430,7 +430,7 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 				}, nil
 			}
 			ptt := msg.Metadata["ptt"] == "true"
-			resp, err = client.SendAudioMessage(ctx, msg.RecipientID, mediaData, att.MimeType, ptt)
+			resp, err = client.SendAudioMessage(ctx, msg.RecipientID, mediaData, mediaMimeType(att.MimeType, mediaData), ptt)
 		} else {
 			return &plugin.SendResult{
 				Success: false,
@@ -451,7 +451,7 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 					Error:   err.Error(),
 				}, nil
 			}
-			resp, err = client.SendDocumentMessage(ctx, msg.RecipientID, mediaData, att.MimeType, att.Filename, msg.Content)
+			resp, err = client.SendDocumentMessage(ctx, msg.RecipientID, mediaData, mediaMimeType(att.MimeType, mediaData), att.Filename, msg.Content)
 		} else {
 			return &plugin.SendResult{
 				Success: false,
@@ -1329,6 +1329,20 @@ func doFetchMedia(ctx context.Context, rawURL string) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// mediaMimeType devolve o tipo declarado do anexo, ou o detectado pelo conteúdo
+// quando ele não veio. O WhatsApp exige o tipo na mensagem de mídia: imagem com
+// Mimetype vazio é aceita pelo servidor e não chega ao destinatário.
+func mediaMimeType(declared string, data []byte) string {
+	if declared = strings.TrimSpace(declared); declared != "" {
+		return declared
+	}
+	detected := http.DetectContentType(data)
+	if i := strings.Index(detected, ";"); i >= 0 {
+		detected = strings.TrimSpace(detected[:i])
+	}
+	return detected
 }
 
 // mediaFetchAllowedHostsEnv lists hosts the operator trusts for outbound media

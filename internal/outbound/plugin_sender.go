@@ -128,6 +128,9 @@ func toPluginMessage(msg *Message) *plugin.OutboundMessage {
 		if c.Filename != "" {
 			out.Metadata["filename"] = c.Filename
 		}
+		if c.MimeType != "" {
+			out.Metadata["mime_type"] = c.MimeType
+		}
 		// Plugin adapters (webchat) deliver msg.Attachments, not the metadata
 		// keys above; without this the client received only the caption.
 		if c.URL != "" {
@@ -135,6 +138,7 @@ func toPluginMessage(msg *Message) *plugin.OutboundMessage {
 				Type:     string(c.Type),
 				URL:      c.URL,
 				Filename: c.Filename,
+				MimeType: c.MimeType,
 			}}
 		}
 	case Interactive:

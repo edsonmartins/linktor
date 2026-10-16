@@ -293,11 +293,17 @@ func mediaContent(mt MediaType, raw *nats.OutboundMessage, meta map[string]strin
 	url := meta["media_url"]
 	mediaID := meta["media_id"]
 	filename := meta["filename"]
-	if url == "" && mediaID == "" && len(raw.Attachments) > 0 {
+	mimeType := meta["mime_type"]
+	if len(raw.Attachments) > 0 {
 		att := raw.Attachments[0]
-		url = att.URL
-		if filename == "" {
-			filename = att.Filename
+		if url == "" && mediaID == "" {
+			url = att.URL
+			if filename == "" {
+				filename = att.Filename
+			}
+		}
+		if mimeType == "" {
+			mimeType = att.MimeType
 		}
 	}
 	return Media{
@@ -306,6 +312,7 @@ func mediaContent(mt MediaType, raw *nats.OutboundMessage, meta map[string]strin
 		MediaID:  mediaID,
 		Caption:  raw.Content,
 		Filename: filename,
+		MimeType: mimeType,
 	}
 }
 
