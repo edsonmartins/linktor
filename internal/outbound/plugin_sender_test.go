@@ -217,3 +217,18 @@ func TestPluginSenderPropagatesReactionError(t *testing.T) {
 		t.Fatal("expected the provider error to propagate for retry")
 	}
 }
+
+// A imagem enviada pela API chegava ao WhatsApp com Mimetype vazio, porque o tipo
+// se perdia aqui: a mídia saía da tradução sem ele. O documento passava; a imagem não.
+func TestToPluginMessageMediaCarriesMimeType(t *testing.T) {
+	out := toPluginMessage(&Message{
+		To:      "s",
+		Content: Media{Type: MediaImage, URL: "https://x/foto", Filename: "foto.jpg", MimeType: "image/jpeg"},
+	})
+	if len(out.Attachments) != 1 || out.Attachments[0].MimeType != "image/jpeg" {
+		t.Fatalf("o tipo do arquivo tem de chegar ao anexo: %+v", out.Attachments)
+	}
+	if out.Metadata["mime_type"] != "image/jpeg" {
+		t.Fatalf("e à metadata, para quem lê por ela: %+v", out.Metadata)
+	}
+}

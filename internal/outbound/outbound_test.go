@@ -205,3 +205,17 @@ func TestResolverUnsupportedType(t *testing.T) {
 		t.Fatal("expected error for unsupported channel type")
 	}
 }
+
+func TestTranslateMediaKeepsMimeTypeFromAttachment(t *testing.T) {
+	m := translate(&nats.OutboundMessage{
+		ContentType: "image",
+		Attachments: []nats.AttachmentData{{Type: "image", URL: "https://x/foto", Filename: "foto.png", MimeType: "image/png"}},
+	})
+	media, ok := m.Content.(Media)
+	if !ok {
+		t.Fatalf("expected Media, got %T", m.Content)
+	}
+	if media.MimeType != "image/png" {
+		t.Fatalf("o tipo do anexo se perdia na tradução: %+v", media)
+	}
+}
