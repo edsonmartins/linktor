@@ -2074,51 +2074,9 @@ func (h *WebhookHandler) EmailWebhook(c *gin.Context) {
 
 // processEmailMessage processes an incoming email message
 func (h *WebhookHandler) processEmailMessage(ctx context.Context, channel *entity.Channel, msg *email.IncomingEmail) error {
-	contentType := "text"
-	content := msg.TextBody
-	var attachments []nats.AttachmentData
-
-	// Prefer text body, but use HTML if no text
-	if content == "" && msg.HTMLBody != "" {
-		content = msg.HTMLBody
-		contentType = "text" // Still text, but HTML
-	}
-
-	// Handle attachments
-	for _, att := range msg.Attachments {
-		attType := "document"
-		if len(att.ContentType) >= 6 {
-			switch att.ContentType[:6] {
-			case "image/":
-				attType = "image"
-			case "video/":
-				attType = "video"
-			case "audio/":
-				attType = "audio"
-			}
-		}
-
-		ad := nats.AttachmentData{
-			Type:      attType,
-			URL:       att.URL,
-			Filename:  att.Filename,
-			MimeType:  att.ContentType,
-			SizeBytes: att.Size,
-		}
-		// Inbound mail carries the file inline (no URL). Hand the bytes to the
-		// generic re-host step as base64 so it gets a durable object-store URL;
-		// without this the attachment reaches the chat with an empty URL.
-		if ad.URL == "" && len(att.Content) > 0 {
-			ad.Metadata = map[string]string{
-				"data":          base64.StdEncoding.EncodeToString(att.Content),
-				"data_encoding": "base64",
-			}
-			if ad.SizeBytes == 0 {
-				ad.SizeBytes = int64(len(att.Content))
-			}
-		}
-		attachments = append(attachments, ad)
-	}
+	// Mesmo corpo e mesmos anexos que o recebimento por IMAP produz.
+	content := msg.Texto()
+	attachments := email.AnexosParaNATS(msg.Attachments)
 
 	// Build metadata
 	metadata := map[string]string{
@@ -2152,7 +2110,7 @@ func (h *WebhookHandler) processEmailMessage(ctx context.Context, channel *entit
 			ChannelID:   channel.ID,
 			ChannelType: "email",
 			ExternalID:  msg.MessageID,
-			ContentType: contentType,
+			ContentType: "text",
 			Content:     content,
 			Metadata:    metadata,
 			Attachments: attachments,

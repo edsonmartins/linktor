@@ -689,6 +689,11 @@ func main() {
 	// instancia adaptador para canais que não são WhatsApp, então sem este
 	// gerenciador o canal recebe "connected" no banco e descarta toda resposta.
 	emailManager := email.NewManager(channelRepo, producer)
+	// Anexo de email chega em base64; re-hospedar antes de publicar mantém a
+	// mensagem NATS pequena e dá ao chat uma URL durável desde o início.
+	emailManager.SetRehost(func(ctx context.Context, msg *nats.InboundMessage) {
+		rehostInboundMedia(ctx, mediaStore, channelRepo, msg)
+	})
 
 	// Telegram só entrega updates a um webhook registrado: conectar o canal
 	// valida o token, gera o secret_token e aponta o bot para cá. Sem isto o
@@ -752,6 +757,9 @@ func main() {
 			unregisterTelegram(channel)
 			if channel.Type == entity.ChannelTypeMattermost {
 				mattermostManager.StopChannel(channel.ID)
+			}
+			if channel.Type == entity.ChannelTypeEmail {
+				emailManager.StopChannel(channel.ID)
 			}
 		},
 	})

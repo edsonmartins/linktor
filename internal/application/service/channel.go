@@ -473,34 +473,23 @@ func (s *ChannelService) UpdateEnabled(ctx context.Context, id string, enabled b
 
 	channel.Enabled = enabled
 	channel.UpdatedAt = time.Now()
+	// Quem mantém processo vivo por canal (o polling IMAP, por exemplo) precisa
+	// saber: sem o aviso, desabilitar não parava a leitura da caixa.
+	s.notifyChannelUpdated(ctx, channel)
 	return channel, nil
 }
 
 // UpdateStatus updates channel status (handles both enabled and connection_status for backwards compatibility)
 func (s *ChannelService) UpdateStatus(ctx context.Context, id string, status string) (*entity.Channel, error) {
-	channel, err := s.repo.FindByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
 	// Map string status to enabled state (for backwards compatibility with frontend)
 	switch status {
 	case "active":
-		if err := s.repo.UpdateEnabled(ctx, id, true); err != nil {
-			return nil, err
-		}
-		channel.Enabled = true
+		return s.UpdateEnabled(ctx, id, true)
 	case "inactive":
-		if err := s.repo.UpdateEnabled(ctx, id, false); err != nil {
-			return nil, err
-		}
-		channel.Enabled = false
+		return s.UpdateEnabled(ctx, id, false)
 	default:
 		return nil, errors.New(errors.ErrCodeValidation, "invalid status: use 'active' or 'inactive'")
 	}
-
-	channel.UpdatedAt = time.Now()
-	return channel, nil
 }
 
 // Connect connects a channel

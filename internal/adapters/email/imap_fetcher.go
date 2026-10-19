@@ -10,9 +10,16 @@ import (
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
+	"github.com/emersion/go-message"
 	_ "github.com/emersion/go-message/charset" // registra ISO-8859-1 e demais charsets
 	"github.com/emersion/go-message/mail"
+
+	"github.com/msgfy/linktor/pkg/logger"
 )
+
+// maxAnexoBytes limita o que se lê de cada anexo. É o teto de envio do Gmail;
+// acima disso só nome e tipo seguem, e o arquivo continua na caixa.
+const maxAnexoBytes = 25 << 20
 
 // Fetcher lê mensagens novas de uma caixa por IMAP.
 //
@@ -102,31 +109,39 @@ func (f *Fetcher) Verificar(ctx context.Context) (int, error) {
 	return len(ids), nil
 }
 
-// Buscar devolve as mensagens não lidas da pasta e as marca como lidas.
+// Buscar lê as mensagens não lidas da pasta e passa cada uma a entregar.
 //
-// Marcar como lida é o que impede reprocessar a mesma mensagem na próxima
-// rodada. Não é infalível — uma queda entre entregar e marcar traria a mensagem
-// de novo — e por isso o Message-ID vai como ExternalID: o repositório tem
-// índice único por (conversation_id, external_id) e descarta a repetição.
-func (f *Fetcher) Buscar(ctx context.Context, limite int) ([]*IncomingEmail, error) {
+// Só a mensagem que entregar aceitou é marcada como lida; a que falhou fica
+// não lida e volta na rodada seguinte. A leitura usa BODY.PEEK: sem isso o
+// próprio FETCH marcava tudo como lido no servidor antes de qualquer entrega,
+// e uma falha de publicação perdia o email.
+//
+// Mensagem que não dá para parsear também é marcada: com PEEK ela voltaria
+// toda rodada e, com o teto por rodada, trancaria a fila atrás de si.
+//
+// Marcar como lida não é infalível — uma queda entre entregar e marcar traria
+// a mensagem de novo — e por isso o Message-ID vai como ExternalID: o
+// repositório tem índice único por (conversation_id, external_id) e descarta a
+// repetição. Devolve quantas foram entregues.
+func (f *Fetcher) Buscar(ctx context.Context, limite int, entregar func(*IncomingEmail) error) (int, error) {
 	c, err := f.conectar()
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	defer c.Logout()
 
 	if _, err := c.Select(f.pasta, false); err != nil {
-		return nil, fmt.Errorf("abrir pasta %q: %w", f.pasta, err)
+		return 0, fmt.Errorf("abrir pasta %q: %w", f.pasta, err)
 	}
 
 	criterio := imap.NewSearchCriteria()
 	criterio.WithoutFlags = []string{imap.SeenFlag}
 	ids, err := c.Search(criterio)
 	if err != nil {
-		return nil, fmt.Errorf("buscar não lidas em %q: %w", f.pasta, err)
+		return 0, fmt.Errorf("buscar não lidas em %q: %w", f.pasta, err)
 	}
 	if len(ids) == 0 {
-		return nil, nil
+		return 0, nil
 	}
 	if limite > 0 && len(ids) > limite {
 		// Uma caixa com histórico acumulado não pode virar uma enxurrada de
@@ -137,14 +152,14 @@ func (f *Fetcher) Buscar(ctx context.Context, limite int) ([]*IncomingEmail, err
 	conjunto := new(imap.SeqSet)
 	conjunto.AddNum(ids...)
 
-	secao := &imap.BodySectionName{}
+	secao := &imap.BodySectionName{Peek: true}
 	mensagens := make(chan *imap.Message, len(ids))
 	erroBusca := make(chan error, 1)
 	go func() {
 		erroBusca <- c.Fetch(conjunto, []imap.FetchItem{secao.FetchItem(), imap.FetchEnvelope}, mensagens)
 	}()
 
-	var lidos []*IncomingEmail
+	entregues := 0
 	var processados []uint32
 	for msg := range mensagens {
 		if msg == nil {
@@ -156,18 +171,22 @@ func (f *Fetcher) Buscar(ctx context.Context, limite int) ([]*IncomingEmail, err
 		}
 		email, err := parsearMensagem(corpo)
 		if err != nil {
-			// Uma mensagem malformada não pode travar a fila inteira: registra
-			// e segue. Ela não é marcada como lida, então dá para investigar.
+			logger.Warn("email: mensagem malformada em " + f.pasta + " marcada como lida sem entrega: " + err.Error())
+			processados = append(processados, msg.SeqNum)
 			continue
 		}
 		if email.MessageID == "" && msg.Envelope != nil {
 			email.MessageID = msg.Envelope.MessageId
 		}
-		lidos = append(lidos, email)
+		if err := entregar(email); err != nil {
+			logger.Warn("email: mensagem " + email.MessageID + " fica não lida para nova tentativa: " + err.Error())
+			continue
+		}
+		entregues++
 		processados = append(processados, msg.SeqNum)
 	}
 	if err := <-erroBusca; err != nil {
-		return lidos, fmt.Errorf("ler mensagens de %q: %w", f.pasta, err)
+		return entregues, fmt.Errorf("ler mensagens de %q: %w", f.pasta, err)
 	}
 
 	if len(processados) > 0 {
@@ -177,11 +196,11 @@ func (f *Fetcher) Buscar(ctx context.Context, limite int) ([]*IncomingEmail, err
 		if err := c.Store(marcar, item, []interface{}{imap.SeenFlag}, nil); err != nil {
 			// Entregar duas vezes é melhor que perder: o índice único por
 			// external_id descarta a repetição lá na frente.
-			return lidos, fmt.Errorf("marcar como lidas em %q: %w", f.pasta, err)
+			return entregues, fmt.Errorf("marcar como lidas em %q: %w", f.pasta, err)
 		}
 	}
 
-	return lidos, nil
+	return entregues, nil
 }
 
 // parsearMensagem converte o RFC 5322 bruto no formato interno, decodificando
@@ -224,27 +243,71 @@ func parsearMensagem(r io.Reader) (*IncomingEmail, error) {
 
 		switch cabecalhoParte := parte.Header.(type) {
 		case *mail.InlineHeader:
+			// go-message classifica pela disposição, não pelo tipo: uma imagem
+			// inline (assinatura, Content-ID) chega aqui como InlineHeader. Só
+			// texto vira corpo; o resto é anexo — antes os bytes da imagem
+			// viravam o "texto" da mensagem.
 			tipo, _, _ := cabecalhoParte.ContentType()
-			conteudo, err := io.ReadAll(parte.Body)
-			if err != nil {
-				continue
-			}
-			if strings.EqualFold(tipo, "text/html") {
-				email.HTMLBody = string(conteudo)
-			} else if email.TextBody == "" {
-				email.TextBody = string(conteudo)
+			switch {
+			case strings.EqualFold(tipo, "text/html"):
+				if email.HTMLBody == "" {
+					email.HTMLBody = lerTexto(parte.Body)
+				}
+			case strings.HasPrefix(strings.ToLower(tipo), "text/"):
+				if email.TextBody == "" {
+					email.TextBody = lerTexto(parte.Body)
+				}
+			default:
+				email.Attachments = append(email.Attachments,
+					lerAnexo(parte.Body, nomeDaParte(cabecalhoParte.Header), tipo, cabecalhoParte.Get("Content-ID")))
 			}
 		case *mail.AttachmentHeader:
 			nome, _ := cabecalhoParte.Filename()
 			tipo, _, _ := cabecalhoParte.ContentType()
-			email.Attachments = append(email.Attachments, &Attachment{
-				Filename:    nome,
-				ContentType: tipo,
-			})
+			email.Attachments = append(email.Attachments,
+				lerAnexo(parte.Body, nome, tipo, cabecalhoParte.Get("Content-ID")))
 		}
 	}
 
 	return email, nil
+}
+
+func lerTexto(r io.Reader) string {
+	conteudo, err := io.ReadAll(io.LimitReader(r, maxAnexoBytes))
+	if err != nil {
+		return ""
+	}
+	return string(conteudo)
+}
+
+// lerAnexo lê os bytes do anexo. Acima do teto fica só o registro (nome e
+// tipo), para o chat mostrar que o arquivo existe sem carregá-lo.
+func lerAnexo(r io.Reader, nome, tipo, contentID string) *Attachment {
+	anexo := &Attachment{
+		Filename:    nome,
+		ContentType: tipo,
+		ContentID:   strings.Trim(contentID, "<>"),
+	}
+	dados, err := io.ReadAll(io.LimitReader(r, maxAnexoBytes+1))
+	if err != nil || len(dados) > maxAnexoBytes {
+		logger.Warn("email: anexo " + nome + " não carregado (erro de leitura ou acima de 25 MB)")
+		return anexo
+	}
+	anexo.Content = dados
+	anexo.Size = int64(len(dados))
+	return anexo
+}
+
+// nomeDaParte tira o nome de uma parte inline do Content-Disposition ou, na
+// falta dele, do parâmetro name do Content-Type.
+func nomeDaParte(h message.Header) string {
+	if _, params, err := h.ContentDisposition(); err == nil && params["filename"] != "" {
+		return params["filename"]
+	}
+	if _, params, err := h.ContentType(); err == nil {
+		return params["name"]
+	}
+	return ""
 }
 
 func enderecos(h mail.Header, campo string) []string {

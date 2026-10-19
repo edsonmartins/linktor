@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"math/big"
 	"net"
 	"strconv"
@@ -115,10 +116,7 @@ func TestFetcherLeMultipartComAcentoECabecalhoCodificado(t *testing.T) {
 	depositar(t, host, porta, mensagemMultipart)
 
 	leitor := leitorDeTeste(host, porta, "INBOX")
-	mensagens, err := leitor.Buscar(context.Background(), 10)
-	if err != nil {
-		t.Fatalf("Buscar: %v", err)
-	}
+	mensagens := buscarTudo(t, leitor, 10)
 	if len(mensagens) != 1 {
 		t.Fatalf("esperava 1 mensagem não lida, veio %d", len(mensagens))
 	}
@@ -157,15 +155,11 @@ func TestFetcherNaoReentregaMensagemJaLida(t *testing.T) {
 
 	leitor := leitorDeTeste(host, porta, "INBOX")
 
-	primeira, err := leitor.Buscar(context.Background(), 10)
-	if err != nil || len(primeira) != 1 {
-		t.Fatalf("primeira rodada: %d mensagens, err=%v", len(primeira), err)
+	if primeira := buscarTudo(t, leitor, 10); len(primeira) != 1 {
+		t.Fatalf("primeira rodada: %d mensagens", len(primeira))
 	}
 
-	segunda, err := leitor.Buscar(context.Background(), 10)
-	if err != nil {
-		t.Fatalf("segunda rodada: %v", err)
-	}
+	segunda := buscarTudo(t, leitor, 10)
 	if len(segunda) != 0 {
 		t.Fatalf("a mesma mensagem voltou na segunda rodada (%d)", len(segunda))
 	}
@@ -178,19 +172,13 @@ func TestFetcherRespeitaOLimitePorRodada(t *testing.T) {
 	}
 
 	leitor := leitorDeTeste(host, porta, "INBOX")
-	mensagens, err := leitor.Buscar(context.Background(), 2)
-	if err != nil {
-		t.Fatalf("Buscar: %v", err)
-	}
+	mensagens := buscarTudo(t, leitor, 2)
 	if len(mensagens) != 2 {
 		t.Fatalf("limite de 2 não respeitado: veio %d", len(mensagens))
 	}
 
 	// O restante continua não lido e vem na rodada seguinte — nada se perde.
-	resto, err := leitor.Buscar(context.Background(), 10)
-	if err != nil {
-		t.Fatalf("segunda rodada: %v", err)
-	}
+	resto := buscarTudo(t, leitor, 10)
 	if len(resto) != 3 {
 		t.Fatalf("esperava as 3 restantes, veio %d", len(resto))
 	}
@@ -218,5 +206,175 @@ func TestFetcherAcusaSenhaErrada(t *testing.T) {
 		t.Fatal("senha errada deveria falhar")
 	} else if !strings.Contains(err.Error(), "login IMAP") {
 		t.Fatalf("erro pouco específico: %v", err)
+	}
+}
+
+// buscarTudo roda Buscar aceitando tudo e devolve o que foi entregue.
+func buscarTudo(t *testing.T, leitor *Fetcher, limite int) []*IncomingEmail {
+	t.Helper()
+	var saida []*IncomingEmail
+	if _, err := leitor.Buscar(context.Background(), limite, func(m *IncomingEmail) error {
+		saida = append(saida, m)
+		return nil
+	}); err != nil {
+		t.Fatalf("Buscar: %v", err)
+	}
+	return saida
+}
+
+const mensagemComAnexo = "From: \"Edson Martins\" <edson@squadx.dev>\r\n" +
+	"To: alcada@squadx.dev\r\n" +
+	"Subject: Proposta\r\n" +
+	"Message-ID: <anexo-1@squadx.dev>\r\n" +
+	"Date: Fri, 15 Aug 2026 10:00:00 +0000\r\n" +
+	"MIME-Version: 1.0\r\n" +
+	"Content-Type: multipart/mixed; boundary=\"mix\"\r\n" +
+	"\r\n" +
+	"--mix\r\n" +
+	"Content-Type: text/plain; charset=UTF-8\r\n" +
+	"\r\n" +
+	"Segue o PDF.\r\n" +
+	"--mix\r\n" +
+	"Content-Type: application/pdf; name=\"proposta.pdf\"\r\n" +
+	"Content-Disposition: attachment; filename=\"proposta.pdf\"\r\n" +
+	"Content-Transfer-Encoding: base64\r\n" +
+	"\r\n" +
+	"JVBERi0xLjQgdGVzdGU=\r\n" +
+	"--mix--\r\n"
+
+const mensagemSoHTML = "From: \"Edson Martins\" <edson@squadx.dev>\r\n" +
+	"To: alcada@squadx.dev\r\n" +
+	"Subject: Newsletter\r\n" +
+	"Message-ID: <html-1@squadx.dev>\r\n" +
+	"Date: Fri, 15 Aug 2026 10:00:00 +0000\r\n" +
+	"MIME-Version: 1.0\r\n" +
+	"Content-Type: text/html; charset=UTF-8\r\n" +
+	"\r\n" +
+	"<html><head><style>p{margin:0}</style></head><body><p>Olá, <b>Alexandre</b>!</p>" +
+	"<p>Segue o <a href=\"https://exemplo.com\">link</a>.</p></body></html>\r\n"
+
+const mensagemComImagemInline = "From: \"Edson Martins\" <edson@squadx.dev>\r\n" +
+	"To: alcada@squadx.dev\r\n" +
+	"Subject: Assinatura\r\n" +
+	"Message-ID: <inline-1@squadx.dev>\r\n" +
+	"Date: Fri, 15 Aug 2026 10:00:00 +0000\r\n" +
+	"MIME-Version: 1.0\r\n" +
+	"Content-Type: multipart/related; boundary=\"rel\"\r\n" +
+	"\r\n" +
+	"--rel\r\n" +
+	"Content-Type: text/html; charset=UTF-8\r\n" +
+	"\r\n" +
+	"<p>Assinatura:</p><img src=\"cid:logo\">\r\n" +
+	"--rel\r\n" +
+	"Content-Type: image/png; name=\"logo.png\"\r\n" +
+	"Content-Disposition: inline; filename=\"logo.png\"\r\n" +
+	"Content-ID: <logo>\r\n" +
+	"Content-Transfer-Encoding: base64\r\n" +
+	"\r\n" +
+	"UE5HREFUQQ==\r\n" +
+	"--rel--\r\n"
+
+// Transfer-encoding desconhecida: o parser recusa a mensagem inteira.
+const mensagemMalformada = "From: alguem@squadx.dev\r\n" +
+	"To: alcada@squadx.dev\r\n" +
+	"Subject: Quebrada\r\n" +
+	"Message-ID: <quebrada-1@squadx.dev>\r\n" +
+	"Content-Type: text/plain; charset=UTF-8\r\n" +
+	"Content-Transfer-Encoding: nope\r\n" +
+	"\r\n" +
+	"corpo\r\n"
+
+func TestFetcherLeAnexoComBytes(t *testing.T) {
+	host, porta := servidorIMAP(t)
+	depositar(t, host, porta, mensagemComAnexo)
+
+	mensagens := buscarTudo(t, leitorDeTeste(host, porta, "INBOX"), 10)
+	if len(mensagens) != 1 {
+		t.Fatalf("esperava 1 mensagem, veio %d", len(mensagens))
+	}
+	m := mensagens[0]
+	if strings.TrimSpace(m.TextBody) != "Segue o PDF." {
+		t.Errorf("TextBody = %q", m.TextBody)
+	}
+	if len(m.Attachments) != 1 {
+		t.Fatalf("esperava 1 anexo, veio %d", len(m.Attachments))
+	}
+	a := m.Attachments[0]
+	if a.Filename != "proposta.pdf" || a.ContentType != "application/pdf" {
+		t.Errorf("anexo = %q (%s)", a.Filename, a.ContentType)
+	}
+	// Antes só nome e tipo eram guardados; o arquivo nunca chegava ao chat.
+	if string(a.Content) != "%PDF-1.4 teste" {
+		t.Errorf("conteúdo do anexo = %q", a.Content)
+	}
+	if a.Size != int64(len("%PDF-1.4 teste")) {
+		t.Errorf("Size = %d", a.Size)
+	}
+}
+
+// Quem recusou a entrega (fila fora, por exemplo) recebe a mensagem de novo na
+// rodada seguinte: ela só é marcada como lida depois de aceita.
+func TestFetcherDeixaNaoLidaQuandoEntregaFalha(t *testing.T) {
+	host, porta := servidorIMAP(t)
+	depositar(t, host, porta, mensagemMultipart)
+	leitor := leitorDeTeste(host, porta, "INBOX")
+
+	entregues, err := leitor.Buscar(context.Background(), 10, func(*IncomingEmail) error {
+		return errors.New("fila fora")
+	})
+	if err != nil || entregues != 0 {
+		t.Fatalf("rodada com falha: entregues=%d err=%v", entregues, err)
+	}
+
+	if de_novo := buscarTudo(t, leitor, 10); len(de_novo) != 1 {
+		t.Fatalf("a mensagem recusada deveria voltar: veio %d", len(de_novo))
+	}
+	if sobrou := buscarTudo(t, leitor, 10); len(sobrou) != 0 {
+		t.Fatalf("depois de aceita não deveria voltar: veio %d", len(sobrou))
+	}
+}
+
+// Uma mensagem que o parser não entende é marcada como lida mesmo sem entrega:
+// com PEEK ela voltaria toda rodada e, no teto por rodada, travaria a fila.
+func TestFetcherMarcaMalformadaComoLida(t *testing.T) {
+	host, porta := servidorIMAP(t)
+	depositar(t, host, porta, mensagemMalformada)
+	depositar(t, host, porta, mensagemMultipart)
+	leitor := leitorDeTeste(host, porta, "INBOX")
+
+	if boas := buscarTudo(t, leitor, 10); len(boas) != 1 {
+		t.Fatalf("esperava só a mensagem válida, veio %d", len(boas))
+	}
+	if sobrou := buscarTudo(t, leitor, 10); len(sobrou) != 0 {
+		t.Fatalf("a malformada continua voltando (%d)", len(sobrou))
+	}
+}
+
+// Imagem inline (assinatura com Content-ID) não é texto: antes os bytes dela
+// viravam o corpo da mensagem.
+func TestFetcherParteInlineNaoTextoViraAnexo(t *testing.T) {
+	host, porta := servidorIMAP(t)
+	depositar(t, host, porta, mensagemComImagemInline)
+
+	mensagens := buscarTudo(t, leitorDeTeste(host, porta, "INBOX"), 10)
+	if len(mensagens) != 1 {
+		t.Fatalf("esperava 1 mensagem, veio %d", len(mensagens))
+	}
+	m := mensagens[0]
+	if m.TextBody != "" {
+		t.Errorf("imagem inline virou texto: %q", m.TextBody)
+	}
+	if !strings.Contains(m.HTMLBody, "cid:logo") {
+		t.Errorf("HTMLBody = %q", m.HTMLBody)
+	}
+	if len(m.Attachments) != 1 {
+		t.Fatalf("esperava 1 anexo, veio %d", len(m.Attachments))
+	}
+	a := m.Attachments[0]
+	if a.ContentType != "image/png" || a.ContentID != "logo" || a.Filename != "logo.png" {
+		t.Errorf("anexo = %+v", a)
+	}
+	if string(a.Content) != "PNGDATA" {
+		t.Errorf("conteúdo = %q", a.Content)
 	}
 }
