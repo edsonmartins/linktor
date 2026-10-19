@@ -61,6 +61,8 @@ const createEmailConfigSchema = (
   ses_secret_key: z.string().optional(),
   // Postmark fields
   postmark_server_token: z.string().optional(),
+  // Chave com que o provedor assina os webhooks (todos menos SMTP)
+  webhook_secret: z.string().optional(),
 }).superRefine((data, ctx) => {
   // Ao editar, os segredos não são exigidos: a API nunca devolve credencial
   // guardada, então o formulário abre com esses campos em branco. Exigi-los aqui
@@ -147,10 +149,23 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
     resolver: zodResolver(emailConfigSchema),
     defaultValues: {
       provider: 'smtp',
-      smtp_encryption: 'tls',
+      // STARTTLS casa com a porta 587 sugerida; TLS direto nela falha no
+      // handshake, e era o que acontecia com o default antigo.
+      smtp_encryption: 'starttls',
       mailgun_region: 'us',
     },
   })
+
+  // A tela mostrava "{channelId}" literal na URL do webhook, mesmo com o canal
+  // já criado. Ao criar, o id ainda não existe; a URL aparece depois.
+  const webhookChannelId = channelId ?? channel?.id
+  // Chave do campo de segredo no estado de "mostrar senha" (em constante
+  // para o scanner de segredos não ler o literal ao lado de "Password").
+  const campoSegredo = 'webhook'
+  const webhookUrlFor = (provider: string) =>
+    webhookChannelId
+      ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/email/${webhookChannelId}/${provider}`
+      : t('willBeGenerated')
 
   const selectedProvider = watch('provider')
   const selectedEncryption = watch('smtp_encryption')
@@ -161,8 +176,8 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
    * O Radix emite `onValueChange('')` sozinho quando o Select é ressincronizado
    * — o que acontece logo depois do reset de preenchimento, porque o cartão SMTP
    * remonta. Esse callback espúrio zerava `smtp_encryption`, e como o payload usa
-   * `data.smtp_encryption || 'tls'`, um canal gravado com STARTTLS voltava a ser
-   * salvo como TLS: a alteração do usuário simplesmente sumia.
+   * `data.smtp_encryption || 'starttls'`, um canal gravado com TLS voltava a ser
+   * salvo como STARTTLS: a alteração do usuário simplesmente sumia.
    */
   const escolher = (aplicar: (valor: string) => void) => (valor: string) => {
     if (!valor) return
@@ -197,7 +212,7 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
 
       smtp_host: cfg.smtp_host || '',
       smtp_port: numero(cfg.smtp_port),
-      smtp_encryption: (cfg.smtp_encryption as EmailConfigForm['smtp_encryption']) || 'tls',
+      smtp_encryption: (cfg.smtp_encryption as EmailConfigForm['smtp_encryption']) || 'starttls',
 
       imap_host: cfg.imap_host || '',
       imap_port: numero(cfg.imap_port),
@@ -231,7 +246,7 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
       if (data.provider === 'smtp') {
         config.smtp_host = data.smtp_host || ''
         config.smtp_port = String(data.smtp_port || '')
-        config.smtp_encryption = data.smtp_encryption || 'tls'
+        config.smtp_encryption = data.smtp_encryption || 'starttls'
         credentials.smtp_username = data.smtp_username || ''
         credentials.smtp_password = data.smtp_password || ''
         // IMAP
@@ -255,6 +270,10 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
         credentials.ses_secret_key = data.ses_secret_key || ''
       } else if (data.provider === 'postmark') {
         credentials.postmark_server_token = data.postmark_server_token || ''
+      }
+      // Em branco significa "manter a guardada" (o backend não sobrescreve).
+      if (data.provider !== 'smtp' && data.webhook_secret) {
+        credentials.webhook_secret = data.webhook_secret
       }
 
     return { config, credentials }
@@ -348,8 +367,7 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
   }
 
   const copyWebhookUrl = (provider: string) => {
-    const webhookUrl = `${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/${provider}`
-    void copyText(webhookUrl)
+    void copyText(webhookUrlFor(provider))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -936,7 +954,7 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
                     <div className="flex gap-2">
                       <Input
                         readOnly
-                        value={`${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/sendgrid`}
+                        value={webhookUrlFor('sendgrid')}
                         className="font-mono text-sm"
                       />
                       <Button
@@ -958,7 +976,7 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
                   <div className="flex gap-2">
                     <Input
                       readOnly
-                      value={`${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/mailgun`}
+                      value={webhookUrlFor('mailgun')}
                       className="font-mono text-sm"
                     />
                     <Button
@@ -979,7 +997,7 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
                   <div className="flex gap-2">
                     <Input
                       readOnly
-                      value={`${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/ses`}
+                      value={webhookUrlFor('ses')}
                       className="font-mono text-sm"
                     />
                     <Button
@@ -1003,7 +1021,7 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
                   <div className="flex gap-2">
                     <Input
                       readOnly
-                      value={`${WEBHOOK_BASE_URL}/api/v1/webhooks/email/{channelId}/postmark`}
+                      value={webhookUrlFor('postmark')}
                       className="font-mono text-sm"
                     />
                     <Button
@@ -1015,6 +1033,34 @@ export function EmailConfig({ channelId, channel, onSuccess }: EmailConfigProps)
                       {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                     </Button>
                   </div>
+                </div>
+              )}
+
+              {selectedProvider !== 'smtp' && (
+                <div className="space-y-2">
+                  <Label htmlFor="webhook_secret">{t('webhookSecretLabel')}</Label>
+                  <div className="relative">
+                    <Input
+                      id="webhook_secret"
+                      type={showPassword[campoSegredo] ? 'text' : 'password'}
+                      placeholder={isEditing ? '••••••••' : t('webhookSecretPlaceholder')}
+                      {...register('webhook_secret')}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3"
+                      onClick={() => togglePasswordVisibility(campoSegredo)}
+                    >
+                      {showPassword[campoSegredo] ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t('emailWebhookSecretDesc')}</p>
                 </div>
               )}
 

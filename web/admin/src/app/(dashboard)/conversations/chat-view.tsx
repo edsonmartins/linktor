@@ -166,6 +166,23 @@ function MessageSourceBadge({ source, isImported, isOwn }: MessageSourceBadgePro
  * player for video/audio, and a downloadable chip for everything else.
  */
 function MessageAttachmentView({ attachment }: { attachment: MessageAttachment }) {
+  const t = useTranslations('conversations')
+
+  // Anexo sem arquivo (o canal só informou nome e tipo): um chip sem link.
+  // Antes virava <img src=""> quebrada ou um link vazio que abria o próprio
+  // painel numa aba nova.
+  if (!attachment.url) {
+    return (
+      <span
+        title={t('attachmentUnavailable')}
+        className="flex items-center gap-2 rounded-md border border-dashed border-border/60 px-2 py-1.5 text-xs text-muted-foreground"
+      >
+        <FileText className="h-4 w-4 shrink-0" />
+        <span className="max-w-[180px] truncate">{attachment.filename || t('attachmentUnavailable')}</span>
+      </span>
+    )
+  }
+
   if (attachment.type === 'image') {
     return (
       <a href={attachment.url} target="_blank" rel="noopener noreferrer" className="block">

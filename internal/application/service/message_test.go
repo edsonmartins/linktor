@@ -98,6 +98,48 @@ func TestMessageService_Send(t *testing.T) {
 	assert.Equal(t, entity.MessageStatusPending, msg.Status)
 }
 
+// A resposta por email entra na thread do cliente: assunto com "Re:" e
+// In-Reply-To/References apontando para a última mensagem que ele mandou. Antes
+// saía um email solto chamado "Message".
+func TestMessageService_Send_EmailRespondeNaThread(t *testing.T) {
+	msgRepo := testutil.NewMockMessageRepository()
+	convRepo := testutil.NewMockConversationRepository()
+	channelRepo := testutil.NewMockChannelRepository()
+	contactRepo := testutil.NewMockContactRepository()
+	producer := testutil.NewMockProducer()
+
+	contactRepo.Contacts["c1"] = &entity.Contact{ID: "c1", TenantID: "t1", Email: "cliente@x.dev"}
+	contactRepo.Identities["c1"] = []*entity.ContactIdentity{{ContactID: "c1", ChannelType: "email", Identifier: "cliente@x.dev"}}
+	channelRepo.Channels["ch"] = &entity.Channel{ID: "ch", TenantID: "t1", Type: entity.ChannelTypeEmail}
+	convRepo.Conversations["conv"] = &entity.Conversation{ID: "conv", TenantID: "t1", ContactID: "c1", ChannelID: "ch", Status: entity.ConversationStatusOpen}
+	msgRepo.Messages["recebida"] = &entity.Message{
+		ID: "recebida", ConversationID: "conv", SenderType: entity.SenderTypeContact,
+		ExternalID: "abc@x.dev",
+		Metadata:   map[string]string{"subject": "Orçamento", "references": "<r@x.dev>"},
+		CreatedAt:  time.Now(),
+	}
+
+	svc := NewMessageService(msgRepo, convRepo, channelRepo, contactRepo, producer)
+	_, err := svc.Send(context.Background(), &SendMessageInput{
+		ConversationID: "conv", SenderType: "user", ContentType: "text", Content: "Segue a proposta.",
+	})
+	assert.NoError(t, err)
+
+	out := producer.OutboundMessages[0]
+	assert.Equal(t, "Re: Orçamento", out.Metadata["subject"])
+	assert.Equal(t, "<abc@x.dev>", out.Metadata["in_reply_to"])
+	assert.Equal(t, "<r@x.dev> <abc@x.dev>", out.Metadata["references"])
+
+	// Quem chama a API pode mandar o próprio assunto.
+	_, err = svc.Send(context.Background(), &SendMessageInput{
+		ConversationID: "conv", SenderType: "user", ContentType: "text", Content: "Outro",
+		Metadata: map[string]string{"subject": "Assunto do caller"},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "Assunto do caller", producer.OutboundMessages[1].Metadata["subject"])
+	assert.Equal(t, "<abc@x.dev>", producer.OutboundMessages[1].Metadata["in_reply_to"])
+}
+
 func TestMessageService_Send_MissingConversation(t *testing.T) {
 	svc := setupMessageTest()
 

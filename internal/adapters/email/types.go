@@ -165,6 +165,16 @@ type SendResult struct {
 	ExternalID string    `json:"external_id,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	Timestamp  time.Time `json:"timestamp"`
+	// Permanent marca a recusa que não muda com nova tentativa (credencial,
+	// destinatário, limite do plano). Sem ela o envio era repetido até a fila
+	// desistir e a mensagem ficava "pendente" para sempre.
+	Permanent bool `json:"permanent,omitempty"`
+}
+
+// respostaDefinitiva diz se um status HTTP do provedor é recusa definitiva:
+// 4xx menos 429 (limite de taxa, que passa). 5xx é problema do provedor.
+func respostaDefinitiva(status int) bool {
+	return status >= 400 && status < 500 && status != 429
 }
 
 // EmailStatus represents the status of an email

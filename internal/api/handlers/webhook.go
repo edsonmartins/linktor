@@ -741,7 +741,11 @@ func firstValues(values url.Values) map[string]string {
 func (h *WebhookHandler) verifyEmailWebhook(c *gin.Context, provider email.Provider, body []byte, headers map[string]string, credentials map[string]string) bool {
 	switch provider {
 	case email.ProviderMailgun:
-		apiKey := firstNonEmpty(credentials["mailgun_webhook_signing_key"], credentials["mailgun_api_key"], credentials["api_key"], credentials["webhook_secret"])
+		// O Mailgun assina com a "HTTP webhook signing key", que é outra chave
+		// que a API key; esta só entra por último, para instalação antiga que
+		// nunca gravou a de assinatura. Antes a API key sombreava o segredo
+		// cadastrado e todo evento voltava 401.
+		apiKey := firstNonEmpty(credentials["mailgun_webhook_signing_key"], credentials["webhook_secret"], credentials["mailgun_api_key"], credentials["api_key"])
 		if apiKey == "" {
 			return h.allowMissingWebhookSecret(c)
 		}

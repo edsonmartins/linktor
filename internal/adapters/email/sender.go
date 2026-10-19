@@ -2,7 +2,11 @@ package email
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"mime"
+	"net/textproto"
+	"path/filepath"
 	"strings"
 
 	"github.com/msgfy/linktor/internal/outbound"
@@ -47,12 +51,15 @@ func (s *emailSender) Send(ctx context.Context, msg *outbound.Message) (*outboun
 
 	res, err := s.client.Send(ctx, email)
 	if err != nil {
-		return nil, err
+		return nil, classificarErro(err)
 	}
 	if res == nil || !res.Success {
 		reason := "email send failed"
 		if res != nil && res.Error != "" {
 			reason = res.Error
+		}
+		if res != nil && res.Permanent {
+			return nil, outbound.Permanentf("%s", reason)
 		}
 		return nil, fmt.Errorf("%s", reason)
 	}
@@ -96,7 +103,7 @@ func buildOutboundEmail(ctx context.Context, msg *outbound.Message) *OutboundEma
 		if err == nil && len(data) > 0 {
 			email.Attachments = append(email.Attachments, &Attachment{
 				Filename:    name,
-				ContentType: msg.Meta("mime_type"),
+				ContentType: tipoDoConteudo(m.MimeType, msg.Meta("mime_type"), name),
 				Content:     data,
 			})
 		} else {
@@ -131,6 +138,33 @@ func splitAddresses(list string) []string {
 		}
 	}
 	return out
+}
+
+// classificarErro separa o que vale repetir (rede, 4xx do servidor) do que não
+// vale (5xx: credencial, destinatário, tamanho; e PLAIN sem TLS, que é erro de
+// configuração). Sem isto a credencial errada era reenviada até a fila
+// desistir, e a mensagem ficava "pendente" para sempre em vez de "falhou".
+func classificarErro(err error) error {
+	var smtpErr *textproto.Error
+	if errors.As(err, &smtpErr) && smtpErr.Code >= 500 {
+		return outbound.Permanent(err)
+	}
+	if strings.Contains(err.Error(), "unencrypted connection") {
+		return outbound.Permanent(err)
+	}
+	return err
+}
+
+// tipoDoConteudo escolhe o Content-Type do anexo: o que veio com a mídia, o do
+// metadata, a extensão do nome, e por fim o genérico. Vazio saía como
+// "Content-Type: ; name=…" e o cliente de email tinha de adivinhar.
+func tipoDoConteudo(doMedia, doMetadata, nome string) string {
+	for _, c := range []string{doMedia, doMetadata, mime.TypeByExtension(filepath.Ext(nome))} {
+		if c != "" {
+			return c
+		}
+	}
+	return "application/octet-stream"
 }
 
 // emailSubjectBody derives the subject (from the "subject"/"email_subject"

@@ -272,6 +272,13 @@ func (s *MessageService) Send(ctx context.Context, input *SendMessageInput) (*en
 	if message.Metadata == nil {
 		message.Metadata = make(map[string]string)
 	}
+	// Resposta por email entra na thread do cliente: assunto e cabeçalhos de
+	// correlação vêm da última mensagem que ele mandou nesta conversa.
+	if channel.Type == entity.ChannelTypeEmail {
+		if last, err := s.messageRepo.FindLastInbound(ctx, conversation.ID); err == nil && last != nil {
+			emailReplyMetadata(last, message.Metadata)
+		}
+	}
 
 	// Save message to database
 	if err := s.messageRepo.Create(ctx, message); err != nil {
