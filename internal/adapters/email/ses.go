@@ -162,6 +162,7 @@ func (p *SESProvider) Send(ctx context.Context, email *OutboundEmail) (*SendResu
 		return &SendResult{
 			Success:   false,
 			Error:     fmt.Sprintf("SES API error (status %d): %s", resp.StatusCode, string(body)),
+			Permanent: respostaDefinitiva(resp.StatusCode),
 			Timestamp: time.Now(),
 		}, nil
 	}

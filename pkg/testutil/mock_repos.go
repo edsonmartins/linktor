@@ -649,6 +649,22 @@ func (m *MockMessageRepository) LastInboundAt(ctx context.Context, conversationI
 	return last, nil
 }
 
+func (m *MockMessageRepository) FindLastInbound(ctx context.Context, conversationID string) (*entity.Message, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
+	var last *entity.Message
+	for _, msg := range m.Messages {
+		if msg.ConversationID != conversationID || msg.SenderType != entity.SenderTypeContact {
+			continue
+		}
+		if last == nil || msg.CreatedAt.After(last.CreatedAt) {
+			last = msg
+		}
+	}
+	return last, nil
+}
+
 func (m *MockMessageRepository) FindByConversation(ctx context.Context, conversationID string, params *repository.ListParams) ([]*entity.Message, int64, error) {
 	if m.ReturnError != nil {
 		return nil, 0, m.ReturnError

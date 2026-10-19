@@ -245,6 +245,27 @@ func (r *MessageRepository) LastInboundAt(ctx context.Context, conversationID st
 	return last, nil
 }
 
+func (r *MessageRepository) FindLastInbound(ctx context.Context, conversationID string) (*entity.Message, error) {
+	query := `
+		SELECT id, conversation_id, sender_type, sender_id, content_type, content,
+		       metadata, status, external_id, error_message, sent_at, delivered_at,
+		       read_at, created_at, reactions
+		FROM messages
+		WHERE conversation_id = $1 AND sender_type = $2
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`
+
+	message, err := r.scanMessage(r.db.Pool.QueryRow(ctx, query, conversationID, string(entity.SenderTypeContact)))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, errors.Wrap(err, errors.ErrCodeInternal, "failed to find last inbound message")
+	}
+	return message, nil
+}
+
 func (r *MessageRepository) FindByConversation(ctx context.Context, conversationID string, params *repository.ListParams) ([]*entity.Message, int64, error) {
 	// Count total
 	countQuery := `SELECT COUNT(*) FROM messages WHERE conversation_id = $1`

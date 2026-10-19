@@ -83,6 +83,48 @@ func TestBuildOutboundEmail_MediaFetchFailureFallsBackToBodyLink(t *testing.T) {
 	assert.Contains(t, email.TextBody, "http://127.0.0.1:1/nope.pdf")
 }
 
+// provedorFixo devolve sempre o mesmo resultado: serve para testar como o
+// sender traduz a resposta de um provedor HTTP.
+type provedorFixo struct{ res *SendResult }
+
+func (p provedorFixo) Send(context.Context, *OutboundEmail) (*SendResult, error) { return p.res, nil }
+func (provedorFixo) ValidateConfig() error                                       { return nil }
+func (provedorFixo) GetProviderName() string                                     { return "fixo" }
+func (provedorFixo) TestConnection(context.Context) error                        { return nil }
+
+// Recusa definitiva do provedor (token errado, destinatário não autorizado) vira
+// erro permanente; antes era repetida até a fila desistir e a mensagem ficava
+// "pendente" para sempre.
+func TestSend_RecusaDefinitivaDoProvedorEPermanente(t *testing.T) {
+	msg := &outbound.Message{To: "c@example.com", Content: outbound.Text{Body: "hi"}}
+
+	cliente := func(res *SendResult) *Client { return &Client{provider: provedorFixo{res}, config: &Config{}} }
+
+	definitiva := &emailSender{client: cliente(&SendResult{Error: "Mailgun API error (status 403)", Permanent: true})}
+	_, err := definitiva.Send(context.Background(), msg)
+	assert.True(t, outbound.IsPermanent(err), "%v", err)
+
+	passageira := &emailSender{client: cliente(&SendResult{Error: "Mailgun API error (status 503)"})}
+	_, err = passageira.Send(context.Background(), msg)
+	assert.Error(t, err)
+	assert.False(t, outbound.IsPermanent(err))
+}
+
+func TestRespostaDefinitiva(t *testing.T) {
+	assert.True(t, respostaDefinitiva(401))
+	assert.True(t, respostaDefinitiva(403))
+	assert.False(t, respostaDefinitiva(429))
+	assert.False(t, respostaDefinitiva(500))
+	assert.False(t, respostaDefinitiva(202))
+}
+
+func TestTipoDoConteudo(t *testing.T) {
+	assert.Equal(t, "image/png", tipoDoConteudo("image/png", "", "x.pdf"), "o da mídia vem primeiro")
+	assert.Equal(t, "application/pdf", tipoDoConteudo("", "application/pdf", "x.png"))
+	assert.Equal(t, "application/pdf", tipoDoConteudo("", "", "proposta.pdf"), "pela extensão")
+	assert.Equal(t, "application/octet-stream", tipoDoConteudo("", "", "semextensao"))
+}
+
 // A plain text reply with no threading metadata still produces a valid text email
 // (subject falls back to "Message").
 func TestBuildOutboundEmail_PlainTextDefaults(t *testing.T) {

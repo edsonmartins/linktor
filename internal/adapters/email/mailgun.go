@@ -224,6 +224,7 @@ func (p *MailgunProvider) Send(ctx context.Context, email *OutboundEmail) (*Send
 		return &SendResult{
 			Success:   false,
 			Error:     fmt.Sprintf("Mailgun API error (status %d): %s", resp.StatusCode, string(body)),
+			Permanent: respostaDefinitiva(resp.StatusCode),
 			Timestamp: time.Now(),
 		}, nil
 	}

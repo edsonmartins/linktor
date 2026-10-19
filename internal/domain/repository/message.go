@@ -64,6 +64,10 @@ type MessageRepository interface {
 	// window (INV-015).
 	LastInboundAt(ctx context.Context, conversationID string) (*time.Time, error)
 
+	// FindLastInbound returns the contact's newest message in the conversation,
+	// or (nil, nil) when they never wrote. An email reply threads under it.
+	FindLastInbound(ctx context.Context, conversationID string) (*entity.Message, error)
+
 	// Update updates a message
 	Update(ctx context.Context, message *entity.Message) error
 
