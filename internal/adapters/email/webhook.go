@@ -1,17 +1,81 @@
 package email
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// maxFormBytes é o teto do formulário de um webhook de entrada em memória; o
+// que passar disso o Go grava em disco e RemoveAll apaga.
+const maxFormBytes = 32 << 20
+
+// ParseFormBody lê o corpo de um webhook de formulário, urlencoded ou
+// multipart. O form só vem no multipart (é onde os anexos estão) e quem chama
+// deve RemoveAll nele. O Mailgun posta a entrada em multipart, e o
+// url.ParseQuery que havia aqui recusava o corpo inteiro: 400 na mensagem e,
+// na assinatura, 401.
+func ParseFormBody(body []byte, contentType string) (url.Values, *multipart.Form, error) {
+	tipo, params, _ := mime.ParseMediaType(contentType)
+	if tipo == "multipart/form-data" {
+		form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(maxFormBytes)
+		if err != nil {
+			return nil, nil, err
+		}
+		return url.Values(form.Value), form, nil
+	}
+	values, err := url.ParseQuery(string(body))
+	return values, nil, err
+}
+
+// anexosDoForm lê os arquivos cujo campo começa com o prefixo (attachment-1,
+// attachment-2… no Mailgun), em ordem de nome.
+func anexosDoForm(form *multipart.Form, prefixo string) []*Attachment {
+	if form == nil {
+		return nil
+	}
+	campos := make([]string, 0, len(form.File))
+	for campo := range form.File {
+		if strings.HasPrefix(campo, prefixo) {
+			campos = append(campos, campo)
+		}
+	}
+	sort.Strings(campos)
+
+	var saida []*Attachment
+	for _, campo := range campos {
+		for _, fh := range form.File[campo] {
+			f, err := fh.Open()
+			if err != nil {
+				continue
+			}
+			dados, err := io.ReadAll(f)
+			f.Close()
+			if err != nil {
+				continue
+			}
+			saida = append(saida, &Attachment{
+				Filename:    fh.Filename,
+				ContentType: fh.Header.Get("Content-Type"),
+				Content:     dados,
+				Size:        int64(len(dados)),
+			})
+		}
+	}
+	return saida
+}
 
 // ParseWebhook parses an incoming webhook from any supported provider
 func ParseWebhook(provider Provider, body []byte, headers map[string]string) (*WebhookPayload, error) {
@@ -166,17 +230,20 @@ func parseMailgunWebhook(body []byte, headers map[string]string) (*WebhookPayloa
 
 	// Check if this is an inbound webhook (form data) or event webhook (JSON)
 	if strings.Contains(contentType, "multipart/form-data") || strings.Contains(contentType, "application/x-www-form-urlencoded") {
-		return parseMailgunInbound(body)
+		return parseMailgunInbound(body, contentType)
 	}
 
 	return parseMailgunEvents(body)
 }
 
 // parseMailgunInbound parses Mailgun Routes webhook (inbound)
-func parseMailgunInbound(body []byte) (*WebhookPayload, error) {
-	values, err := url.ParseQuery(string(body))
+func parseMailgunInbound(body []byte, contentType string) (*WebhookPayload, error) {
+	values, form, err := ParseFormBody(body, contentType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse form data: %w", err)
+	}
+	if form != nil {
+		defer form.RemoveAll()
 	}
 
 	inbound := &MailgunInboundWebhook{
@@ -193,15 +260,23 @@ func parseMailgunInbound(body []byte) (*WebhookPayload, error) {
 		ContentType: values.Get("Content-Type"),
 	}
 
+	// O Mailgun manda o texto duas vezes: body-plain inteiro e stripped-text,
+	// sem a citação do email anterior nem a assinatura. Para o chat, o segundo.
+	// Os cabeçalhos do email chegam como campos com o nome original.
+	from, nome := splitAddress(primeiro(inbound.From, inbound.Sender))
 	email := &IncomingEmail{
-		MessageID:  inbound.MessageID,
-		From:       inbound.From,
-		To:         []string{inbound.Recipient},
-		Subject:    inbound.Subject,
-		TextBody:   inbound.BodyPlain,
-		HTMLBody:   inbound.BodyHTML,
-		ReceivedAt: time.Now(),
-		Headers:    make(map[string]string),
+		MessageID:   strings.Trim(inbound.MessageID, "<>"),
+		From:        from,
+		FromName:    nome,
+		To:          []string{inbound.Recipient},
+		Subject:     inbound.Subject,
+		TextBody:    primeiro(values.Get("stripped-text"), inbound.BodyPlain),
+		HTMLBody:    inbound.BodyHTML,
+		InReplyTo:   strings.Trim(values.Get("In-Reply-To"), "<>"),
+		References:  values.Get("References"),
+		Attachments: anexosDoForm(form, "attachment-"),
+		ReceivedAt:  time.Now(),
+		Headers:     make(map[string]string),
 		Metadata: map[string]string{
 			"sender": inbound.Sender,
 		},
@@ -228,15 +303,24 @@ func parseMailgunEvents(body []byte) (*WebhookPayload, error) {
 		return nil, fmt.Errorf("failed to parse Mailgun event: %w", err)
 	}
 
+	// Falha temporária: o próprio Mailgun vai tentar de novo; não há status a
+	// aplicar na mensagem.
+	if event.EventData.Event == "failed" && event.EventData.Severity == "temporary" {
+		return &WebhookPayload{Provider: ProviderMailgun, Type: "status", RawPayload: body}, nil
+	}
+
 	status := mapMailgunEventToStatus(event.EventData.Event)
 
+	// O que casa com a mensagem enviada é o Message-Id do cabeçalho (o mesmo
+	// que o envio guardou, sem colchetes). Antes ele ia em MessageID, que o
+	// consumidor trata como id interno, e o id do evento ia em ExternalID:
+	// nenhum dos dois achava a mensagem, e Entregue/Lido nunca apareciam.
 	callback := &StatusCallback{
-		ExternalID: event.EventData.ID,
-		MessageID:  event.EventData.Message.Headers.MessageID,
+		ExternalID: strings.Trim(event.EventData.Message.Headers.MessageID, "<>"),
 		Status:     status,
 		Recipient:  event.EventData.Recipient,
 		Timestamp:  time.Unix(int64(event.EventData.Timestamp), 0),
-		Metadata:   make(map[string]string),
+		Metadata:   map[string]string{"event_id": event.EventData.ID},
 	}
 
 	if event.EventData.Severity != "" {

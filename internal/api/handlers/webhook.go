@@ -785,7 +785,11 @@ func (h *WebhookHandler) allowMissingWebhookSecret(c *gin.Context) bool {
 }
 
 func mailgunSignatureParts(body []byte, headers map[string]string) (token, timestamp, signature string) {
-	values, _ := url.ParseQuery(string(body))
+	// A entrada (Routes) vem em multipart; só o evento vem em JSON.
+	values, form, _ := email.ParseFormBody(body, headers["Content-Type"])
+	if form != nil {
+		form.RemoveAll()
+	}
 	token = values.Get("token")
 	timestamp = values.Get("timestamp")
 	signature = values.Get("signature")

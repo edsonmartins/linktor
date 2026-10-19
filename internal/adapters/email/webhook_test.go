@@ -1,10 +1,12 @@
 package email
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"mime/multipart"
 	"net/url"
 	"testing"
 
@@ -92,11 +94,52 @@ func TestParseMailgunWebhook(t *testing.T) {
 		assert.Equal(t, ProviderMailgun, payload.Provider)
 		assert.Equal(t, "inbound", payload.Type)
 		require.NotNil(t, payload.IncomingEmail)
-		assert.Equal(t, "Sender Name <sender@example.com>", payload.IncomingEmail.From)
+		// Endereço puro identifica o contato, como no IMAP; o nome vai à parte.
+		assert.Equal(t, "sender@example.com", payload.IncomingEmail.From)
+		assert.Equal(t, "Sender Name", payload.IncomingEmail.FromName)
 		assert.Equal(t, []string{"to@example.com"}, payload.IncomingEmail.To)
 		assert.Equal(t, "Test Subject", payload.IncomingEmail.Subject)
 		assert.Equal(t, "Hello Body", payload.IncomingEmail.TextBody)
-		assert.Equal(t, "<msg123@example.com>", payload.IncomingEmail.MessageID)
+		assert.Equal(t, "msg123@example.com", payload.IncomingEmail.MessageID, "sem colchetes, como o IMAP guarda")
+	})
+
+	// É assim que as Routes do Mailgun postam de verdade: multipart, com o
+	// texto sem citação em stripped-text e os arquivos em attachment-N.
+	t.Run("inbound email in multipart with attachment", func(t *testing.T) {
+		var corpo bytes.Buffer
+		w := multipart.NewWriter(&corpo)
+		for campo, valor := range map[string]string{
+			"recipient":     "to@example.com",
+			"from":          "Sender Name <sender@example.com>",
+			"subject":       "Re: Orçamento",
+			"body-plain":    "Pode seguir.\n\nEm seg., Suporte escreveu:\n> Segue o orçamento",
+			"stripped-text": "Pode seguir.",
+			"Message-Id":    "<resposta@example.com>",
+			"In-Reply-To":   "<orcamento@linktor.dev>",
+			"References":    "<orcamento@linktor.dev>",
+			"timestamp":     "1609459200",
+		} {
+			require.NoError(t, w.WriteField(campo, valor))
+		}
+		parte, err := w.CreateFormFile("attachment-1", "proposta.pdf")
+		require.NoError(t, err)
+		_, _ = parte.Write([]byte("%PDF-1.4 teste"))
+		require.NoError(t, w.Close())
+
+		payload, err := ParseWebhook(ProviderMailgun, corpo.Bytes(), map[string]string{"Content-Type": w.FormDataContentType()})
+		require.NoError(t, err)
+		m := payload.IncomingEmail
+		require.NotNil(t, m)
+		assert.Equal(t, "sender@example.com", m.From)
+		assert.Equal(t, "Pode seguir.", m.TextBody)
+		assert.Equal(t, "resposta@example.com", m.MessageID)
+		assert.Equal(t, "orcamento@linktor.dev", m.InReplyTo)
+		assert.Equal(t, "<orcamento@linktor.dev>", m.References)
+		require.Len(t, m.Attachments, 1)
+		assert.Equal(t, "proposta.pdf", m.Attachments[0].Filename)
+		assert.Equal(t, "application/octet-stream", m.Attachments[0].ContentType)
+		assert.Equal(t, "%PDF-1.4 teste", string(m.Attachments[0].Content))
+		assert.Equal(t, int64(14), m.Attachments[0].Size)
 	})
 
 	t.Run("event webhook with JSON", func(t *testing.T) {
@@ -121,9 +164,25 @@ func TestParseMailgunWebhook(t *testing.T) {
 		assert.Equal(t, "status", payload.Type)
 		require.NotNil(t, payload.StatusCallback)
 		assert.Equal(t, StatusDelivered, payload.StatusCallback.Status)
-		assert.Equal(t, "event-id-123", payload.StatusCallback.ExternalID)
-		assert.Equal(t, "<msg@example.com>", payload.StatusCallback.MessageID)
+		// O que acha a mensagem é o Message-Id sem colchetes (como o envio
+		// guarda); o id do evento fica no metadata.
+		assert.Equal(t, "msg@example.com", payload.StatusCallback.ExternalID)
+		assert.Empty(t, payload.StatusCallback.MessageID)
+		assert.Equal(t, "event-id-123", payload.StatusCallback.Metadata["event_id"])
 		assert.Equal(t, "user@example.com", payload.StatusCallback.Recipient)
+	})
+
+	t.Run("temporary failure carries no status", func(t *testing.T) {
+		event := MailgunEventWebhook{}
+		event.EventData.Event = "failed"
+		event.EventData.Severity = "temporary"
+		event.EventData.Message.Headers.MessageID = "<msg@example.com>"
+		body, _ := json.Marshal(event)
+
+		payload, err := ParseWebhook(ProviderMailgun, body, map[string]string{"Content-Type": "application/json"})
+		require.NoError(t, err)
+		assert.Equal(t, "status", payload.Type)
+		assert.Nil(t, payload.StatusCallback, "o Mailgun ainda vai tentar; nada a aplicar")
 	})
 }
 
