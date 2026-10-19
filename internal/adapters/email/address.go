@@ -1,6 +1,20 @@
 package email
 
-import "strings"
+import (
+	"net/mail"
+	"strings"
+)
+
+// splitAddress separa "Nome <endereço>" em endereço e nome. O contato é
+// identificado pelo endereço puro, como no IMAP; o webhook mandava o campo
+// inteiro e a mesma pessoa virava dois contatos conforme o caminho.
+func splitAddress(s string) (endereco, nome string) {
+	s = strings.TrimSpace(s)
+	if a, err := mail.ParseAddress(s); err == nil {
+		return a.Address, a.Name
+	}
+	return s, parseFromName(s)
+}
 
 // Helpers de endereço compartilhados pelo webhook de provedor e pelo leitor
 // IMAP. Ficavam no cliente IMAP artesanal; sobreviveram à remoção dele porque

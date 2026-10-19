@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -992,6 +993,65 @@ func TestWebhookEmail_MailgunValidSignature(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	require.Len(t, producer.InboundMessages, 1)
 	assert.Equal(t, "mailgun-msg-1", producer.InboundMessages[0].ExternalID)
+}
+
+// As Routes do Mailgun postam em multipart. A assinatura vem como campo do
+// formulário e os anexos como arquivos; antes o corpo era lido como
+// urlencoded, a assinatura não era achada e tudo voltava 401.
+func TestWebhookEmail_MailgunMultipartWithAttachment(t *testing.T) {
+	handler, channelRepo, producer, _ := setupWebhookTest()
+	channelRepo.Channels["ch-email"] = &entity.Channel{
+		ID:               "ch-email",
+		TenantID:         "tenant-1",
+		Type:             entity.ChannelTypeEmail,
+		Enabled:          true,
+		ConnectionStatus: entity.ConnectionStatusConnected,
+		Config:           map[string]string{"provider": "mailgun"},
+		Credentials:      map[string]string{"mailgun_webhook_signing_key": "signing-key", "mailgun_api_key": "api-key"},
+	}
+
+	mac := hmac.New(sha256.New, []byte("signing-key"))
+	mac.Write([]byte("1700000000token-1"))
+
+	var corpo bytes.Buffer
+	mw := multipart.NewWriter(&corpo)
+	for campo, valor := range map[string]string{
+		"recipient":     "support@example.com",
+		"from":          "Sender <sender@example.com>",
+		"subject":       "Hello",
+		"body-plain":    "Email body\n\n> citação",
+		"stripped-text": "Email body",
+		"Message-Id":    "<mailgun-msg-2@example.com>",
+		"timestamp":     "1700000000",
+		"token":         "token-1",
+		"signature":     hex.EncodeToString(mac.Sum(nil)),
+	} {
+		require.NoError(t, mw.WriteField(campo, valor))
+	}
+	arquivo, err := mw.CreateFormFile("attachment-1", "foto.png")
+	require.NoError(t, err)
+	_, _ = arquivo.Write([]byte("PNGDATA"))
+	require.NoError(t, mw.Close())
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/webhook/email/ch-email/mailgun", bytes.NewReader(corpo.Bytes()))
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	c.Request = req
+	c.Params = []gin.Param{{Key: "channelId", Value: "ch-email"}}
+
+	handler.EmailWebhook(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, producer.InboundMessages, 1)
+	msg := producer.InboundMessages[0]
+	assert.Equal(t, "mailgun-msg-2@example.com", msg.ExternalID)
+	assert.Equal(t, "sender@example.com", msg.Metadata["sender_id"])
+	assert.Equal(t, "Sender", msg.Metadata["sender_name"])
+	assert.Equal(t, "Email body", msg.Content)
+	require.Len(t, msg.Attachments, 1)
+	assert.Equal(t, "foto.png", msg.Attachments[0].Filename)
+	assert.Equal(t, "base64", msg.Attachments[0].Metadata["data_encoding"])
 }
 
 func TestWebhookEmail_MailgunInvalidSignature_Returns401(t *testing.T) {

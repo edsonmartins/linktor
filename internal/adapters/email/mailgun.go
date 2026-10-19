@@ -12,6 +12,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -242,10 +243,13 @@ func (p *MailgunProvider) Send(ctx context.Context, email *OutboundEmail) (*Send
 		}, nil
 	}
 
+	// O Mailgun devolve "<id@dominio>" e manda o mesmo id sem colchetes nos
+	// webhooks de status; guardado com eles, o status nunca casava.
+	id := strings.Trim(result.ID, "<>")
 	return &SendResult{
 		Success:    true,
-		ExternalID: result.ID,
-		MessageID:  result.ID,
+		ExternalID: id,
+		MessageID:  id,
 		Timestamp:  time.Now(),
 	}, nil
 }
