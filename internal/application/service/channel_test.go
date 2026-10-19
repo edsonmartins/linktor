@@ -297,6 +297,27 @@ func TestChannelService_UpdateEnabled_Disable(t *testing.T) {
 	assert.False(t, ch.Enabled)
 }
 
+// Desabilitar precisa avisar quem mantém processo por canal (o polling IMAP):
+// sem o hook, o canal desabilitado seguia lendo a caixa.
+func TestChannelService_UpdateEnabled_NotificaHook(t *testing.T) {
+	svc, _, _ := newChannelService()
+
+	created, err := svc.Create(context.Background(), &CreateChannelInput{
+		TenantID: "tenant1", Type: "webchat", Name: "Chat",
+	})
+	require.NoError(t, err)
+
+	var visto *entity.Channel
+	svc.SetLifecycleHooks(ChannelLifecycleHooks{
+		OnUpdated: func(_ context.Context, ch *entity.Channel) { visto = ch },
+	})
+
+	_, err = svc.UpdateEnabled(context.Background(), created.ID, false)
+	require.NoError(t, err)
+	require.NotNil(t, visto)
+	assert.False(t, visto.Enabled)
+}
+
 func TestChannelService_UpdateEnabled_NotFound(t *testing.T) {
 	svc, _, _ := newChannelService()
 

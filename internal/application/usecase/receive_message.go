@@ -263,12 +263,19 @@ func (uc *ReceiveMessageUseCase) getOrCreateContact(ctx context.Context, inbound
 	if p, ok := inbound.Metadata["phone"]; ok {
 		phone = p
 	}
+	// Por email o identificador é o próprio endereço; gravá-lo no contato é o
+	// que faz o cabeçalho da conversa mostrar algo além do nome.
+	email := ""
+	if inbound.ChannelType == string(entity.ChannelTypeEmail) {
+		email = identifier
+	}
 
 	contact = &entity.Contact{
 		ID:           uuid.New().String(),
 		TenantID:     inbound.TenantID,
 		Name:         name,
 		Phone:        phone,
+		Email:        email,
 		CustomFields: make(map[string]string),
 		Tags:         []string{},
 		CreatedAt:    now,
