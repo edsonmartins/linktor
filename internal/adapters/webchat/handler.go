@@ -202,7 +202,7 @@ func (h *Handler) handleClientMessage(ctx context.Context, client *Client, chann
 	client.ConversationID = conversation.ID
 	if h.adapter != nil {
 		if hub := h.adapter.GetHub(); hub != nil {
-			hub.BindConversation(client)
+			hub.BindConversation(client, conversation.ID)
 		}
 	}
 
