@@ -430,6 +430,9 @@ func main() {
 	outboundResolver.Register(outbound.NewPluginSenderFactory("webchat", plugin.GetGlobalRegistry()))
 	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp", plugin.GetGlobalRegistry()))
 	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp_unofficial", plugin.GetGlobalRegistry()))
+	// Canal do Linktor Bridge: a sessão do WhatsApp roda no aparelho do usuário e
+	// o gateway registra um RemoteAdapter por canal quando o bridge conecta.
+	outboundResolver.Register(outbound.NewPluginSenderFactory(string(plugin.ChannelTypeWhatsAppRemote), plugin.GetGlobalRegistry()))
 	// Signed media URLs: stored message URLs stay the durable reference; the
 	// signature is added on the way out to readers and providers.
 	mediaSigner := buildMediaSigner()
