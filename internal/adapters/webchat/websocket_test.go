@@ -53,26 +53,35 @@ func TestHub_ConversationTracking(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	client1 := &Client{
-		hub:            hub,
-		SessionID:      "session-1",
-		ConversationID: "conv-1",
-		send:           make(chan *WebSocketMessage, 256),
-		Metadata:       make(map[string]string),
+		hub:       hub,
+		SessionID: "session-1",
+		send:      make(chan *WebSocketMessage, 256),
+		Metadata:  make(map[string]string),
 	}
 	client2 := &Client{
-		hub:            hub,
-		SessionID:      "session-2",
-		ConversationID: "conv-1",
-		send:           make(chan *WebSocketMessage, 256),
-		Metadata:       make(map[string]string),
+		hub:       hub,
+		SessionID: "session-2",
+		send:      make(chan *WebSocketMessage, 256),
+		Metadata:  make(map[string]string),
 	}
 
 	hub.register <- client1
 	hub.register <- client2
 	time.Sleep(10 * time.Millisecond)
 
+	// A conversa só é conhecida depois do registro (primeira mensagem).
+	hub.BindConversation(client1, "conv-1")
+	hub.BindConversation(client2, "conv-1")
+
 	clients := hub.GetConversationClients("conv-1")
 	assert.Len(t, clients, 2)
+
+	// Rebind troca a sessão de conversa em vez de duplicar.
+	hub.BindConversation(client2, "conv-2")
+	assert.Len(t, hub.GetConversationClients("conv-1"), 1)
+	assert.Len(t, hub.GetConversationClients("conv-2"), 1)
+	hub.BindConversation(client2, "conv-1")
+	assert.Len(t, hub.GetConversationClients("conv-2"), 0)
 
 	// Empty conversation
 	clients = hub.GetConversationClients("conv-nonexistent")
@@ -100,31 +109,33 @@ func TestHub_BroadcastToConversation(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	client1 := &Client{
-		hub:            hub,
-		SessionID:      "session-1",
-		ConversationID: "conv-1",
-		send:           make(chan *WebSocketMessage, 256),
-		Metadata:       make(map[string]string),
+		hub:       hub,
+		SessionID: "session-1",
+		send:      make(chan *WebSocketMessage, 256),
+		Metadata:  make(map[string]string),
 	}
 	client2 := &Client{
-		hub:            hub,
-		SessionID:      "session-2",
-		ConversationID: "conv-1",
-		send:           make(chan *WebSocketMessage, 256),
-		Metadata:       make(map[string]string),
+		hub:       hub,
+		SessionID: "session-2",
+		send:      make(chan *WebSocketMessage, 256),
+		Metadata:  make(map[string]string),
 	}
 	client3 := &Client{
-		hub:            hub,
-		SessionID:      "session-3",
-		ConversationID: "conv-2", // Different conversation
-		send:           make(chan *WebSocketMessage, 256),
-		Metadata:       make(map[string]string),
+		hub:       hub,
+		SessionID: "session-3",
+		send:      make(chan *WebSocketMessage, 256),
+		Metadata:  make(map[string]string),
 	}
 
 	hub.register <- client1
 	hub.register <- client2
 	hub.register <- client3
 	time.Sleep(10 * time.Millisecond)
+
+	// A conversa é conhecida só depois do registro (primeira mensagem).
+	hub.BindConversation(client1, "conv-1")
+	hub.BindConversation(client2, "conv-1")
+	hub.BindConversation(client3, "conv-2") // Different conversation
 
 	// Broadcast to conv-1
 	msg := &WebSocketMessage{
