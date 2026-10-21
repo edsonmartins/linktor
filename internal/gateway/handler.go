@@ -68,8 +68,11 @@ type InboundEvent struct {
 	From       string `json:"from"`
 	SenderName string `json:"sender_name"`
 	Chat       string `json:"chat"`
-	Text       string `json:"text"`
-	Timestamp  int64  `json:"ts"`
+	// SenderLID é o LID do remetente quando o bridge traduziu From para o
+	// número; vazio quando From já era o número ou quando só há o LID.
+	SenderLID string `json:"sender_lid,omitempty"`
+	Text      string `json:"text"`
+	Timestamp int64  `json:"ts"`
 }
 
 // ServeHTTP is the entry point for GET /api/v1/gateways/ws: authenticate,
@@ -152,11 +155,20 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 	// JIDs preserved in metadata for group/1:1 context. Parsing is lenient so a
 	// bare number from the bridge still works.
 	var (
-		senderID = evt.From
-		chatJID  = evt.Chat
+		senderID    = evt.From
+		chatJID     = evt.Chat
+		senderPhone string
 	)
-	if from, err := jidUserOrBare(evt.From); err == nil && from != "" {
+	// Um remetente que só veio como LID (o bridge não conseguiu traduzir para
+	// número) fica com o JID inteiro como chave: sem o sufixo @lid a resposta
+	// seria endereçada a um número que não existe.
+	if strings.HasSuffix(evt.From, "@lid") {
+		senderID = evt.From
+	} else if from, err := jidUserOrBare(evt.From); err == nil && from != "" {
 		senderID = from
+		// Mesmo contrato do webhook oficial: com o número em "phone" o contato
+		// nasce com telefone e casa com o mesmo número vindo de outro canal.
+		senderPhone = from
 	}
 	if chatJID == "" {
 		chatJID = evt.From
@@ -166,6 +178,12 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 		"sender_id":  senderID,
 		"sender_jid": evt.From,
 		"chat_jid":   chatJID,
+	}
+	if senderPhone != "" {
+		metadata["phone"] = senderPhone
+	}
+	if evt.SenderLID != "" {
+		metadata["sender_lid"] = evt.SenderLID
 	}
 	if evt.SenderName != "" {
 		metadata["sender_name"] = evt.SenderName
