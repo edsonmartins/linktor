@@ -316,6 +316,51 @@ func TestAdapter_SetHandlers(t *testing.T) {
 	assert.True(t, called)
 }
 
+// O visitante recarregou a página e voltou com outra sessão: a identidade
+// antiga não está conectada, mas a conversa tem um cliente vivo. A entrega tem
+// de ir para ele em vez de falhar com "client not connected".
+func TestAdapter_SendMessage_FallsBackToConversationClient(t *testing.T) {
+	a := NewAdapter()
+	a.Initialize(map[string]string{})
+	ctx := context.Background()
+	require.NoError(t, a.Connect(ctx))
+	defer a.Disconnect(ctx)
+	hub := a.GetHub()
+	time.Sleep(10 * time.Millisecond)
+
+	live := &Client{hub: hub, SessionID: "session-new", send: make(chan *WebSocketMessage, 8), Metadata: map[string]string{}}
+	hub.register <- live
+	time.Sleep(10 * time.Millisecond)
+	live.ConversationID = "conv-1"
+	hub.BindConversation(live)
+
+	result, err := a.SendMessage(ctx, &plugin.OutboundMessage{
+		ID:             "m1",
+		ConversationID: "conv-1",
+		RecipientID:    "session-old",
+		ContentType:    plugin.ContentTypeImage,
+		Attachments:    []*plugin.Attachment{{Type: "image", URL: "https://example.com/a.png"}},
+	})
+	require.NoError(t, err)
+	assert.True(t, result.Success, result.Error)
+	assert.Equal(t, plugin.MessageStatusDelivered, result.Status)
+
+	select {
+	case frame := <-live.send:
+		assert.Equal(t, MessageTypeMessage, frame.Type)
+		require.Len(t, frame.Payload.Attachments, 1)
+		assert.Equal(t, "https://example.com/a.png", frame.Payload.Attachments[0].URL)
+	default:
+		t.Fatal("a aba viva não recebeu o frame")
+	}
+
+	// Sem cliente nenhum na conversa continua falhando como antes (transitório, o worker tenta de novo).
+	result, err = a.SendMessage(ctx, &plugin.OutboundMessage{ID: "m2", ConversationID: "conv-x", RecipientID: "session-old"})
+	require.NoError(t, err)
+	assert.False(t, result.Success)
+	assert.Equal(t, "client not connected", result.Error)
+}
+
 func TestConvertAttachments(t *testing.T) {
 	t.Run("nil input", func(t *testing.T) {
 		result := convertAttachments(nil)

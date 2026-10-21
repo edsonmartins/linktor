@@ -145,7 +145,7 @@ func (n *MessageNormalizer) normalizeContentType(contentType string) entity.Cont
 		return entity.ContentTypeImage
 	case "video", "video/mp4", "video/3gpp":
 		return entity.ContentTypeVideo
-	case "audio", "audio/ogg", "audio/mpeg", "audio/mp3", "ptt", "voice":
+	case "audio", "audio/ogg", "audio/mpeg", "audio/mp3", "audio/webm", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "ptt", "voice":
 		return entity.ContentTypeAudio
 	case "document", "file", "application/pdf":
 		return entity.ContentTypeDocument

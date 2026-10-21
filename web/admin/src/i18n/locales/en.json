@@ -584,6 +584,8 @@
       "delaySeconds": "Delay (seconds)",
       "showTypingIndicator": "Show Typing Indicator",
       "typingIndicatorDesc": "Show when the agent or bot is typing",
+      "allowAttachments": "Allow attachments",
+      "allowAttachmentsDesc": "Visitors can send images and audio (recorded or file) from the widget",
       "allowedDomains": "Allowed Domains",
       "allowedDomainsPlaceholder": "example.com",
       "allowedDomainsDesc": "One domain per line. Leave empty to allow all domains.",

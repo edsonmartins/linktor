@@ -149,9 +149,16 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 		}, nil
 	}
 
-	// Find the client by recipient ID (session ID)
-	client := hub.GetClient(msg.RecipientID)
-	if client == nil {
+	// Find the client by recipient ID (session ID). O visitante pode ter
+	// reconectado com outra sessão (aba nova, página recarregada); nesse caso
+	// entrega para quem estiver conectado na mesma conversa.
+	targets := []*Client{}
+	if client := hub.GetClient(msg.RecipientID); client != nil {
+		targets = append(targets, client)
+	} else if msg.ConversationID != "" {
+		targets = hub.GetConversationClients(msg.ConversationID)
+	}
+	if len(targets) == 0 {
 		return &plugin.SendResult{
 			Success: false,
 			Status:  plugin.MessageStatusFailed,
@@ -174,11 +181,20 @@ func (a *Adapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) 
 		},
 	}
 
-	if err := client.SendMessage(wsMsg); err != nil {
+	var lastErr error
+	delivered := 0
+	for _, client := range targets {
+		if err := client.SendMessage(wsMsg); err != nil {
+			lastErr = err
+			continue
+		}
+		delivered++
+	}
+	if delivered == 0 {
 		return &plugin.SendResult{
 			Success:   false,
 			Status:    plugin.MessageStatusFailed,
-			Error:     err.Error(),
+			Error:     lastErr.Error(),
 			Timestamp: time.Now(),
 		}, nil
 	}

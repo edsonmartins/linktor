@@ -3,10 +3,10 @@ package webchat
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +16,7 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
+	"github.com/msgfy/linktor/internal/infrastructure/storage"
 )
 
 // Handler handles WebChat HTTP endpoints
@@ -25,8 +26,12 @@ type Handler struct {
 	conversationRepo repository.ConversationRepository
 	contactRepo      repository.ContactRepository
 	producer         nats.Publisher
-	upgrader         websocket.Upgrader
-	rateLimiter      *ipRateLimiter
+	// store guarda os anexos enviados pelo widget. nil quando não há storage
+	// configurado; o upload responde 503 nesse caso.
+	store         storage.Client
+	upgrader      websocket.Upgrader
+	rateLimiter   *ipRateLimiter
+	uploadLimiter *ipRateLimiter
 }
 
 // NewHandler creates a new WebChat handler
@@ -36,6 +41,7 @@ func NewHandler(
 	conversationRepo repository.ConversationRepository,
 	contactRepo repository.ContactRepository,
 	producer nats.Publisher,
+	store storage.Client,
 ) *Handler {
 	return &Handler{
 		adapter:          adapter,
@@ -43,8 +49,11 @@ func NewHandler(
 		conversationRepo: conversationRepo,
 		contactRepo:      contactRepo,
 		producer:         producer,
+		store:            store,
 		// Allow bursts of 10 connection attempts per IP, refilling ~1/sec.
 		rateLimiter: newIPRateLimiter(1, 10),
+		// Uploads são mais caros que conexões: 10 de rajada, repondo 1 a cada 2s.
+		uploadLimiter: newIPRateLimiter(0.5, 10),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -191,6 +200,11 @@ func (h *Handler) handleClientMessage(ctx context.Context, client *Client, chann
 		return err
 	}
 	client.ConversationID = conversation.ID
+	if h.adapter != nil {
+		if hub := h.adapter.GetHub(); hub != nil {
+			hub.BindConversation(client)
+		}
+	}
 
 	// Publish to NATS
 	attachments := make([]nats.AttachmentData, 0, len(msg.Attachments))
@@ -214,7 +228,12 @@ func (h *Handler) handleClientMessage(ctx context.Context, client *Client, chann
 		ExternalID:     msg.ID,
 		ContentType:    msg.ContentType,
 		Content:        msg.Content,
+		// sender_id é o identificador que o ReceiveMessageUseCase usa para achar o contato; sem
+		// ele o use case cai no ExternalID, que é o id da mensagem, e cada mensagem vira um
+		// contato e uma conversa novos. É também o RecipientID da resposta, e o adapter
+		// entrega pela sessão do WebSocket.
 		Metadata: map[string]string{
+			"sender_id":   client.SessionID,
 			"session_id":  client.SessionID,
 			"sender_name": client.Metadata["name"],
 		},
@@ -280,6 +299,7 @@ func (h *Handler) getOrCreateContact(ctx context.Context, tenantID string, clien
 			identity := &entity.ContactIdentity{
 				ID:          uuid.New().String(),
 				ContactID:   contact.ID,
+				TenantID:    tenantID,
 				ChannelType: "webchat",
 				Identifier:  client.SessionID,
 				Metadata:    client.Metadata,
@@ -317,6 +337,7 @@ func (h *Handler) getOrCreateContact(ctx context.Context, tenantID string, clien
 	identity := &entity.ContactIdentity{
 		ID:          uuid.New().String(),
 		ContactID:   contact.ID,
+		TenantID:    tenantID,
 		ChannelType: "webchat",
 		Identifier:  client.SessionID,
 		Metadata:    client.Metadata,
@@ -398,50 +419,143 @@ func (h *Handler) GetWidgetConfig(c *gin.Context) {
 	})
 }
 
-// UploadMedia handles media uploads from the widget
+// maxUploadBytes limita o anexo enviado pelo widget. É menor que o limite do
+// atendente (25 MB) porque o endpoint é público.
+const maxUploadBytes = 10 << 20
+
+// uploadExtByMime é a allowlist de tipos aceitos do widget e a extensão gravada
+// para cada um. A extensão vem daqui, nunca do nome enviado pelo cliente, para
+// que um .html disfarçado nunca seja servido como tal.
+var uploadExtByMime = map[string]string{
+	"image/jpeg":  ".jpg",
+	"image/png":   ".png",
+	"image/gif":   ".gif",
+	"image/webp":  ".webp",
+	"audio/webm":  ".webm",
+	"audio/ogg":   ".ogg",
+	"audio/mpeg":  ".mp3",
+	"audio/mp4":   ".m4a",
+	"audio/x-m4a": ".m4a",
+	"audio/wav":   ".wav",
+	"audio/x-wav": ".wav",
+}
+
+// UploadResponse espelha handlers.UploadAttachmentResponse: os mesmos campos
+// que o widget depois manda em attachments[] da mensagem.
+type UploadResponse struct {
+	URL       string `json:"url"`
+	Type      string `json:"type"`
+	Filename  string `json:"filename"`
+	MimeType  string `json:"mime_type"`
+	SizeBytes int64  `json:"size_bytes"`
+}
+
+// UploadMedia recebe um anexo do widget (multipart, campo "file"), guarda no
+// media store e devolve a URL para o widget referenciar na mensagem. É público
+// como o WebSocket: as mesmas checagens de canal e de widget token se aplicam,
+// mais a flag allow_attachments do canal e um rate limit próprio por IP.
 func (h *Handler) UploadMedia(c *gin.Context) {
-	file, header, err := c.Request.FormFile("file")
+	channelID := c.Param("channelId")
+
+	channel, err := h.channelRepo.FindByID(c.Request.Context(), channelID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+	if channel.Type != entity.ChannelTypeWebChat {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel type"})
+		return
+	}
+	if !channel.IsActive() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "channel not active"})
+		return
+	}
+	if !ParseConfig(channel.Config).AllowAttachments {
+		c.JSON(http.StatusForbidden, gin.H{"error": "attachments are disabled for this channel"})
+		return
+	}
+	if secret := widgetSecret(channel); secret != "" {
+		token := c.Query("token")
+		if token == "" {
+			token = c.GetHeader("X-Widget-Token")
+		}
+		if err := VerifyWidgetToken(token, channel.ID, secret, time.Now()); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing widget token"})
+			return
+		}
+	}
+	if h.uploadLimiter != nil && !h.uploadLimiter.Allow(c.ClientIP(), time.Now()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many uploads"})
+		return
+	}
+	if h.store == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "attachment storage is not configured"})
+		return
+	}
+
+	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
 		return
 	}
+	if fileHeader.Size > maxUploadBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file exceeds the 10 MB limit"})
+		return
+	}
+
+	// O MIME declarado decide o tipo; só os da allowlist passam.
+	mimeType := strings.ToLower(strings.TrimSpace(strings.Split(fileHeader.Header.Get("Content-Type"), ";")[0]))
+	ext, ok := uploadExtByMime[mimeType]
+	if !ok {
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": "unsupported file type: only images and audio are accepted"})
+		return
+	}
+
+	file, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not read the uploaded file"})
+		return
+	}
 	defer file.Close()
 
-	// Validate file size (max 10MB)
-	if header.Size > 10*1024*1024 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "file too large (max 10MB)"})
+	data, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not read the uploaded file"})
+		return
+	}
+	if int64(len(data)) > maxUploadBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file exceeds the 10 MB limit"})
 		return
 	}
 
-	// Generate unique filename
-	ext := filepath.Ext(header.Filename)
-	filename := uuid.New().String() + ext
-
-	// Save to uploads directory
-	uploadDir := filepath.Join("uploads", "webchat")
-	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create upload directory"})
+	key := fmt.Sprintf("webchat/%s/%s%s", channel.ID, uuid.New().String(), ext)
+	url, err := h.store.Upload(c.Request.Context(), key, data, mimeType)
+	if err != nil {
+		log.Printf("[webchat] upload: falha ao gravar %s: %v", key, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store attachment"})
 		return
 	}
 
-	savePath := filepath.Join(uploadDir, filename)
-	if err := c.SaveUploadedFile(header, savePath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save file"})
-		return
-	}
-
-	// Build URL for the uploaded file
-	baseURL := c.Request.Host
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	fileURL := fmt.Sprintf("%s://%s/uploads/webchat/%s", scheme, baseURL, filename)
-
-	c.JSON(http.StatusOK, gin.H{
-		"url":       fileURL,
-		"filename":  header.Filename,
-		"mime_type": header.Header.Get("Content-Type"),
-		"size":      header.Size,
+	c.JSON(http.StatusOK, UploadResponse{
+		URL:       url,
+		Type:      attachmentTypeFromMime(mimeType),
+		Filename:  fileHeader.Filename,
+		MimeType:  mimeType,
+		SizeBytes: int64(len(data)),
 	})
+}
+
+// attachmentTypeFromMime reduz o MIME ao tipo grosso usado em attachments[]
+// (mesma regra do upload do atendente em handlers.attachmentTypeFromMime).
+func attachmentTypeFromMime(mimeType string) string {
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "image"
+	case strings.HasPrefix(mimeType, "video/"):
+		return "video"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "audio"
+	default:
+		return "document"
+	}
 }

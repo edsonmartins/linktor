@@ -584,6 +584,8 @@
       "delaySeconds": "Atraso (segundos)",
       "showTypingIndicator": "Mostrar Indicador de Digitação",
       "typingIndicatorDesc": "Mostrar quando o agente ou bot está digitando",
+      "allowAttachments": "Permitir anexos",
+      "allowAttachmentsDesc": "Visitantes podem enviar imagens e áudios (gravados ou arquivo) pelo widget",
       "allowedDomains": "Domínios Permitidos",
       "allowedDomainsPlaceholder": "exemplo.com",
       "allowedDomainsDesc": "Um domínio por linha. Deixe vazio para permitir todos os domínios.",

@@ -104,9 +104,10 @@ func toPluginMessage(msg *Message) *plugin.OutboundMessage {
 	}
 
 	out := &plugin.OutboundMessage{
-		ID:          msg.ID,
-		RecipientID: msg.To,
-		Metadata:    meta,
+		ID:             msg.ID,
+		ConversationID: msg.ConversationID,
+		RecipientID:    msg.To,
+		Metadata:       meta,
 	}
 
 	switch c := msg.Content.(type) {

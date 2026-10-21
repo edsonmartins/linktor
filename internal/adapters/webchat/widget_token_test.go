@@ -144,7 +144,7 @@ func TestWebSocketHandler_RejectsMissingToken(t *testing.T) {
 		Config:           map[string]string{"widget_secret": "top-secret"},
 	}
 
-	h := NewHandler(NewAdapter(), channelRepo, nil, nil, nil)
+	h := NewHandler(NewAdapter(), channelRepo, nil, nil, nil, nil)
 
 	r := gin.New()
 	r.GET("/ws/:channelId", h.WebSocketHandler)

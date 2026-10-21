@@ -192,6 +192,24 @@ func (h *Hub) GetClient(sessionID string) *Client {
 	return h.clients[sessionID]
 }
 
+// BindConversation indexa o cliente pela conversa. A conversa só é conhecida na
+// primeira mensagem, depois do Register, então o índice por conversa precisa
+// deste passo para o adapter achar as abas vivas de um visitante.
+func (h *Hub) BindConversation(client *Client) {
+	if client == nil || client.ConversationID == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, registered := h.clients[client.SessionID]; !registered {
+		return
+	}
+	if h.conversations[client.ConversationID] == nil {
+		h.conversations[client.ConversationID] = make(map[string]*Client)
+	}
+	h.conversations[client.ConversationID][client.SessionID] = client
+}
+
 // GetConversationClients returns all clients for a conversation
 func (h *Hub) GetConversationClients(conversationID string) []*Client {
 	h.mu.RLock()

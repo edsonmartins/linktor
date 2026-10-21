@@ -49,14 +49,20 @@ func (c *Contact) AddIdentity(identity *ContactIdentity) {
 	c.Identities = append(c.Identities, identity)
 }
 
-// GetIdentityByChannel returns the identity for a specific channel type
+// GetIdentityByChannel devolve a identidade mais recente do contato nesse canal.
+// Um contato pode acumular várias (ex.: cada sessão nova do webchat vira uma
+// identidade); a resposta tem de ir para a última, que é a que está viva.
 func (c *Contact) GetIdentityByChannel(channelType string) *ContactIdentity {
+	var newest *ContactIdentity
 	for _, identity := range c.Identities {
-		if identity.ChannelType == channelType {
-			return identity
+		if identity.ChannelType != channelType {
+			continue
+		}
+		if newest == nil || identity.CreatedAt.After(newest.CreatedAt) {
+			newest = identity
 		}
 	}
-	return nil
+	return newest
 }
 
 // HasTag checks if the contact has a specific tag

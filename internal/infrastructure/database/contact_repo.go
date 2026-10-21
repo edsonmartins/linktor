@@ -408,6 +408,7 @@ func (r *ContactRepository) FindIdentitiesByContact(ctx context.Context, contact
 		SELECT id, contact_id, channel_type, identifier, metadata, created_at
 		FROM contact_identities
 		WHERE contact_id = $1
+		ORDER BY created_at
 	`
 
 	rows, err := r.db.Pool.Query(ctx, query, contactID)

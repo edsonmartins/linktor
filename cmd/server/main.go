@@ -556,6 +556,12 @@ func main() {
 	// Note: Email adapter supports multiple providers (SMTP, SendGrid, Mailgun, SES, Postmark)
 	plugin.Register(plugin.ChannelTypeEmail, emailAdapter)
 
+	// Media store re-hosts inbound attachments that sit behind authenticated
+	// provider URLs (Slack url_private, Mattermost file API) so external
+	// consumers can fetch them. Optional: nil falls back to the provider URL.
+	// Também guarda os anexos enviados pelo widget do WebChat.
+	mediaStore := buildMediaStore()
+
 	// Create WebChat handler
 	webchatHandler := webchat.NewHandler(
 		webchatAdapter,
@@ -563,12 +569,8 @@ func main() {
 		conversationRepo,
 		contactRepo,
 		producer,
+		mediaStore,
 	)
-
-	// Media store re-hosts inbound attachments that sit behind authenticated
-	// provider URLs (Slack url_private, Mattermost file API) so external
-	// consumers can fetch them. Optional: nil falls back to the provider URL.
-	mediaStore := buildMediaStore()
 
 	// Create webhook handler
 	requireWebhookSecrets := cfg.Server.Mode == "release" || os.Getenv("LINKTOR_REQUIRE_WEBHOOK_SECRETS") == "true"
@@ -1178,6 +1180,9 @@ func main() {
 
 		// WebChat widget config (no auth required)
 		api.GET("/webchat/:channelId/config", webchatHandler.GetWidgetConfig)
+		// Anexo enviado pelo widget (imagem/áudio). Público como o WebSocket: o
+		// handler valida canal, allow_attachments e widget token.
+		api.POST("/webchat/:channelId/upload", webchatHandler.UploadMedia)
 
 		// Media proxy: streams stored attachments by opaque key so message URLs
 		// stay stable (vs presigned S3 links). No session required: a signed URL
