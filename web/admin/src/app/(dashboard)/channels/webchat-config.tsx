@@ -48,6 +48,7 @@ const webchatConfigSchema = z.object({
   auto_open: z.boolean(),
   auto_open_delay: z.coerce.number().min(0),
   show_typing_indicator: z.boolean(),
+  allow_attachments: z.boolean(),
   // Allowed domains
   allowed_domains: z.string().optional(),
 })
@@ -113,6 +114,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
       auto_open: toBoolean(channel?.config?.auto_open, false),
       auto_open_delay: toNumber(channel?.config?.auto_open_delay, 3),
       show_typing_indicator: toBoolean(channel?.config?.show_typing_indicator, true),
+      allow_attachments: toBoolean(channel?.config?.allow_attachments, false),
       allowed_domains: (channel?.config?.allowed_domains as string) || '',
     },
   })
@@ -139,6 +141,8 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
           widget_color: data.primary_color,
           welcome_message: data.welcome_message || '',
           offline_message: data.offline_message || '',
+          // Libera o upload de imagem/áudio pelo widget (POST /webchat/:id/upload).
+          allow_attachments: String(data.allow_attachments),
           // Client-side widget options, carried into the embed snippet.
           text_color: data.text_color,
           position: data.position,
@@ -425,6 +429,19 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
                 <Switch
                   checked={watch('show_typing_indicator')}
                   onCheckedChange={(checked) => setValue('show_typing_indicator', checked)}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>{t('allowAttachments')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('allowAttachmentsDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={watch('allow_attachments')}
+                  onCheckedChange={(checked) => setValue('allow_attachments', checked)}
                 />
               </div>
 

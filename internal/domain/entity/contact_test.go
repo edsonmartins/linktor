@@ -2,6 +2,7 @@ package entity
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -35,6 +36,19 @@ func TestContact_GetIdentityByChannel(t *testing.T) {
 
 	missing := contact.GetIdentityByChannel("email")
 	assert.Nil(t, missing)
+}
+
+// Um contato acumula uma identidade por sessão do webchat; a resposta tem de ir
+// para a mais recente, independentemente da ordem em que foram carregadas.
+func TestContact_GetIdentityByChannel_NewestWins(t *testing.T) {
+	contact := NewContact("tenant1")
+	base := time.Date(2026, 10, 20, 15, 0, 0, 0, time.UTC)
+	contact.AddIdentity(&ContactIdentity{ChannelType: "webchat", Identifier: "session-new", CreatedAt: base.Add(2 * time.Hour)})
+	contact.AddIdentity(&ContactIdentity{ChannelType: "webchat", Identifier: "session-old", CreatedAt: base})
+	contact.AddIdentity(&ContactIdentity{ChannelType: "whatsapp", Identifier: "5511999999999", CreatedAt: base.Add(3 * time.Hour)})
+
+	assert.Equal(t, "session-new", contact.GetIdentityByChannel("webchat").Identifier)
+	assert.Equal(t, "5511999999999", contact.GetIdentityByChannel("whatsapp").Identifier)
 }
 
 func TestContact_HasTag(t *testing.T) {

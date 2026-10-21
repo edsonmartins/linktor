@@ -219,12 +219,13 @@ func (uc *SendMessageUseCase) Execute(ctx context.Context, input *SendMessageInp
 
 func (uc *SendMessageUseCase) findRecipientID(ctx context.Context, contact *entity.Contact, channelType string) string {
 	// Try to find identity for this channel type
+	// A mais recente vence: o webchat cria uma identidade por sessão e só a última
+	// está conectada (mesma regra de Contact.GetIdentityByChannel).
 	identities, err := uc.contactRepo.FindIdentitiesByContact(ctx, contact.ID)
 	if err == nil {
-		for _, identity := range identities {
-			if identity.ChannelType == channelType {
-				return identity.Identifier
-			}
+		scratch := &entity.Contact{Identities: identities}
+		if identity := scratch.GetIdentityByChannel(channelType); identity != nil {
+			return identity.Identifier
 		}
 	}
 
