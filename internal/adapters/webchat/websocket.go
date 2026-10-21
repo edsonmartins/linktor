@@ -72,6 +72,11 @@ type Hub struct {
 	// Client sessions by conversation ID
 	conversations map[string]map[string]*Client
 
+	// Conversa de cada sessão, para desfazer o índice acima no unregister. O hub
+	// é dono deste mapa: Run nunca lê client.ConversationID, que o handler
+	// escreve de outra goroutine.
+	sessionConv map[string]string
+
 	// Register requests from clients
 	register chan *Client
 
@@ -99,6 +104,7 @@ func NewHub() *Hub {
 	return &Hub{
 		clients:       make(map[string]*Client),
 		conversations: make(map[string]map[string]*Client),
+		sessionConv:   make(map[string]string),
 		register:      make(chan *Client),
 		unregister:    make(chan *Client),
 		broadcast:     make(chan *BroadcastMessage),
@@ -113,23 +119,18 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client.SessionID] = client
-			if client.ConversationID != "" {
-				if h.conversations[client.ConversationID] == nil {
-					h.conversations[client.ConversationID] = make(map[string]*Client)
-				}
-				h.conversations[client.ConversationID][client.SessionID] = client
-			}
 			h.mu.Unlock()
 
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if _, ok := h.clients[client.SessionID]; ok {
 				delete(h.clients, client.SessionID)
-				if client.ConversationID != "" {
-					if convClients, ok := h.conversations[client.ConversationID]; ok {
+				if convID := h.sessionConv[client.SessionID]; convID != "" {
+					delete(h.sessionConv, client.SessionID)
+					if convClients, ok := h.conversations[convID]; ok {
 						delete(convClients, client.SessionID)
 						if len(convClients) == 0 {
-							delete(h.conversations, client.ConversationID)
+							delete(h.conversations, convID)
 						}
 					}
 				}
@@ -155,6 +156,7 @@ func (h *Hub) Run() {
 			}
 			h.clients = make(map[string]*Client)
 			h.conversations = make(map[string]map[string]*Client)
+			h.sessionConv = make(map[string]string)
 			h.mu.Unlock()
 			return
 		}
@@ -194,20 +196,27 @@ func (h *Hub) GetClient(sessionID string) *Client {
 
 // BindConversation indexa o cliente pela conversa. A conversa só é conhecida na
 // primeira mensagem, depois do Register, então o índice por conversa precisa
-// deste passo para o adapter achar as abas vivas de um visitante.
-func (h *Hub) BindConversation(client *Client) {
-	if client == nil || client.ConversationID == "" {
+// deste passo para o adapter achar as abas vivas de um visitante. Uma sessão
+// fica em uma conversa só; rebind troca o índice.
+func (h *Hub) BindConversation(client *Client, conversationID string) {
+	if client == nil || conversationID == "" {
 		return
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if _, registered := h.clients[client.SessionID]; !registered {
-		return
+	if prev := h.sessionConv[client.SessionID]; prev != "" && prev != conversationID {
+		if convClients, ok := h.conversations[prev]; ok {
+			delete(convClients, client.SessionID)
+			if len(convClients) == 0 {
+				delete(h.conversations, prev)
+			}
+		}
 	}
-	if h.conversations[client.ConversationID] == nil {
-		h.conversations[client.ConversationID] = make(map[string]*Client)
+	h.sessionConv[client.SessionID] = conversationID
+	if h.conversations[conversationID] == nil {
+		h.conversations[conversationID] = make(map[string]*Client)
 	}
-	h.conversations[client.ConversationID][client.SessionID] = client
+	h.conversations[conversationID][client.SessionID] = client
 }
 
 // GetConversationClients returns all clients for a conversation

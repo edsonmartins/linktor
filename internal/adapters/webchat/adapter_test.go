@@ -331,8 +331,7 @@ func TestAdapter_SendMessage_FallsBackToConversationClient(t *testing.T) {
 	live := &Client{hub: hub, SessionID: "session-new", send: make(chan *WebSocketMessage, 8), Metadata: map[string]string{}}
 	hub.register <- live
 	time.Sleep(10 * time.Millisecond)
-	live.ConversationID = "conv-1"
-	hub.BindConversation(live)
+	hub.BindConversation(live, "conv-1")
 
 	result, err := a.SendMessage(ctx, &plugin.OutboundMessage{
 		ID:             "m1",
