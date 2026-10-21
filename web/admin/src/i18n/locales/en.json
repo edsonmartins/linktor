@@ -328,9 +328,9 @@
     "comingSoon": "Coming soon",
     "types": {
       "webchat": "Web Chat",
-      "whatsapp": "WhatsApp",
+      "whatsapp": "WhatsApp (unofficial)",
       "whatsapp_official": "WhatsApp Business",
-      "whatsapp_remote": "WhatsApp via Bridge",
+      "whatsapp_remote": "WhatsApp via Bridge (unofficial)",
       "telegram": "Telegram",
       "instagram": "Instagram",
       "facebook": "Facebook Messenger",
@@ -345,9 +345,9 @@
     },
     "descriptions": {
       "webchat": "Embeddable widget for your website",
-      "whatsapp": "Unofficial WhatsApp integration",
+      "whatsapp": "WhatsApp session on this server; QR code here in the admin",
       "whatsapp_official": "Meta Business Cloud API",
-      "whatsapp_remote": "WhatsApp session on the agent's computer",
+      "whatsapp_remote": "WhatsApp session on the agent's computer, through the Linktor Bridge app",
       "telegram": "Bot API integration",
       "sms": "Twilio SMS integration",
       "instagram": "Meta Graph API integration",

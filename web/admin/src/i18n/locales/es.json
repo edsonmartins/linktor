@@ -325,9 +325,9 @@
     "comingSoon": "Próximamente",
     "types": {
       "webchat": "Chat Web",
-      "whatsapp": "WhatsApp",
+      "whatsapp": "WhatsApp (no oficial)",
       "whatsapp_official": "WhatsApp Business",
-      "whatsapp_remote": "WhatsApp vía Bridge",
+      "whatsapp_remote": "WhatsApp vía Bridge (no oficial)",
       "telegram": "Telegram",
       "instagram": "Instagram",
       "facebook": "Facebook Messenger",
@@ -342,9 +342,9 @@
     },
     "descriptions": {
       "webchat": "Widget integrable para tu sitio web",
-      "whatsapp": "Integración no oficial de WhatsApp",
+      "whatsapp": "Sesión de WhatsApp en este servidor; código QR aquí en el admin",
       "whatsapp_official": "API de Meta Business Cloud",
-      "whatsapp_remote": "Sesión de WhatsApp en la computadora del agente",
+      "whatsapp_remote": "Sesión de WhatsApp en la computadora del agente, con la app Linktor Bridge",
       "telegram": "Integración con Bot API",
       "sms": "Integración SMS via Twilio",
       "instagram": "Integración con Meta Graph API",
