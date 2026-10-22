@@ -236,6 +236,7 @@
     "snooze": "Adiar",
     "attachmentUnavailable": "Anexo indisponível (o arquivo não foi recebido)",
     "unsupportedMessage": "Mensagem sem conteúdo exibível",
+    "locationShared": "Localização compartilhada",
     "deleteConversation": "Excluir conversa",
     "deleteConversationDescription": "Excluir a conversa com {name}? As mensagens, os anexos e o histórico vão com ela. Esta ação não pode ser desfeita — para tirá-la da fila sem perder o histórico, resolva a conversa.",
     "conversationDeleted": "Conversa excluída",

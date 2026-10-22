@@ -105,6 +105,10 @@ type InboundEvent struct {
 	MsgType     string              `json:"msg_type,omitempty"`
 	Attachments []InboundAttachment `json:"attachments,omitempty"`
 	Location    *InboundLocation    `json:"location,omitempty"`
+	// Recibo (Type "receipt"): Status delivered|read de MessageIDs enviadas
+	// por este canal. Vira StatusUpdate por ID, casado pelo external_id.
+	Status     string   `json:"status,omitempty"`
+	MessageIDs []string `json:"message_ids,omitempty"`
 }
 
 // InboundLocation é um ponto compartilhado; vira latitude/longitude/name/
@@ -192,6 +196,9 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 	var evt InboundEvent
 	if err := json.Unmarshal(raw, &evt); err != nil {
 		return fmt.Errorf("parse inbound payload: %w", err)
+	}
+	if evt.Type == "receipt" {
+		return h.handleReceipt(channelID, evt)
 	}
 	if evt.ID == "" || (evt.Text == "" && len(evt.Attachments) == 0 && evt.Location == nil) {
 		return nil // ignore receipts/connection frames forwarded without content
@@ -288,6 +295,38 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 		log.Printf("gateway: anexo %q do canal %s sem object store e grande demais para a fila; segue só o registro", name, channelID)
 	}
 	return h.producer.PublishInbound(ctx, inbound)
+}
+
+// handleReceipt publica um StatusUpdate por mensagem do recibo. O consumidor
+// de status acha a mensagem pelo external_id (o ID do WhatsApp que o ack do
+// envio gravou) e ignora IDs que não conhece.
+func (h *Handler) handleReceipt(channelID string, evt InboundEvent) error {
+	status := map[string]string{"delivered": "delivered", "read": "read"}[evt.Status]
+	if status == "" || len(evt.MessageIDs) == 0 {
+		return nil
+	}
+	channel, err := h.channels.FindByID(context.Background(), channelID)
+	if err != nil {
+		return fmt.Errorf("resolve channel: %w", err)
+	}
+	ts := time.Unix(evt.Timestamp, 0)
+	if evt.Timestamp == 0 {
+		ts = time.Now()
+	}
+	for _, id := range evt.MessageIDs {
+		if id == "" {
+			continue
+		}
+		if err := h.producer.PublishStatusUpdate(context.Background(), &nats.StatusUpdate{
+			ExternalID:  id,
+			ChannelType: string(channel.Type),
+			Status:      status,
+			Timestamp:   ts,
+		}); err != nil {
+			return fmt.Errorf("publish status for %s: %w", id, err)
+		}
+	}
+	return nil
 }
 
 // inboundAttachments converte os anexos do bridge para o contrato inline do

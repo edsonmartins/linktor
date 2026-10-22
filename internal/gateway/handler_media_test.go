@@ -129,3 +129,22 @@ func TestHandleInbound_Location(t *testing.T) {
 	assert.Equal(t, "Av. Paulista, 1", in.Metadata["address"])
 	assert.Empty(t, in.Attachments)
 }
+
+// Recibo do WhatsApp vira um StatusUpdate por ID, casado pelo external_id;
+// status desconhecido não publica nada.
+func TestHandleInbound_Receipt(t *testing.T) {
+	h, producer := newMediaHandler(t)
+	require.NoError(t, h.handleInbound("ch-1", inboundRaw(t, InboundEvent{
+		Type: "receipt", From: "5511999999999@s.whatsapp.net", Status: "read", MessageIDs: []string{"WA1", "WA2"}, Timestamp: 1700000000,
+	})))
+	require.NoError(t, h.handleInbound("ch-1", inboundRaw(t, InboundEvent{
+		Type: "receipt", From: "5511999999999@s.whatsapp.net", Status: "played-self", MessageIDs: []string{"WA3"},
+	})))
+	assert.Empty(t, producer.InboundMessages, "recibo não é mensagem")
+	require.Len(t, producer.StatusUpdates, 2)
+	assert.Equal(t, "WA1", producer.StatusUpdates[0].ExternalID)
+	assert.Equal(t, "read", producer.StatusUpdates[0].Status)
+	assert.Equal(t, "whatsapp_remote", producer.StatusUpdates[0].ChannelType)
+	assert.Equal(t, int64(1700000000), producer.StatusUpdates[0].Timestamp.Unix())
+	assert.Equal(t, "WA2", producer.StatusUpdates[1].ExternalID)
+}

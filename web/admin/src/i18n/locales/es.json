@@ -235,6 +235,7 @@
     "snooze": "Posponer",
     "attachmentUnavailable": "Adjunto no disponible (el archivo no se recibió)",
     "unsupportedMessage": "Mensaje sin contenido que mostrar",
+    "locationShared": "Ubicación compartida",
     "deleteConversation": "Eliminar conversación",
     "deleteConversationDescription": "¿Eliminar la conversación con {name}? Sus mensajes, adjuntos e historial se van con ella. Esta acción no se puede deshacer — para quitarla de la cola sin perder el historial, resuélvela.",
     "conversationDeleted": "Conversación eliminada",
