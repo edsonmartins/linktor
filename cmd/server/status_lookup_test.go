@@ -10,7 +10,7 @@ import (
 )
 
 type finderStub struct {
-	calls  int
+	calls   int
 	readyAt int
 }
 
