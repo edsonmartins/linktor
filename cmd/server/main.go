@@ -2082,7 +2082,7 @@ func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.Messag
 
 	messageID := status.MessageID
 	if messageID == "" && status.ExternalID != "" {
-		message, err := messageRepo.FindByExternalID(ctx, status.ExternalID)
+		message, err := findMessageByExternalID(ctx, messageRepo, status.ExternalID, time.Sleep)
 		if err != nil {
 			logger.Warn("Ignoring status update for unknown external message id: " + status.ExternalID)
 			return nil
@@ -2122,6 +2122,45 @@ func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.Messag
 	publishStatusWebhookEvent(ctx, messageRepo, conversationRepo, producer, messageID, status)
 
 	return nil
+}
+
+// O recibo do canal (entregue/lido) e o ack do envio viajam por filas
+// diferentes e costumam chegar na mesma fração de segundo. Quando o recibo
+// ganha a corrida, o external_id ainda não foi gravado e a mensagem "não
+// existe"; descartar aí perdia o delivered para sempre. A espera é curta e
+// limitada: o que não aparece em ~1s não é essa corrida.
+const (
+	externalIDLookupRetries = 4
+	externalIDLookupDelay   = 300 * time.Millisecond
+)
+
+// messageByExternalIDFinder é o pedaço do repositório que a busca usa.
+type messageByExternalIDFinder interface {
+	FindByExternalID(ctx context.Context, externalID string) (*entity.Message, error)
+}
+
+// findMessageByExternalID procura a mensagem pelo id do provedor, tentando de
+// novo por um instante se ela ainda não foi gravada. sleep é injetado para os
+// testes não esperarem de verdade.
+func findMessageByExternalID(ctx context.Context, repo messageByExternalIDFinder, externalID string, sleep func(time.Duration)) (*entity.Message, error) {
+	var lastErr error
+	for attempt := 0; attempt < externalIDLookupRetries; attempt++ {
+		if attempt > 0 {
+			sleep(externalIDLookupDelay)
+		}
+		message, err := repo.FindByExternalID(ctx, externalID)
+		if err == nil && message != nil {
+			return message, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("message %s not found", externalID)
+	}
+	return nil, lastErr
 }
 
 // publishStatusWebhookEvent publishes a `message.<status>` event carrying the
