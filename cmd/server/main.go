@@ -1774,7 +1774,7 @@ func main() {
 	go func() {
 		logger.Info("Server started")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("Failed to start server")
+			logger.Fatal("Failed to start server on " + srv.Addr + ": " + err.Error())
 		}
 	}()
 
