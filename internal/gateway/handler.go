@@ -91,8 +91,13 @@ type InboundEvent struct {
 	// SenderLID é o LID do remetente quando o bridge traduziu From para o
 	// número; vazio quando From já era o número ou quando só há o LID.
 	SenderLID string `json:"sender_lid,omitempty"`
-	Text      string `json:"text"`
-	Timestamp int64  `json:"ts"`
+	// IsFromMe é mensagem digitada no aparelho pareado: From já é o cliente e
+	// OperatorName quem digitou. Vira is_from_me, que o normalizer arquiva como
+	// mensagem do atendente.
+	IsFromMe     bool   `json:"is_from_me,omitempty"`
+	OperatorName string `json:"operator_name,omitempty"`
+	Text         string `json:"text"`
+	Timestamp    int64  `json:"ts"`
 	// ContentType é o tipo da mensagem (text, image, video, audio, document);
 	// vazio vale text. MsgType guarda a variante do WhatsApp (ptt, sticker).
 	ContentType string              `json:"content_type,omitempty"`
@@ -223,6 +228,12 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 	}
 	if evt.SenderName != "" {
 		metadata["sender_name"] = evt.SenderName
+	}
+	if evt.IsFromMe {
+		metadata["is_from_me"] = "true"
+		if evt.OperatorName != "" {
+			metadata["operator_name"] = evt.OperatorName
+		}
 	}
 	// Mesmas chaves do adaptador WhatsApp embutido, para o resto do pipeline
 	// não distinguir de onde a sessão veio.

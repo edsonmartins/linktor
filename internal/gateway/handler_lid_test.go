@@ -38,6 +38,18 @@ func TestHandleInbound_SenderIdentity(t *testing.T) {
 			assert.Equal(t, tc.wantPhone, in.Metadata["phone"])
 			assert.Equal(t, tc.wantLID, in.Metadata["sender_lid"])
 			assert.Equal(t, tc.from, in.Metadata["sender_jid"])
+			assert.Empty(t, in.Metadata["is_from_me"])
 		})
 	}
+
+	// Digitada no aparelho pareado: From já é o cliente; is_from_me faz o
+	// normalizer arquivar como mensagem do atendente, e o nome vai à parte.
+	raw, _ := json.Marshal(InboundEvent{Type: "message", ID: "M-me", From: "5511999999999@s.whatsapp.net", Chat: "5511999999999@s.whatsapp.net",
+		IsFromMe: true, OperatorName: "Loja", Text: "respondi pelo app", Timestamp: 1})
+	require.NoError(t, h.handleInbound("ch-1", raw))
+	in := producer.InboundMessages[len(producer.InboundMessages)-1]
+	assert.Equal(t, "5511999999999", in.Metadata["sender_id"])
+	assert.Equal(t, "true", in.Metadata["is_from_me"])
+	assert.Equal(t, "Loja", in.Metadata["operator_name"])
+	assert.Empty(t, in.Metadata["sender_name"])
 }
