@@ -65,6 +65,8 @@ export interface Channel {
   // entity.IdentityCredentialKeys.
   public_credentials?: Record<string, string>
   webhook_url?: string
+  // Saúde do Linktor Bridge (canal whatsapp_remote), inline no GET do canal.
+  bridge_health?: Record<string, unknown>
   created_at: string
   updated_at: string
   // WhatsApp Coexistence fields
@@ -77,6 +79,7 @@ export interface Channel {
 export type ChannelType =
   | 'whatsapp'
   | 'whatsapp_official'
+  | 'whatsapp_remote'
   | 'telegram'
   | 'webchat'
   | 'sms'

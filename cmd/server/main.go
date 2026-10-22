@@ -64,6 +64,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -103,6 +104,7 @@ import (
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/application/usecase"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/gateway"
 	"github.com/msgfy/linktor/internal/infrastructure/config"
 	"github.com/msgfy/linktor/internal/infrastructure/database"
 	"github.com/msgfy/linktor/internal/infrastructure/metrics"
@@ -428,6 +430,9 @@ func main() {
 	outboundResolver.Register(outbound.NewPluginSenderFactory("webchat", plugin.GetGlobalRegistry()))
 	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp", plugin.GetGlobalRegistry()))
 	outboundResolver.Register(outbound.NewPluginSenderFactory("whatsapp_unofficial", plugin.GetGlobalRegistry()))
+	// Canal do Linktor Bridge: a sessão do WhatsApp roda no aparelho do usuário e
+	// o gateway registra um RemoteAdapter por canal quando o bridge conecta.
+	outboundResolver.Register(outbound.NewPluginSenderFactory(string(plugin.ChannelTypeWhatsAppRemote), plugin.GetGlobalRegistry()))
 	// Signed media URLs: stored message URLs stay the durable reference; the
 	// signature is added on the way out to readers and providers.
 	mediaSigner := buildMediaSigner()
@@ -646,6 +651,29 @@ func main() {
 	}
 	channelHandler := handlers.NewChannelHandler(channelService, producer, auditService)
 	groupHandler := handlers.NewGroupHandler(producer, channelService)
+
+	// Bridge gateway: Linktor Bridge devices (Android/desktop) host the WhatsApp
+	// session locally and connect back here over WebSocket. The gateway validates
+	// the per-channel bridge token, registers a remote adapter so the unified
+	// outbound worker routes through the device, and feeds inbound/status into
+	// the platform pipeline.
+	gatewayHub := gateway.NewHub()
+	gatewayHandler := gateway.NewHandler(gatewayHub, channelRepo, producer, channelService, plugin.GetGlobalRegistry())
+	// Mídia recebida pelo bridge chega inline (base64) e vai para o object
+	// store antes do NATS, como no e-mail.
+	gatewayHandler.SetRehost(func(ctx context.Context, msg *nats.InboundMessage) {
+		rehostInboundMedia(ctx, mediaStore, channelRepo, msg)
+	})
+
+	// Expose bridge health inline on channel List/Get responses so the admin UI
+	// sees online/stale/last_seen without extra calls.
+	channelHandler.SetBridgeHealth(func(channelID string) json.RawMessage {
+		info, err := json.Marshal(gatewayHandler.HealthForChannel(channelID))
+		if err != nil {
+			return nil
+		}
+		return info
+	})
 
 	// Create tenant service and handler
 	tenantService := service.NewTenantService(tenantRepo, userRepo, channelRepo, contactRepo)
@@ -1162,6 +1190,10 @@ func main() {
 	// WebSocket endpoint for WebChat
 	router.GET("/ws/:channelId", webchatHandler.WebSocketHandler)
 
+	// WebSocket endpoint for Linktor Bridge devices. Authenticated by the bridge
+	// token in the query string (channel_id + token), not by JWT.
+	router.GET("/api/v1/gateways/ws", gin.WrapH(gatewayHandler))
+
 	// API routes
 	api := router.Group("/api/v1")
 	{
@@ -1383,6 +1415,18 @@ func main() {
 				channels.POST("/:id/pair", channelHandler.RequestPairCode)
 				channels.POST("/:id/passkey/response", channelHandler.SubmitPasskeyResponse)
 				channels.POST("/:id/disconnect", channelHandler.Disconnect)
+				channels.POST("/:id/bridge-token", authMiddleware.RequireRole("admin", "owner"), channelHandler.GenerateBridgeToken)
+				channels.GET("/:id/bridge-health", func(c *gin.Context) {
+					tenantID := middleware.MustGetTenantID(c)
+					if tenantID == "" {
+						return
+					}
+					if _, err := channelService.GetByTenantAndID(c.Request.Context(), tenantID, c.Param("id")); err != nil {
+						handlers.RespondError(c, err)
+						return
+					}
+					c.JSON(http.StatusOK, gatewayHandler.HealthForChannel(c.Param("id")))
+				})
 				// A agenda do aparelho pareado. Antes das rotas genéricas de
 				// `/:id`, como as demais específicas deste bloco.
 				channels.GET("/:id/contacts", channelHandler.ListDeviceContacts)
@@ -1730,7 +1774,7 @@ func main() {
 	go func() {
 		logger.Info("Server started")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("Failed to start server")
+			logger.Fatal("Failed to start server on " + srv.Addr + ": " + err.Error())
 		}
 	}()
 
@@ -2038,7 +2082,7 @@ func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.Messag
 
 	messageID := status.MessageID
 	if messageID == "" && status.ExternalID != "" {
-		message, err := messageRepo.FindByExternalID(ctx, status.ExternalID)
+		message, err := findMessageByExternalID(ctx, messageRepo, status.ExternalID, time.Sleep)
 		if err != nil {
 			logger.Warn("Ignoring status update for unknown external message id: " + status.ExternalID)
 			return nil
@@ -2072,25 +2116,59 @@ func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.Messag
 		return nil
 	}
 
-	// Emit an outbound-webhook status event so external consumers (DeskLenz)
-	// receive message.{sent,delivered,read,failed}. Best-effort: never block the
-	// status pipeline on event publication.
-	publishStatusWebhookEvent(ctx, messageRepo, conversationRepo, producer, messageID, status)
+	// Quem precisa saber do status novo: o admin aberto (ticks na bolha, sem
+	// F5) e o webhook de saída do canal. Nenhum dos dois pode travar a fila.
+	notifyMessageStatusChange(ctx, messageRepo, conversationRepo, producer, messageID, status)
 
 	return nil
 }
 
-// publishStatusWebhookEvent publishes a `message.<status>` event carrying the
-// channel id so the webhook dispatcher can resolve the channel's endpoint.
-func publishStatusWebhookEvent(ctx context.Context, messageRepo *database.MessageRepository, conversationRepo *database.ConversationRepository, producer nats.Publisher, messageID string, status *nats.StatusUpdate) {
-	if producer == nil || conversationRepo == nil {
-		return
-	}
-	eventType := statusEventType(status.Status)
-	if eventType == "" {
-		return
-	}
+// O recibo do canal (entregue/lido) e o ack do envio viajam por filas
+// diferentes e costumam chegar na mesma fração de segundo. Quando o recibo
+// ganha a corrida, o external_id ainda não foi gravado e a mensagem "não
+// existe"; descartar aí perdia o delivered para sempre. A espera é curta e
+// limitada: o que não aparece em ~1s não é essa corrida.
+const (
+	externalIDLookupRetries = 4
+	externalIDLookupDelay   = 300 * time.Millisecond
+)
 
+// messageByExternalIDFinder é o pedaço do repositório que a busca usa.
+type messageByExternalIDFinder interface {
+	FindByExternalID(ctx context.Context, externalID string) (*entity.Message, error)
+}
+
+// findMessageByExternalID procura a mensagem pelo id do provedor, tentando de
+// novo por um instante se ela ainda não foi gravada. sleep é injetado para os
+// testes não esperarem de verdade.
+func findMessageByExternalID(ctx context.Context, repo messageByExternalIDFinder, externalID string, sleep func(time.Duration)) (*entity.Message, error) {
+	var lastErr error
+	for attempt := 0; attempt < externalIDLookupRetries; attempt++ {
+		if attempt > 0 {
+			sleep(externalIDLookupDelay)
+		}
+		message, err := repo.FindByExternalID(ctx, externalID)
+		if err == nil && message != nil {
+			return message, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("message %s not found", externalID)
+	}
+	return nil, lastErr
+}
+
+// notifyMessageStatusChange carrega a mensagem já com o status novo e a
+// repassa ao admin pelo WebSocket (message_updated) e ao webhook de saída
+// como `message.<status>`, com o channel id para o dispatcher achar o destino.
+func notifyMessageStatusChange(ctx context.Context, messageRepo *database.MessageRepository, conversationRepo *database.ConversationRepository, producer nats.Publisher, messageID string, status *nats.StatusUpdate) {
+	if conversationRepo == nil {
+		return
+	}
 	message, err := messageRepo.FindByID(ctx, messageID)
 	if err != nil || message == nil {
 		return
@@ -2100,6 +2178,12 @@ func publishStatusWebhookEvent(ctx context.Context, messageRepo *database.Messag
 		return
 	}
 
+	handlers.BroadcastMessageUpdated(conversation.TenantID, conversation.ID, message)
+
+	eventType := statusEventType(status.Status)
+	if producer == nil || eventType == "" {
+		return
+	}
 	_ = producer.PublishEvent(ctx, &nats.Event{
 		Type:     eventType,
 		TenantID: conversation.TenantID,

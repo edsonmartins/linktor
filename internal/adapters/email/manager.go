@@ -287,20 +287,8 @@ func tipoDoAnexo(mime string) string {
 // descartarInlineExcedente tira os bytes inline dos anexos que não cabem no
 // orçamento, na ordem em que vieram. Quem perde os bytes mantém nome e tipo.
 func descartarInlineExcedente(anexos []nats.AttachmentData, orcamento int) {
-	restante := orcamento
-	for i := range anexos {
-		a := &anexos[i]
-		dados := a.Metadata["data"]
-		if dados == "" {
-			continue
-		}
-		if len(dados) <= restante {
-			restante -= len(dados)
-			continue
-		}
-		logger.Warn("email: anexo " + a.Filename + " sem object store e grande demais para a fila; segue só o registro")
-		delete(a.Metadata, "data")
-		delete(a.Metadata, "data_encoding")
+	for _, nome := range nats.TrimInlineAttachments(anexos, orcamento) {
+		logger.Warn("email: anexo " + nome + " sem object store e grande demais para a fila; segue só o registro")
 	}
 }
 

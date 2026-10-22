@@ -72,6 +72,7 @@ import { TeamsConfig } from './teams-config'
 import { SlackConfig } from './slack-config'
 import { MattermostConfig } from './mattermost-config'
 import { DiretoConfig } from './direto-config'
+import { WhatsAppBridgeConfig } from './whatsapp-bridge-config'
 import { CoexistenceStatusBadge } from '@/components/coexistence-status-widget'
 import { EnvironmentBadge } from '@/components/environment-badge'
 
@@ -82,6 +83,7 @@ const channelIcons: Record<ChannelType, { color: string; bgColor: string }> = {
   webchat: { color: 'text-primary', bgColor: 'bg-primary/10' },
   whatsapp: { color: 'text-green-500', bgColor: 'bg-green-500/10' },
   whatsapp_official: { color: 'text-green-600', bgColor: 'bg-green-600/10' },
+  whatsapp_remote: { color: 'text-teal-500', bgColor: 'bg-teal-500/10' },
   telegram: { color: 'text-blue-500', bgColor: 'bg-blue-500/10' },
   sms: { color: 'text-purple-500', bgColor: 'bg-purple-500/10' },
   instagram: { color: 'text-pink-500', bgColor: 'bg-pink-500/10' },
@@ -422,6 +424,8 @@ function ChannelConfigSheet({
         return <WhatsAppConfig {...commonProps} />
       case 'whatsapp':
         return <WhatsAppUnofficialConfig {...commonProps} />
+      case 'whatsapp_remote':
+        return <WhatsAppBridgeConfig {...commonProps} />
       case 'telegram':
         return <TelegramConfig {...commonProps} />
       case 'sms':
@@ -675,6 +679,7 @@ export default function ChannelsPage() {
             <AvailableChannelCard type="instagram" t={t} onClick={() => handleAddChannel('instagram')} />
             <AvailableChannelCard type="email" t={t} onClick={() => handleAddChannel('email')} />
             <AvailableChannelCard type="whatsapp" t={t} onClick={() => handleAddChannel('whatsapp')} />
+            <AvailableChannelCard type="whatsapp_remote" t={t} onClick={() => handleAddChannel('whatsapp_remote')} />
             <AvailableChannelCard type="rcs" t={t} onClick={() => handleAddChannel('rcs')} />
             <AvailableChannelCard type="voice" t={t} onClick={() => handleAddChannel('voice')} />
             <AvailableChannelCard type="teams" t={t} onClick={() => handleAddChannel('teams')} />
