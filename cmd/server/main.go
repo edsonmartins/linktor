@@ -2116,10 +2116,9 @@ func handleMessageStatusUpdate(ctx context.Context, messageRepo *database.Messag
 		return nil
 	}
 
-	// Emit an outbound-webhook status event so external consumers (DeskLenz)
-	// receive message.{sent,delivered,read,failed}. Best-effort: never block the
-	// status pipeline on event publication.
-	publishStatusWebhookEvent(ctx, messageRepo, conversationRepo, producer, messageID, status)
+	// Quem precisa saber do status novo: o admin aberto (ticks na bolha, sem
+	// F5) e o webhook de saída do canal. Nenhum dos dois pode travar a fila.
+	notifyMessageStatusChange(ctx, messageRepo, conversationRepo, producer, messageID, status)
 
 	return nil
 }
@@ -2163,17 +2162,13 @@ func findMessageByExternalID(ctx context.Context, repo messageByExternalIDFinder
 	return nil, lastErr
 }
 
-// publishStatusWebhookEvent publishes a `message.<status>` event carrying the
-// channel id so the webhook dispatcher can resolve the channel's endpoint.
-func publishStatusWebhookEvent(ctx context.Context, messageRepo *database.MessageRepository, conversationRepo *database.ConversationRepository, producer nats.Publisher, messageID string, status *nats.StatusUpdate) {
-	if producer == nil || conversationRepo == nil {
+// notifyMessageStatusChange carrega a mensagem já com o status novo e a
+// repassa ao admin pelo WebSocket (message_updated) e ao webhook de saída
+// como `message.<status>`, com o channel id para o dispatcher achar o destino.
+func notifyMessageStatusChange(ctx context.Context, messageRepo *database.MessageRepository, conversationRepo *database.ConversationRepository, producer nats.Publisher, messageID string, status *nats.StatusUpdate) {
+	if conversationRepo == nil {
 		return
 	}
-	eventType := statusEventType(status.Status)
-	if eventType == "" {
-		return
-	}
-
 	message, err := messageRepo.FindByID(ctx, messageID)
 	if err != nil || message == nil {
 		return
@@ -2183,6 +2178,12 @@ func publishStatusWebhookEvent(ctx context.Context, messageRepo *database.Messag
 		return
 	}
 
+	handlers.BroadcastMessageUpdated(conversation.TenantID, conversation.ID, message)
+
+	eventType := statusEventType(status.Status)
+	if producer == nil || eventType == "" {
+		return
+	}
 	_ = producer.PublishEvent(ctx, &nats.Event{
 		Type:     eventType,
 		TenantID: conversation.TenantID,

@@ -1148,6 +1148,17 @@ export function ChatView({ conversationId }: ChatViewProps) {
       }
     )
 
+    // Status (entregue/lido) e edição chegam como message_updated; a mesma
+    // invalidação troca a bolha no lugar, sem esperar um F5.
+    const unsubMessageUpdated = subscribe<WSNewMessagePayload>(
+      WSEventTypes.MESSAGE_UPDATED,
+      (payload) => {
+        if (payload.conversation_id === conversationId) {
+          invalidateConversation()
+        }
+      }
+    )
+
     // Subscribe to typing events for this conversation
     const unsubTyping = subscribe<WSTypingPayload>(
       WSEventTypes.TYPING,
@@ -1171,6 +1182,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
     return () => {
       unsubNewMessage()
+      unsubMessageUpdated()
       unsubTyping()
     }
   }, [conversationId, subscribe, invalidateConversation])
