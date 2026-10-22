@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -109,24 +108,9 @@ func (h *AttachmentHandler) Upload(c *gin.Context) {
 
 	RespondCreated(c, UploadAttachmentResponse{
 		URL:       url,
-		Type:      attachmentTypeFromMime(mimeType),
+		Type:      storagelib.AttachmentTypeFromMime(mimeType),
 		Filename:  fileHeader.Filename,
 		MimeType:  mimeType,
 		SizeBytes: int64(len(data)),
 	})
-}
-
-// attachmentTypeFromMime maps a MIME type to the coarse attachment type used by
-// the message/entity model and the channel adapters.
-func attachmentTypeFromMime(mimeType string) string {
-	switch {
-	case strings.HasPrefix(mimeType, "image/"):
-		return "image"
-	case strings.HasPrefix(mimeType, "video/"):
-		return "video"
-	case strings.HasPrefix(mimeType, "audio/"):
-		return "audio"
-	default:
-		return "document"
-	}
 }

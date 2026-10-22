@@ -35,6 +35,19 @@ type Frame struct {
 	Message       json.RawMessage `json:"message"`
 	Status        json.RawMessage `json:"status"`
 	TS            int64           `json:"ts,omitempty"`
+	// Media é a mídia de um outbound (imagem, vídeo, áudio, documento). Text
+	// vira a legenda. A URL já vem assinada pelo worker; o bridge a baixa.
+	Media *OutboundMedia `json:"media,omitempty"`
+}
+
+// OutboundMedia descreve a mídia que o bridge deve baixar e enviar.
+type OutboundMedia struct {
+	Type     string `json:"type"` // image | video | audio | document
+	URL      string `json:"url"`
+	MimeType string `json:"mime_type,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	// PTT marca áudio como mensagem de voz (o WhatsApp espera OGG/Opus).
+	PTT bool `json:"ptt,omitempty"`
 }
 
 // AckResult is the outcome of an outbound send, delivered to the waiter keyed
@@ -199,10 +212,11 @@ func (b *Bridge) resolveAck(correlationID string, ack AckResult) {
 	}
 }
 
-// SendText sends an outbound command to the bridge and waits for its ack.
-// Returns the WhatsApp message ID on success. messageID may be empty (the
-// bridge generates one) or a caller-persisted ID reused for idempotent retry.
-func (b *Bridge) SendText(ctx context.Context, correlationID, to, text, messageID string) (AckResult, error) {
+// Send sends an outbound command (text or media) to the bridge and waits for
+// its ack. Returns the WhatsApp message ID on success. messageID may be empty
+// (the bridge generates one) or a caller-persisted ID reused for idempotent
+// retry.
+func (b *Bridge) Send(ctx context.Context, correlationID string, out *plugin.OutboundMessage, messageID string) (AckResult, error) {
 	ackCh := make(chan AckResult, 1)
 	b.pendingMu.Lock()
 	b.pending[correlationID] = ackCh
@@ -217,9 +231,10 @@ func (b *Bridge) SendText(ctx context.Context, correlationID, to, text, messageI
 		Type:          "outbound",
 		ChannelID:     b.ChannelID,
 		CorrelationID: correlationID,
-		To:            to,
-		Text:          text,
+		To:            out.RecipientID,
+		Text:          out.Content,
 		MessageID:     messageID,
+		Media:         outboundMedia(out),
 	}
 	if err := b.write(f); err != nil {
 		return AckResult{}, fmt.Errorf("write outbound to bridge: %w", err)
@@ -327,14 +342,36 @@ func (h *Hub) ServeConnection(b *Bridge) {
 
 // SendToChannel is the exported entry point the RemoteSender uses: it resolves
 // the channel's live bridge and performs the send, waiting for the ack.
-func (h *Hub) SendToChannel(ctx context.Context, channelID, correlationID, to, text, messageID string) (AckResult, error) {
+func (h *Hub) SendToChannel(ctx context.Context, channelID, correlationID string, out *plugin.OutboundMessage, messageID string) (AckResult, error) {
 	h.mu.RLock()
 	b, ok := h.bridges[channelID]
 	h.mu.RUnlock()
 	if !ok {
 		return AckResult{}, fmt.Errorf("no live bridge for channel %s", channelID)
 	}
-	return b.SendText(ctx, correlationID, to, text, messageID)
+	return b.Send(ctx, correlationID, out, messageID)
+}
+
+// outboundMedia extrai a mídia do OutboundMessage no formato do frame. O
+// worker já põe o anexo em Attachments[0] com a URL assinada; sem anexo é
+// texto puro. O tipo é o content type da mensagem, que o normalizer já
+// reduziu a image/video/audio/document.
+func outboundMedia(out *plugin.OutboundMessage) *OutboundMedia {
+	if out == nil || len(out.Attachments) == 0 || out.Attachments[0] == nil || out.Attachments[0].URL == "" {
+		return nil
+	}
+	att := out.Attachments[0]
+	mediaType := string(out.ContentType)
+	if mediaType == string(plugin.ContentTypeText) {
+		mediaType = att.Type
+	}
+	return &OutboundMedia{
+		Type:     mediaType,
+		URL:      att.URL,
+		MimeType: att.MimeType,
+		Filename: att.Filename,
+		PTT:      out.Metadata["ptt"] == "true",
+	}
 }
 
 // HealthInfo is the sanitized health snapshot of a bridge, for the admin API/UI.
@@ -430,17 +467,30 @@ func (a *RemoteAdapter) GetConnectionStatus() *plugin.ConnectionStatus {
 	return &plugin.ConnectionStatus{Connected: connected, Status: status}
 }
 
-// SendMessage implements plugin.ChannelAdapter. Only text is supported for now;
-// media/interactive/template over the bridge is a follow-up milestone.
+// bridgeContentTypes é o que o protocolo do bridge transporta hoje. Interativos,
+// templates e reações ficam como falha permanente até existirem no protocolo.
+var bridgeContentTypes = map[plugin.ContentType]bool{
+	plugin.ContentTypeText:     true,
+	plugin.ContentTypeImage:    true,
+	plugin.ContentTypeVideo:    true,
+	plugin.ContentTypeAudio:    true,
+	plugin.ContentTypeDocument: true,
+}
+
+// SendMessage implements plugin.ChannelAdapter. Text and media go over the
+// bridge; interactive/template are a follow-up milestone.
 func (a *RemoteAdapter) SendMessage(ctx context.Context, msg *plugin.OutboundMessage) (*plugin.SendResult, error) {
 	if msg == nil || msg.RecipientID == "" {
 		return nil, outbound.Permanentf("recipient is required")
 	}
-	if msg.ContentType != plugin.ContentTypeText {
-		return nil, outbound.Permanentf("bridge currently supports text outbound only (got %s)", msg.ContentType)
+	if !bridgeContentTypes[msg.ContentType] {
+		return nil, outbound.Permanentf("bridge does not support %s outbound", msg.ContentType)
+	}
+	if msg.ContentType != plugin.ContentTypeText && outboundMedia(msg) == nil {
+		return nil, outbound.Permanentf("%s outbound without a media URL", msg.ContentType)
 	}
 
-	ack, err := a.hub.SendToChannel(ctx, a.channelID, msg.ID, msg.RecipientID, msg.Content, "")
+	ack, err := a.hub.SendToChannel(ctx, a.channelID, msg.ID, msg, "")
 	if err != nil {
 		return nil, err // transient: worker retries
 	}
@@ -494,9 +544,12 @@ func (a *RemoteAdapter) GetChannelInfo() *plugin.ChannelInfo {
 		Description: "WhatsApp Multi-Device session hosted on the user's device",
 		Version:     "0.1.0",
 		Capabilities: &plugin.ChannelCapabilities{
-			SupportedContentTypes: []plugin.ContentType{plugin.ContentTypeText},
-			SupportsMedia:         false,
-			MaxMessageLength:      65536,
+			SupportedContentTypes: []plugin.ContentType{
+				plugin.ContentTypeText, plugin.ContentTypeImage, plugin.ContentTypeVideo,
+				plugin.ContentTypeAudio, plugin.ContentTypeDocument,
+			},
+			SupportsMedia:    true,
+			MaxMessageLength: 65536,
 		},
 	}
 }

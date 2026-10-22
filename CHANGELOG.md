@@ -27,8 +27,16 @@ APIs não-oficiais.
     token do canal, armazenado cifrado em `credentials.bridge_token`.
   - `GET /api/v1/gateways/ws?channel_id=..&token=..` — conexão da bridge
     (autenticada pelo token do canal, não por JWT).
-- **Escopo atual**: texto outbound/inbound. Mídia, interativos e reações sobre a
-  bridge ficam como próximos milestones (falha permanente até lá).
+- **Texto e mídia nos dois sentidos**: `outbound` leva `media{type,url,mime_type,
+  filename,ptt}` com a URL já assinada pelo worker (o device baixa e envia);
+  `inbound` traz `attachments[]` em base64, que o gateway re-hospeda no object
+  store antes de publicar no NATS (mesmo caminho do e-mail e do WhatsApp
+  embutido, `rehostInboundMedia`); acima de 32 MB ou sem download só o
+  registro do anexo segue, com `download_error`. Interativos e reações ficam
+  como próximos milestones (falha permanente até lá).
+- **Helpers compartilhados**: `storage.AttachmentTypeFromMime` (antes copiado
+  no upload do atendente e no do widget) e `nats.TrimInlineAttachments` (antes
+  privado do e-mail) passam a ser usados também pelo gateway.
 - **Heartbeat e saúde da bridge**: frame de aplicação `ping`/`pong` (a bridge
   envia status + timestamp a cada 20s; o servidor registra `last_seen`).
   `GET /api/v1/channels/:id/bridge-health` expõe `online`, `platform`, `version`,
@@ -46,10 +54,9 @@ Protocolo documentado em `bridges/docs/PROTOCOL.md` (repo bridges).
 
 ### Próximos milestones (bridge)
 
-- Mídia (imagem/documento/vídeo/áudio) e interativos (botões/listas) pelo protocolo;
-- UX de registro: criar canal + gerar token direto no admin;
-- Rehost de mídia inbound no device → object storage;
-- Teste E2E ao vivo com device real.
+- Interativos (botões/listas) e reações pelo protocolo;
+- Recibos de entrega/leitura do WhatsApp refletidos no status da mensagem;
+- Mensagem de voz (OGG/Opus) a partir de áudios em outros formatos.
 
 ### Canais — WhatsApp não-oficial (whatsmeow)
 

@@ -14,6 +14,7 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
+	"github.com/msgfy/linktor/internal/infrastructure/storage"
 	"github.com/msgfy/linktor/pkg/plugin"
 )
 
@@ -39,7 +40,26 @@ type Handler struct {
 	producer nats.Publisher
 	status   StatusUpdater
 	registry *plugin.Registry
+	// rehost move os anexos inline (base64) para o object store antes de
+	// publicar, como o e-mail faz: o NATS limita o payload a 1 MB.
+	rehost func(context.Context, *nats.InboundMessage)
 }
+
+// SetRehost registra o passo que move anexos inline para o object store antes
+// da publicação no NATS.
+func (h *Handler) SetRehost(fn func(context.Context, *nats.InboundMessage)) {
+	h.rehost = fn
+}
+
+const (
+	// maxInboundAttachmentBytes é o maior anexo aceito do bridge, em bytes
+	// decodificados. Fotos do WhatsApp têm no máximo 16 MB; vídeos e documentos
+	// maiores chegam só com nome, tipo e tamanho.
+	maxInboundAttachmentBytes = 32 << 20
+	// maxInlineBytes é quanto base64 ainda pode seguir no NATS quando não há
+	// object store configurado (mesmo orçamento do e-mail).
+	maxInlineBytes = 600 << 10
+)
 
 // HealthSummary returns the live bridge health snapshots for admin visibility.
 func (h *Handler) HealthSummary() []HealthInfo {
@@ -73,6 +93,22 @@ type InboundEvent struct {
 	SenderLID string `json:"sender_lid,omitempty"`
 	Text      string `json:"text"`
 	Timestamp int64  `json:"ts"`
+	// ContentType é o tipo da mensagem (text, image, video, audio, document);
+	// vazio vale text. MsgType guarda a variante do WhatsApp (ptt, sticker).
+	ContentType string              `json:"content_type,omitempty"`
+	MsgType     string              `json:"msg_type,omitempty"`
+	Attachments []InboundAttachment `json:"attachments,omitempty"`
+}
+
+// InboundAttachment é um anexo baixado e decifrado no device. Data traz os
+// bytes em base64; Error explica quando o bridge não conseguiu baixar.
+type InboundAttachment struct {
+	Type      string `json:"type"`
+	MimeType  string `json:"mime_type,omitempty"`
+	Filename  string `json:"filename,omitempty"`
+	SizeBytes int64  `json:"size_bytes,omitempty"`
+	Data      string `json:"data,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // ServeHTTP is the entry point for GET /api/v1/gateways/ws: authenticate,
@@ -141,8 +177,8 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &evt); err != nil {
 		return fmt.Errorf("parse inbound payload: %w", err)
 	}
-	if evt.ID == "" || evt.Text == "" {
-		return nil // ignore receipts/connection frames forwarded without text
+	if evt.ID == "" || (evt.Text == "" && len(evt.Attachments) == 0) {
+		return nil // ignore receipts/connection frames forwarded without content
 	}
 
 	channel, err := h.channels.FindByID(context.Background(), channelID)
@@ -188,18 +224,89 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 	if evt.SenderName != "" {
 		metadata["sender_name"] = evt.SenderName
 	}
+	// Mesmas chaves do adaptador WhatsApp embutido, para o resto do pipeline
+	// não distinguir de onde a sessão veio.
+	if evt.MsgType != "" {
+		metadata["msg_type"] = evt.MsgType
+	}
+	if evt.MsgType == "sticker" {
+		metadata["is_sticker"] = "true"
+	}
+	contentType := evt.ContentType
+	if contentType == "" {
+		contentType = string(plugin.ContentTypeText)
+	}
 	inbound := &nats.InboundMessage{
 		ID:          evt.ID,
 		TenantID:    channel.TenantID,
 		ChannelID:   channel.ID,
 		ChannelType: string(channel.Type),
 		ExternalID:  evt.ID,
-		ContentType: "text",
+		ContentType: contentType,
 		Content:     evt.Text,
 		Metadata:    metadata,
+		Attachments: inboundAttachments(evt.Attachments),
 		Timestamp:   time.Unix(evt.Timestamp, 0),
 	}
-	return h.producer.PublishInbound(context.Background(), inbound)
+	ctx := context.Background()
+	if h.rehost != nil && len(inbound.Attachments) > 0 {
+		h.rehost(ctx, inbound)
+	}
+	for _, name := range nats.TrimInlineAttachments(inbound.Attachments, maxInlineBytes) {
+		log.Printf("gateway: anexo %q do canal %s sem object store e grande demais para a fila; segue só o registro", name, channelID)
+	}
+	return h.producer.PublishInbound(ctx, inbound)
+}
+
+// inboundAttachments converte os anexos do bridge para o contrato inline do
+// pipeline (base64 em metadata, que rehostInboundMedia move para o store).
+// Anexos acima do limite ou que o bridge não conseguiu baixar seguem só com
+// nome, tipo e tamanho, mais o motivo em download_error.
+func inboundAttachments(in []InboundAttachment) []nats.AttachmentData {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]nats.AttachmentData, 0, len(in))
+	for _, a := range in {
+		att := nats.AttachmentData{
+			Type:      a.Type,
+			Filename:  a.Filename,
+			MimeType:  a.MimeType,
+			SizeBytes: a.SizeBytes,
+			Metadata:  map[string]string{},
+		}
+		if att.Type == "" {
+			att.Type = storage.AttachmentTypeFromMime(a.MimeType)
+		}
+		switch {
+		case a.Error != "":
+			att.Metadata["download_error"] = a.Error
+		case a.Data == "":
+			att.Metadata["download_error"] = "bridge forwarded no data"
+		case base64DecodedLen(a.Data) > maxInboundAttachmentBytes:
+			att.Metadata["download_error"] = fmt.Sprintf("attachment exceeds %d MB", maxInboundAttachmentBytes>>20)
+		default:
+			att.Metadata[nats.AttachmentDataKey] = a.Data
+			att.Metadata[nats.AttachmentDataEncodingKey] = nats.AttachmentDataBase64
+			if att.SizeBytes == 0 {
+				att.SizeBytes = int64(base64DecodedLen(a.Data))
+			}
+		}
+		out = append(out, att)
+	}
+	return out
+}
+
+// base64DecodedLen estima o tamanho decodificado sem decodificar.
+func base64DecodedLen(data string) int {
+	n := len(data) / 4 * 3
+	if strings.HasSuffix(data, "==") {
+		return n - 2
+	}
+	if strings.HasSuffix(data, "=") {
+		return n - 1
+	}
+	return n
 }
 
 // jidUserOrBare returns the phone/user part of a JID (everything before @ and

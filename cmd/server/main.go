@@ -659,6 +659,11 @@ func main() {
 	// the platform pipeline.
 	gatewayHub := gateway.NewHub()
 	gatewayHandler := gateway.NewHandler(gatewayHub, channelRepo, producer, channelService, plugin.GetGlobalRegistry())
+	// Mídia recebida pelo bridge chega inline (base64) e vai para o object
+	// store antes do NATS, como no e-mail.
+	gatewayHandler.SetRehost(func(ctx context.Context, msg *nats.InboundMessage) {
+		rehostInboundMedia(ctx, mediaStore, channelRepo, msg)
+	})
 
 	// Expose bridge health inline on channel List/Get responses so the admin UI
 	// sees online/stale/last_seen without extra calls.

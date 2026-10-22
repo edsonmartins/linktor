@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"github.com/msgfy/linktor/pkg/plugin"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,7 +54,9 @@ func TestHubSendTextAck(t *testing.T) {
 	}
 	resultCh := make(chan sendResult, 1)
 	go func() {
-		ack, err := hub.SendToChannel(context.Background(), "wh-abc", "c_1", "5511999999999", "olá", "")
+		ack, err := hub.SendToChannel(context.Background(), "wh-abc", "c_1", &plugin.OutboundMessage{
+			RecipientID: "5511999999999", ContentType: plugin.ContentTypeText, Content: "olá",
+		}, "")
 		resultCh <- sendResult{ack, err}
 	}()
 
@@ -95,7 +98,9 @@ func TestHubSendTextAck(t *testing.T) {
 // channel has no live bridge (the outbound worker will retry).
 func TestHubSendToChannelNoBridge(t *testing.T) {
 	hub := NewHub()
-	_, err := hub.SendToChannel(context.Background(), "wh-xyz", "c_2", "5511999999999", "oi", "")
+	_, err := hub.SendToChannel(context.Background(), "wh-xyz", "c_2", &plugin.OutboundMessage{
+		RecipientID: "5511999999999", ContentType: plugin.ContentTypeText, Content: "oi",
+	}, "")
 	if err == nil || !strings.Contains(err.Error(), "no live bridge") {
 		t.Fatalf("expected no-live-bridge error, got %v", err)
 	}
