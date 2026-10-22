@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,6 +104,16 @@ type InboundEvent struct {
 	ContentType string              `json:"content_type,omitempty"`
 	MsgType     string              `json:"msg_type,omitempty"`
 	Attachments []InboundAttachment `json:"attachments,omitempty"`
+	Location    *InboundLocation    `json:"location,omitempty"`
+}
+
+// InboundLocation é um ponto compartilhado; vira latitude/longitude/name/
+// address no metadata, as chaves que o normalizer e o adaptador embutido usam.
+type InboundLocation struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Name      string  `json:"name,omitempty"`
+	Address   string  `json:"address,omitempty"`
 }
 
 // InboundAttachment é um anexo baixado e decifrado no device. Data traz os
@@ -182,7 +193,7 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &evt); err != nil {
 		return fmt.Errorf("parse inbound payload: %w", err)
 	}
-	if evt.ID == "" || (evt.Text == "" && len(evt.Attachments) == 0) {
+	if evt.ID == "" || (evt.Text == "" && len(evt.Attachments) == 0 && evt.Location == nil) {
 		return nil // ignore receipts/connection frames forwarded without content
 	}
 
@@ -242,6 +253,16 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 	}
 	if evt.MsgType == "sticker" {
 		metadata["is_sticker"] = "true"
+	}
+	if loc := evt.Location; loc != nil {
+		metadata["latitude"] = strconv.FormatFloat(loc.Latitude, 'f', -1, 64)
+		metadata["longitude"] = strconv.FormatFloat(loc.Longitude, 'f', -1, 64)
+		if loc.Name != "" {
+			metadata["name"] = loc.Name
+		}
+		if loc.Address != "" {
+			metadata["address"] = loc.Address
+		}
 	}
 	contentType := evt.ContentType
 	if contentType == "" {

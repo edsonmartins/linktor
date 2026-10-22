@@ -111,3 +111,21 @@ func TestHandleInbound_IgnoresEmptyEvents(t *testing.T) {
 	require.NoError(t, h.handleInbound("ch-1", inboundRaw(t, InboundEvent{ID: "R1", Type: "receipt", From: "x@s.whatsapp.net"})))
 	assert.Empty(t, producer.InboundMessages)
 }
+
+// Localização não tem anexo: vira content_type location com as coordenadas,
+// nome e endereço no metadata, nas chaves que o normalizer já lê.
+func TestHandleInbound_Location(t *testing.T) {
+	h, producer := newMediaHandler(t)
+	require.NoError(t, h.handleInbound("ch-1", inboundRaw(t, InboundEvent{
+		ID: "L1", From: "5511999999999@s.whatsapp.net", ContentType: "location", Text: "Loja", Timestamp: 1,
+		Location: &InboundLocation{Latitude: -23.55, Longitude: -46.63, Name: "Loja", Address: "Av. Paulista, 1"},
+	})))
+	require.Len(t, producer.InboundMessages, 1)
+	in := producer.InboundMessages[0]
+	assert.Equal(t, "location", in.ContentType)
+	assert.Equal(t, "Loja", in.Content)
+	assert.Equal(t, "-23.55", in.Metadata["latitude"])
+	assert.Equal(t, "-46.63", in.Metadata["longitude"])
+	assert.Equal(t, "Av. Paulista, 1", in.Metadata["address"])
+	assert.Empty(t, in.Attachments)
+}
