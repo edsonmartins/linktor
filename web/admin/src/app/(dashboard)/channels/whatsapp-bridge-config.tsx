@@ -223,29 +223,37 @@ export function WhatsAppBridgeConfig({ channel, onSuccess, onCancel }: WhatsAppB
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <KeyRound className="h-4 w-4" />
-                    {tb('tokenTitle')}
+                    {tb('valuesTitle')}
                   </CardTitle>
-                  <CardDescription>{tb('tokenDesc')}</CardDescription>
+                  <CardDescription>{tb('valuesDesc')}</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button type="button" variant="outline" onClick={generateToken} disabled={generating}>
-                    {generating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                    {token ? tb('regenerateToken') : tb('generateToken')}
-                  </Button>
-
-                  {token && (
-                    <>
-                      <div className="flex gap-2">
-                        <Input readOnly value={token} className="font-mono text-xs" />
-                        <Button type="button" variant="outline" size="icon" onClick={() => copy('token', token)}>
-                          {copied === 'token' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                      <p className="text-xs text-amber-600">{tb('tokenShownOnce')}</p>
-                    </>
-                  )}
+                <CardContent className="space-y-4">
+                  <CopyRow label={tb('serverLabel')} value={gatewayWsUrl()} copied={copied === 'server'} onCopy={() => copy('server', gatewayWsUrl())} />
+                  <CopyRow label={tb('channelIdLabel')} value={channel.id} copied={copied === 'channel'} onCopy={() => copy('channel', channel.id)} />
 
                   <div className="space-y-1">
+                    <p className="text-xs font-medium">{tb('tokenLabel')}</p>
+                    {token ? (
+                      <>
+                        <div className="flex gap-2">
+                          <Input readOnly value={token} className="font-mono text-xs" />
+                          <Button type="button" variant="outline" size="icon" onClick={() => copy('token', token)}>
+                            {copied === 'token' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-amber-600">{tb('tokenShownOnce')}</p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{tb('tokenPending')}</p>
+                    )}
+                    <Button type="button" variant="outline" size="sm" onClick={generateToken} disabled={generating}>
+                      {generating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                      {token ? tb('regenerateToken') : tb('generateToken')}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">{tb('tokenDesc')}</p>
+                  </div>
+
+                  <div className="space-y-1 pt-2 border-t">
                     <p className="text-xs font-medium">{tb('commandTitle')}</p>
                     <div className="flex gap-2">
                       <Input readOnly value={command} className="font-mono text-xs" />
@@ -284,6 +292,21 @@ export function WhatsAppBridgeConfig({ channel, onSuccess, onCancel }: WhatsAppB
         </div>
       </form>
     </Form>
+  )
+}
+
+/** Linha "rótulo + valor somente leitura + copiar", para a pessoa colar no painel do bridge. */
+function CopyRow({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium">{label}</p>
+      <div className="flex gap-2">
+        <Input readOnly value={value} className="font-mono text-xs" />
+        <Button type="button" variant="outline" size="icon" onClick={onCopy}>
+          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+        </Button>
+      </div>
+    </div>
   )
 }
 

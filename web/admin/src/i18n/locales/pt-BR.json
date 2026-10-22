@@ -362,6 +362,12 @@
     },
     "config": {
       "bridge": {
+        "valuesTitle": "Dados para o painel do bridge",
+        "valuesDesc": "Copie e cole os três valores no bloco \"Linktor\" do painel do bridge (http://127.0.0.1:7788 no computador do atendente).",
+        "serverLabel": "Servidor",
+        "channelIdLabel": "ID do canal",
+        "tokenLabel": "Token do bridge",
+        "tokenPending": "Ainda não há token. Gere um para o bridge se autenticar neste canal.",
         "namePlaceholder": "WhatsApp da loja",
         "howItWorksTitle": "Como funciona",
         "howItWorksDesc": "A sessão do WhatsApp fica no computador do atendente, no app Linktor Bridge, e liga ao Linktor por conexão de saída. Nada precisa ser aberto no firewall.",
