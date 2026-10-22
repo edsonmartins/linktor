@@ -23,6 +23,12 @@ import { useToast } from '@/hooks/use-toast'
 import { api, WEBHOOK_BASE_URL } from '@/lib/api'
 import { copyText } from '@/lib/clipboard'
 import type { Channel } from '@/types'
+import {
+  OutboundWebhookFields,
+  outboundWebhookDefaults,
+  outboundWebhookPayload,
+  outboundWebhookSchema,
+} from '@/components/channels/outbound-webhook-fields'
 
 /**
  * WhatsApp via Linktor Bridge: a sessão do WhatsApp roda no computador do
@@ -30,9 +36,11 @@ import type { Channel } from '@/types'
  * Aqui só se dá nome ao canal, gera-se o token do bridge e acompanha-se a
  * saúde da ligação; o pareamento por QR acontece no painel do bridge, no PC.
  */
-const bridgeConfigSchema = z.object({
-  name: z.string().min(1, 'Channel name is required'),
-})
+const bridgeConfigSchema = z
+  .object({
+    name: z.string().min(1, 'Channel name is required'),
+  })
+  .merge(outboundWebhookSchema)
 
 type BridgeConfigForm = z.infer<typeof bridgeConfigSchema>
 
@@ -72,7 +80,7 @@ export function WhatsAppBridgeConfig({ channel, onSuccess, onCancel }: WhatsAppB
 
   const form = useForm<BridgeConfigForm>({
     resolver: zodResolver(bridgeConfigSchema),
-    defaultValues: { name: channel?.name || '' },
+    defaultValues: { name: channel?.name || '', ...outboundWebhookDefaults(channel) },
   })
 
   // Saúde do bridge a cada 10s enquanto a tela está aberta: o ping do bridge
@@ -99,10 +107,11 @@ export function WhatsAppBridgeConfig({ channel, onSuccess, onCancel }: WhatsAppB
   const onSubmit = async (data: BridgeConfigForm) => {
     setIsSubmitting(true)
     try {
-      const payload = { name: data.name, type: 'whatsapp_remote' }
+      const webhook = outboundWebhookPayload(data)
+      const payload = { name: data.name, type: 'whatsapp_remote', ...webhook }
       let result: Channel
       if (isEditing) {
-        result = await api.put<Channel>(`/channels/${channel.id}`, { name: data.name })
+        result = await api.put<Channel>(`/channels/${channel.id}`, { name: data.name, ...webhook })
         toast({ title: t('channelUpdated'), description: t('channelUpdatedDesc', { name: data.name }) })
       } else {
         result = await api.post<Channel>('/channels', payload)
@@ -181,6 +190,8 @@ export function WhatsAppBridgeConfig({ channel, onSuccess, onCancel }: WhatsAppB
               </ol>
             </CardContent>
           </Card>
+
+          <OutboundWebhookFields control={form.control} isEditing={isEditing} />
 
           {isEditing ? (
             <>
