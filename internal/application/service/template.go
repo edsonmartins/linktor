@@ -561,6 +561,8 @@ type metaTemplateInfo struct {
 	Language string `json:"language"`
 	Status   string `json:"status"`
 	Category string `json:"category"`
+	// RejectedReason is Meta's reason for a REJECTED template ("NONE" otherwise).
+	RejectedReason string `json:"rejected_reason,omitempty"`
 }
 
 // editTemplateOnMeta updates an existing template. Meta allows editing
@@ -804,7 +806,7 @@ func (s *TemplateService) CreateFromLibrary(ctx context.Context, input *CreateFr
 // Useful when the caller has a stale local copy and wants to refresh just
 // that variant without paying for a 250-template list call.
 func (s *TemplateService) getTemplateFromMeta(ctx context.Context, creds *metaCredentials, templateID string) (*metaTemplateInfo, error) {
-	url := fmt.Sprintf("%s/%s/%s?fields=id,name,language,status,category", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, templateID)
+	url := fmt.Sprintf("%s/%s/%s?fields=id,name,language,status,category,rejected_reason", graphapi.BaseURL(), whatsappofficial.DefaultAPIVersion, templateID)
 
 	respBody, err := s.metaRequest(ctx, "GET", url, creds.accessToken, nil)
 	if err != nil {
@@ -851,6 +853,15 @@ func (s *TemplateService) RefreshFromMeta(ctx context.Context, tenantID, id stri
 	template.Status = mapMetaStatusToEntity(info.Status)
 	template.Category = entity.TemplateCategory(info.Category)
 	template.Language = info.Language
+	// The refresh is the fallback when the status webhook was missed: it must also carry the
+	// rejection reason, or a REJECTED template reaches the author without the "why".
+	if template.Status == entity.TemplateStatusRejected {
+		if info.RejectedReason != "" && info.RejectedReason != "NONE" {
+			template.RejectionReason = info.RejectedReason
+		}
+	} else {
+		template.RejectionReason = ""
+	}
 	template.UpdatedAt = time.Now()
 	now := time.Now()
 	template.LastSyncedAt = &now

@@ -723,6 +723,35 @@ func TestTemplateService_RefreshFromMeta_UpdatesLocalRow(t *testing.T) {
 	assert.NotNil(t, result.LastSyncedAt)
 }
 
+func TestTemplateService_RefreshFromMeta_CarriesRejectionReason(t *testing.T) {
+	svc, templateRepo := setupTemplateService()
+	channelRepo := svc.channelRepo.(*testutil.MockChannelRepository)
+	channelRepo.Channels["ch-1"] = &entity.Channel{
+		ID: "ch-1", TenantID: "tenant-1", Type: entity.ChannelTypeWhatsAppOfficial,
+		Credentials: map[string]string{"access_token": "t", "waba_id": "w"},
+	}
+	templateRepo.Templates["t1"] = &entity.Template{
+		ID: "t1", TenantID: "tenant-1", ChannelID: "ch-1", ExternalID: "hsm-7", Status: entity.TemplateStatusPending,
+	}
+	body := `{"id":"hsm-7","name":"cobranca","language":"pt_BR","status":"REJECTED","category":"UTILITY","rejected_reason":"PROMOTIONAL"}`
+	svc.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		assert.Contains(t, r.URL.RawQuery, "rejected_reason")
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+
+	result, err := svc.RefreshFromMeta(context.Background(), "tenant-1", "t1")
+	require.NoError(t, err)
+	assert.Equal(t, entity.TemplateStatusRejected, result.Status)
+	assert.Equal(t, "PROMOTIONAL", result.RejectionReason)
+
+	// Approved later (after an edit): the old reason no longer applies.
+	body = `{"id":"hsm-7","name":"cobranca","language":"pt_BR","status":"APPROVED","category":"UTILITY","rejected_reason":"NONE"}`
+	result, err = svc.RefreshFromMeta(context.Background(), "tenant-1", "t1")
+	require.NoError(t, err)
+	assert.Equal(t, entity.TemplateStatusApproved, result.Status)
+	assert.Empty(t, result.RejectionReason)
+}
+
 func TestTemplateService_RefreshFromMeta_RejectsWrongTenant(t *testing.T) {
 	svc, templateRepo := setupTemplateService()
 	templateRepo.Templates["t1"] = &entity.Template{
