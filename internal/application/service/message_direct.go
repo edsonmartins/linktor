@@ -63,6 +63,24 @@ type DirectSendInput struct {
 	// an integrator with no conversation in hand to keep a second messaging stack
 	// alive just for images and audio.
 	Attachments []MessageAttachmentInput
+	// Template carries an approved-template send (content_type "template"). It is
+	// stored as the template_* metadata the outbound pipeline already reads, so the
+	// direct route needs no template model of its own downstream.
+	Template *DirectTemplate
+	// Precheck asks for the synchronous refusals (invalid recipient, template not
+	// approved, outside the 24h window) on whatsapp_official channels, before
+	// anything is written. Opt-in: without it the send behaves exactly as before
+	// and the outbound guards decide asynchronously.
+	Precheck bool
+}
+
+// DirectTemplate is the template part of a direct send.
+type DirectTemplate struct {
+	Name     string
+	Language string
+	// ComponentsJSON is the provider-native components array (header, body
+	// parameters, buttons), passed through verbatim.
+	ComponentsJSON string
 }
 
 // DirectSendResult is the canonical Linktor answer to a direct send.
@@ -119,11 +137,24 @@ func (s *MessageService) SendDirect(ctx context.Context, input *DirectSendInput)
 			contentType = string(entity.ContentTypeText)
 		}
 	}
+	// Template is carried by its own structured field; it must name the template
+	// and the language. The message content shown to agents is the template name.
+	if contentType == string(entity.ContentTypeTemplate) {
+		if input.Template == nil || strings.TrimSpace(input.Template.Name) == "" || strings.TrimSpace(input.Template.Language) == "" {
+			return nil, errors.Validation("template.name and template.language are required for content_type \"template\"")
+		}
+		if c := strings.TrimSpace(input.Template.ComponentsJSON); c != "" && !json.Valid([]byte(c)) {
+			return nil, errors.Validation("template.components must be valid JSON")
+		}
+		if strings.TrimSpace(input.Content) == "" {
+			input.Content = "template:" + strings.TrimSpace(input.Template.Name)
+		}
+	}
 	// Media types are allowed, but only with something to deliver. The types left
-	// out (location, contact, template, interactive, poll, reaction) need
-	// structured payloads this route does not model, and silently degrading them
-	// to text would deliver the wrong thing.
-	if contentType != string(entity.ContentTypeText) {
+	// out (location, contact, interactive, poll, reaction) need structured
+	// payloads this route does not model, and silently degrading them to text
+	// would deliver the wrong thing.
+	if contentType != string(entity.ContentTypeText) && contentType != string(entity.ContentTypeTemplate) {
 		if !directMediaContentTypes[contentType] {
 			return nil, errors.Validation(
 				"content_type must be \"text\" or one of: image, video, audio, document, sticker")
@@ -158,6 +189,21 @@ func (s *MessageService) SendDirect(ctx context.Context, input *DirectSendInput)
 	}
 
 	metadata := copyMetadata(input.Metadata)
+	if contentType == string(entity.ContentTypeTemplate) {
+		metadata["template_name"] = strings.TrimSpace(input.Template.Name)
+		metadata["template_language"] = strings.TrimSpace(input.Template.Language)
+		if c := strings.TrimSpace(input.Template.ComponentsJSON); c != "" {
+			metadata["template_components"] = c
+		}
+	}
+
+	// Synchronous refusals, before anything is written (opt-in).
+	if input.Precheck {
+		if err := s.precheckDirect(ctx, channel, recipient, contentType, input.Template); err != nil {
+			return nil, err
+		}
+	}
+
 	idempotencyKey := strings.TrimSpace(metadata[MetadataIdempotencyKey])
 	if len(idempotencyKey) > MaxIdempotencyKeyLength {
 		// The column is VARCHAR(255); without this the driver's "value too long"
@@ -549,6 +595,55 @@ func newDirectOutboxEvent(eventType, tenantID, aggregateType, aggregateID, idemp
 		IdempotencyKey: idempotencyKey,
 		CreatedAt:      time.Now(),
 	}, nil
+}
+
+// TemplateStatusLookup reads the locally-synced template registry. Implemented
+// by database.TemplateRepository.
+type TemplateStatusLookup interface {
+	FindByName(ctx context.Context, tenantID, channelID, name, language string) (*entity.Template, error)
+}
+
+// SetTemplateStatusLookup wires the registry used by the template precheck.
+// Optional: without it the template precheck passes and Meta decides.
+func (s *MessageService) SetTemplateStatusLookup(lookup TemplateStatusLookup) {
+	s.templates = lookup
+}
+
+// precheckDirect gives the caller, synchronously and with distinct codes, the
+// refusals the outbound guards would otherwise produce later as a failed status:
+// INVALID_RECIPIENT (not a phone number), TEMPLATE_NOT_APPROVED (local registry
+// knows the template is unusable) and OUTSIDE_WINDOW (free-form message with
+// the 24h window closed). Only whatsapp_official channels have these rules.
+// Unknown template status passes, as in the guard: Meta stays the validator.
+func (s *MessageService) precheckDirect(ctx context.Context, channel *entity.Channel, recipient, contentType string, tpl *DirectTemplate) error {
+	if channel.Type != entity.ChannelTypeWhatsAppOfficial {
+		return nil
+	}
+	if _, ok := entity.NormalizeE164(recipient); !ok {
+		return errors.New(errors.ErrCodeInvalidRecipient, "recipient is not a valid phone number")
+	}
+	if contentType == string(entity.ContentTypeTemplate) {
+		if s.templates == nil {
+			return nil
+		}
+		record, err := s.templates.FindByName(ctx, channel.TenantID, channel.ID, strings.TrimSpace(tpl.Name), strings.TrimSpace(tpl.Language))
+		if err == nil && record != nil && outbound.TemplateStatusBlocked(record.Status) {
+			return errors.New(errors.ErrCodeTemplateNotApproved, "template is not approved for sending").
+				WithDetails(map[string]string{"template_status": string(record.Status)})
+		}
+		return nil
+	}
+	if contentType != string(entity.ContentTypeText) {
+		return nil
+	}
+	window, err := s.windowFor(ctx, channel, recipient)
+	if err != nil {
+		return nil // lookup failure: fail open, the outbound guard still decides
+	}
+	if !window.Open {
+		return errors.New(errors.ErrCodeOutsideWindow, "24h customer-service window is closed; send an approved template instead")
+	}
+	return nil
 }
 
 // WindowState is the 24h customer-service window of a recipient on a channel.

@@ -34,6 +34,13 @@ var blockedTemplateStatuses = map[entity.TemplateStatus]bool{
 	entity.TemplateStatusLimitExceeded:   true,
 }
 
+// TemplateStatusBlocked reports whether Meta is known to reject a template in this
+// status — the same blocklist the guard applies, exported for the synchronous
+// precheck of POST /messages/send.
+func TemplateStatusBlocked(status entity.TemplateStatus) bool {
+	return blockedTemplateStatuses[status]
+}
+
 // NewTemplateStatusPolicy returns a PolicyDecorator that blocks (or observes,
 // per mode) template sends whose locally-synced status is known-unusable, on
 // whatsapp_official channels. Other channel types are returned unwrapped.

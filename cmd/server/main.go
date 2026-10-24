@@ -608,6 +608,7 @@ func main() {
 	// Idempotência lógica do envio direto: (tenant_id, metadata.idempotency_key)
 	// não produz duas mensagens.
 	messageService.SetIdempotencyStore(messageIdempotencyRepo)
+	messageService.SetTemplateStatusLookup(templateRepo)
 	// Typing inbound (VendaX Direto, RFC-009): resolve phone→contact→conversation e mostra o
 	// "digitando" do cliente na UI do agente. Opcional (no-op sem estas deps).
 	webhookHandler.SetTypingDeps(contactRepo, conversationRepo, messageService)

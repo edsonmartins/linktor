@@ -43,6 +43,13 @@ const (
 
 	// Timeout errors
 	ErrCodeTimeout ErrorCode = "TIMEOUT"
+
+	// Send precheck refusals (POST /messages/send with "precheck": true). Each
+	// names a different reason so the caller can tell them apart without parsing
+	// the message.
+	ErrCodeInvalidRecipient    ErrorCode = "INVALID_RECIPIENT"
+	ErrCodeTemplateNotApproved ErrorCode = "TEMPLATE_NOT_APPROVED"
+	ErrCodeOutsideWindow       ErrorCode = "OUTSIDE_WINDOW"
 )
 
 // AppError represents an application error
@@ -103,8 +110,10 @@ func codeToStatus(code ErrorCode) int {
 	switch code {
 	case ErrCodeInternal:
 		return http.StatusInternalServerError
-	case ErrCodeValidation, ErrCodeBadRequest:
+	case ErrCodeValidation, ErrCodeBadRequest, ErrCodeInvalidRecipient:
 		return http.StatusBadRequest
+	case ErrCodeTemplateNotApproved, ErrCodeOutsideWindow:
+		return http.StatusUnprocessableEntity
 	case ErrCodeNotFound, ErrCodeTenantNotFound, ErrCodeUserNotFound,
 		ErrCodeChannelNotFound, ErrCodeContactNotFound,
 		ErrCodeConversationNotFound, ErrCodeMessageNotFound:

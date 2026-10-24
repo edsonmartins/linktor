@@ -17,6 +17,12 @@ outbound que as torna funcionais ponta-a-ponta. Tudo com backend, testes e UI.
   `closes_at` —, pela mesma regra e a mesma fonte do guard de saída (última mensagem recebida do contato na
   conversa aberta do canal). `applies=false` em canal sem a regra (tudo que não é `whatsapp_official`).
   Só leitura: não cria contato nem conversa.
+- **Template no envio direto:** `POST /api/v1/messages/send` aceita `content_type: "template"` com
+  `template {name, language, components}`. Ele vira a metadata `template_*` que o pipeline de saída já entrega pelo
+  `whatsapp_official`.
+- **Precheck opt-in:** com `"precheck": true`, o envio direto recusa na hora, antes de gravar, com códigos distintos:
+  `INVALID_RECIPIENT` (400), `TEMPLATE_NOT_APPROVED` (422, com o status do template) e `OUTSIDE_WINDOW` (422). Sem o
+  campo, nada muda. Ver `docs/vendax-integration/messages-send-template-janela-precheck.md`.
 
 ### Canais — WhatsApp não-oficial (whatsmeow)
 

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -28,6 +29,22 @@ type DirectSendRequest struct {
 	// caller that already uploads media for one route needs no second format for
 	// the other.
 	Attachments []MessageAttachmentReq `json:"attachments"`
+	// Template is required for content_type "template": an approved WhatsApp
+	// template by name and language, with the provider-native components array
+	// (header/body parameters, buttons) passed through verbatim.
+	Template *DirectTemplateReq `json:"template,omitempty"`
+	// Precheck asks for synchronous, distinctly-coded refusals on
+	// whatsapp_official channels before anything is written: INVALID_RECIPIENT,
+	// TEMPLATE_NOT_APPROVED and OUTSIDE_WINDOW. Opt-in and additive: without it
+	// nothing changes and the outbound guards decide later.
+	Precheck bool `json:"precheck,omitempty"`
+}
+
+// DirectTemplateReq is the template part of a direct send.
+type DirectTemplateReq struct {
+	Name       string          `json:"name"`
+	Language   string          `json:"language"`
+	Components json.RawMessage `json:"components,omitempty"`
 }
 
 // body returns the message text, preferring "text" over the "content" alias.
@@ -177,6 +194,8 @@ func (h *MessageHandler) SendDirect(c *gin.Context) {
 		SenderID:    persistableSenderID(c.GetString(middleware.UserIDKey)),
 		Metadata:    req.Metadata,
 		Attachments: toAttachmentInputs(req.Attachments),
+		Template:    toDirectTemplate(req.Template),
+		Precheck:    req.Precheck,
 	})
 	if err != nil {
 		RespondError(c, err)
@@ -215,6 +234,14 @@ func directSendStatus(status entity.MessageStatus) string {
 		return "queued"
 	}
 	return string(status)
+}
+
+// toDirectTemplate converts the wire form of the template part.
+func toDirectTemplate(t *DirectTemplateReq) *service.DirectTemplate {
+	if t == nil {
+		return nil
+	}
+	return &service.DirectTemplate{Name: t.Name, Language: t.Language, ComponentsJSON: string(t.Components)}
 }
 
 // WindowResponse is the answer of GET /api/v1/channels/:id/window.

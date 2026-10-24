@@ -58,6 +58,8 @@ type MessageService struct {
 	// idempotency backs metadata.idempotency_key on the direct-send route.
 	// Optional (nil persists the key without collapsing repeats).
 	idempotency repository.MessageIdempotencyRepository
+	// templates backs the template precheck of the direct-send route. Optional.
+	templates TemplateStatusLookup
 }
 
 // SetSandboxAllowlist wires the allowlist used for the synchronous sandbox
