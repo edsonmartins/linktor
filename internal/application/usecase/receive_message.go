@@ -419,6 +419,14 @@ func (uc *ReceiveMessageUseCase) getOrCreateConversation(ctx context.Context, ch
 	return conversation, true, nil
 }
 
+// ReferralMetadataKeys are the message metadata keys an adapter fills from an ad
+// referral (Click-to-WhatsApp). They ride the message.received event so the
+// outbound webhook can carry them as the structured `referral` object.
+var ReferralMetadataKeys = []string{
+	"referral_source_type", "referral_source_id", "referral_source_url", "referral_headline", "referral_body",
+	"referral_ctwa_clid", "referral_media_type", "referral_image_url", "referral_video_url",
+}
+
 // buildMessageReceivedOutboxEvent builds the durable outbox entry for the
 // "message received" event. Its payload carries everything the outbound-webhook
 // dispatcher needs to build the `linktor-channel-v1` envelope without extra DB
@@ -457,6 +465,14 @@ func (uc *ReceiveMessageUseCase) buildMessageReceivedOutboxEvent(tenantID string
 	}
 	if atts := attachmentsPayload(message.Attachments); len(atts) > 0 {
 		payload["attachments"] = atts
+	}
+	// Referral de anúncio (Click-to-WhatsApp): o adaptador grava referral_* na
+	// metadata da mensagem; sem levá-las ao evento durável, o dispatcher não tem
+	// como montar o `referral` do webhook e a origem do lead se perde.
+	for _, key := range ReferralMetadataKeys {
+		if v := message.Metadata[key]; v != "" {
+			payload[key] = v
+		}
 	}
 	// Reação de canal (RFC-010): propaga o alvo/emoji ao consumidor (o bridge VendaX monta a
 	// reação inbound). Sem isto a reação chega como texto solto (emoji) sem alvo.

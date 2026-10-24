@@ -365,6 +365,7 @@ func (c *WebhookConsumer) ProcessWebhook(ctx context.Context, body []byte) error
 			ChannelType:  "whatsapp_official",
 			Status:       string(status.Status),
 			ErrorMessage: status.ErrorMessage,
+			ErrorCode:    status.ErrorCode,
 			Timestamp:    status.Timestamp,
 		}
 

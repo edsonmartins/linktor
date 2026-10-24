@@ -19,13 +19,53 @@ const (
 	DefaultTolerance = 300 // 5 minutes
 )
 
-// WebhookEvent represents a webhook event
+// WebhookEvent represents a webhook event (`linktor-channel-v1` envelope).
 type WebhookEvent struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type"`
-	Timestamp time.Time              `json:"timestamp"`
-	TenantID  string                 `json:"tenantId"`
-	Data      map[string]interface{} `json:"data"`
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	Timestamp time.Time `json:"timestamp"`
+	TenantID  string    `json:"tenantId"`
+	// Environment is "production" or "sandbox"; absent means production. Additive.
+	Environment string                 `json:"environment,omitempty"`
+	Data        map[string]interface{} `json:"data"`
+}
+
+// DecodeData decodes the event's data into a typed struct (e.g. StatusData, or a
+// struct holding `message.referral`).
+func (e *WebhookEvent) DecodeData(v interface{}) error {
+	raw, err := json.Marshal(e.Data)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, v)
+}
+
+// ReferralData is `data.message.referral` on `message.received`: the ad that
+// brought the contact (e.g. WhatsApp Click-to-WhatsApp). Present only when the
+// conversation came from an ad. Additive field; every attribute is optional.
+type ReferralData struct {
+	SourceType string `json:"sourceType,omitempty"`
+	SourceID   string `json:"sourceId,omitempty"`
+	SourceURL  string `json:"sourceUrl,omitempty"`
+	Headline   string `json:"headline,omitempty"`
+	Body       string `json:"body,omitempty"`
+	CtwaClid   string `json:"ctwaClid,omitempty"`
+	MediaType  string `json:"mediaType,omitempty"`
+	MediaURL   string `json:"mediaUrl,omitempty"`
+}
+
+// StatusData is the data of `message.{sent,delivered,read,failed}`. ErrorCode
+// (the provider's code, e.g. Meta 131047) is additive and only set on failures
+// that carried one.
+type StatusData struct {
+	MessageID   string    `json:"messageId"`
+	Status      string    `json:"status"`
+	Direction   string    `json:"direction"`
+	Timestamp   time.Time `json:"timestamp"`
+	Error       string    `json:"error,omitempty"`
+	ErrorCode   string    `json:"errorCode,omitempty"`
+	ChannelID   string    `json:"channelId"`
+	ChannelType string    `json:"channelType,omitempty"`
 }
 
 // ComputeSignature computes HMAC-SHA256 over the raw payload only. It is the

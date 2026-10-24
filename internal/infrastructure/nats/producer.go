@@ -85,6 +85,9 @@ type StatusUpdate struct {
 	ChannelType  string `json:"channel_type"`
 	Status       string `json:"status"`
 	ErrorMessage string `json:"error_message,omitempty"`
+	// ErrorCode is the provider's error code for a failed status (e.g. Meta
+	// `errors[0].code`). Additive; empty when the provider sent none.
+	ErrorCode string `json:"error_code,omitempty"`
 	// BlockedReason, when set, is the machine-readable reason a delivery guard
 	// stopped the send locally (allowlist, window_24h, template_rejected) — as
 	// opposed to a provider rejection. Persisted into the message so the console

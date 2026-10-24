@@ -718,6 +718,37 @@ func TestExtractMessages_Referral(t *testing.T) {
 	assert.Equal(t, "50% off", m.Metadata["referral_body"])
 }
 
+// The full Click-to-WhatsApp referral: source_url, ctwa_clid and the creative's media are kept
+// next to the original keys (additive). An empty field does not become an empty metadata key.
+func TestExtractMessages_ReferralCtwaCompleto(t *testing.T) {
+	proc := testProcessor()
+	body := []byte(`{"object":"whatsapp_business_account","entry":[{"id":"WABA-1","changes":[{"field":"messages","value":{
+	  "messaging_product":"whatsapp",
+	  "metadata":{"display_phone_number":"5511900000000","phone_number_id":"PN-1"},
+	  "contacts":[{"profile":{"name":"Cliente Ficticio"},"wa_id":"5511999990000"}],
+	  "messages":[{"from":"5511999990000","id":"wamid.ctwa1","timestamp":"1700000000","type":"text",
+	    "text":{"body":"Quero saber do produto"},
+	    "referral":{"source_url":"https://fb.me/anuncio-ficticio","source_id":"120200000000000","source_type":"ad",
+	      "headline":"Promoção fictícia","body":"Fale com a gente","media_type":"image",
+	      "image_url":"https://scontent.example.test/criativo.jpg","ctwa_clid":"ARAkLkA8rmlFeiCktEJQ-QTwRiyYHAFDLMNDBH0CD3qpjd0HR4irJ6LEkR7JwFF4XvnO2E4Nx0-eM-GABDLOPaOdRMv-_zfUQ2a"}}]}}]}]}`)
+	payload, err := proc.ParseWebhook(body)
+	require.NoError(t, err)
+
+	msgs := proc.ExtractMessages(payload)
+	require.Len(t, msgs, 1)
+	md := msgs[0].Metadata
+	assert.Equal(t, "ad", md["referral_source_type"])
+	assert.Equal(t, "120200000000000", md["referral_source_id"])
+	assert.Equal(t, "https://fb.me/anuncio-ficticio", md["referral_source_url"])
+	assert.Equal(t, "Promoção fictícia", md["referral_headline"])
+	assert.Equal(t, "Fale com a gente", md["referral_body"])
+	assert.Equal(t, "image", md["referral_media_type"])
+	assert.Equal(t, "https://scontent.example.test/criativo.jpg", md["referral_image_url"])
+	assert.Equal(t, "ARAkLkA8rmlFeiCktEJQ-QTwRiyYHAFDLMNDBH0CD3qpjd0HR4irJ6LEkR7JwFF4XvnO2E4Nx0-eM-GABDLOPaOdRMv-_zfUQ2a", md["referral_ctwa_clid"])
+	_, temVideo := md["referral_video_url"]
+	assert.False(t, temVideo, "campo ausente não vira chave vazia")
+}
+
 // ---------------------------------------------------------------------------
 // 7. Timestamp parsing
 // ---------------------------------------------------------------------------
@@ -770,16 +801,19 @@ func TestExtractStatuses(t *testing.T) {
 		name       string
 		waStatus   MessageStatus
 		wantStatus plugin.MessageStatus
-		errors     []WebhookError
-		wantErrMsg string
+		errors      []WebhookError
+		wantErrMsg  string
+		wantErrCode string
 	}{
-		{"sent", StatusSent, plugin.MessageStatusSent, nil, ""},
-		{"delivered", StatusDelivered, plugin.MessageStatusDelivered, nil, ""},
-		{"read", StatusRead, plugin.MessageStatusRead, nil, ""},
+		{"sent", StatusSent, plugin.MessageStatusSent, nil, "", ""},
+		{"delivered", StatusDelivered, plugin.MessageStatusDelivered, nil, "", ""},
+		{"read", StatusRead, plugin.MessageStatusRead, nil, "", ""},
 		{"failed with error", StatusFailed, plugin.MessageStatusFailed,
 			[]WebhookError{{Code: 131047, Title: "Re-engagement message", Message: "Outside 24h window"}},
-			"Outside 24h window"},
-		{"unknown status", MessageStatus("something_else"), plugin.MessageStatusPending, nil, ""},
+			"Outside 24h window", "131047"},
+		{"failed without code", StatusFailed, plugin.MessageStatusFailed,
+			[]WebhookError{{Message: "Unknown"}}, "Unknown", ""},
+		{"unknown status", MessageStatus("something_else"), plugin.MessageStatusPending, nil, "", ""},
 	}
 
 	proc := testProcessor()
@@ -800,6 +834,8 @@ func TestExtractStatuses(t *testing.T) {
 			assert.Equal(t, "5511888887777", s.RecipientID)
 			assert.Equal(t, tt.wantStatus, s.Status)
 			assert.Equal(t, tt.wantErrMsg, s.ErrorMessage)
+			assert.Equal(t, tt.wantErrCode, s.ErrorCode)
+			assert.Equal(t, tt.wantErrCode, s.ToStatusCallback().ErrorCode)
 			assert.Equal(t, time.Unix(1700000000, 0), s.Timestamp)
 		})
 	}

@@ -1011,3 +1011,28 @@ func TestReceiveMessage_NonReplyCarriesNoReplyToID(t *testing.T) {
 	require.NoError(t, json.Unmarshal(f.messageRepo.OutboxEvents[0].Payload, &payload))
 	assert.Empty(t, payload["reply_to_id"])
 }
+
+// The Click-to-WhatsApp referral the adapter records on the message metadata must ride the
+// durable event — the dispatcher builds the webhook `referral` from it. Empty keys stay out.
+func TestReceiveMessage_ReferralReachesTheDurableEvent(t *testing.T) {
+	ctx := context.Background()
+	f := newReceiveMessageFixture()
+	channel := makeChannel("ch-1", "tenant-1")
+	f.channelRepo.Channels[channel.ID] = channel
+
+	inbound := makeInbound("ch-1", "tenant-1")
+	inbound.Metadata["referral_source_type"] = "ad"
+	inbound.Metadata["referral_ctwa_clid"] = "clid-ficticio-1"
+	inbound.Metadata["referral_source_url"] = "https://fb.me/anuncio-ficticio"
+
+	_, err := f.uc.Execute(ctx, inbound)
+	require.NoError(t, err)
+	require.Len(t, f.messageRepo.OutboxEvents, 1)
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(f.messageRepo.OutboxEvents[0].Payload, &payload))
+	assert.Equal(t, "ad", payload["referral_source_type"])
+	assert.Equal(t, "clid-ficticio-1", payload["referral_ctwa_clid"])
+	assert.Equal(t, "https://fb.me/anuncio-ficticio", payload["referral_source_url"])
+	_, temHeadline := payload["referral_headline"]
+	assert.False(t, temHeadline, "chave vazia não vai ao evento")
+}

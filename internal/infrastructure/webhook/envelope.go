@@ -113,6 +113,24 @@ type InboundMessagePayload struct {
 	// one. Consumers should apply it to the target rather than appending a message — without this
 	// a reaction arrives as an empty text bubble.
 	Reaction *ReactionPayload `json:"reaction,omitempty"`
+	// Referral is present only when the conversation was opened from an ad
+	// (e.g. WhatsApp Click-to-WhatsApp). Additive and backward-compatible
+	// (INV-018): consumers that predate it keep parsing; absence means "no ad".
+	Referral *ReferralPayload `json:"referral,omitempty"`
+}
+
+// ReferralPayload is the ad that brought the contact, as the provider reported it.
+// Every field is optional; for Click-to-WhatsApp, CtwaClid is the click id that
+// attributes the conversation to the ad click.
+type ReferralPayload struct {
+	SourceType string `json:"sourceType,omitempty"` // "ad" | "post"
+	SourceID   string `json:"sourceId,omitempty"`
+	SourceURL  string `json:"sourceUrl,omitempty"`
+	Headline   string `json:"headline,omitempty"`
+	Body       string `json:"body,omitempty"`
+	CtwaClid   string `json:"ctwaClid,omitempty"`
+	MediaType  string `json:"mediaType,omitempty"` // "image" | "video"
+	MediaURL   string `json:"mediaUrl,omitempty"`
 }
 
 // ReactionPayload describes a reaction to an earlier message.
@@ -173,13 +191,17 @@ type ConversationData struct {
 // process the event at all. VendaX was rejecting these with 400, which became retries and DLQ on
 // our side. Additive and backward-compatible (INV-018), like `environment`.
 type StatusData struct {
-	MessageID   string    `json:"messageId"`
-	Status      string    `json:"status"`
-	Direction   string    `json:"direction"` // always "outbound"
-	Timestamp   time.Time `json:"timestamp"`
-	Error       string    `json:"error,omitempty"`
-	ChannelID   string    `json:"channelId"`
-	ChannelType string    `json:"channelType,omitempty"`
+	MessageID string    `json:"messageId"`
+	Status    string    `json:"status"`
+	Direction string    `json:"direction"` // always "outbound"
+	Timestamp time.Time `json:"timestamp"`
+	Error     string    `json:"error,omitempty"`
+	// ErrorCode is the provider's error code for a failed delivery (e.g. Meta
+	// `errors[0].code`), next to the human-readable Error. Additive (INV-018);
+	// absent when the provider sent none.
+	ErrorCode   string `json:"errorCode,omitempty"`
+	ChannelID   string `json:"channelId"`
+	ChannelType string `json:"channelType,omitempty"`
 }
 
 // ComputeSignature returns the hex-encoded HMAC-SHA256 of payload keyed by

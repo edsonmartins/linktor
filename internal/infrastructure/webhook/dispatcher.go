@@ -171,6 +171,7 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 			Metadata:    inboundMetadata(p),
 			Mentions:    inboundMentions(p),
 			Reaction:    d.reactionOf(ctx, p),
+			Referral:    inboundReferral(p),
 		},
 		ConversationID: p.str("conversation_id"),
 		ContactID:      p.str("contact_id"),
@@ -330,6 +331,7 @@ func (d *Dispatcher) dispatchStatus(ctx context.Context, event *nats.Event, even
 		Direction: "outbound",
 		Timestamp: d.now().UTC(),
 		Error:     p.str("error"),
+		ErrorCode: p.str("error_code"),
 		// The channel is already resolved above; carrying it lets the consumer route the event
 		// exactly like the inbound ones instead of guessing.
 		ChannelID:   channel.ID,
@@ -539,6 +541,30 @@ func inboundMetadata(p eventPayload) map[string]string {
 		return nil
 	}
 	return meta
+}
+
+// inboundReferral builds the structured `referral` from the referral_* keys the
+// adapter put on the message (Click-to-WhatsApp). Nil when the message carries
+// none — the field is then omitted from the envelope. MediaURL is the creative's
+// image, or its video when there is no image.
+func inboundReferral(p eventPayload) *ReferralPayload {
+	r := &ReferralPayload{
+		SourceType: p.str("referral_source_type"),
+		SourceID:   p.str("referral_source_id"),
+		SourceURL:  p.str("referral_source_url"),
+		Headline:   p.str("referral_headline"),
+		Body:       p.str("referral_body"),
+		CtwaClid:   p.str("referral_ctwa_clid"),
+		MediaType:  p.str("referral_media_type"),
+		MediaURL:   p.str("referral_image_url"),
+	}
+	if r.MediaURL == "" {
+		r.MediaURL = p.str("referral_video_url")
+	}
+	if *r == (ReferralPayload{}) {
+		return nil
+	}
+	return r
 }
 
 // eventPayload is a defensive reader over the JSON-decoded event payload map.

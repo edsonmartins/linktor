@@ -1079,6 +1079,7 @@ func (s *ChannelService) setupWhatsAppHandlers(adapter *whatsapp.Adapter, channe
 			Timestamp:   status.Timestamp,
 		}
 
+		statusUpdate.ErrorCode = status.ErrorCode
 		if status.ErrorMessage != "" {
 			statusUpdate.ErrorMessage = status.ErrorMessage
 			logger.Warn("WhatsApp message delivery failed",

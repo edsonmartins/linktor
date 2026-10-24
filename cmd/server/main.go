@@ -2109,6 +2109,7 @@ func publishStatusWebhookEvent(ctx context.Context, messageRepo *database.Messag
 			"external_id": status.ExternalID,
 			"status":      status.Status,
 			"error":       status.ErrorMessage,
+			"error_code":  status.ErrorCode,
 		},
 		Timestamp: time.Now(),
 	})

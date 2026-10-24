@@ -164,7 +164,9 @@ type StatusCallback struct {
 	ExternalID   string        `json:"external_id"`
 	Status       MessageStatus `json:"status"`
 	ErrorMessage string        `json:"error_message,omitempty"`
-	Timestamp    time.Time     `json:"timestamp"`
+	// ErrorCode is the provider's error code, when it sent one. Additive.
+	ErrorCode string    `json:"error_code,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // TypingIndicator represents typing status

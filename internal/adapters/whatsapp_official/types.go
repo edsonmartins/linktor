@@ -349,6 +349,10 @@ type ReferralContent struct {
 	ImageURL     string `json:"image_url,omitempty"`
 	VideoURL     string `json:"video_url,omitempty"`
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+	// CtwaClid is Meta's Click-to-WhatsApp click id — the key to attribute the
+	// conversation back to the ad click (conversions API). Absent on referrals
+	// that did not come from a CTWA ad.
+	CtwaClid string `json:"ctwa_clid,omitempty"`
 }
 
 // StatusUpdate represents a message status update

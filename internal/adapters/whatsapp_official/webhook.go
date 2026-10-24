@@ -136,7 +136,10 @@ type ParsedStatus struct {
 	RecipientID  string
 	Status       plugin.MessageStatus
 	ErrorMessage string
-	Timestamp    time.Time
+	// ErrorCode is the provider's error code (Meta `errors[0].code`), as text.
+	// Empty when the provider sent none.
+	ErrorCode string
+	Timestamp time.Time
 }
 
 // parseMessage parses a single incoming message
@@ -355,15 +358,24 @@ func (p *WebhookProcessor) parseMessage(msg *IncomingMessage, contacts map[strin
 	parsed.Metadata["phone_number_id"] = metadata.PhoneNumberID
 	parsed.Metadata["display_phone_number"] = metadata.DisplayPhoneNumber
 
-	// Handle referral data (click-to-WhatsApp ads)
+	// Handle referral data (click-to-WhatsApp ads). The referral_* metadata keys
+	// are the transport to the outbound webhook (structured there as `referral`);
+	// source_url, ctwa_clid and the creative media are additive keys.
 	if msg.Referral != nil {
 		parsed.Metadata["referral_source_type"] = msg.Referral.SourceType
 		parsed.Metadata["referral_source_id"] = msg.Referral.SourceID
-		if msg.Referral.Headline != "" {
-			parsed.Metadata["referral_headline"] = msg.Referral.Headline
-		}
-		if msg.Referral.Body != "" {
-			parsed.Metadata["referral_body"] = msg.Referral.Body
+		for key, value := range map[string]string{
+			"referral_headline":   msg.Referral.Headline,
+			"referral_body":       msg.Referral.Body,
+			"referral_source_url": msg.Referral.SourceURL,
+			"referral_ctwa_clid":  msg.Referral.CtwaClid,
+			"referral_media_type": msg.Referral.MediaType,
+			"referral_image_url":  msg.Referral.ImageURL,
+			"referral_video_url":  msg.Referral.VideoURL,
+		} {
+			if value != "" {
+				parsed.Metadata[key] = value
+			}
 		}
 	}
 
@@ -400,6 +412,9 @@ func (p *WebhookProcessor) parseStatus(status *StatusUpdate) *ParsedStatus {
 		parsed.Status = plugin.MessageStatusFailed
 		if len(status.Errors) > 0 {
 			parsed.ErrorMessage = status.Errors[0].Message
+			if status.Errors[0].Code != 0 {
+				parsed.ErrorCode = strconv.Itoa(status.Errors[0].Code)
+			}
 		}
 	default:
 		parsed.Status = plugin.MessageStatusPending
@@ -428,6 +443,7 @@ func (ps *ParsedStatus) ToStatusCallback() *plugin.StatusCallback {
 		ExternalID:   ps.MessageID,
 		Status:       ps.Status,
 		ErrorMessage: ps.ErrorMessage,
+		ErrorCode:    ps.ErrorCode,
 		Timestamp:    ps.Timestamp,
 	}
 }
