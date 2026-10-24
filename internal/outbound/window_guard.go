@@ -28,6 +28,17 @@ func windowOpen(lastInbound *time.Time, now time.Time) bool {
 	return lastInbound != nil && now.Sub(*lastInbound) < sessionWindow
 }
 
+// SessionWindow is the length of Meta's customer-service window, exported so the
+// read-only window query (GET /channels/:id/window) answers with the very rule
+// this guard enforces.
+const SessionWindow = sessionWindow
+
+// WindowOpen reports whether a free-form message is inside the 24h window, by the
+// same rule the guard applies at send time.
+func WindowOpen(lastInbound *time.Time, now time.Time) bool {
+	return windowOpen(lastInbound, now)
+}
+
 // NewSessionWindowPolicy returns a PolicyDecorator enforcing (or observing,
 // per mode) the WhatsApp Cloud API 24h window on whatsapp_official channels.
 // Other channel types are returned unwrapped.

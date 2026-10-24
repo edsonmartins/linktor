@@ -12,6 +12,7 @@ import (
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
+	"github.com/msgfy/linktor/internal/outbound"
 	"github.com/msgfy/linktor/pkg/errors"
 	"github.com/msgfy/linktor/pkg/logger"
 )
@@ -548,4 +549,66 @@ func newDirectOutboxEvent(eventType, tenantID, aggregateType, aggregateID, idemp
 		IdempotencyKey: idempotencyKey,
 		CreatedAt:      time.Now(),
 	}, nil
+}
+
+// WindowState is the 24h customer-service window of a recipient on a channel.
+type WindowState struct {
+	ChannelID string
+	To        string
+	// Applies is false for channel types without the window (anything but
+	// whatsapp_official): free-form messages are always allowed there.
+	Applies       bool
+	Open          bool
+	LastInboundAt *time.Time
+	ClosesAt      *time.Time
+}
+
+// Window answers whether a free-form message to the recipient is inside the 24h
+// window, from the contact's last inbound message in the open conversation the
+// next send would use — the same source the outbound window guard reads. No
+// contact or no open conversation means no inbound to count: closed. Read-only:
+// nothing is created.
+func (s *MessageService) Window(ctx context.Context, tenantID, channelID, to string) (*WindowState, error) {
+	if strings.TrimSpace(to) == "" {
+		return nil, errors.Validation("to is required")
+	}
+	channel, err := s.channelRepo.FindByID(ctx, channelID)
+	if err != nil || channel == nil || channel.TenantID != tenantID {
+		return nil, errors.New(errors.ErrCodeChannelNotFound, "channel not found")
+	}
+	return s.windowFor(ctx, channel, to)
+}
+
+func (s *MessageService) windowFor(ctx context.Context, channel *entity.Channel, to string) (*WindowState, error) {
+	state := &WindowState{ChannelID: channel.ID, To: CanonicalRecipient(string(channel.Type), to)}
+	if channel.Type != entity.ChannelTypeWhatsAppOfficial {
+		state.Open = true
+		return state, nil
+	}
+	state.Applies = true
+	var contact *entity.Contact
+	for _, candidate := range recipientCandidates(string(channel.Type), to) {
+		if c, err := s.contactRepo.FindByIdentity(ctx, channel.TenantID, string(channel.Type), candidate); err == nil && c != nil {
+			contact = c
+			break
+		}
+	}
+	if contact == nil {
+		return state, nil
+	}
+	conversation, err := s.conversationRepo.FindOpenByContactAndChannel(ctx, contact.ID, channel.ID)
+	if err != nil || conversation == nil {
+		return state, nil
+	}
+	last, err := s.messageRepo.LastInboundAt(ctx, conversation.ID)
+	if err != nil {
+		return nil, err
+	}
+	if last != nil {
+		closes := last.Add(outbound.SessionWindow)
+		state.LastInboundAt = last
+		state.ClosesAt = &closes
+		state.Open = outbound.WindowOpen(last, time.Now())
+	}
+	return state, nil
 }

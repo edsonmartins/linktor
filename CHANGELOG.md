@@ -58,6 +58,14 @@ Protocolo documentado em `bridges/docs/PROTOCOL.md` (repo bridges).
 - Recibos de entrega/leitura do WhatsApp refletidos no status da mensagem;
 - Mensagem de voz (OGG/Opus) a partir de áudios em outros formatos.
 
+### API — janela de 24h
+
+- **Consulta da janela de 24h:** `GET /api/v1/channels/:id/window?to=<destinatário>` (escopo `messages:send`)
+  responde se uma mensagem livre ainda cabe na janela de atendimento da Meta — `open`, `last_inbound_at` e
+  `closes_at` —, pela mesma regra e a mesma fonte do guard de saída (última mensagem recebida do contato na
+  conversa aberta do canal). `applies=false` em canal sem a regra (tudo que não é `whatsapp_official`).
+  Só leitura: não cria contato nem conversa.
+
 ### Canais — WhatsApp não-oficial (whatsmeow)
 
 Enriquecimento do canal não-oficial (`internal/adapters/whatsapp`) e novo motor

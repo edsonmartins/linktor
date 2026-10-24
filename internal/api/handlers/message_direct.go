@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -214,4 +215,42 @@ func directSendStatus(status entity.MessageStatus) string {
 		return "queued"
 	}
 	return string(status)
+}
+
+// WindowResponse is the answer of GET /api/v1/channels/:id/window.
+type WindowResponse struct {
+	ChannelID     string     `json:"channel_id"`
+	To            string     `json:"to"`
+	Applies       bool       `json:"applies"`
+	Open          bool       `json:"open"`
+	LastInboundAt *time.Time `json:"last_inbound_at"`
+	ClosesAt      *time.Time `json:"closes_at"`
+}
+
+// Window godoc
+// @Summary      24h customer-service window of a recipient on a channel
+// @Description  Whether a free-form message to the recipient is inside Meta's 24h window, from the contact's last inbound message (the same rule the outbound guard enforces). applies=false for channel types without the window. Read-only. Requires the messages:send scope for API-key callers.
+// @Tags         messages
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Param        id path string true "Channel ID"
+// @Param        to query string true "Recipient"
+// @Success      200 {object} Response{data=WindowResponse}
+// @Failure      400 {object} Response
+// @Failure      404 {object} Response
+// @Router       /channels/{id}/window [get]
+func (h *MessageHandler) Window(c *gin.Context) {
+	tenantID := middleware.MustGetTenantID(c)
+	if tenantID == "" {
+		return
+	}
+	state, err := h.messageService.Window(c.Request.Context(), tenantID, c.Param("id"), c.Query("to"))
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, Response{Success: true, Data: WindowResponse{
+		ChannelID: state.ChannelID, To: state.To, Applies: state.Applies, Open: state.Open,
+		LastInboundAt: state.LastInboundAt, ClosesAt: state.ClosesAt,
+	}})
 }
