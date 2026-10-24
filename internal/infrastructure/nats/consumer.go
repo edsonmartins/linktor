@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"github.com/msgfy/linktor/pkg/logger"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -246,12 +247,24 @@ func deliveryExhausted(msg jetstream.Msg, maxDeliver int) bool {
 // deadLetter publishes the raw message to the consumer's DLQ subject and acks
 // it. If the DLQ publish fails, the message is NAK'd so it is not lost.
 func deadLetter(ctx context.Context, client *Client, consumerName string, msg jetstream.Msg, cause error) {
-	if _, err := client.JetStream().Publish(ctx, SubjectDLQ(consumerName), msg.Data()); err != nil {
+	deadLetterVia(ctx, func(ctx context.Context, subject string, data []byte) error {
+		_, err := client.JetStream().Publish(ctx, subject, data)
+		return err
+	}, consumerName, msg, cause)
+}
+
+// deadLetterVia is deadLetter with the DLQ publish injected (testable without a
+// JetStream server).
+func deadLetterVia(ctx context.Context, publish func(context.Context, string, []byte) error, consumerName string, msg jetstream.Msg, cause error) {
+	if err := publish(ctx, SubjectDLQ(consumerName), msg.Data()); err != nil {
 		logger.Error("failed to dead-letter message, will retry delivery: " + err.Error())
 		msg.NakWithDelay(30 * time.Second)
 		return
 	}
 	logger.Warn("message dead-lettered after exhausting retries (consumer=" + consumerName + "): " + cause.Error())
+	// The counter was declared but never incremented, so an alert on it could never
+	// fire: a dead-lettered webhook was a log line and nothing else.
+	metrics.IncDLQ(consumerName)
 	msg.Ack()
 }
 

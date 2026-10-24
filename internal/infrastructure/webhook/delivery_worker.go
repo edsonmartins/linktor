@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/errors"
 	"github.com/msgfy/linktor/pkg/logger"
@@ -71,6 +72,7 @@ func (w *DeliveryWorker) Handle(ctx context.Context, wh *nats.WebhookDelivery) e
 
 	if _, err := w.producer.Deliver(ctx, endpoint, wh.EventType, wh.Body); err != nil {
 		logger.Warn("webhook: delivery to " + endpoint.URL + " failed (will retry): " + err.Error())
+		metrics.IncWebhookDeliveryFailure(string(channel.Type))
 		return err
 	}
 	return nil

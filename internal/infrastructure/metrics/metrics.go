@@ -75,6 +75,17 @@ var (
 		Help:      "Messages routed to the dead-letter queue, by reason.",
 	}, []string{"reason"})
 
+	// WebhookDeliveryFailures counts failed attempts to deliver an outbound
+	// webhook (linktor-channel-v1) to an integrator endpoint, by channel type. Each
+	// failure is retried by JetStream; after MaxDeliver the item is dead-lettered
+	// and dlq_messages_total{reason="webhooks"} counts it. Alert on the rate.
+	WebhookDeliveryFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: "webhook",
+		Name:      "delivery_failures_total",
+		Help:      "Failed outbound webhook delivery attempts, by channel type.",
+	}, []string{"channel_type"})
+
 	// NATSUp is 1 when the JetStream connection is live, 0 otherwise.
 	NATSUp = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
@@ -223,6 +234,11 @@ func RecordOutbound(channelType, result string, started time.Time) {
 
 // IncPublishFailure increments the publish-failure counter for a message kind.
 func IncPublishFailure(kind string) { PublishFailures.WithLabelValues(kind).Inc() }
+
+// IncWebhookDeliveryFailure counts one failed outbound webhook delivery attempt.
+func IncWebhookDeliveryFailure(channelType string) {
+	WebhookDeliveryFailures.WithLabelValues(channelType).Inc()
+}
 
 // IncDLQ increments the dead-letter counter for a reason.
 func IncDLQ(reason string) { DLQMessages.WithLabelValues(reason).Inc() }

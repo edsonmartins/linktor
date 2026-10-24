@@ -2,6 +2,8 @@ package webhook
 
 import (
 	"context"
+	"github.com/msgfy/linktor/internal/infrastructure/metrics"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -63,6 +65,23 @@ func TestDeliveryWorkerReturnsErrorOn5xxForRetry(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("a 5xx must return an error so NATS redelivers (and eventually DLQs)")
+	}
+}
+
+// Each failed delivery attempt moves linktor_webhook_delivery_failures_total for
+// the channel type, so a failing integrator endpoint is an alert, not silence.
+func TestDeliveryWorkerCountsFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	ch := newTestChannel()
+	ch.WebhookURL = srv.URL
+	before := testutil.ToFloat64(metrics.WebhookDeliveryFailures.WithLabelValues(string(ch.Type)))
+	worker := NewDeliveryWorker(NewWebhookProducer(), &fakeChannels{channel: ch})
+	_ = worker.Handle(context.Background(), &nats.WebhookDelivery{ChannelID: "ch-1", EventType: TypeMessageReceived, Body: []byte(`{}`)})
+	if got := testutil.ToFloat64(metrics.WebhookDeliveryFailures.WithLabelValues(string(ch.Type))); got != before+1 {
+		t.Fatalf("delivery_failures_total = %v, want %v", got, before+1)
 	}
 }
 
