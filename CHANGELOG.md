@@ -10,6 +10,14 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 Features de operação inspiradas na análise do whatomate + subsistema de entrega
 outbound que as torna funcionais ponta-a-ponta. Tudo com backend, testes e UI.
 
+### API — janela de 24h e template no envio direto
+
+- **Consulta da janela de 24h:** `GET /api/v1/channels/:id/window?to=<destinatário>` (escopo `messages:send`)
+  responde se uma mensagem livre ainda cabe na janela de atendimento da Meta — `open`, `last_inbound_at` e
+  `closes_at` —, pela mesma regra e a mesma fonte do guard de saída (última mensagem recebida do contato na
+  conversa aberta do canal). `applies=false` em canal sem a regra (tudo que não é `whatsapp_official`).
+  Só leitura: não cria contato nem conversa.
+
 ### Canais — WhatsApp não-oficial (whatsmeow)
 
 Enriquecimento do canal não-oficial (`internal/adapters/whatsapp`) e novo motor

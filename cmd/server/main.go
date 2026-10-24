@@ -1332,6 +1332,7 @@ func main() {
 			// propósito: exige messages:send, não conversations:write — enviar
 			// uma mensagem não deve conceder permissão de editar conversas.
 			protected.POST("/messages/send", authMiddleware.RequireScope(middleware.ScopeMessagesSend), messageHandler.SendDirect)
+			protected.GET("/channels/:id/window", authMiddleware.RequireScope(middleware.ScopeMessagesSend), messageHandler.Window)
 			// Envio a um JID de grupo. Registrada aqui, e não no grupo /channels,
 			// porque lá herdava channels:write: enviar mensagem passava a exigir
 			// (e implicitamente conceder) permissão para editar canais.
