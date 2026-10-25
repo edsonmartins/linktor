@@ -202,6 +202,59 @@ type StatusCallback struct {
 	ErrorMessage string            `json:"error_message,omitempty"`
 	Timestamp    time.Time         `json:"timestamp"`
 	Metadata     map[string]string `json:"metadata,omitempty"`
+	// ProviderEvent is the provider's original event, normalized (ProviderEvent*
+	// constants). Status folds open/click into "read" and bounce/spam/failure into
+	// "failed"; consumers that must suppress a bounced address or record a spam
+	// complaint as an objection need the original. Empty when it adds nothing
+	// (queued). Additive in linktor-channel-v1.
+	ProviderEvent string `json:"provider_event,omitempty"`
+	// BounceType is "hard" or "soft" when the provider tells which; empty otherwise.
+	BounceType string `json:"bounce_type,omitempty"`
+	// URL is the clicked link, on click events.
+	URL string `json:"url,omitempty"`
+}
+
+// Provider events, normalized across SendGrid, Mailgun, SES and Postmark.
+const (
+	ProviderEventSent         = "sent"
+	ProviderEventDelivered    = "delivered"
+	ProviderEventOpened       = "opened"
+	ProviderEventClicked      = "clicked"
+	ProviderEventBounced      = "bounced"
+	ProviderEventSpamReport   = "spam_report"
+	ProviderEventUnsubscribed = "unsubscribed"
+	ProviderEventFailed       = "failed"
+)
+
+// Bounce types, normalized.
+const (
+	BounceHard = "hard"
+	BounceSoft = "soft"
+)
+
+// ProviderEventOf is the normalized provider event for an email status; empty for
+// queued (nothing happened at the provider yet).
+func ProviderEventOf(s EmailStatus) string {
+	switch s {
+	case StatusSent:
+		return ProviderEventSent
+	case StatusDelivered:
+		return ProviderEventDelivered
+	case StatusOpened:
+		return ProviderEventOpened
+	case StatusClicked:
+		return ProviderEventClicked
+	case StatusBounced:
+		return ProviderEventBounced
+	case StatusSpam:
+		return ProviderEventSpamReport
+	case StatusUnsubscribed:
+		return ProviderEventUnsubscribed
+	case StatusFailed:
+		return ProviderEventFailed
+	default:
+		return ""
+	}
 }
 
 // WebhookPayload represents a generic webhook payload from providers
@@ -236,6 +289,8 @@ type SendGridEventWebhook struct {
 	Reason    string `json:"reason,omitempty"`
 	Response  string `json:"response,omitempty"`
 	URL       string `json:"url,omitempty"` // for click events
+	// Type distinguishes bounce events: "bounce" (permanent) or "blocked" (temporary).
+	Type string `json:"type,omitempty"`
 }
 
 // Mailgun webhook types
@@ -270,6 +325,7 @@ type MailgunEventWebhook struct {
 		} `json:"message"`
 		Recipient string `json:"recipient"`
 		Severity  string `json:"severity,omitempty"` // for failed events: permanent, temporary
+		URL       string `json:"url,omitempty"`      // for clicked events
 	} `json:"event-data"`
 }
 
@@ -368,4 +424,6 @@ type PostmarkEventWebhook struct {
 	Type        string `json:"Type,omitempty"`     // Bounce type
 	TypeCode    int    `json:"TypeCode,omitempty"` // Bounce type code
 	Description string `json:"Description,omitempty"`
+	// OriginalLink is the clicked link, on Click records.
+	OriginalLink string `json:"OriginalLink,omitempty"`
 }

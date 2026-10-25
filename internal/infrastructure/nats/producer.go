@@ -92,6 +92,12 @@ type StatusUpdate struct {
 	// text (INV-014: no client-side inference). Empty for provider failures.
 	BlockedReason string    `json:"blocked_reason,omitempty"`
 	Timestamp     time.Time `json:"timestamp"`
+	// ProviderEvent, BounceType and URL carry the provider's original event when
+	// Status folds it (email: open/click → read, bounce/spam/failure → failed).
+	// Optional and additive; see email.StatusCallback.
+	ProviderEvent string `json:"provider_event,omitempty"`
+	BounceType    string `json:"bounce_type,omitempty"`
+	URL           string `json:"url,omitempty"`
 }
 
 // AttachmentData represents attachment information

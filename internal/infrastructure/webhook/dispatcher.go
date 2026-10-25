@@ -334,9 +334,20 @@ func (d *Dispatcher) dispatchStatus(ctx context.Context, event *nats.Event, even
 		// exactly like the inbound ones instead of guessing.
 		ChannelID:   channel.ID,
 		ChannelType: channelType(channel, p),
+		// Email: the provider's original event (opened vs clicked, bounced vs spam…).
+		ProviderEvent: p.str("provider_event"),
+		BounceType:    p.str("bounce_type"),
+		URL:           p.str("url"),
 	}
 
-	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), eventType), data)
+	// The original event is part of the identity: an open and a later click are both
+	// message.read, and must not collapse into one at the stream. Without it the key is
+	// what it always was.
+	kind := eventType
+	if data.ProviderEvent != "" {
+		kind = eventType + "_" + data.ProviderEvent
+	}
+	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), kind), data)
 }
 
 // dispatchContact converts a contact lifecycle event into an outbound webhook.

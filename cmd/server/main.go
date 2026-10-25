@@ -2101,17 +2101,34 @@ func publishStatusWebhookEvent(ctx context.Context, messageRepo *database.Messag
 	}
 
 	_ = producer.PublishEvent(ctx, &nats.Event{
-		Type:     eventType,
-		TenantID: conversation.TenantID,
-		Payload: map[string]interface{}{
-			"message_id":  messageID,
-			"channel_id":  conversation.ChannelID,
-			"external_id": status.ExternalID,
-			"status":      status.Status,
-			"error":       status.ErrorMessage,
-		},
+		Type:      eventType,
+		TenantID:  conversation.TenantID,
+		Payload:   statusWebhookPayload(messageID, conversation.ChannelID, status),
 		Timestamp: time.Now(),
 	})
+}
+
+// statusWebhookPayload is the event payload the webhook dispatcher turns into
+// StatusData. The provider's original event (email) rides along only when set,
+// so channels without it publish exactly what they always did.
+func statusWebhookPayload(messageID, channelID string, status *nats.StatusUpdate) map[string]interface{} {
+	p := map[string]interface{}{
+		"message_id":  messageID,
+		"channel_id":  channelID,
+		"external_id": status.ExternalID,
+		"status":      status.Status,
+		"error":       status.ErrorMessage,
+	}
+	if status.ProviderEvent != "" {
+		p["provider_event"] = status.ProviderEvent
+	}
+	if status.BounceType != "" {
+		p["bounce_type"] = status.BounceType
+	}
+	if status.URL != "" {
+		p["url"] = status.URL
+	}
+	return p
 }
 
 // buildMediaStore constructs the optional inbound-media store from the

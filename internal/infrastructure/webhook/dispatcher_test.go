@@ -726,3 +726,55 @@ func TestDispatcherInboundWithoutSenderTypeKeepsOldBehaviour(t *testing.T) {
 			data.Message.SenderType, data.Message.Direction)
 	}
 }
+
+// Email status: the provider's original event, the bounce type and the clicked link reach the
+// consumer in StatusData; an open and a later click (both message.read) are distinct deliveries.
+// Without the fields (every other channel) the payload and the dedup id are what they always were.
+func TestDispatcherStatusCarriesEmailProviderEvent(t *testing.T) {
+	dispatch := func(payload map[string]interface{}) (*nats.WebhookDelivery, map[string]interface{}) {
+		t.Helper()
+		pub := &recordingPublisher{}
+		d := NewDispatcher(pub, &fakeChannels{channel: newTestChannel()})
+		if err := d.handle(context.Background(), &nats.Event{Type: nats.EventMessageRead, TenantID: "tenant-1", Payload: payload}); err != nil {
+			t.Fatalf("handle: %v", err)
+		}
+		if len(pub.deliveries) != 1 {
+			t.Fatalf("expected 1 delivery, got %d", len(pub.deliveries))
+		}
+		var env Envelope
+		if err := json.Unmarshal(pub.deliveries[0].Body, &env); err != nil {
+			t.Fatalf("body not an envelope: %v", err)
+		}
+		data, _ := env.Data.(map[string]interface{})
+		return pub.deliveries[0], data
+	}
+
+	clique, data := dispatch(map[string]interface{}{"message_id": "msg-9", "channel_id": "ch-1", "status": "read",
+		"provider_event": "clicked", "url": "https://loja.exemplo.test/oferta"})
+	if data["status"] != "read" || data["providerEvent"] != "clicked" || data["url"] != "https://loja.exemplo.test/oferta" {
+		t.Errorf("click not carried: %+v", data)
+	}
+	if _, ok := data["bounceType"]; ok {
+		t.Errorf("bounceType must be absent when empty: %+v", data)
+	}
+	abertura, _ := dispatch(map[string]interface{}{"message_id": "msg-9", "channel_id": "ch-1", "status": "read", "provider_event": "opened"})
+	if clique.ID == abertura.ID {
+		t.Errorf("open and click of the same message collapsed into one id: %s", clique.ID)
+	}
+
+	_, bounce := dispatch(map[string]interface{}{"message_id": "msg-9", "channel_id": "ch-1", "status": "failed",
+		"provider_event": "bounced", "bounce_type": "hard", "error": "550 user unknown"})
+	if bounce["providerEvent"] != "bounced" || bounce["bounceType"] != "hard" || bounce["error"] != "550 user unknown" {
+		t.Errorf("bounce not carried: %+v", bounce)
+	}
+
+	semEvento, plain := dispatch(map[string]interface{}{"message_id": "msg-9", "channel_id": "ch-1", "status": "read"})
+	for _, k := range []string{"providerEvent", "bounceType", "url"} {
+		if _, ok := plain[k]; ok {
+			t.Errorf("%s must be absent for channels without it: %+v", k, plain)
+		}
+	}
+	if semEvento.ID != "evt_msg-9_"+nats.EventMessageRead {
+		t.Errorf("dedup id without provider event changed: %s", semEvento.ID)
+	}
+}

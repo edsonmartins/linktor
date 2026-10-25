@@ -2139,7 +2139,10 @@ func (h *WebhookHandler) processEmailStatus(ctx context.Context, channel *entity
 		status = "sent"
 	case email.StatusDelivered:
 		status = "delivered"
-	case email.StatusOpened, email.StatusClicked:
+	case email.StatusOpened, email.StatusClicked, email.StatusUnsubscribed:
+		// Unsubscribing takes opening the email: "read" is true at the delivery
+		// level and, unlike "pending", reaches the consumer (and doesn't regress the
+		// message). The original event goes in ProviderEvent.
 		status = "read"
 	case email.StatusBounced, email.StatusFailed, email.StatusSpam:
 		status = "failed"
@@ -2155,6 +2158,10 @@ func (h *WebhookHandler) processEmailStatus(ctx context.Context, channel *entity
 			Status:       status,
 			ErrorMessage: report.ErrorMessage,
 			Timestamp:    report.Timestamp,
+			// The original event, which Status folds (linktor-channel-v1, additive).
+			ProviderEvent: report.ProviderEvent,
+			BounceType:    report.BounceType,
+			URL:           report.URL,
 		})
 	}
 }

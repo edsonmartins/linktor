@@ -79,6 +79,15 @@ func anexosDoForm(form *multipart.Form, prefixo string) []*Attachment {
 
 // ParseWebhook parses an incoming webhook from any supported provider
 func ParseWebhook(provider Provider, body []byte, headers map[string]string) (*WebhookPayload, error) {
+	payload, err := parseWebhook(provider, body, headers)
+	if err == nil && payload != nil && payload.Type == "status" && payload.StatusCallback != nil &&
+		payload.StatusCallback.ProviderEvent == "" {
+		payload.StatusCallback.ProviderEvent = ProviderEventOf(payload.StatusCallback.Status)
+	}
+	return payload, err
+}
+
+func parseWebhook(provider Provider, body []byte, headers map[string]string) (*WebhookPayload, error) {
 	switch provider {
 	case ProviderSendGrid:
 		return parseSendGridWebhook(body, headers)
@@ -188,6 +197,16 @@ func parseSendGridEvents(body []byte) (*WebhookPayload, error) {
 	}
 	if event.URL != "" {
 		callback.Metadata["url"] = event.URL
+		callback.URL = event.URL
+	}
+	if status == StatusBounced {
+		// SendGrid: "bounce" is the permanent rejection, "blocked" the temporary one.
+		switch event.Type {
+		case "bounce":
+			callback.BounceType = BounceHard
+		case "blocked":
+			callback.BounceType = BounceSoft
+		}
 	}
 
 	return &WebhookPayload{
@@ -215,9 +234,9 @@ func mapSendGridEventToStatus(event string) EmailStatus {
 		return StatusOpened
 	case "click":
 		return StatusClicked
-	case "spam_report":
+	case "spam_report", "spamreport":
 		return StatusSpam
-	case "unsubscribe":
+	case "unsubscribe", "group_unsubscribe":
 		return StatusUnsubscribed
 	default:
 		return StatusSent
@@ -326,6 +345,15 @@ func parseMailgunEvents(body []byte) (*WebhookPayload, error) {
 	if event.EventData.Severity != "" {
 		callback.Metadata["severity"] = event.EventData.Severity
 	}
+	// Mailgun reports a bounce as a permanent failure (the temporary ones returned
+	// above): the original event is a hard bounce.
+	if event.EventData.Event == "failed" && event.EventData.Severity == "permanent" {
+		callback.ProviderEvent = ProviderEventBounced
+		callback.BounceType = BounceHard
+	}
+	if event.EventData.URL != "" {
+		callback.URL = event.EventData.URL
+	}
 
 	return &WebhookPayload{
 		Provider:       ProviderMailgun,
@@ -401,6 +429,12 @@ func parseSESWebhook(body []byte, headers map[string]string) (*WebhookPayload, e
 		if sesMessage.Bounce != nil {
 			callback.Metadata["bounce_type"] = sesMessage.Bounce.BounceType
 			callback.Metadata["bounce_sub_type"] = sesMessage.Bounce.BounceSubType
+			switch sesMessage.Bounce.BounceType {
+			case "Permanent":
+				callback.BounceType = BounceHard
+			case "Transient":
+				callback.BounceType = BounceSoft
+			}
 			if len(sesMessage.Bounce.BouncedRecipients) > 0 {
 				callback.Recipient = sesMessage.Bounce.BouncedRecipients[0].EmailAddress
 				callback.ErrorMessage = sesMessage.Bounce.BouncedRecipients[0].DiagnosticCode
@@ -532,6 +566,18 @@ func parsePostmarkEvent(body []byte) (*WebhookPayload, error) {
 
 	if event.Type != "" {
 		callback.Metadata["bounce_type"] = event.Type
+	}
+	if status == StatusBounced {
+		switch event.Type {
+		// Postmark's bounce Type; the others (AutoResponder, Unknown…) don't say.
+		case "HardBounce", "BadEmailAddress", "ManuallyDeactivated":
+			callback.BounceType = BounceHard
+		case "SoftBounce", "Transient", "DnsError":
+			callback.BounceType = BounceSoft
+		}
+	}
+	if event.OriginalLink != "" {
+		callback.URL = event.OriginalLink
 	}
 	if event.Description != "" {
 		callback.ErrorMessage = event.Description

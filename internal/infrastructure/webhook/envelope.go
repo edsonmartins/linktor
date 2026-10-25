@@ -180,6 +180,15 @@ type StatusData struct {
 	Error       string    `json:"error,omitempty"`
 	ChannelID   string    `json:"channelId"`
 	ChannelType string    `json:"channelType,omitempty"`
+	// ProviderEvent is the provider's original event when Status folds it — for
+	// email: sent, delivered, opened, clicked (both → "read"), unsubscribed
+	// ("read"), bounced, spam_report, failed (all → "failed"). BounceType is
+	// "hard"/"soft" when the provider tells; URL is the clicked link. Optional and
+	// additive (INV-018): absent for every other channel, so existing consumers
+	// (DeskLenz) see the same payload.
+	ProviderEvent string `json:"providerEvent,omitempty"`
+	BounceType    string `json:"bounceType,omitempty"`
+	URL           string `json:"url,omitempty"`
 }
 
 // ComputeSignature returns the hex-encoded HMAC-SHA256 of payload keyed by
