@@ -24,6 +24,7 @@ import {
   FileText,
   Download,
   Trash2,
+  MapPin,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -233,13 +234,43 @@ interface MessageBubbleProps {
   isOwn: boolean
 }
 
+/**
+ * Localização compartilhada: as coordenadas vêm em metadata (latitude,
+ * longitude, name, address), sem anexo. Vira um link para abrir no mapa.
+ */
+function MessageLocationView({ message }: { message: Message }) {
+  const t = useTranslations('conversations')
+  const lat = String(message.metadata?.latitude ?? '')
+  const lng = String(message.metadata?.longitude ?? '')
+  if (!lat || !lng) return null
+  const name = String(message.metadata?.name ?? message.content ?? '')
+  const address = String(message.metadata?.address ?? '')
+  return (
+    <a
+      href={`https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-start gap-2 text-sm hover:underline"
+    >
+      <MapPin className="h-4 w-4 mt-0.5 shrink-0" />
+      <span>
+        <span className="font-medium">{name || t('locationShared')}</span>
+        {address && <span className="block text-xs text-muted-foreground">{address}</span>}
+        <span className="block text-xs text-muted-foreground font-mono">{lat}, {lng}</span>
+      </span>
+    </a>
+  )
+}
+
 function MessageBubble({ message, isOwn }: MessageBubbleProps) {
   const t = useTranslations('conversations')
+  const isLocation = message.content_type === 'location' && !!message.metadata?.latitude
   // Nem toda mensagem recebida tem o que mostrar: figurinhas, enquetes,
   // atualizações de status e outros tipos que o conector ainda não traduz
   // chegam sem texto e sem anexo. Sem isto a bolha saía vazia — um retângulo
   // cinza sem explicação, que é como a tela estava.
   const semConteudoVisivel =
+    !isLocation &&
     !message.content?.trim() &&
     (!message.attachments || message.attachments.length === 0)
 
@@ -270,7 +301,9 @@ function MessageBubble({ message, isOwn }: MessageBubbleProps) {
               ))}
             </div>
           )}
-          {semConteudoVisivel ? (
+          {isLocation ? (
+            <MessageLocationView message={message} />
+          ) : semConteudoVisivel ? (
             <p className="text-sm italic text-muted-foreground">
               {t('unsupportedMessage')}
             </p>
@@ -1115,6 +1148,17 @@ export function ChatView({ conversationId }: ChatViewProps) {
       }
     )
 
+    // Status (entregue/lido) e edição chegam como message_updated; a mesma
+    // invalidação troca a bolha no lugar, sem esperar um F5.
+    const unsubMessageUpdated = subscribe<WSNewMessagePayload>(
+      WSEventTypes.MESSAGE_UPDATED,
+      (payload) => {
+        if (payload.conversation_id === conversationId) {
+          invalidateConversation()
+        }
+      }
+    )
+
     // Subscribe to typing events for this conversation
     const unsubTyping = subscribe<WSTypingPayload>(
       WSEventTypes.TYPING,
@@ -1138,6 +1182,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
 
     return () => {
       unsubNewMessage()
+      unsubMessageUpdated()
       unsubTyping()
     }
   }, [conversationId, subscribe, invalidateConversation])

@@ -538,24 +538,9 @@ func (h *Handler) UploadMedia(c *gin.Context) {
 
 	c.JSON(http.StatusOK, UploadResponse{
 		URL:       url,
-		Type:      attachmentTypeFromMime(mimeType),
+		Type:      storage.AttachmentTypeFromMime(mimeType),
 		Filename:  fileHeader.Filename,
 		MimeType:  mimeType,
 		SizeBytes: int64(len(data)),
 	})
-}
-
-// attachmentTypeFromMime reduz o MIME ao tipo grosso usado em attachments[]
-// (mesma regra do upload do atendente em handlers.attachmentTypeFromMime).
-func attachmentTypeFromMime(mimeType string) string {
-	switch {
-	case strings.HasPrefix(mimeType, "image/"):
-		return "image"
-	case strings.HasPrefix(mimeType, "video/"):
-		return "video"
-	case strings.HasPrefix(mimeType, "audio/"):
-		return "audio"
-	default:
-		return "document"
-	}
 }

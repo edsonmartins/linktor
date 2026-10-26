@@ -47,10 +47,13 @@ func fixedTimePtr(min int) *time.Time { t := fixedTime(min); return &t }
 
 var roundTripCases = []roundTripCase{
 	{
-		entity:     "Channel",
+		entity: "Channel",
 		exceptions: map[string]string{
-			// none — every Channel field must round-trip; Environment is
-			// immutable on UPDATE by design but Create→FindByID covers it.
+			// Environment is immutable on UPDATE by design but Create→FindByID
+			// covers it, so it is not an exception. BridgeHealth is a view
+			// field: the API handler fills it from the gateway hub's in-memory
+			// snapshot on every read; nothing in channels stores it.
+			"BridgeHealth": "preenchido pelo handler a partir do hub do gateway; não é coluna",
 		},
 		run: func(t *testing.T, ctx context.Context, db *PostgresDB, tenantID string) (any, any) {
 			repo := NewChannelRepository(db, nil)
