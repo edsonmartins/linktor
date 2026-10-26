@@ -16,13 +16,15 @@ import (
 // side is returned for speaking the protocol from the "device".
 func newConnPair(t *testing.T) (*websocket.Conn, *websocket.Conn) {
 	t.Helper()
-	var serverConn *websocket.Conn
+	// The handler runs on the httptest server's goroutine; hand the upgraded
+	// connection over a channel so the test goroutine never races on it.
+	accepted := make(chan *websocket.Conn, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-		serverConn = conn
+		accepted <- conn
 	}))
 	t.Cleanup(srv.Close)
 
@@ -33,14 +35,13 @@ func newConnPair(t *testing.T) (*websocket.Conn, *websocket.Conn) {
 	}
 	t.Cleanup(func() { _ = clientConn.Close() })
 
-	deadline := time.Now().Add(2 * time.Second)
-	for serverConn == nil && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if serverConn == nil {
+	select {
+	case serverConn := <-accepted:
+		return clientConn, serverConn
+	case <-time.After(2 * time.Second):
 		t.Fatal("server connection never established")
+		return nil, nil
 	}
-	return clientConn, serverConn
 }
 
 func unmarshal(data []byte, v any) error {
