@@ -7,6 +7,16 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Webhook `linktor-channel-v1` — `template.status_changed`
+
+- **Evento novo e aditivo:** quando a Meta muda o status de um template (aprovado, recusado, **pausado**, desativado…),
+  `ProcessTemplateStatusWebhook` publica `template.status_changed` e o webhook do canal do template entrega `data`
+  com `templateId`, `externalId`, `name`, `language`, `category`, `previousStatus`, `status`, `reason`, `channelId` e
+  `channelType`. Reenvio do mesmo status não gera evento.
+- **Opt-in por canal:** o tipo só é entregue a canal que o lista **pelo nome** em `webhook_events`; canal sem lista ou com
+  `*` continua recebendo exatamente os tipos de antes. Consumidores existentes (DeskLenz) não veem tipo novo.
+- Pedido do VendaX CRM (VCR-29/VCR-30, §7.4): saber da pausa de template sem consultar.
+
 ### Bridge de WhatsApp (gateway em device)
 
 Novo subsistema `internal/gateway` que permite hospedar a sessão WhatsApp

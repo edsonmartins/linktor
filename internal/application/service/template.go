@@ -14,6 +14,7 @@ import (
 	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/graphapi"
 )
 
@@ -23,6 +24,15 @@ type TemplateService struct {
 	channelRepo  repository.ChannelRepository
 	httpClient   *http.Client
 	writeLimiter *templateWriteLimiter
+	// producer, when set, publishes template.status_changed so the
+	// linktor-channel-v1 webhook can tell integrators (e.g. a template paused by
+	// Meta). Optional: without it, status changes are only persisted, as before.
+	producer nats.Publisher
+}
+
+// SetEventPublisher enables the template.status_changed event. Optional.
+func (s *TemplateService) SetEventPublisher(p nats.Publisher) {
+	s.producer = p
 }
 
 // NewTemplateService creates a new template service
@@ -415,9 +425,41 @@ func (s *TemplateService) ProcessTemplateStatusWebhook(ctx context.Context, even
 		return nil
 	}
 
+	previous := template.Status
 	status := mapMetaStatusToEntity(event.Event)
 	template.UpdateStatus(status, event.Reason)
-	return s.templateRepo.Update(ctx, template)
+	if err := s.templateRepo.Update(ctx, template); err != nil {
+		return err
+	}
+	if previous != status {
+		s.publishStatusChanged(ctx, template, previous)
+	}
+	return nil
+}
+
+// publishStatusChanged emits template.status_changed. Best-effort: a missing
+// producer or a publish failure never fails the webhook processing (the status
+// is already persisted and a later sync reads it).
+func (s *TemplateService) publishStatusChanged(ctx context.Context, t *entity.Template, previous entity.TemplateStatus) {
+	if s.producer == nil {
+		return
+	}
+	_ = s.producer.PublishEvent(ctx, &nats.Event{
+		Type:     nats.EventTemplateStatusChanged,
+		TenantID: t.TenantID,
+		Payload: map[string]interface{}{
+			"template_id":     t.ID,
+			"external_id":     t.ExternalID,
+			"channel_id":      t.ChannelID,
+			"name":            t.Name,
+			"language":        t.Language,
+			"category":        string(t.Category),
+			"previous_status": string(previous),
+			"status":          string(t.Status),
+			"reason":          t.RejectionReason,
+		},
+		Timestamp: time.Now(),
+	})
 }
 
 // ProcessTemplateQualityWebhook processes a template quality webhook event

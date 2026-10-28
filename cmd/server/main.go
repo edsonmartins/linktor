@@ -292,6 +292,8 @@ func main() {
 
 	// Initialize template service
 	templateService := service.NewTemplateService(templateRepo, channelRepo)
+	// template.status_changed no linktor-channel-v1 (aditivo, opt-in por canal em webhook_events).
+	templateService.SetEventPublisher(producer)
 
 	// Initialize coexistence monitor service
 	coexistenceMonitor := service.NewCoexistenceMonitorService(channelRepo, producer)

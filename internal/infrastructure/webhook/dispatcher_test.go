@@ -726,3 +726,72 @@ func TestDispatcherInboundWithoutSenderTypeKeepsOldBehaviour(t *testing.T) {
 			data.Message.SenderType, data.Message.Direction)
 	}
 }
+
+func templateStatusEvent() *nats.Event {
+	return &nats.Event{
+		Type:     nats.EventTemplateStatusChanged,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"template_id": "tpl-1", "external_id": "987", "channel_id": "ch-1", "name": "boas_vindas",
+			"language": "pt_BR", "category": "UTILITY", "previous_status": "APPROVED", "status": "PAUSED", "reason": "baixa qualidade",
+		},
+	}
+}
+
+// template.status_changed é opt-in: só vai a canal que o lista pelo nome em webhook_events.
+func TestDispatcherTemplateStatusChangedOptIn(t *testing.T) {
+	cases := []struct {
+		name   string
+		events string
+		want   int
+	}{
+		{"sem lista (todos os eventos antigos)", "", 0},
+		{"curinga", "*", 0},
+		{"lista sem o tipo", "message.received,message.read", 0},
+		{"listado pelo nome", "message.received, template.status_changed", 1},
+		{"curinga mais o nome", "*,template.status_changed", 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := newTestChannel()
+			ch.Config = map[string]string{cfgWebhookEvents: tc.events}
+			pub := &recordingPublisher{}
+			d := NewDispatcher(pub, &fakeChannels{channel: ch})
+			if err := d.handle(context.Background(), templateStatusEvent()); err != nil {
+				t.Fatalf("handle: %v", err)
+			}
+			if len(pub.deliveries) != tc.want {
+				t.Fatalf("deliveries = %d, want %d", len(pub.deliveries), tc.want)
+			}
+			if tc.want == 0 {
+				return
+			}
+			var env Envelope
+			if err := json.Unmarshal(pub.deliveries[0].Body, &env); err != nil {
+				t.Fatalf("body not an envelope: %v", err)
+			}
+			if env.Type != TypeTemplateStatusChanged || env.TenantID != "tenant-1" {
+				t.Fatalf("unexpected envelope: %+v", env)
+			}
+			data, _ := env.Data.(map[string]interface{})
+			for k, v := range map[string]string{"templateId": "tpl-1", "externalId": "987", "name": "boas_vindas", "language": "pt_BR",
+				"category": "UTILITY", "previousStatus": "APPROVED", "status": "PAUSED", "reason": "baixa qualidade", "channelId": "ch-1"} {
+				if data[k] != v {
+					t.Errorf("data[%s] = %v, want %q", k, data[k], v)
+				}
+			}
+		})
+	}
+}
+
+// Os tipos antigos seguem com o padrão de sempre: canal sem lista recebe todos.
+func TestDispatcherOptInNaoMudaOsTiposAntigos(t *testing.T) {
+	if !subscribedTo(newTestChannel(), TypeConversationCreated) {
+		t.Fatal("empty webhook_events must keep delivering existing types")
+	}
+	ch := newTestChannel()
+	ch.Config = map[string]string{cfgWebhookEvents: "*"}
+	if !subscribedTo(ch, TypeMessageReceived) {
+		t.Fatal("\"*\" must keep delivering existing types")
+	}
+}

@@ -50,17 +50,25 @@ const credWebhookSecret = "webhook_secret"
 // all events, preserving the original always-deliver behaviour.
 const cfgWebhookEvents = "webhook_events"
 
+// optInEventTypes are event types added to `linktor-channel-v1` after
+// consumers already existed. They are delivered only when the channel lists them
+// by name in webhook_events — never through the empty/"*" default — so an
+// existing consumer (e.g. DeskLenz) never starts receiving a type it does not know.
+var optInEventTypes = map[string]bool{
+	TypeTemplateStatusChanged: true,
+}
+
 // subscribedTo reports whether the channel's outbound webhook should receive
 // eventType. When webhook_events is empty (or "*" is present) every event is
-// delivered; otherwise only the listed types are.
+// delivered, except the opt-in types; otherwise only the listed types are.
 func subscribedTo(channel *entity.Channel, eventType string) bool {
 	raw := strings.TrimSpace(channel.Config[cfgWebhookEvents])
 	if raw == "" {
-		return true
+		return !optInEventTypes[eventType]
 	}
 	for _, e := range strings.Split(raw, ",") {
 		e = strings.TrimSpace(e)
-		if e == "*" || e == eventType {
+		if e == eventType || (e == "*" && !optInEventTypes[eventType]) {
 			return true
 		}
 	}
@@ -145,6 +153,8 @@ func (d *Dispatcher) handle(ctx context.Context, event *nats.Event) error {
 		return d.dispatchConversation(ctx, event, TypeConversationEscalated)
 	case nats.EventConversationDeleted:
 		return d.dispatchConversation(ctx, event, TypeConversationDeleted)
+	case nats.EventTemplateStatusChanged:
+		return d.dispatchTemplateStatus(ctx, event)
 	}
 	return nil
 }
@@ -390,6 +400,32 @@ func (d *Dispatcher) dispatchConversation(ctx context.Context, event *nats.Event
 		dedup = dedupKey(p.str("conversation_id"), eventType)
 	}
 	return d.deliver(ctx, channel, eventType, event.TenantID, dedup, data)
+}
+
+// dispatchTemplateStatus converts a template status change into an outbound
+// webhook on the template's channel. A status can legitimately repeat (paused,
+// reinstated, paused again), so each occurrence gets a fresh id.
+func (d *Dispatcher) dispatchTemplateStatus(ctx context.Context, event *nats.Event) error {
+	p := payload(event.Payload)
+
+	channel := d.resolveChannel(ctx, p.str("channel_id"))
+	if channel == nil {
+		return nil
+	}
+
+	data := TemplateStatusData{
+		TemplateID:     p.str("template_id"),
+		ExternalID:     p.str("external_id"),
+		Name:           p.str("name"),
+		Language:       p.str("language"),
+		Category:       p.str("category"),
+		PreviousStatus: p.str("previous_status"),
+		Status:         p.str("status"),
+		Reason:         p.str("reason"),
+		ChannelID:      p.str("channel_id"),
+		ChannelType:    channelType(channel, p),
+	}
+	return d.deliver(ctx, channel, TypeTemplateStatusChanged, event.TenantID, "", data)
 }
 
 // dedupKey builds a stable id for an outbound webhook from the source message id
