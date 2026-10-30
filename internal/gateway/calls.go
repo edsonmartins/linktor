@@ -60,7 +60,7 @@ var (
 type CallUpdate struct {
 	ChannelID  string
 	CallID     string
-	From       string // JID de quem ligou
+	From       string // endereço com que a chamada foi sinalizada
 	State      string
 	RejectedBy string        // só em rejected
 	Duration   time.Duration // só em ended
@@ -77,7 +77,9 @@ func (h *Handler) SetCallSink(fn CallSink) {
 }
 
 type activeCall struct {
-	channelID  string
+	channelID string
+	// from é o endereço com que o WhatsApp sinalizou a chamada (o LID quando
+	// veio por LID): a recusa tem de usar o mesmo call-creator.
 	from       string
 	state      string
 	answeredAt time.Time
@@ -223,7 +225,11 @@ func (h *Handler) callOffered(channelID string, evt InboundEvent, at time.Time) 
 	if err != nil {
 		return fmt.Errorf("resolve channel: %w", err)
 	}
-	call := &activeCall{channelID: channelID, from: evt.From}
+	signaledBy := evt.From
+	if evt.SenderLID != "" {
+		signaledBy = evt.SenderLID
+	}
+	call := &activeCall{channelID: channelID, from: signaledBy}
 	if !h.calls.add(evt.ID, call, func() { h.applyCall(evt.ID, CallStateEnded, "", time.Now()) }) {
 		return nil
 	}

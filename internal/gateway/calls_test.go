@@ -80,6 +80,34 @@ func TestCall_OfferBecomesMessage(t *testing.T) {
 	noUpdate(t, updates)
 }
 
+// Chamada sinalizada por LID: a mensagem usa o número (mesmo contato das
+// mensagens) e a recusa vai para o LID, o endereço com que o WhatsApp a
+// sinalizou.
+func TestCall_LIDCallerKeepsContactAndRejectsByLID(t *testing.T) {
+	h, producer, _ := newCallHandler(t, nil)
+	clientConn, serverConn := newConnPair(t)
+	go h.hub.ServeConnection(NewBridge("ch-1", serverConn))
+	waitForWelcome(t, clientConn)
+
+	raw, err := json.Marshal(InboundEvent{Type: "call", ID: "LID1", From: caller, SenderLID: "252415295144120@lid", Summary: "offer"})
+	require.NoError(t, err)
+	require.NoError(t, h.handleCall("ch-1", raw))
+	require.Len(t, producer.InboundMessages, 1)
+	require.Equal(t, "5511999999999", producer.InboundMessages[0].Metadata["sender_id"])
+	require.Equal(t, "252415295144120@lid", producer.InboundMessages[0].Metadata["sender_lid"])
+
+	done := make(chan error, 1)
+	go func() { done <- h.RejectCall(context.Background(), "ch-1", "LID1", RejectedByOperator) }()
+	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, data, err := clientConn.ReadMessage()
+	require.NoError(t, err)
+	var cmd Frame
+	require.NoError(t, json.Unmarshal(data, &cmd))
+	require.Equal(t, "252415295144120@lid", cmd.From)
+	require.NoError(t, writeJSON(clientConn, Frame{Type: "call_ack", ChannelID: "ch-1", CorrelationID: cmd.CorrelationID, OK: true}))
+	require.NoError(t, <-done)
+}
+
 // Aceite e término viram atendida e encerrada com a duração; término sem
 // aceite é perdida; recusa pelo aparelho é recusada por device.
 func TestCall_Transitions(t *testing.T) {
