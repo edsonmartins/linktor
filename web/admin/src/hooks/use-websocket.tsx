@@ -74,8 +74,11 @@ export type WSEventHandler<T = unknown> = (payload: T) => void
 
 interface UseWebSocketOptions {
   autoConnect?: boolean
-  reconnectAttempts?: number
+  // Primeira espera entre reconexões; dobra a cada falha até maxReconnectDelay.
+  // Não há limite de tentativas: o backend reiniciando (go run leva mais de
+  // 15s) deixava a tela sem atualização ao vivo até um F5.
   reconnectInterval?: number
+  maxReconnectDelay?: number
   onConnect?: () => void
   onDisconnect?: () => void
   onError?: (error: Event) => void
@@ -93,8 +96,8 @@ interface UseWebSocketReturn {
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
   const {
     autoConnect = true,
-    reconnectAttempts = 5,
     reconnectInterval = 3000,
+    maxReconnectDelay = 30000,
     onConnect,
     onDisconnect,
     onError,
@@ -102,6 +105,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectCountRef = useRef(0)
+  // Fechamento pedido pela aplicação (unmount/logout): não religar.
+  const stoppedRef = useRef(false)
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
   const handlersRef = useRef<Map<WSEventType, Set<WSEventHandler>>>(new Map())
 
@@ -158,6 +163,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       return
     }
 
+    stoppedRef.current = false
     setConnectionState('connecting')
     // The HttpOnly access_token cookie is sent automatically with the WS
     // handshake (same-site); no token in the URL.
@@ -207,16 +213,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         setConnectionState('disconnected')
         onDisconnect?.()
 
-        // Attempt reconnect
-        if (reconnectCountRef.current < reconnectAttempts) {
-          setConnectionState('reconnecting')
-          reconnectCountRef.current++
-          if (process.env.NODE_ENV === 'development') console.log(`[WebSocket] Reconnecting (${reconnectCountRef.current}/${reconnectAttempts})...`)
-
-          reconnectTimerRef.current = setTimeout(() => {
-            connect()
-          }, reconnectInterval)
+        // Religa enquanto a sessão existir, com espera crescente; sair da
+        // página ou da conta é o único fim.
+        if (stoppedRef.current || !tokenStorage.isAuthenticated()) {
+          return
         }
+        const delay = Math.min(reconnectInterval * 2 ** reconnectCountRef.current, maxReconnectDelay)
+        reconnectCountRef.current++
+        setConnectionState('reconnecting')
+        if (process.env.NODE_ENV === 'development') console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectCountRef.current})...`)
+
+        reconnectTimerRef.current = setTimeout(() => {
+          connect()
+        }, delay)
       }
 
       wsRef.current.onerror = (error) => {
@@ -230,7 +239,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       if (process.env.NODE_ENV === 'development') console.error('[WebSocket] Failed to connect:', err)
       setConnectionState('disconnected')
     }
-  }, [reconnectAttempts, reconnectInterval, onConnect, onDisconnect, onError, emit])
+  }, [reconnectInterval, maxReconnectDelay, onConnect, onDisconnect, onError, emit])
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -238,7 +247,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       clearTimeout(reconnectTimerRef.current)
       reconnectTimerRef.current = null
     }
-    reconnectCountRef.current = reconnectAttempts // Prevent reconnect
+    stoppedRef.current = true
 
     if (wsRef.current) {
       wsRef.current.close()
@@ -246,7 +255,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
 
     setConnectionState('disconnected')
-  }, [reconnectAttempts])
+  }, [])
 
   // Auto connect on mount (only when authenticated)
   useEffect(() => {
