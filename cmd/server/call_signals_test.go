@@ -10,8 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/msgfy/linktor/internal/application/usecase"
+	"github.com/msgfy/linktor/internal/callsignal"
 	"github.com/msgfy/linktor/internal/domain/entity"
-	"github.com/msgfy/linktor/internal/gateway"
 	"github.com/msgfy/linktor/pkg/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -52,21 +52,21 @@ func (s *senderStub) Execute(_ context.Context, in *usecase.SendMessageInput) (*
 	return &usecase.SendMessageOutput{}, nil
 }
 
-func newSinkUnderTest(t *testing.T, rejectMsg string) (*bridgeCallSink, *callStoreStub, *testutil.MockProducer, *senderStub, *[]string) {
+func newSinkUnderTest(t *testing.T, rejectMsg string) (*callOutcomeSink, *callStoreStub, *testutil.MockProducer, *senderStub, *[]string) {
 	t.Helper()
 	store := &callStoreStub{message: &entity.Message{
 		ID: "m-1", ConversationID: "c-1", ExternalID: "CALL1",
 		ContentType: entity.ContentTypeCall,
-		Metadata:    map[string]string{"phone": "5511999999999", gateway.MetaCallState: gateway.CallStateRinging},
+		Metadata:    map[string]string{"phone": "5511999999999", callsignal.MetaState: callsignal.StateRinging},
 	}}
 	producer := testutil.NewMockProducer()
 	sender := &senderStub{}
 	channel := &entity.Channel{ID: "ch-1", TenantID: "t-1", Config: map[string]string{"reject_call": "true", "reject_call_msg": rejectMsg}}
-	sink := newBridgeCallSink(store, conversationStub{&entity.Conversation{ID: "c-1", TenantID: "t-1", ContactID: "ct-1", ChannelID: "ch-1"}}, channelStub{channel}, producer, sender)
+	sink := newCallOutcomeSink(store, conversationStub{&entity.Conversation{ID: "c-1", TenantID: "t-1", ContactID: "ct-1", ChannelID: "ch-1"}}, channelStub{channel}, producer, sender)
 	sink.sleep = func(time.Duration) {}
 	var broadcasts []string
 	sink.broadcast = func(tenantID, conversationID string, m *entity.Message) {
-		broadcasts = append(broadcasts, tenantID+"/"+conversationID+"/"+m.Metadata[gateway.MetaCallState])
+		broadcasts = append(broadcasts, tenantID+"/"+conversationID+"/"+m.Metadata[callsignal.MetaState])
 	}
 	return sink, store, producer, sender, &broadcasts
 }
@@ -77,8 +77,8 @@ func TestBridgeCallSink_RecordsStateAndPublishes(t *testing.T) {
 	sink, store, producer, sender, broadcasts := newSinkUnderTest(t, "")
 	at := time.Unix(1700000000, 0)
 
-	sink.Handle(context.Background(), gateway.CallUpdate{ChannelID: "ch-1", CallID: "CALL1", State: gateway.CallStateAnswered, At: at})
-	require.Equal(t, gateway.CallStateAnswered, store.updated.Metadata[gateway.MetaCallState])
+	sink.Handle(context.Background(), callsignal.Update{ChannelID: "ch-1", CallID: "CALL1", State: callsignal.StateAnswered, At: at})
+	require.Equal(t, callsignal.StateAnswered, store.updated.Metadata[callsignal.MetaState])
 	require.Equal(t, []string{"t-1/c-1/answered"}, *broadcasts)
 	require.Len(t, producer.Events, 1)
 	ev := producer.Events[0]
@@ -90,13 +90,13 @@ func TestBridgeCallSink_RecordsStateAndPublishes(t *testing.T) {
 	require.Equal(t, "5511999999999", ev.Payload["from"])
 	require.Equal(t, at, ev.Timestamp)
 
-	require.Empty(t, store.updated.Metadata[gateway.MetaCallRejectedBy])
+	require.Empty(t, store.updated.Metadata[callsignal.MetaRejectedBy])
 
-	sink.Handle(context.Background(), gateway.CallUpdate{CallID: "CALL1", State: gateway.CallStateMissed, At: at})
+	sink.Handle(context.Background(), callsignal.Update{CallID: "CALL1", State: callsignal.StateMissed, At: at})
 	require.Equal(t, "call.missed", producer.Events[1].Type)
 
-	sink.Handle(context.Background(), gateway.CallUpdate{CallID: "CALL1", State: gateway.CallStateRejected, RejectedBy: gateway.RejectedByOperator, At: at})
-	require.Equal(t, gateway.RejectedByOperator, store.updated.Metadata[gateway.MetaCallRejectedBy])
+	sink.Handle(context.Background(), callsignal.Update{CallID: "CALL1", State: callsignal.StateRejected, RejectedBy: callsignal.RejectedByOperator, At: at})
+	require.Equal(t, callsignal.RejectedByOperator, store.updated.Metadata[callsignal.MetaRejectedBy])
 	require.Equal(t, "call.rejected", producer.Events[2].Type)
 	require.Equal(t, "operator", producer.Events[2].Payload["rejected_by"])
 	require.Empty(t, sender.inputs, "recusa pelo atendente não manda a mensagem automática")
@@ -106,17 +106,17 @@ func TestBridgeCallSink_RecordsStateAndPublishes(t *testing.T) {
 // como mensagem do sistema; sem mensagem configurada, nada sai.
 func TestBridgeCallSink_AutoRejectReplies(t *testing.T) {
 	sink, _, _, sender, _ := newSinkUnderTest(t, "Este número não atende chamadas.")
-	sink.Handle(context.Background(), gateway.CallUpdate{CallID: "CALL1", State: gateway.CallStateRejected, RejectedBy: gateway.RejectedByAuto, At: time.Now()})
+	sink.Handle(context.Background(), callsignal.Update{CallID: "CALL1", State: callsignal.StateRejected, RejectedBy: callsignal.RejectedByAuto, At: time.Now()})
 	require.Len(t, sender.inputs, 1)
 	in := sender.inputs[0]
 	require.Equal(t, "c-1", in.ConversationID)
 	require.Equal(t, "t-1", in.TenantID)
 	require.Equal(t, entity.SenderTypeSystem, in.SenderType)
 	require.Equal(t, "Este número não atende chamadas.", in.Content)
-	require.Equal(t, "CALL1", in.Metadata[gateway.MetaCallID])
+	require.Equal(t, "CALL1", in.Metadata[callsignal.MetaCallID])
 
 	sink, _, _, sender, _ = newSinkUnderTest(t, "")
-	sink.Handle(context.Background(), gateway.CallUpdate{CallID: "CALL1", State: gateway.CallStateRejected, RejectedBy: gateway.RejectedByAuto, At: time.Now()})
+	sink.Handle(context.Background(), callsignal.Update{CallID: "CALL1", State: callsignal.StateRejected, RejectedBy: callsignal.RejectedByAuto, At: time.Now()})
 	require.Empty(t, sender.inputs)
 }
 
@@ -124,7 +124,7 @@ func TestBridgeCallSink_AutoRejectReplies(t *testing.T) {
 // tentativas) não derruba nada: só não registra.
 func TestBridgeCallSink_UnknownCall(t *testing.T) {
 	sink, store, producer, _, broadcasts := newSinkUnderTest(t, "")
-	sink.Handle(context.Background(), gateway.CallUpdate{CallID: "OTHER", State: gateway.CallStateMissed, At: time.Now()})
+	sink.Handle(context.Background(), callsignal.Update{CallID: "OTHER", State: callsignal.StateMissed, At: time.Now()})
 	require.Nil(t, store.updated)
 	require.Empty(t, producer.Events)
 	require.Empty(t, *broadcasts)
@@ -136,7 +136,7 @@ type rejecterStub struct {
 	call string
 }
 
-func (r *rejecterStub) RejectCall(_ context.Context, channelID, callID, by string) error {
+func (r *rejecterStub) Reject(_ context.Context, channelID, callID, by string) error {
 	r.got = append(r.got, channelID+"/"+callID+"/"+by)
 	return r.err
 }
@@ -152,9 +152,9 @@ func rejectRequest(t *testing.T, rejecter *rejecterStub) *httptest.ResponseRecor
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) { c.Set("tenant_id", "t-1") })
-	r.POST("/channels/:id/bridge-calls/:callId/reject", rejectBridgeCallHandler(tenantChannelStub{}, rejecter))
+	r.POST("/channels/:id/calls/:callId/reject", rejectCallHandler(tenantChannelStub{}, rejecter))
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/channels/ch-1/bridge-calls/CALL1/reject", nil))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/channels/ch-1/calls/CALL1/reject", nil))
 	return w
 }
 
@@ -171,8 +171,8 @@ func TestRejectBridgeCallHandler(t *testing.T) {
 		err  error
 		want int
 	}{
-		{gateway.ErrCallNotFound, http.StatusNotFound},
-		{gateway.ErrNoBridge, http.StatusServiceUnavailable},
+		{callsignal.ErrCallNotFound, http.StatusNotFound},
+		{callsignal.ErrDeviceOffline, http.StatusServiceUnavailable},
 		{errors.New("bridge could not reject call: boom"), http.StatusInternalServerError},
 	} {
 		w := rejectRequest(t, &rejecterStub{err: tc.err})

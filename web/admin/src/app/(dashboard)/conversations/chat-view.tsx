@@ -243,6 +243,10 @@ interface MessageBubbleProps {
 
 type CallState = 'ringing' | 'answered' | 'missed' | 'rejected'
 
+// Canais em que o Linktor é um aparelho conectado ao WhatsApp e pode recusar
+// a chamada que toca (bridge e sessão embutida).
+const LINKED_CALL_CHANNELS = new Set(['whatsapp_remote', 'whatsapp'])
+
 const CALL_STATES: CallState[] = ['ringing', 'answered', 'missed', 'rejected']
 
 const CALL_ICONS: Record<CallState, typeof PhoneIncoming> = {
@@ -1106,11 +1110,11 @@ export function ChatView({ conversationId }: ChatViewProps) {
     })
   }, [conversationId, queryClient])
 
-  // Recusar chamada que toca no aparelho do bridge. O estado novo chega por
-  // message_updated; a invalidação aqui só adianta a troca da bolha.
+  // Recusar chamada que toca no aparelho (bridge ou sessão embutida). O
+  // estado novo chega por message_updated; a invalidação só adianta a troca.
   const rejectCall = useMutation({
     mutationFn: (callId: string) =>
-      api.post(`/channels/${conversation?.channel_id}/bridge-calls/${callId}/reject`),
+      api.post(`/channels/${conversation?.channel_id}/calls/${callId}/reject`),
     onSuccess: () => {
       invalidateConversation()
     },
@@ -1469,7 +1473,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
                 // importadas do aparelho chegam sem sender_id, e nenhuma
                 // batia.
                 isOwn={message.sender_type !== 'contact'}
-                onRejectCall={conversation?.channel?.type === 'whatsapp_remote' ? rejectCall.mutate : undefined}
+                onRejectCall={LINKED_CALL_CHANNELS.has(conversation?.channel?.type ?? '') ? rejectCall.mutate : undefined}
                 rejectingCall={rejectCall.isPending}
               />
             ))

@@ -88,6 +88,11 @@ func (c *Client) handleEvent(evt any) {
 		}
 		c.dispatch(eventCh, chatPresence, "chat_presence")
 
+	case *events.CallOffer, *events.CallOfferNotice, *events.CallAccept, *events.CallReject, *events.CallTerminate:
+		// Na mesma fila das mensagens: a oferta precisa ser registrada antes
+		// do aceite ou do término que vêm logo atrás (call_signal.go).
+		c.dispatch(eventCh, toCallSignal(v), "call")
+
 	case *events.HistorySync:
 		c.dispatch(eventCh, HistorySyncEvent{
 			Complete: true,

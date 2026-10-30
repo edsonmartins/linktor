@@ -10,17 +10,18 @@ import (
 	"github.com/msgfy/linktor/internal/api/handlers"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/usecase"
+	"github.com/msgfy/linktor/internal/callsignal"
 	"github.com/msgfy/linktor/internal/domain/entity"
-	"github.com/msgfy/linktor/internal/gateway"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	apperrors "github.com/msgfy/linktor/pkg/errors"
 	"github.com/msgfy/linktor/pkg/logger"
 )
 
-// Chamadas pelo bridge. A oferta entra pelo pipeline de mensagens (tipo
-// call, estado tocando). O gateway avisa aqui o desfecho, uma vez por
-// chamada: atendida, não atendida ou recusada. Ele vira metadata na mensagem
-// da chamada, atualização ao vivo no admin e evento call.* para o webhook.
+// Chamadas vistas por um aparelho conectado (bridge ou sessão embutida). A
+// oferta entra pelo pipeline de mensagens (tipo call, estado tocando). O
+// callsignal.Tracker avisa aqui o desfecho, uma vez por chamada: atendida,
+// não atendida ou recusada. Ele vira metadata na mensagem da chamada,
+// atualização ao vivo no admin e evento call.* para o webhook.
 // Recusa automática ainda manda a mensagem configurada no canal pela
 // conversa, como uma resposta normal do atendimento.
 
@@ -41,7 +42,7 @@ type messageSender interface {
 	Execute(ctx context.Context, input *usecase.SendMessageInput) (*usecase.SendMessageOutput, error)
 }
 
-type bridgeCallSink struct {
+type callOutcomeSink struct {
 	messages      callMessageStore
 	conversations conversationFinder
 	channels      channelFinder
@@ -51,8 +52,8 @@ type bridgeCallSink struct {
 	broadcast     func(tenantID, conversationID string, message *entity.Message)
 }
 
-func newBridgeCallSink(messages callMessageStore, conversations conversationFinder, channels channelFinder, producer nats.Publisher, sender messageSender) *bridgeCallSink {
-	return &bridgeCallSink{
+func newCallOutcomeSink(messages callMessageStore, conversations conversationFinder, channels channelFinder, producer nats.Publisher, sender messageSender) *callOutcomeSink {
+	return &callOutcomeSink{
 		messages:      messages,
 		conversations: conversations,
 		channels:      channels,
@@ -63,24 +64,24 @@ func newBridgeCallSink(messages callMessageStore, conversations conversationFind
 	}
 }
 
-// Handle é o gateway.CallSink. A busca pelo call_id tenta de novo por um
+// Handle é o callsignal.Sink. A busca pelo call_id tenta de novo por um
 // instante porque a mensagem da oferta é gravada por outro consumidor e a
 // recusa automática chega logo atrás dela.
-func (s *bridgeCallSink) Handle(ctx context.Context, u gateway.CallUpdate) {
+func (s *callOutcomeSink) Handle(ctx context.Context, u callsignal.Update) {
 	message, err := findMessageByExternalID(ctx, s.messages, u.CallID, s.sleep)
 	if err != nil || message == nil {
-		logger.Warn("bridge call " + u.CallID + ": message not found, state " + u.State + " not recorded")
+		logger.Warn("call " + u.CallID + ": message not found, state " + u.State + " not recorded")
 		return
 	}
 	if message.Metadata == nil {
 		message.Metadata = map[string]string{}
 	}
-	message.Metadata[gateway.MetaCallState] = u.State
+	message.Metadata[callsignal.MetaState] = u.State
 	if u.RejectedBy != "" {
-		message.Metadata[gateway.MetaCallRejectedBy] = u.RejectedBy
+		message.Metadata[callsignal.MetaRejectedBy] = u.RejectedBy
 	}
 	if err := s.messages.Update(ctx, message); err != nil {
-		logger.Warn("bridge call " + u.CallID + ": failed to record state " + u.State + ": " + err.Error())
+		logger.Warn("call " + u.CallID + ": failed to record state " + u.State + ": " + err.Error())
 		return
 	}
 
@@ -108,14 +109,14 @@ func (s *bridgeCallSink) Handle(ctx context.Context, u gateway.CallUpdate) {
 		})
 	}
 
-	if u.State == gateway.CallStateRejected && u.RejectedBy == gateway.RejectedByAuto {
+	if u.State == callsignal.StateRejected && u.RejectedBy == callsignal.RejectedByAuto {
 		s.autoReply(ctx, conversation, u.CallID)
 	}
 }
 
 // autoReply manda a mensagem de recusa do canal (reject_call_msg) pela
 // conversa, para ficar registrada e seguir pelo envio normal.
-func (s *bridgeCallSink) autoReply(ctx context.Context, conversation *entity.Conversation, callID string) {
+func (s *callOutcomeSink) autoReply(ctx context.Context, conversation *entity.Conversation, callID string) {
 	if s.sender == nil || s.channels == nil {
 		return
 	}
@@ -133,10 +134,10 @@ func (s *bridgeCallSink) autoReply(ctx context.Context, conversation *entity.Con
 		SenderType:     entity.SenderTypeSystem,
 		ContentType:    entity.ContentTypeText,
 		Content:        settings.RejectCallMsg,
-		Metadata:       map[string]string{gateway.MetaCallID: callID, "auto_reply": "reject_call"},
+		Metadata:       map[string]string{callsignal.MetaCallID: callID, "auto_reply": "reject_call"},
 	})
 	if err != nil {
-		logger.Warn("bridge call " + callID + ": reject message not sent: " + err.Error())
+		logger.Warn("call " + callID + ": reject message not sent: " + err.Error())
 	}
 }
 
@@ -144,28 +145,28 @@ func (s *bridgeCallSink) autoReply(ctx context.Context, conversation *entity.Con
 // (é o message.received da própria mensagem).
 func callEventType(state string) string {
 	switch state {
-	case gateway.CallStateAnswered:
+	case callsignal.StateAnswered:
 		return nats.EventCallAnswered
-	case gateway.CallStateMissed:
+	case callsignal.StateMissed:
 		return nats.EventCallMissed
-	case gateway.CallStateRejected:
+	case callsignal.StateRejected:
 		return nats.EventCallRejected
 	}
 	return ""
 }
 
-// callRejecter é o pedaço do gateway que a rota de recusa usa.
+// callRejecter é o pedaço do callsignal.Tracker que a rota de recusa usa.
 type callRejecter interface {
-	RejectCall(ctx context.Context, channelID, callID, by string) error
+	Reject(ctx context.Context, channelID, callID, by string) error
 }
 
 type tenantChannelFinder interface {
 	GetByTenantAndID(ctx context.Context, tenantID, id string) (*entity.Channel, error)
 }
 
-// rejectBridgeCallHandler atende POST /channels/:id/bridge-calls/:callId/reject:
-// o atendente recusa, pelo admin, uma chamada que está tocando no aparelho.
-func rejectBridgeCallHandler(channels tenantChannelFinder, calls callRejecter) gin.HandlerFunc {
+// rejectCallHandler atende POST /channels/:id/calls/:callId/reject: o
+// atendente recusa, pelo admin, uma chamada que está tocando no aparelho.
+func rejectCallHandler(channels tenantChannelFinder, calls callRejecter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tenantID := middleware.MustGetTenantID(c)
 		if tenantID == "" {
@@ -176,22 +177,22 @@ func rejectBridgeCallHandler(channels tenantChannelFinder, calls callRejecter) g
 			handlers.RespondError(c, err)
 			return
 		}
-		if err := calls.RejectCall(c.Request.Context(), channelID, callID, gateway.RejectedByOperator); err != nil {
-			handlers.RespondError(c, bridgeCallError(err))
+		if err := calls.Reject(c.Request.Context(), channelID, callID, callsignal.RejectedByOperator); err != nil {
+			handlers.RespondError(c, callRejectError(err))
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"call_id": callID, "state": gateway.CallStateRejected})
+		c.JSON(http.StatusOK, gin.H{"call_id": callID, "state": callsignal.StateRejected})
 	}
 }
 
-// bridgeCallError traduz os erros do gateway para a API: chamada que não
-// está tocando (404), bridge desligado (503).
-func bridgeCallError(err error) error {
+// callRejectError traduz os erros da recusa para a API: chamada que não está
+// tocando (404), aparelho desligado (503).
+func callRejectError(err error) error {
 	switch {
-	case errors.Is(err, gateway.ErrCallNotFound):
+	case errors.Is(err, callsignal.ErrCallNotFound):
 		return apperrors.NotFound("call")
-	case errors.Is(err, gateway.ErrNoBridge):
-		e := apperrors.New(apperrors.ErrCodeChannelDisconnected, "bridge is offline")
+	case errors.Is(err, callsignal.ErrDeviceOffline):
+		e := apperrors.New(apperrors.ErrCodeChannelDisconnected, "device is offline")
 		e.StatusCode = http.StatusServiceUnavailable
 		return e
 	}

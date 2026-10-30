@@ -75,11 +75,6 @@ type Config struct {
 	// AutoReadMessages marks inbound messages as read on arrival.
 	AutoReadMessages bool
 
-	// RejectCall auto-declines inbound calls; RejectCallMsg, when set, is sent
-	// to the caller after the rejection.
-	RejectCall    bool
-	RejectCallMsg string
-
 	// QRCodeMaxCount caps how many QR codes are generated before giving up
 	// (0 = unlimited).
 	QRCodeMaxCount int

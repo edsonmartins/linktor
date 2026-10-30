@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/msgfy/linktor/internal/callsignal"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
@@ -44,10 +45,9 @@ type Handler struct {
 	// rehost move os anexos inline (base64) para o object store antes de
 	// publicar, como o e-mail faz: o NATS limita o payload a 1 MB.
 	rehost func(context.Context, *nats.InboundMessage)
-	// calls acompanha as chamadas em andamento nos bridges; onCall recebe
-	// cada mudança de estado depois da oferta (ver calls.go).
-	calls  *callRegistry
-	onCall CallSink
+	// calls é o registro de chamadas compartilhado com a sessão embutida
+	// (ver calls.go).
+	calls *callsignal.Tracker
 }
 
 // SetRehost registra o passo que move anexos inline para o object store antes
@@ -78,7 +78,7 @@ func (h *Handler) HealthForChannel(channelID string) HealthInfo {
 
 // NewHandler builds the gateway WS handler.
 func NewHandler(hub *Hub, channels repository.ChannelRepository, producer nats.Publisher, status StatusUpdater, registry *plugin.Registry) *Handler {
-	dh := &Handler{hub: hub, channels: channels, producer: producer, status: status, registry: registry, calls: newCallRegistry()}
+	dh := &Handler{hub: hub, channels: channels, producer: producer, status: status, registry: registry}
 	// Wire the platform sinks once; idempotent across handler instances since
 	// they all delegate to the same service layer.
 	hub.SetInboundHandler(dh.handleInbound)

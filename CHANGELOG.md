@@ -66,6 +66,15 @@ APIs não-oficiais.
   mensagem configurada pela conversa. Admin: bolha de chamada com botão
   **Recusar**, card "Chamadas" na tela do bridge e os três eventos no
   webhook de saída.
+- **Chamadas também sem o bridge**: o registro saiu do gateway para
+  `internal/callsignal` e serve as duas origens. A sessão whatsmeow embutida
+  (canal "WhatsApp não oficial") passa a traduzir os sinais de chamada
+  (inclusive o aviso de oferta, `CallOfferNotice`, que é o que um aparelho
+  conectado recebe) na mesma fila das mensagens, com a mesma identidade
+  (número, LID em metadata), e recusa direto pelo whatsmeow. Sai a recusa
+  automática antiga do adaptador, que dependia do motor de voz ver a oferta
+  completa e por isso nunca disparava. A rota de recusa vira
+  `POST /api/v1/channels/:id/calls/:callId/reject`.
 - **Admin religa o WebSocket** depois que o backend reinicia (antes desistia
   em 15s e a tela parava de atualizar até um F5).
 

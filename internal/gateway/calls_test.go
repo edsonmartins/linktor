@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/msgfy/linktor/internal/callsignal"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/pkg/plugin"
 	"github.com/msgfy/linktor/pkg/testutil"
@@ -16,52 +17,68 @@ import (
 
 const caller = "5511999999999@s.whatsapp.net"
 
-// newCallHandler monta o handler com um sink que entrega cada CallUpdate num
-// canal, para o teste esperar a transição sem dormir.
-func newCallHandler(t *testing.T, cfg map[string]string) (*Handler, *testutil.MockProducer, chan CallUpdate) {
+// newCallHandler monta o handler com o registro de chamadas real e um sink
+// que entrega cada desfecho num canal.
+func newCallHandler(t *testing.T, cfg map[string]string) (*Handler, *testutil.MockProducer, *callsignal.Tracker, chan callsignal.Update) {
 	t.Helper()
 	channels := testutil.NewMockChannelRepository()
 	channels.Channels["ch-1"] = &entity.Channel{ID: "ch-1", TenantID: "t-1", Type: entity.ChannelType(plugin.ChannelTypeWhatsAppRemote), Config: cfg}
 	producer := testutil.NewMockProducer()
 	h := NewHandler(NewHub(), channels, producer, nil, nil)
-	updates := make(chan CallUpdate, 8)
-	h.SetCallSink(func(_ context.Context, u CallUpdate) { updates <- u })
-	return h, producer, updates
+	tracker := callsignal.NewTracker(channels)
+	updates := make(chan callsignal.Update, 8)
+	tracker.SetSink(func(_ context.Context, u callsignal.Update) { updates <- u })
+	h.SetCallTracker(tracker)
+	return h, producer, tracker, updates
 }
 
-func callRaw(t *testing.T, id, kind string, ts int64) json.RawMessage {
+func callFrame(t *testing.T, evt InboundEvent) json.RawMessage {
 	t.Helper()
-	raw, err := json.Marshal(InboundEvent{Type: "call", ID: id, From: caller, Timestamp: ts, Summary: kind})
+	evt.Type = "call"
+	raw, err := json.Marshal(evt)
 	require.NoError(t, err)
 	return raw
 }
 
-func nextUpdate(t *testing.T, updates chan CallUpdate) CallUpdate {
+func nextUpdate(t *testing.T, updates chan callsignal.Update) callsignal.Update {
 	t.Helper()
 	select {
 	case u := <-updates:
 		return u
 	case <-time.After(2 * time.Second):
-		t.Fatal("sink não recebeu a transição")
-		return CallUpdate{}
+		t.Fatal("sink não recebeu o desfecho")
+		return callsignal.Update{}
 	}
 }
 
-func noUpdate(t *testing.T, updates chan CallUpdate) {
+// connectBridge liga um bridge falso ao hub do handler.
+func connectBridge(t *testing.T, h *Handler) *websocket.Conn {
 	t.Helper()
-	select {
-	case u := <-updates:
-		t.Fatalf("transição inesperada: %+v", u)
-	case <-time.After(50 * time.Millisecond):
-	}
+	clientConn, serverConn := newConnPair(t)
+	go h.hub.ServeConnection(NewBridge("ch-1", serverConn))
+	waitForWelcome(t, clientConn)
+	return clientConn
+}
+
+// readCallCommand lê o próximo frame do bridge falso e o devolve.
+func readCallCommand(t *testing.T, conn *websocket.Conn) Frame {
+	t.Helper()
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, data, err := conn.ReadMessage()
+	require.NoError(t, err)
+	var cmd Frame
+	require.NoError(t, json.Unmarshal(data, &cmd))
+	require.Equal(t, "call_command", cmd.Type)
+	require.Equal(t, "reject", cmd.Text)
+	return cmd
 }
 
 // A oferta vira mensagem de tipo call na conversa do contato, com a mesma
-// identidade das mensagens e o estado tocando; oferta repetida não duplica.
+// identidade das mensagens (o número, com o LID ao lado); repetida não
+// duplica.
 func TestCall_OfferBecomesMessage(t *testing.T) {
-	h, producer, updates := newCallHandler(t, nil)
-	raw, err := json.Marshal(InboundEvent{Type: "call", ID: "CALL1", From: caller, SenderName: "Ale", Timestamp: 1700000000, Summary: "offer", Video: true})
-	require.NoError(t, err)
+	h, producer, tracker, _ := newCallHandler(t, nil)
+	raw := callFrame(t, InboundEvent{ID: "CALL1", From: caller, SenderLID: "252415295144120@lid", SenderName: "Ale", Timestamp: 1700000000, Summary: "offer", Video: true})
 	require.NoError(t, h.handleCall("ch-1", raw))
 	require.NoError(t, h.handleCall("ch-1", raw))
 
@@ -72,176 +89,86 @@ func TestCall_OfferBecomesMessage(t *testing.T) {
 	require.Equal(t, "Chamada de vídeo", msg.Content)
 	require.Equal(t, "5511999999999", msg.Metadata["sender_id"])
 	require.Equal(t, "5511999999999", msg.Metadata["phone"])
+	require.Equal(t, "252415295144120@lid", msg.Metadata["sender_lid"])
 	require.Equal(t, "Ale", msg.Metadata["sender_name"])
-	require.Equal(t, "CALL1", msg.Metadata[MetaCallID])
-	require.Equal(t, CallStateRinging, msg.Metadata[MetaCallState])
-	require.Equal(t, "true", msg.Metadata[MetaCallVideo])
+	require.Equal(t, callsignal.StateRinging, msg.Metadata[callsignal.MetaState])
+	require.Equal(t, "true", msg.Metadata[callsignal.MetaVideo])
 	require.Equal(t, int64(1700000000), msg.Timestamp.Unix())
-	noUpdate(t, updates)
+	require.True(t, tracker.Ringing("CALL1"))
 }
 
-// Chamada sinalizada por LID: a mensagem usa o número (mesmo contato das
-// mensagens) e a recusa vai para o LID, o endereço com que o WhatsApp a
-// sinalizou.
-func TestCall_LIDCallerKeepsContactAndRejectsByLID(t *testing.T) {
-	h, producer, _ := newCallHandler(t, nil)
-	clientConn, serverConn := newConnPair(t)
-	go h.hub.ServeConnection(NewBridge("ch-1", serverConn))
-	waitForWelcome(t, clientConn)
-
-	raw, err := json.Marshal(InboundEvent{Type: "call", ID: "LID1", From: caller, SenderLID: "252415295144120@lid", Summary: "offer"})
-	require.NoError(t, err)
-	require.NoError(t, h.handleCall("ch-1", raw))
-	require.Len(t, producer.InboundMessages, 1)
-	require.Equal(t, "5511999999999", producer.InboundMessages[0].Metadata["sender_id"])
-	require.Equal(t, "252415295144120@lid", producer.InboundMessages[0].Metadata["sender_lid"])
-
-	done := make(chan error, 1)
-	go func() { done <- h.RejectCall(context.Background(), "ch-1", "LID1", RejectedByOperator) }()
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, data, err := clientConn.ReadMessage()
-	require.NoError(t, err)
-	var cmd Frame
-	require.NoError(t, json.Unmarshal(data, &cmd))
-	require.Equal(t, "252415295144120@lid", cmd.From)
-	require.NoError(t, writeJSON(clientConn, Frame{Type: "call_ack", ChannelID: "ch-1", CorrelationID: cmd.CorrelationID, OK: true}))
-	require.NoError(t, <-done)
-}
-
-// Cada chamada tem um só desfecho: aceite é atendida (no aparelho pareado o
-// término vem logo atrás e não muda nada), término com a chamada tocando é
-// não atendida, recusa pelo aparelho é recusada por device.
-func TestCall_Outcomes(t *testing.T) {
-	h, _, updates := newCallHandler(t, nil)
-
-	// atendida no celular: o WhatsApp manda o aceite (do próprio número) e
-	// encerra a participação do aparelho pareado no mesmo segundo
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "A", "offer", 100)))
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "A", "accept", 114)))
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "A", "terminate", 114)))
+// Sequência real de um aparelho principal que atende, pelo WebSocket como o
+// bridge manda: aceite (do próprio número) e término no mesmo segundo viram
+// só "atendida".
+func TestCall_AnsweredOnPhoneThroughHub(t *testing.T) {
+	h, _, _, updates := newCallHandler(t, nil)
+	conn := connectBridge(t, h)
+	for _, evt := range []InboundEvent{
+		{ID: "X", From: "554499806761@s.whatsapp.net", SenderLID: "252415295144120@lid", Timestamp: 1792956583, Summary: "offer"},
+		{ID: "X", From: "554497239232@s.whatsapp.net", SenderLID: "258570671104121@lid", Timestamp: 1792956588, Summary: "accept"},
+		{ID: "X", From: "554499806761@s.whatsapp.net", SenderLID: "252415295144120@lid", Timestamp: 1792956588, Summary: "terminate"},
+	} {
+		require.NoError(t, writeJSON(conn, Frame{Type: "call_event", ChannelID: "ch-1", Message: callFrame(t, evt)}))
+	}
 	u := nextUpdate(t, updates)
-	require.Equal(t, CallStateAnswered, u.State)
-	require.Equal(t, caller, u.From)
-	require.Equal(t, int64(114), u.At.Unix())
-	noUpdate(t, updates)
-
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "B", "offer", 200)))
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "B", "terminate", 230)))
-	require.Equal(t, CallStateMissed, nextUpdate(t, updates).State)
-
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "C", "offer", 300)))
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "C", "reject", 310)))
-	u = nextUpdate(t, updates)
-	require.Equal(t, CallStateRejected, u.State)
-	require.Equal(t, RejectedByDevice, u.RejectedBy)
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "C", "terminate", 311)))
-	noUpdate(t, updates)
-
-	// sinalização de chamada desconhecida (ou já resolvida) é ignorada
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "Z", "accept", 400)))
-	noUpdate(t, updates)
-	_, ok := h.calls.get("A")
-	require.False(t, ok, "chamada resolvida deve sair do registro")
+	require.Equal(t, callsignal.StateAnswered, u.State)
+	require.Equal(t, int64(1792956588), u.At.Unix())
 }
 
-// Sem término (bridge caiu no meio do toque) a chamada vira perdida pelo
-// tempo limite, em vez de ficar tocando para sempre.
-func TestCall_RingTimeout(t *testing.T) {
-	h, _, updates := newCallHandler(t, nil)
-	h.calls.ringTimeout = 20 * time.Millisecond
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "T", "offer", 0)))
-	require.Equal(t, CallStateMissed, nextUpdate(t, updates).State)
-}
-
-// RejectCall manda call_command reject ao bridge com o JID de quem ligou e,
-// com o call_ack ok, registra a recusa; chamada desconhecida ou já atendida
-// é erro antes de falar com o bridge.
-func TestCall_RejectThroughBridge(t *testing.T) {
-	h, _, updates := newCallHandler(t, nil)
-	clientConn, serverConn := newConnPair(t)
-	go h.hub.ServeConnection(NewBridge("ch-1", serverConn))
-	waitForWelcome(t, clientConn)
-
-	require.ErrorIs(t, h.RejectCall(context.Background(), "ch-1", "NOPE", RejectedByOperator), ErrCallNotFound)
-
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "R", "offer", 0)))
-	require.ErrorIs(t, h.RejectCall(context.Background(), "ch-other", "R", RejectedByOperator), ErrCallNotFound)
+// A recusa vai ao bridge como call_command endereçado ao LID com que a
+// chamada foi sinalizada e só conta com o call_ack ok.
+func TestCall_RejectThroughBridgeByLID(t *testing.T) {
+	h, _, tracker, updates := newCallHandler(t, nil)
+	conn := connectBridge(t, h)
+	require.NoError(t, h.handleCall("ch-1", callFrame(t, InboundEvent{ID: "R", From: caller, SenderLID: "252415295144120@lid", Summary: "offer"})))
 
 	done := make(chan error, 1)
-	go func() { done <- h.RejectCall(context.Background(), "ch-1", "R", RejectedByOperator) }()
-
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, data, err := clientConn.ReadMessage()
-	require.NoError(t, err)
-	var cmd Frame
-	require.NoError(t, json.Unmarshal(data, &cmd))
-	require.Equal(t, "call_command", cmd.Type)
-	require.Equal(t, "reject", cmd.Text)
+	go func() { done <- tracker.Reject(context.Background(), "ch-1", "R", callsignal.RejectedByOperator) }()
+	cmd := readCallCommand(t, conn)
 	require.Equal(t, "R", cmd.CallID)
-	require.Equal(t, caller, cmd.From)
-	require.NoError(t, writeJSON(clientConn, Frame{Type: "call_ack", ChannelID: "ch-1", CorrelationID: cmd.CorrelationID, OK: true}))
-
+	require.Equal(t, "252415295144120@lid", cmd.From)
+	require.NoError(t, writeJSON(conn, Frame{Type: "call_ack", ChannelID: "ch-1", CorrelationID: cmd.CorrelationID, OK: true}))
 	require.NoError(t, <-done)
-	u := nextUpdate(t, updates)
-	require.Equal(t, CallStateRejected, u.State)
-	require.Equal(t, RejectedByOperator, u.RejectedBy)
-	require.ErrorIs(t, h.RejectCall(context.Background(), "ch-1", "R", RejectedByOperator), ErrCallNotFound)
+	require.Equal(t, callsignal.RejectedByOperator, nextUpdate(t, updates).RejectedBy)
 }
 
-// Sem bridge ligado a recusa falha com ErrNoBridge e a chamada continua
-// tocando; o bridge negando o comando também não muda o estado.
+// Sem bridge ligado a recusa falha com ErrNoBridge; o bridge negando também
+// falha. Nos dois casos a chamada continua tocando.
 func TestCall_RejectWithoutBridgeOrRefused(t *testing.T) {
-	h, _, updates := newCallHandler(t, nil)
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "N", "offer", 0)))
-	err := h.RejectCall(context.Background(), "ch-1", "N", RejectedByOperator)
-	require.True(t, errors.Is(err, ErrNoBridge), "erro = %v", err)
-	noUpdate(t, updates)
+	h, _, tracker, _ := newCallHandler(t, nil)
+	require.NoError(t, h.handleCall("ch-1", callFrame(t, InboundEvent{ID: "N", From: caller, Summary: "offer"})))
+	err := tracker.Reject(context.Background(), "ch-1", "N", callsignal.RejectedByOperator)
+	require.True(t, errors.Is(err, callsignal.ErrDeviceOffline), "erro = %v", err)
+	require.True(t, tracker.Ringing("N"))
 
-	clientConn, serverConn := newConnPair(t)
-	go h.hub.ServeConnection(NewBridge("ch-1", serverConn))
-	waitForWelcome(t, clientConn)
+	conn := connectBridge(t, h)
 	done := make(chan error, 1)
-	go func() { done <- h.RejectCall(context.Background(), "ch-1", "N", RejectedByOperator) }()
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, data, err := clientConn.ReadMessage()
-	require.NoError(t, err)
-	var cmd Frame
-	require.NoError(t, json.Unmarshal(data, &cmd))
-	require.NoError(t, writeJSON(clientConn, Frame{Type: "call_ack", ChannelID: "ch-1", CorrelationID: cmd.CorrelationID, OK: false, Error: "not ringing"}))
+	go func() { done <- tracker.Reject(context.Background(), "ch-1", "N", callsignal.RejectedByOperator) }()
+	cmd := readCallCommand(t, conn)
+	require.Equal(t, caller, cmd.From)
+	require.NoError(t, writeJSON(conn, Frame{Type: "call_ack", ChannelID: "ch-1", CorrelationID: cmd.CorrelationID, OK: false, Error: "not ringing"}))
 	require.ErrorContains(t, <-done, "not ringing")
-	noUpdate(t, updates)
-	_, ok := h.calls.get("N")
-	require.True(t, ok, "recusa negada pelo bridge mantém a chamada tocando")
+	require.True(t, tracker.Ringing("N"))
 }
 
-// Canal com reject_call ligado recusa sozinho: a oferta ainda vira mensagem,
-// o bridge recebe o comando e o sink vê a recusa por auto.
-func TestCall_AutoReject(t *testing.T) {
-	h, producer, updates := newCallHandler(t, map[string]string{"reject_call": "true"})
-	clientConn, serverConn := newConnPair(t)
-	go h.hub.ServeConnection(NewBridge("ch-1", serverConn))
-	waitForWelcome(t, clientConn)
-
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "AUTO", "offer", 0)))
+// Canal com reject_call recusa sozinho pelo bridge depois de publicar.
+func TestCall_AutoRejectThroughBridge(t *testing.T) {
+	h, producer, _, updates := newCallHandler(t, map[string]string{"reject_call": "true"})
+	conn := connectBridge(t, h)
+	require.NoError(t, h.handleCall("ch-1", callFrame(t, InboundEvent{ID: "AUTO", From: caller, Summary: "offer"})))
 	require.Len(t, producer.InboundMessages, 1)
 
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, data, err := clientConn.ReadMessage()
-	require.NoError(t, err)
-	var cmd Frame
-	require.NoError(t, json.Unmarshal(data, &cmd))
-	require.Equal(t, "call_command", cmd.Type)
+	cmd := readCallCommand(t, conn)
 	require.Equal(t, "AUTO", cmd.CallID)
-	require.NoError(t, clientConn.WriteMessage(websocket.TextMessage, mustJSON(t, Frame{Type: "call_ack", ChannelID: "ch-1", CorrelationID: cmd.CorrelationID, OK: true})))
-
-	u := nextUpdate(t, updates)
-	require.Equal(t, CallStateRejected, u.State)
-	require.Equal(t, RejectedByAuto, u.RejectedBy)
+	require.NoError(t, writeJSON(conn, Frame{Type: "call_ack", ChannelID: "ch-1", CorrelationID: cmd.CorrelationID, OK: true}))
+	require.Equal(t, callsignal.RejectedByAuto, nextUpdate(t, updates).RejectedBy)
 }
 
-func mustJSON(t *testing.T, v any) []byte {
-	t.Helper()
-	data, err := json.Marshal(v)
-	require.NoError(t, err)
-	return data
+// Sem registro configurado os frames de chamada são ignorados.
+func TestCall_NoTrackerIgnores(t *testing.T) {
+	channels := testutil.NewMockChannelRepository()
+	producer := testutil.NewMockProducer()
+	h := NewHandler(NewHub(), channels, producer, nil, nil)
+	require.NoError(t, h.handleCall("ch-1", callFrame(t, InboundEvent{ID: "Q", From: caller, Summary: "offer"})))
+	require.Empty(t, producer.InboundMessages)
 }
