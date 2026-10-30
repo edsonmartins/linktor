@@ -33,6 +33,10 @@ export const WEBHOOK_EVENT_TYPES = [
   'conversation.resolved',
   'conversation.reopened',
   'conversation.escalated',
+  'call.answered',
+  'call.missed',
+  'call.rejected',
+  'call.ended',
 ] as const
 
 type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number]
@@ -49,6 +53,10 @@ const WEBHOOK_EVENT_LABEL_KEYS: Record<WebhookEventType, string> = {
   'conversation.resolved': 'eventConversationResolved',
   'conversation.reopened': 'eventConversationReopened',
   'conversation.escalated': 'eventConversationEscalated',
+  'call.answered': 'eventCallAnswered',
+  'call.missed': 'eventCallMissed',
+  'call.rejected': 'eventCallRejected',
+  'call.ended': 'eventCallEnded',
 }
 
 /** Campos do formulário; cada tela faz `schema.merge(outboundWebhookSchema)`. */

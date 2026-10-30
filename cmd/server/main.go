@@ -664,6 +664,9 @@ func main() {
 	gatewayHandler.SetRehost(func(ctx context.Context, msg *nats.InboundMessage) {
 		rehostInboundMedia(ctx, mediaStore, channelRepo, msg)
 	})
+	// Chamadas: a oferta vira mensagem pelo pipeline; os desfechos (atendida,
+	// perdida, recusada, encerrada) chegam por aqui (ver bridge_calls.go).
+	gatewayHandler.SetCallSink(newBridgeCallSink(messageRepo, conversationRepo, channelRepo, producer, sendMessageUC).Handle)
 
 	// Expose bridge health inline on channel List/Get responses so the admin UI
 	// sees online/stale/last_seen without extra calls.
@@ -1427,6 +1430,7 @@ func main() {
 					}
 					c.JSON(http.StatusOK, gatewayHandler.HealthForChannel(c.Param("id")))
 				})
+				channels.POST("/:id/bridge-calls/:callId/reject", rejectBridgeCallHandler(channelService, gatewayHandler))
 				// A agenda do aparelho pareado. Antes das rotas genéricas de
 				// `/:id`, como as demais específicas deste bloco.
 				channels.GET("/:id/contacts", channelHandler.ListDeviceContacts)

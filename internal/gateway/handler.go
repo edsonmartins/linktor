@@ -44,6 +44,10 @@ type Handler struct {
 	// rehost move os anexos inline (base64) para o object store antes de
 	// publicar, como o e-mail faz: o NATS limita o payload a 1 MB.
 	rehost func(context.Context, *nats.InboundMessage)
+	// calls acompanha as chamadas em andamento nos bridges; onCall recebe
+	// cada mudança de estado depois da oferta (ver calls.go).
+	calls  *callRegistry
+	onCall CallSink
 }
 
 // SetRehost registra o passo que move anexos inline para o object store antes
@@ -74,17 +78,18 @@ func (h *Handler) HealthForChannel(channelID string) HealthInfo {
 
 // NewHandler builds the gateway WS handler.
 func NewHandler(hub *Hub, channels repository.ChannelRepository, producer nats.Publisher, status StatusUpdater, registry *plugin.Registry) *Handler {
-	dh := &Handler{hub: hub, channels: channels, producer: producer, status: status, registry: registry}
+	dh := &Handler{hub: hub, channels: channels, producer: producer, status: status, registry: registry, calls: newCallRegistry()}
 	// Wire the platform sinks once; idempotent across handler instances since
 	// they all delegate to the same service layer.
 	hub.SetInboundHandler(dh.handleInbound)
 	hub.SetStatusHandler(dh.handleStatus)
+	hub.SetCallHandler(dh.handleCall)
 	return dh
 }
 
 // InboundEvent is the sanitized message payload the bridge forwards.
 type InboundEvent struct {
-	Type       string `json:"type"` // "message" | "receipt" | "connection" | "logout"
+	Type       string `json:"type"` // "message" | "receipt" | "call" | "connection" | "logout"
 	ID         string `json:"id"`
 	From       string `json:"from"`
 	SenderName string `json:"sender_name"`
@@ -109,6 +114,10 @@ type InboundEvent struct {
 	// por este canal. Vira StatusUpdate por ID, casado pelo external_id.
 	Status     string   `json:"status,omitempty"`
 	MessageIDs []string `json:"message_ids,omitempty"`
+	// Chamada (Type "call"): ID é o call_id do WhatsApp, Summary a sinalização
+	// (offer, accept, reject, terminate) e Video se a oferta é de vídeo.
+	Summary string `json:"summary,omitempty"`
+	Video   bool   `json:"video,omitempty"`
 }
 
 // InboundLocation é um ponto compartilhado; vira latitude/longitude/name/
@@ -209,44 +218,7 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 		return fmt.Errorf("resolve channel: %w", err)
 	}
 
-	// Build the same identity contract as the embedded whatsapp adapter: the
-	// stable contact key is the phone-only user part (JID.User), with the full
-	// JIDs preserved in metadata for group/1:1 context. Parsing is lenient so a
-	// bare number from the bridge still works.
-	var (
-		senderID    = evt.From
-		chatJID     = evt.Chat
-		senderPhone string
-	)
-	// Um remetente que só veio como LID (o bridge não conseguiu traduzir para
-	// número) fica com o JID inteiro como chave: sem o sufixo @lid a resposta
-	// seria endereçada a um número que não existe.
-	if strings.HasSuffix(evt.From, "@lid") {
-		senderID = evt.From
-	} else if from, err := jidUserOrBare(evt.From); err == nil && from != "" {
-		senderID = from
-		// Mesmo contrato do webhook oficial: com o número em "phone" o contato
-		// nasce com telefone e casa com o mesmo número vindo de outro canal.
-		senderPhone = from
-	}
-	if chatJID == "" {
-		chatJID = evt.From
-	}
-
-	metadata := map[string]string{
-		"sender_id":  senderID,
-		"sender_jid": evt.From,
-		"chat_jid":   chatJID,
-	}
-	if senderPhone != "" {
-		metadata["phone"] = senderPhone
-	}
-	if evt.SenderLID != "" {
-		metadata["sender_lid"] = evt.SenderLID
-	}
-	if evt.SenderName != "" {
-		metadata["sender_name"] = evt.SenderName
-	}
+	metadata := senderMetadata(evt)
 	if evt.IsFromMe {
 		metadata["is_from_me"] = "true"
 		if evt.OperatorName != "" {
@@ -297,6 +269,48 @@ func (h *Handler) handleInbound(channelID string, raw json.RawMessage) error {
 	return h.producer.PublishInbound(ctx, inbound)
 }
 
+// senderMetadata monta o mesmo contrato de identidade do adaptador WhatsApp
+// embutido: a chave estável do contato é o número (JID.User), com os JIDs
+// inteiros em metadata para o contexto de grupo/1:1. O parse é tolerante
+// para um número cru do bridge também servir. Mensagem e chamada usam isto.
+func senderMetadata(evt InboundEvent) map[string]string {
+	var (
+		senderID    = evt.From
+		chatJID     = evt.Chat
+		senderPhone string
+	)
+	// Um remetente que só veio como LID (o bridge não conseguiu traduzir para
+	// número) fica com o JID inteiro como chave: sem o sufixo @lid a resposta
+	// seria endereçada a um número que não existe.
+	if strings.HasSuffix(evt.From, "@lid") {
+		senderID = evt.From
+	} else if from, err := jidUserOrBare(evt.From); err == nil && from != "" {
+		senderID = from
+		// Mesmo contrato do webhook oficial: com o número em "phone" o contato
+		// nasce com telefone e casa com o mesmo número vindo de outro canal.
+		senderPhone = from
+	}
+	if chatJID == "" {
+		chatJID = evt.From
+	}
+
+	metadata := map[string]string{
+		"sender_id":  senderID,
+		"sender_jid": evt.From,
+		"chat_jid":   chatJID,
+	}
+	if senderPhone != "" {
+		metadata["phone"] = senderPhone
+	}
+	if evt.SenderLID != "" {
+		metadata["sender_lid"] = evt.SenderLID
+	}
+	if evt.SenderName != "" {
+		metadata["sender_name"] = evt.SenderName
+	}
+	return metadata
+}
+
 // handleReceipt publica um StatusUpdate por mensagem do recibo. O consumidor
 // de status acha a mensagem pelo external_id (o ID do WhatsApp que o ack do
 // envio gravou) e ignora IDs que não conhece.
@@ -309,10 +323,7 @@ func (h *Handler) handleReceipt(channelID string, evt InboundEvent) error {
 	if err != nil {
 		return fmt.Errorf("resolve channel: %w", err)
 	}
-	ts := time.Unix(evt.Timestamp, 0)
-	if evt.Timestamp == 0 {
-		ts = time.Now()
-	}
+	ts := eventTime(evt.Timestamp)
 	for _, id := range evt.MessageIDs {
 		if id == "" {
 			continue

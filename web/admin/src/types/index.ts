@@ -264,6 +264,7 @@ export type MessageContentType =
   | 'contact'
   | 'sticker'
   | 'template'
+  | 'call'
 
 export type MessageStatus =
   | 'pending'

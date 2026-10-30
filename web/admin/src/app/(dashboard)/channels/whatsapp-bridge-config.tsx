@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { useTranslations } from 'next-intl'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Check, Copy, KeyRound, Loader2, MonitorSmartphone, RefreshCw } from 'lucide-react'
+import { Check, Copy, KeyRound, Loader2, MonitorSmartphone, PhoneOff, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,6 +19,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
 import { api, WEBHOOK_BASE_URL } from '@/lib/api'
 import { copyText } from '@/lib/clipboard'
@@ -39,6 +40,10 @@ import {
 const bridgeConfigSchema = z
   .object({
     name: z.string().min(1, 'Channel name is required'),
+    // Chamadas: o WhatsApp só sinaliza; a chamada entra na conversa e pode
+    // ser recusada pelo admin ou aqui, de forma automática (channel.config.*).
+    reject_call: z.boolean(),
+    reject_call_msg: z.string().optional(),
   })
   .merge(outboundWebhookSchema)
 
@@ -80,7 +85,12 @@ export function WhatsAppBridgeConfig({ channel, onSuccess, onCancel }: WhatsAppB
 
   const form = useForm<BridgeConfigForm>({
     resolver: zodResolver(bridgeConfigSchema),
-    defaultValues: { name: channel?.name || '', ...outboundWebhookDefaults(channel) },
+    defaultValues: {
+      name: channel?.name || '',
+      reject_call: channel?.config?.reject_call === 'true',
+      reject_call_msg: (channel?.config?.reject_call_msg as string) || '',
+      ...outboundWebhookDefaults(channel),
+    },
   })
 
   // Saúde do bridge a cada 10s enquanto a tela está aberta: o ping do bridge
@@ -107,11 +117,21 @@ export function WhatsAppBridgeConfig({ channel, onSuccess, onCancel }: WhatsAppB
   const onSubmit = async (data: BridgeConfigForm) => {
     setIsSubmitting(true)
     try {
+      // O update troca o config inteiro: tudo que esta tela gerencia vai junto.
       const webhook = outboundWebhookPayload(data)
-      const payload = { name: data.name, type: 'whatsapp_remote', ...webhook }
+      const body = {
+        name: data.name,
+        ...webhook,
+        config: {
+          ...webhook.config,
+          reject_call: String(data.reject_call),
+          reject_call_msg: data.reject_call_msg || '',
+        },
+      }
+      const payload = { type: 'whatsapp_remote', ...body }
       let result: Channel
       if (isEditing) {
-        result = await api.put<Channel>(`/channels/${channel.id}`, { name: data.name, ...webhook })
+        result = await api.put<Channel>(`/channels/${channel.id}`, body)
         toast({ title: t('channelUpdated'), description: t('channelUpdatedDesc', { name: data.name }) })
       } else {
         result = await api.post<Channel>('/channels', payload)
@@ -188,6 +208,47 @@ export function WhatsAppBridgeConfig({ channel, onSuccess, onCancel }: WhatsAppB
                 <li>{tb('step2')}</li>
                 <li>{tb('step3')}</li>
               </ol>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <PhoneOff className="h-4 w-4" />
+                {tb('callsTitle')}
+              </CardTitle>
+              <CardDescription>{tb('callsDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <FormField
+                control={form.control}
+                name="reject_call"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center gap-2">
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} aria-label={t('rejectCall')} />
+                      </FormControl>
+                      <FormLabel className="!mt-0">{t('rejectCall')}</FormLabel>
+                    </div>
+                    <FormDescription>{t('rejectCallDesc')}</FormDescription>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="reject_call_msg"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('rejectCallMsg')}</FormLabel>
+                    <FormControl>
+                      <Input placeholder={t('rejectCallMsgPlaceholder')} {...field} />
+                    </FormControl>
+                    <FormDescription>{tb('rejectCallMsgDesc')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
 

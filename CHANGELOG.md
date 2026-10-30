@@ -50,13 +50,28 @@ APIs não-oficiais.
   `sender_name` (pushName) propagado para o contato não nascer como
   "Unknown Contact".
 
+- **Chamadas pelo bridge (sinalização)**: o WhatsApp só sinaliza e o áudio
+  fica no aparelho pareado; o Linktor registra a chamada na conversa do contato
+  como mensagem `content_type: call` (`metadata.call_id`, `call_state`,
+  `call_video`) e acompanha o desfecho pelos frames `call_event`: `ringing` →
+  `answered`/`missed`/`rejected` → `ended` (com `call_duration_seconds`). Sem
+  término em 90s a chamada vira `missed`. Cada mudança chega ao admin por
+  `message_updated` e sai como webhook `call.answered`, `call.missed`,
+  `call.rejected` e `call.ended` (a chegada é o `message.received` da própria
+  mensagem). `POST /api/v1/channels/:id/bridge-calls/:callId/reject` recusa
+  pelo painel (`call_command` → `call_ack`); `reject_call`/`reject_call_msg`
+  do canal recusam sozinhos e mandam a mensagem configurada pela conversa.
+  Admin: bolha de chamada com botão **Recusar**, card "Chamadas" na tela do
+  bridge e os quatro eventos no webhook de saída.
+
 Protocolo documentado em `bridges/docs/PROTOCOL.md` (repo bridges).
 
 ### Próximos milestones (bridge)
 
 - Interativos (botões/listas) e reações pelo protocolo;
-- Recibos de entrega/leitura do WhatsApp refletidos no status da mensagem;
-- Mensagem de voz (OGG/Opus) a partir de áudios em outros formatos.
+- Mensagem de voz (OGG/Opus) a partir de áudios em outros formatos;
+- Registro de chamadas também no canal não-oficial embutido (mesmo sink);
+- Áudio da chamada pelo Linktor (motor de voz no bridge + WebRTC no admin).
 
 ### Canais — WhatsApp não-oficial (whatsmeow)
 
