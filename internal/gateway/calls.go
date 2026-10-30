@@ -14,18 +14,22 @@ import (
 )
 
 // Chamada pelo bridge. O WhatsApp só sinaliza (oferta, aceite, recusa,
-// término); o áudio toca e é atendido no aparelho pareado, nunca passa por
-// aqui. O Linktor registra a chamada na conversa do contato como mensagem de
-// tipo call, acompanha o estado enquanto ela dura e pode recusá-la, por
-// pedido do atendente ou pela configuração do canal.
+// término); o áudio toca e é atendido no aparelho principal do WhatsApp,
+// nunca passa por aqui. O Linktor registra a chamada na conversa do contato
+// como mensagem de tipo call, guarda o desfecho e pode recusá-la, por pedido
+// do atendente ou pela configuração do canal.
 
-// Estados de uma chamada (metadata call_state da mensagem).
+// Estados de uma chamada (metadata call_state da mensagem). Tocando é o
+// único estado intermediário; os outros três são o desfecho, e cada chamada
+// tem um só. O bridge é um aparelho pareado e não vê o fim da conversa:
+// quando o aparelho principal atende, o WhatsApp encerra a participação do
+// bridge no mesmo instante, então "atendida" é final e a duração não é
+// observável.
 const (
 	CallStateRinging  = "ringing"
 	CallStateAnswered = "answered"
 	CallStateMissed   = "missed"
 	CallStateRejected = "rejected"
-	CallStateEnded    = "ended"
 )
 
 // Chaves de metadata da mensagem de chamada.
@@ -33,7 +37,6 @@ const (
 	MetaCallID         = "call_id"
 	MetaCallState      = "call_state"
 	MetaCallVideo      = "call_video"
-	MetaCallDuration   = "call_duration_seconds"
 	MetaCallRejectedBy = "call_rejected_by"
 )
 
@@ -44,34 +47,29 @@ const (
 	RejectedByDevice   = "device"   // aparelho pareado ou o próprio WhatsApp
 )
 
-// defaultRingTimeout cobre o caso em que o término nunca chega (bridge caiu
+// defaultRingTimeout cobre o caso em que nenhum desfecho chega (bridge caiu
 // no meio do toque): o WhatsApp toca por volta de um minuto.
 const defaultRingTimeout = 90 * time.Second
 
-var (
-	// ErrCallNotFound diz que não há chamada com esse ID em andamento.
-	ErrCallNotFound = errors.New("call not found")
-	// ErrCallNotRinging diz que a chamada já foi atendida, recusada ou acabou.
-	ErrCallNotRinging = errors.New("call is not ringing")
-)
+// ErrCallNotFound diz que não há chamada tocando com esse ID.
+var ErrCallNotFound = errors.New("call not found")
 
-// CallUpdate é uma mudança de estado depois da oferta. A oferta em si vira
-// mensagem pelo pipeline normal (PublishInbound); o resto chega por aqui.
+// CallUpdate é o desfecho de uma chamada. A oferta em si vira mensagem pelo
+// pipeline normal (PublishInbound); o desfecho chega por aqui, uma vez.
 type CallUpdate struct {
 	ChannelID  string
 	CallID     string
 	From       string // endereço com que a chamada foi sinalizada
-	State      string
-	RejectedBy string        // só em rejected
-	Duration   time.Duration // só em ended
+	State      string // answered | missed | rejected
+	RejectedBy string // só em rejected
 	At         time.Time
 }
 
-// CallSink recebe as mudanças de estado; roda fora do loop de leitura do
-// bridge, então pode ir ao banco.
+// CallSink recebe os desfechos; roda fora do loop de leitura do bridge,
+// então pode ir ao banco.
 type CallSink func(ctx context.Context, update CallUpdate)
 
-// SetCallSink registra quem grava o estado da chamada na mensagem.
+// SetCallSink registra quem grava o desfecho da chamada na mensagem.
 func (h *Handler) SetCallSink(fn CallSink) {
 	h.onCall = fn
 }
@@ -80,14 +78,12 @@ type activeCall struct {
 	channelID string
 	// from é o endereço com que o WhatsApp sinalizou a chamada (o LID quando
 	// veio por LID): a recusa tem de usar o mesmo call-creator.
-	from       string
-	state      string
-	answeredAt time.Time
-	ringTimer  *time.Timer
+	from      string
+	ringTimer *time.Timer
 }
 
-// callRegistry guarda as chamadas em andamento de todos os bridges, por
-// call_id (o WhatsApp o gera único).
+// callRegistry guarda as chamadas tocando em todos os bridges, por call_id
+// (o WhatsApp o gera único). Estar no registro é estar tocando.
 type callRegistry struct {
 	mu          sync.Mutex
 	calls       map[string]*activeCall
@@ -106,7 +102,6 @@ func (r *callRegistry) add(callID string, call *activeCall, onTimeout func()) bo
 	if _, exists := r.calls[callID]; exists {
 		return false
 	}
-	call.state = CallStateRinging
 	call.ringTimer = time.AfterFunc(r.ringTimeout, onTimeout)
 	r.calls[callID] = call
 	return true
@@ -130,61 +125,30 @@ func (r *callRegistry) remove(callID string) {
 
 func (r *callRegistry) dropLocked(callID string) {
 	if call, ok := r.calls[callID]; ok {
-		if call.ringTimer != nil {
-			call.ringTimer.Stop()
-		}
+		call.ringTimer.Stop()
 		delete(r.calls, callID)
 	}
 }
 
-// transition aplica uma sinalização e devolve a mudança resultante, se houve:
-//   - answered: só enquanto toca;
-//   - rejected: enquanto toca ou já atendida;
-//   - terminate: tocando vira missed, atendida vira ended (com duração),
-//     recusada só some.
-//
-// Estados finais saem do registro.
-func (r *callRegistry) transition(callID, state, rejectedBy string, at time.Time) (CallUpdate, bool) {
+// finish tira a chamada do registro com o desfecho dado. Só a primeira
+// sinalização conta: o término que segue um aceite ou uma recusa encontra a
+// chamada já resolvida e não gera nada.
+func (r *callRegistry) finish(callID, state, rejectedBy string, at time.Time) (CallUpdate, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	call, ok := r.calls[callID]
 	if !ok {
 		return CallUpdate{}, false
 	}
-	update := CallUpdate{ChannelID: call.channelID, CallID: callID, From: call.from, At: at}
-	switch state {
-	case CallStateAnswered:
-		if call.state != CallStateRinging {
-			return CallUpdate{}, false
-		}
-		call.state = CallStateAnswered
-		call.answeredAt = at
-		if call.ringTimer != nil {
-			call.ringTimer.Stop()
-		}
-	case CallStateRejected:
-		if call.state == CallStateRejected {
-			return CallUpdate{}, false
-		}
-		call.state = CallStateRejected
-		update.RejectedBy = rejectedBy
-		r.dropLocked(callID)
-	case CallStateEnded: // término
-		switch call.state {
-		case CallStateRinging:
-			state = CallStateMissed
-		case CallStateAnswered:
-			update.Duration = at.Sub(call.answeredAt)
-		default:
-			r.dropLocked(callID)
-			return CallUpdate{}, false
-		}
-		r.dropLocked(callID)
-	default:
-		return CallUpdate{}, false
-	}
-	update.State = state
-	return update, true
+	r.dropLocked(callID)
+	return CallUpdate{
+		ChannelID:  call.channelID,
+		CallID:     callID,
+		From:       call.from,
+		State:      state,
+		RejectedBy: rejectedBy,
+		At:         at,
+	}, true
 }
 
 // handleCall recebe a sinalização de chamada do bridge (frame call_event).
@@ -204,11 +168,12 @@ func (h *Handler) handleCall(channelID string, raw json.RawMessage) error {
 	case "offer":
 		return h.callOffered(channelID, evt, at)
 	case "accept":
-		h.applyCall(evt.ID, CallStateAnswered, "", at)
+		h.finishCall(evt.ID, CallStateAnswered, "", at)
 	case "reject":
-		h.applyCall(evt.ID, CallStateRejected, RejectedByDevice, at)
+		h.finishCall(evt.ID, CallStateRejected, RejectedByDevice, at)
 	case "terminate":
-		h.applyCall(evt.ID, CallStateEnded, "", at)
+		// Término com a chamada ainda tocando: quem ligou desistiu.
+		h.finishCall(evt.ID, CallStateMissed, "", at)
 	}
 	return nil
 }
@@ -230,7 +195,7 @@ func (h *Handler) callOffered(channelID string, evt InboundEvent, at time.Time) 
 		signaledBy = evt.SenderLID
 	}
 	call := &activeCall{channelID: channelID, from: signaledBy}
-	if !h.calls.add(evt.ID, call, func() { h.applyCall(evt.ID, CallStateEnded, "", time.Now()) }) {
+	if !h.calls.add(evt.ID, call, func() { h.finishCall(evt.ID, CallStateMissed, "", time.Now()) }) {
 		return nil
 	}
 
@@ -273,9 +238,6 @@ func (h *Handler) RejectCall(ctx context.Context, channelID, callID, by string) 
 	if !ok || call.channelID != channelID {
 		return ErrCallNotFound
 	}
-	if call.state != CallStateRinging {
-		return ErrCallNotRinging
-	}
 	ack, err := h.hub.RejectCallOnChannel(ctx, channelID, "call_"+callID, call.from, callID)
 	if err != nil {
 		return err
@@ -283,13 +245,13 @@ func (h *Handler) RejectCall(ctx context.Context, channelID, callID, by string) 
 	if !ack.OK {
 		return fmt.Errorf("bridge could not reject call: %s", ack.Error)
 	}
-	h.applyCall(callID, CallStateRejected, by, time.Now())
+	h.finishCall(callID, CallStateRejected, by, time.Now())
 	return nil
 }
 
-// applyCall registra a transição e avisa o sink fora do loop de leitura.
-func (h *Handler) applyCall(callID, state, rejectedBy string, at time.Time) {
-	update, ok := h.calls.transition(callID, state, rejectedBy, at)
+// finishCall registra o desfecho e avisa o sink fora do loop de leitura.
+func (h *Handler) finishCall(callID, state, rejectedBy string, at time.Time) {
+	update, ok := h.calls.finish(callID, state, rejectedBy, at)
 	if !ok || h.onCall == nil {
 		return
 	}

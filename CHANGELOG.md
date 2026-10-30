@@ -51,18 +51,23 @@ APIs não-oficiais.
   "Unknown Contact".
 
 - **Chamadas pelo bridge (sinalização)**: o WhatsApp só sinaliza e o áudio
-  fica no aparelho pareado; o Linktor registra a chamada na conversa do contato
-  como mensagem `content_type: call` (`metadata.call_id`, `call_state`,
-  `call_video`) e acompanha o desfecho pelos frames `call_event`: `ringing` →
-  `answered`/`missed`/`rejected` → `ended` (com `call_duration_seconds`). Sem
-  término em 90s a chamada vira `missed`. Cada mudança chega ao admin por
-  `message_updated` e sai como webhook `call.answered`, `call.missed`,
-  `call.rejected` e `call.ended` (a chegada é o `message.received` da própria
-  mensagem). `POST /api/v1/channels/:id/bridge-calls/:callId/reject` recusa
-  pelo painel (`call_command` → `call_ack`); `reject_call`/`reject_call_msg`
-  do canal recusam sozinhos e mandam a mensagem configurada pela conversa.
-  Admin: bolha de chamada com botão **Recusar**, card "Chamadas" na tela do
-  bridge e os quatro eventos no webhook de saída.
+  fica no aparelho principal; o Linktor registra a chamada na conversa do
+  contato como mensagem `content_type: call` (`metadata.call_id`,
+  `call_state`, `call_video`) e guarda o desfecho, um por chamada: `ringing`
+  → `answered`, `missed` ou `rejected`. O bridge é um aparelho pareado: quando
+  o principal atende, o WhatsApp encerra a participação dele no mesmo
+  instante, então não há fim de conversa nem duração observáveis. Sem
+  desfecho em 90s a chamada vira `missed`. O desfecho chega ao admin por
+  `message_updated` e sai como webhook `call.answered`, `call.missed` ou
+  `call.rejected` (a chegada é o `message.received` da própria mensagem).
+  `POST /api/v1/channels/:id/bridge-calls/:callId/reject` recusa pelo painel
+  (`call_command` → `call_ack`, endereçado ao LID quando a chamada veio por
+  LID); `reject_call`/`reject_call_msg` do canal recusam sozinhos e mandam a
+  mensagem configurada pela conversa. Admin: bolha de chamada com botão
+  **Recusar**, card "Chamadas" na tela do bridge e os três eventos no
+  webhook de saída.
+- **Admin religa o WebSocket** depois que o backend reinicia (antes desistia
+  em 15s e a tela parava de atualizar até um F5).
 
 Protocolo documentado em `bridges/docs/PROTOCOL.md` (repo bridges).
 

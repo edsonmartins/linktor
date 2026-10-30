@@ -240,13 +240,11 @@
     "call": {
       "voice": "Chamada de voz",
       "video": "Chamada de vídeo",
-      "ringing": "Tocando no aparelho pareado",
+      "ringing": "Tocando no aparelho",
       "answered": "Atendida no aparelho",
       "missed": "Não atendida",
       "rejected": "Recusada",
       "rejectedAuto": "Recusada automaticamente pelo canal",
-      "ended": "Encerrada",
-      "endedWithDuration": "Encerrada · {duration}",
       "reject": "Recusar",
       "rejectFailed": "Não foi possível recusar a chamada"
     },
@@ -378,7 +376,7 @@
       "bridge": {
         "valuesTitle": "Dados para o painel do bridge",
         "callsTitle": "Chamadas",
-        "callsDesc": "Chamadas de voz e vídeo entram na conversa do contato com o estado (tocando, atendida, não atendida, recusada). O áudio continua no aparelho pareado; pelo Linktor dá para recusar.",
+        "callsDesc": "Chamadas de voz e vídeo entram na conversa do contato com o estado (tocando, atendida, não atendida, recusada). O áudio fica no aparelho com o WhatsApp; pelo Linktor dá para recusar.",
         "rejectCallMsgDesc": "Enviada pela conversa logo após a recusa automática. Vazio não envia nada.",
         "valuesDesc": "Copie e cole os três valores no bloco \"Linktor\" do painel do bridge (http://127.0.0.1:7788 no computador do atendente).",
         "serverLabel": "Servidor",
@@ -437,7 +435,6 @@
       "eventCallAnswered": "Chamada atendida",
       "eventCallMissed": "Chamada não atendida",
       "eventCallRejected": "Chamada recusada",
-      "eventCallEnded": "Chamada encerrada",
       "operations": "Operações",
       "diretoSendUrl": "URL de envio",
       "diretoSendUrlDesc": "Endpoint REST do Direto para onde o Linktor envia mensagens",

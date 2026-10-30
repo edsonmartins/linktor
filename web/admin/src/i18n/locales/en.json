@@ -240,13 +240,11 @@
     "call": {
       "voice": "Voice call",
       "video": "Video call",
-      "ringing": "Ringing on the paired device",
+      "ringing": "Ringing on the device",
       "answered": "Answered on the device",
       "missed": "Missed",
       "rejected": "Rejected",
       "rejectedAuto": "Rejected automatically by the channel",
-      "ended": "Ended",
-      "endedWithDuration": "Ended · {duration}",
       "reject": "Reject",
       "rejectFailed": "Could not reject the call"
     },
@@ -378,7 +376,7 @@
       "bridge": {
         "valuesTitle": "Values for the bridge panel",
         "callsTitle": "Calls",
-        "callsDesc": "Voice and video calls show up in the contact's conversation with their state (ringing, answered, missed, rejected). Audio stays on the paired device; from Linktor you can reject.",
+        "callsDesc": "Voice and video calls show up in the contact's conversation with their state (ringing, answered, missed, rejected). Audio stays on the device running WhatsApp; from Linktor you can reject.",
         "rejectCallMsgDesc": "Sent through the conversation right after an automatic rejection. Empty sends nothing.",
         "valuesDesc": "Copy and paste the three values into the \"Linktor\" block of the bridge panel (http://127.0.0.1:7788 on the agent's computer).",
         "serverLabel": "Server",
@@ -437,7 +435,6 @@
       "eventCallAnswered": "Call answered",
       "eventCallMissed": "Call missed",
       "eventCallRejected": "Call rejected",
-      "eventCallEnded": "Call ended",
       "operations": "Operations",
       "diretoSendUrl": "Send URL",
       "diretoSendUrlDesc": "Direto REST endpoint Linktor POSTs outbound messages to",

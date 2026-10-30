@@ -108,20 +108,22 @@ func TestCall_LIDCallerKeepsContactAndRejectsByLID(t *testing.T) {
 	require.NoError(t, <-done)
 }
 
-// Aceite e término viram atendida e encerrada com a duração; término sem
-// aceite é perdida; recusa pelo aparelho é recusada por device.
-func TestCall_Transitions(t *testing.T) {
+// Cada chamada tem um só desfecho: aceite é atendida (no aparelho pareado o
+// término vem logo atrás e não muda nada), término com a chamada tocando é
+// não atendida, recusa pelo aparelho é recusada por device.
+func TestCall_Outcomes(t *testing.T) {
 	h, _, updates := newCallHandler(t, nil)
 
+	// atendida no celular: o WhatsApp manda o aceite (do próprio número) e
+	// encerra a participação do aparelho pareado no mesmo segundo
 	require.NoError(t, h.handleCall("ch-1", callRaw(t, "A", "offer", 100)))
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "A", "accept", 105)))
+	require.NoError(t, h.handleCall("ch-1", callRaw(t, "A", "accept", 114)))
+	require.NoError(t, h.handleCall("ch-1", callRaw(t, "A", "terminate", 114)))
 	u := nextUpdate(t, updates)
 	require.Equal(t, CallStateAnswered, u.State)
 	require.Equal(t, caller, u.From)
-	require.NoError(t, h.handleCall("ch-1", callRaw(t, "A", "terminate", 165)))
-	u = nextUpdate(t, updates)
-	require.Equal(t, CallStateEnded, u.State)
-	require.Equal(t, 60*time.Second, u.Duration)
+	require.Equal(t, int64(114), u.At.Unix())
+	noUpdate(t, updates)
 
 	require.NoError(t, h.handleCall("ch-1", callRaw(t, "B", "offer", 200)))
 	require.NoError(t, h.handleCall("ch-1", callRaw(t, "B", "terminate", 230)))
@@ -132,15 +134,14 @@ func TestCall_Transitions(t *testing.T) {
 	u = nextUpdate(t, updates)
 	require.Equal(t, CallStateRejected, u.State)
 	require.Equal(t, RejectedByDevice, u.RejectedBy)
-	// o término que segue a recusa não gera nada
 	require.NoError(t, h.handleCall("ch-1", callRaw(t, "C", "terminate", 311)))
 	noUpdate(t, updates)
 
-	// sinalização de chamada desconhecida (ou já encerrada) é ignorada
+	// sinalização de chamada desconhecida (ou já resolvida) é ignorada
 	require.NoError(t, h.handleCall("ch-1", callRaw(t, "Z", "accept", 400)))
 	noUpdate(t, updates)
 	_, ok := h.calls.get("A")
-	require.False(t, ok, "chamada encerrada deve sair do registro")
+	require.False(t, ok, "chamada resolvida deve sair do registro")
 }
 
 // Sem término (bridge caiu no meio do toque) a chamada vira perdida pelo
@@ -209,9 +210,8 @@ func TestCall_RejectWithoutBridgeOrRefused(t *testing.T) {
 	require.NoError(t, writeJSON(clientConn, Frame{Type: "call_ack", ChannelID: "ch-1", CorrelationID: cmd.CorrelationID, OK: false, Error: "not ringing"}))
 	require.ErrorContains(t, <-done, "not ringing")
 	noUpdate(t, updates)
-	call, ok := h.calls.get("N")
-	require.True(t, ok)
-	require.Equal(t, CallStateRinging, call.state)
+	_, ok := h.calls.get("N")
+	require.True(t, ok, "recusa negada pelo bridge mantém a chamada tocando")
 }
 
 // Canal com reject_call ligado recusa sozinho: a oferta ainda vira mensagem,

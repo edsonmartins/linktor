@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,8 +18,8 @@ import (
 )
 
 // Chamadas pelo bridge. A oferta entra pelo pipeline de mensagens (tipo
-// call, estado tocando). O gateway avisa aqui cada mudança depois disso:
-// atendida, perdida, recusada, encerrada. A mudança vira metadata na mensagem
+// call, estado tocando). O gateway avisa aqui o desfecho, uma vez por
+// chamada: atendida, não atendida ou recusada. Ele vira metadata na mensagem
 // da chamada, atualização ao vivo no admin e evento call.* para o webhook.
 // Recusa automática ainda manda a mensagem configurada no canal pela
 // conversa, como uma resposta normal do atendimento.
@@ -77,9 +76,6 @@ func (s *bridgeCallSink) Handle(ctx context.Context, u gateway.CallUpdate) {
 		message.Metadata = map[string]string{}
 	}
 	message.Metadata[gateway.MetaCallState] = u.State
-	if u.Duration > 0 {
-		message.Metadata[gateway.MetaCallDuration] = strconv.Itoa(int(u.Duration.Seconds()))
-	}
 	if u.RejectedBy != "" {
 		message.Metadata[gateway.MetaCallRejectedBy] = u.RejectedBy
 	}
@@ -99,15 +95,14 @@ func (s *bridgeCallSink) Handle(ctx context.Context, u gateway.CallUpdate) {
 			Type:     eventType,
 			TenantID: conversation.TenantID,
 			Payload: map[string]interface{}{
-				"message_id":       message.ID,
-				"conversation_id":  conversation.ID,
-				"contact_id":       conversation.ContactID,
-				"channel_id":       conversation.ChannelID,
-				"call_id":          u.CallID,
-				"state":            u.State,
-				"from":             message.Metadata["phone"],
-				"duration_seconds": int(u.Duration.Seconds()),
-				"rejected_by":      u.RejectedBy,
+				"message_id":      message.ID,
+				"conversation_id": conversation.ID,
+				"contact_id":      conversation.ContactID,
+				"channel_id":      conversation.ChannelID,
+				"call_id":         u.CallID,
+				"state":           u.State,
+				"from":            message.Metadata["phone"],
+				"rejected_by":     u.RejectedBy,
 			},
 			Timestamp: u.At,
 		})
@@ -155,8 +150,6 @@ func callEventType(state string) string {
 		return nats.EventCallMissed
 	case gateway.CallStateRejected:
 		return nats.EventCallRejected
-	case gateway.CallStateEnded:
-		return nats.EventCallEnded
 	}
 	return ""
 }
@@ -192,13 +185,11 @@ func rejectBridgeCallHandler(channels tenantChannelFinder, calls callRejecter) g
 }
 
 // bridgeCallError traduz os erros do gateway para a API: chamada que não
-// existe (404), que já não toca (409), bridge desligado (503).
+// está tocando (404), bridge desligado (503).
 func bridgeCallError(err error) error {
 	switch {
 	case errors.Is(err, gateway.ErrCallNotFound):
 		return apperrors.NotFound("call")
-	case errors.Is(err, gateway.ErrCallNotRinging):
-		return apperrors.Conflict("call is not ringing")
 	case errors.Is(err, gateway.ErrNoBridge):
 		e := apperrors.New(apperrors.ErrCodeChannelDisconnected, "bridge is offline")
 		e.StatusCode = http.StatusServiceUnavailable

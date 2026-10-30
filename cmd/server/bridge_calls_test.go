@@ -72,7 +72,7 @@ func newSinkUnderTest(t *testing.T, rejectMsg string) (*bridgeCallSink, *callSto
 }
 
 // Cada desfecho vira metadata na mensagem, aviso ao admin e evento call.*;
-// a duração só na encerrada e quem recusou só na recusada.
+// quem recusou só na recusada.
 func TestBridgeCallSink_RecordsStateAndPublishes(t *testing.T) {
 	sink, store, producer, sender, broadcasts := newSinkUnderTest(t, "")
 	at := time.Unix(1700000000, 0)
@@ -90,14 +90,15 @@ func TestBridgeCallSink_RecordsStateAndPublishes(t *testing.T) {
 	require.Equal(t, "5511999999999", ev.Payload["from"])
 	require.Equal(t, at, ev.Timestamp)
 
-	sink.Handle(context.Background(), gateway.CallUpdate{CallID: "CALL1", State: gateway.CallStateEnded, Duration: 42 * time.Second, At: at})
-	require.Equal(t, "42", store.updated.Metadata[gateway.MetaCallDuration])
-	require.Equal(t, "call.ended", producer.Events[1].Type)
-	require.Equal(t, 42, producer.Events[1].Payload["duration_seconds"])
+	require.Empty(t, store.updated.Metadata[gateway.MetaCallRejectedBy])
+
+	sink.Handle(context.Background(), gateway.CallUpdate{CallID: "CALL1", State: gateway.CallStateMissed, At: at})
+	require.Equal(t, "call.missed", producer.Events[1].Type)
 
 	sink.Handle(context.Background(), gateway.CallUpdate{CallID: "CALL1", State: gateway.CallStateRejected, RejectedBy: gateway.RejectedByOperator, At: at})
 	require.Equal(t, gateway.RejectedByOperator, store.updated.Metadata[gateway.MetaCallRejectedBy])
 	require.Equal(t, "call.rejected", producer.Events[2].Type)
+	require.Equal(t, "operator", producer.Events[2].Payload["rejected_by"])
 	require.Empty(t, sender.inputs, "recusa pelo atendente não manda a mensagem automática")
 }
 
@@ -158,7 +159,7 @@ func rejectRequest(t *testing.T, rejecter *rejecterStub) *httptest.ResponseRecor
 }
 
 // A rota pede a recusa em nome do atendente e traduz os erros do gateway:
-// chamada desconhecida 404, já não toca 409, bridge desligado 503.
+// chamada que não está tocando 404, bridge desligado 503.
 func TestRejectBridgeCallHandler(t *testing.T) {
 	rejecter := &rejecterStub{}
 	w := rejectRequest(t, rejecter)
@@ -171,7 +172,6 @@ func TestRejectBridgeCallHandler(t *testing.T) {
 		want int
 	}{
 		{gateway.ErrCallNotFound, http.StatusNotFound},
-		{gateway.ErrCallNotRinging, http.StatusConflict},
 		{gateway.ErrNoBridge, http.StatusServiceUnavailable},
 		{errors.New("bridge could not reject call: boom"), http.StatusInternalServerError},
 	} {

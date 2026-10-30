@@ -36,7 +36,6 @@ export const WEBHOOK_EVENT_TYPES = [
   'call.answered',
   'call.missed',
   'call.rejected',
-  'call.ended',
 ] as const
 
 type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number]
@@ -56,7 +55,6 @@ const WEBHOOK_EVENT_LABEL_KEYS: Record<WebhookEventType, string> = {
   'call.answered': 'eventCallAnswered',
   'call.missed': 'eventCallMissed',
   'call.rejected': 'eventCallRejected',
-  'call.ended': 'eventCallEnded',
 }
 
 /** Campos do formulário; cada tela faz `schema.merge(outboundWebhookSchema)`. */

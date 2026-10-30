@@ -241,37 +241,31 @@ interface MessageBubbleProps {
   rejectingCall?: boolean
 }
 
-type CallState = 'ringing' | 'answered' | 'missed' | 'rejected' | 'ended'
+type CallState = 'ringing' | 'answered' | 'missed' | 'rejected'
+
+const CALL_STATES: CallState[] = ['ringing', 'answered', 'missed', 'rejected']
 
 const CALL_ICONS: Record<CallState, typeof PhoneIncoming> = {
   ringing: PhoneIncoming,
   answered: PhoneCall,
   missed: PhoneMissed,
   rejected: PhoneOff,
-  ended: PhoneCall,
 }
 
 /**
  * Chamada registrada na conversa (content_type call). O áudio fica no
- * aparelho pareado; aqui só o estado, que o backend atualiza em
- * metadata.call_state e chega ao vivo por message_updated.
+ * aparelho principal do WhatsApp; aqui só o estado, que o backend atualiza
+ * em metadata.call_state e chega ao vivo por message_updated. O bridge é um
+ * aparelho pareado e não vê o fim da conversa, então não há duração.
  */
 function MessageCallView({ message, onRejectCall, rejectingCall }: Omit<MessageBubbleProps, 'isOwn'>) {
   const t = useTranslations('conversations.call')
   const meta = message.metadata ?? {}
-  const state = (['ringing', 'answered', 'missed', 'rejected', 'ended'] as CallState[]).includes(meta.call_state as CallState)
+  const state: CallState = CALL_STATES.includes(meta.call_state as CallState)
     ? (meta.call_state as CallState)
-    : 'ended'
+    : 'missed'
   const Icon = CALL_ICONS[state]
-  const seconds = Number(meta.call_duration_seconds ?? 0)
-  const duration = seconds > 0 ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` : ''
-  const rejectedBy = typeof meta.call_rejected_by === 'string' ? meta.call_rejected_by : ''
-  const status =
-    state === 'ended' && duration
-      ? t('endedWithDuration', { duration })
-      : state === 'rejected' && rejectedBy === 'auto'
-        ? t('rejectedAuto')
-        : t(state)
+  const status = state === 'rejected' && meta.call_rejected_by === 'auto' ? t('rejectedAuto') : t(state)
   const callId = typeof meta.call_id === 'string' ? meta.call_id : ''
 
   return (

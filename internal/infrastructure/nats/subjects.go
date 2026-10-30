@@ -105,11 +105,10 @@ const (
 	EventConversationDeleted   = "conversation.deleted"
 
 	// Chamadas registradas na conversa (bridge): a chegada é message.received
-	// com content_type call; estes são os desfechos.
+	// com content_type call; estes são os desfechos, um por chamada.
 	EventCallAnswered = "call.answered"
 	EventCallMissed   = "call.missed"
 	EventCallRejected = "call.rejected"
-	EventCallEnded    = "call.ended"
 
 	EventContactCreated = "contact.created"
 	EventContactUpdated = "contact.updated"

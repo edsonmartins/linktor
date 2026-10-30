@@ -536,7 +536,7 @@ func TestDispatcherStatusCarriesChannel(t *testing.T) {
 }
 
 // Desfechos de chamada viram call.* com o id da mensagem da chamada, o
-// call_id e o canal; a duração só vai quando houver.
+// call_id e o canal.
 func TestDispatcherCallOutcomes(t *testing.T) {
 	for _, tc := range []struct {
 		eventType string
@@ -545,7 +545,6 @@ func TestDispatcherCallOutcomes(t *testing.T) {
 		{nats.EventCallAnswered, TypeCallAnswered},
 		{nats.EventCallMissed, TypeCallMissed},
 		{nats.EventCallRejected, TypeCallRejected},
-		{nats.EventCallEnded, TypeCallEnded},
 	} {
 		t.Run(tc.wantType, func(t *testing.T) {
 			pub := &recordingPublisher{}
@@ -555,14 +554,13 @@ func TestDispatcherCallOutcomes(t *testing.T) {
 				Type:     tc.eventType,
 				TenantID: "tenant-1",
 				Payload: map[string]interface{}{
-					"message_id":       "msg-7",
-					"channel_id":       "ch-1",
-					"conversation_id":  "conv-1",
-					"call_id":          "CALL1",
-					"state":            "ended",
-					"from":             "5511999999999",
-					"duration_seconds": float64(42),
-					"rejected_by":      "operator",
+					"message_id":      "msg-7",
+					"channel_id":      "ch-1",
+					"conversation_id": "conv-1",
+					"call_id":         "CALL1",
+					"state":           "rejected",
+					"from":            "5511999999999",
+					"rejected_by":     "operator",
 				},
 			})
 			if err != nil {
@@ -585,7 +583,7 @@ func TestDispatcherCallOutcomes(t *testing.T) {
 			data, _ := env.Data.(map[string]interface{})
 			for key, want := range map[string]interface{}{
 				"messageId": "msg-7", "callId": "CALL1", "channelId": "ch-1", "conversationId": "conv-1",
-				"from": "5511999999999", "durationSeconds": float64(42), "rejectedBy": "operator",
+				"from": "5511999999999", "rejectedBy": "operator",
 			} {
 				if data[key] != want {
 					t.Errorf("%s = %v, want %v", key, data[key], want)
