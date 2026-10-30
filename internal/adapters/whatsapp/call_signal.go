@@ -126,8 +126,28 @@ func (a *Adapter) handleCallSignal(ctx context.Context, client *Client, sig *cal
 			}
 		}
 		evt.Message = callMessage(sig, pn, evt.At)
+		evt.Message.SenderName = callerName(ctx, client, pn)
 	}
 	handler(ctx, evt)
+}
+
+// callerName é o nome de quem ligou na agenda da sessão. A chamada, ao
+// contrário da mensagem, não traz o pushName; sem isto quem liga antes de
+// mandar mensagem vira "Contato Desconhecido".
+func callerName(ctx context.Context, client *Client, pn types.JID) string {
+	if client == nil || isLID(pn) {
+		return ""
+	}
+	info, err := client.GetContactInfo(ctx, pn)
+	if err != nil || info == nil {
+		return ""
+	}
+	for _, name := range []string{info.PushName, info.FullName, info.BusinessName} {
+		if name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 // callMessage monta a chamada como mensagem, com as chaves de identidade de
@@ -140,6 +160,10 @@ func callMessage(sig *callSignal, pn types.JID, at time.Time) *plugin.InboundMes
 	metadata["is_group"] = "false"
 	if !isLID(pn) {
 		metadata["sender_pn"] = pn.String()
+		// Mesmo contrato do bridge e do webhook oficial: com o número em
+		// "phone" a chamada casa com o contato que já existe com esse número
+		// em outro canal, em vez de abrir um contato novo.
+		metadata["phone"] = pn.User
 		if isLID(signaledBy) {
 			metadata["lid"] = signaledBy.String()
 		}

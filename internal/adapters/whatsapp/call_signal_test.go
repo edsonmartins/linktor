@@ -69,6 +69,7 @@ func TestHandleCallSignalOfferIdentity(t *testing.T) {
 	require.Equal(t, "Chamada de vídeo", msg.Content)
 	require.Equal(t, callerPN.String(), msg.Metadata["chat_jid"])
 	require.Equal(t, callerPN.String(), msg.Metadata["sender_pn"])
+	require.Equal(t, "554499806761", msg.Metadata["phone"])
 	require.Equal(t, callerLID.String(), msg.Metadata["lid"])
 	require.Equal(t, callsignal.StateRinging, msg.Metadata[callsignal.MetaState])
 	require.Equal(t, "true", msg.Metadata[callsignal.MetaVideo])
@@ -88,6 +89,7 @@ func TestHandleCallSignalUnresolvedLID(t *testing.T) {
 	require.NotNil(t, got.Message)
 	require.Equal(t, callerLID.User, got.Message.SenderID)
 	require.Empty(t, got.Message.Metadata["sender_pn"])
+	require.Empty(t, got.Message.Metadata["phone"])
 	require.False(t, got.At.IsZero())
 }
 
