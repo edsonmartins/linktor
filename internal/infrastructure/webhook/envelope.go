@@ -44,6 +44,10 @@ const (
 
 	TypeContactCreated = "contact.created"
 
+	TypeCallAnswered = "call.answered"
+	TypeCallMissed   = "call.missed"
+	TypeCallRejected = "call.rejected"
+
 	TypeConversationCreated   = "conversation.created"
 	TypeConversationAssigned  = "conversation.assigned"
 	TypeConversationResolved  = "conversation.resolved"
@@ -180,6 +184,22 @@ type StatusData struct {
 	Error       string    `json:"error,omitempty"`
 	ChannelID   string    `json:"channelId"`
 	ChannelType string    `json:"channelType,omitempty"`
+}
+
+// CallData is the payload of call.* events: the single outcome of a call that
+// message.received (contentType "call") announced. MessageID is that message.
+// A paired device never sees the conversation end, so there is no duration.
+type CallData struct {
+	MessageID      string    `json:"messageId"`
+	CallID         string    `json:"callId"`
+	State          string    `json:"state"` // answered | missed | rejected
+	From           string    `json:"from,omitempty"`
+	RejectedBy     string    `json:"rejectedBy,omitempty"` // auto | operator | device
+	Timestamp      time.Time `json:"timestamp"`
+	ConversationID string    `json:"conversationId,omitempty"`
+	ContactID      string    `json:"contactId,omitempty"`
+	ChannelID      string    `json:"channelId"`
+	ChannelType    string    `json:"channelType,omitempty"`
 }
 
 // ComputeSignature returns the hex-encoded HMAC-SHA256 of payload keyed by

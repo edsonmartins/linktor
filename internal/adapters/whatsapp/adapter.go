@@ -42,6 +42,9 @@ type Adapter struct {
 	// what the operator typed on the paired phone. See own_messages.go.
 	sent *sentRegistry
 
+	// Sinais de chamada para o registro do Linktor (call_signal.go).
+	callSignalHandler CallSignalHandler
+
 	// Native calling (VoIP) — isolated from the messaging event loop.
 	callGateway   *CallGateway
 	callHandler   CallHandler
@@ -115,8 +118,6 @@ func (a *Adapter) Initialize(config map[string]string) error {
 		IgnoreStatus:     config["ignore_status"] == "true",
 		AlwaysOnline:     config["always_online"] == "true",
 		AutoReadMessages: config["auto_read_messages"] == "true",
-		RejectCall:       config["reject_call"] == "true",
-		RejectCallMsg:    config["reject_call_msg"],
 		QRCodeMaxCount:   atoiOr(config["qrcode_max_count"], 0),
 		ProxyHost:        config["proxy_host"],
 		ProxyPort:        atoiOr(config["proxy_port"], 0),
@@ -171,11 +172,6 @@ func (a *Adapter) Connect(ctx context.Context) error {
 	// works whether it is called before or after Connect.
 	if raw := client.GetRawClient(); raw != nil {
 		g := NewCallGateway(raw, nil, func(cctx context.Context, evt CallEvent) {
-			// reject_call: auto-decline inbound calls (default off), optionally
-			// sending reject_call_msg to the caller afterwards.
-			if evt.Type == CallEventIncoming && a.config != nil && a.config.RejectCall {
-				go a.autoRejectCall(evt)
-			}
 			a.mu.RLock()
 			h := a.callHandler
 			a.mu.RUnlock()
@@ -578,26 +574,6 @@ func (a *Adapter) RejectCall(ctx context.Context, callID string) error {
 	return g.RejectCall(ctx, callID)
 }
 
-// autoRejectCall declines an inbound call and, when reject_call_msg is set,
-// notifies the caller. Runs off the whatsmeow event goroutine.
-func (a *Adapter) autoRejectCall(evt CallEvent) {
-	ctx := context.Background()
-	if err := a.RejectCall(ctx, evt.CallID); err != nil {
-		return
-	}
-	a.mu.RLock()
-	msg := ""
-	if a.config != nil {
-		msg = a.config.RejectCallMsg
-	}
-	client := a.client
-	a.mu.RUnlock()
-	if msg == "" || evt.PeerJID == "" || client == nil {
-		return
-	}
-	_, _ = client.SendTextMessage(ctx, evt.PeerJID, msg)
-}
-
 // EndCall hangs up an in-progress call.
 func (a *Adapter) EndCall(ctx context.Context, callID string) error {
 	a.mu.RLock()
@@ -846,6 +822,9 @@ func (a *Adapter) eventLoop() {
 						_ = client.MarkAsRead(ctx, []string{v.ExternalID}, v.ChatJID, v.SenderJID)
 					}
 				}
+
+			case *callSignal:
+				a.handleCallSignal(ctx, client, v)
 
 			case *Receipt:
 				if statusHandler != nil {

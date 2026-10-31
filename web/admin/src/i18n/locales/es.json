@@ -236,6 +236,17 @@
     "attachmentUnavailable": "Adjunto no disponible (el archivo no se recibió)",
     "unsupportedMessage": "Mensaje sin contenido que mostrar",
     "locationShared": "Ubicación compartida",
+    "call": {
+      "voice": "Llamada de voz",
+      "video": "Videollamada",
+      "ringing": "Sonando en el dispositivo",
+      "answered": "Atendida en el dispositivo",
+      "missed": "Perdida",
+      "rejected": "Rechazada",
+      "rejectedAuto": "Rechazada automáticamente por el canal",
+      "reject": "Rechazar",
+      "rejectFailed": "No se pudo rechazar la llamada"
+    },
     "deleteConversation": "Eliminar conversación",
     "deleteConversationDescription": "¿Eliminar la conversación con {name}? Sus mensajes, adjuntos e historial se van con ella. Esta acción no se puede deshacer — para quitarla de la cola sin perder el historial, resuélvela.",
     "conversationDeleted": "Conversación eliminada",
@@ -361,6 +372,9 @@
     "config": {
       "bridge": {
         "valuesTitle": "Datos para el panel del bridge",
+        "callsTitle": "Llamadas",
+        "callsDesc": "Las llamadas de voz y video entran en la conversación del contacto con su estado (sonando, atendida, perdida, rechazada). El audio queda en el dispositivo con WhatsApp; desde Linktor se puede rechazar.",
+        "rejectCallMsgDesc": "Se envía por la conversación justo después del rechazo automático. Vacío no envía nada.",
         "valuesDesc": "Copie y pegue los tres valores en el bloque \"Linktor\" del panel del bridge (http://127.0.0.1:7788 en la computadora del agente).",
         "serverLabel": "Servidor",
         "channelIdLabel": "ID del canal",
@@ -415,6 +429,9 @@
       "eventConversationResolved": "Conversación resuelta",
       "eventConversationReopened": "Conversación reabierta",
       "eventConversationEscalated": "Conversación escalada",
+      "eventCallAnswered": "Llamada atendida",
+      "eventCallMissed": "Llamada perdida",
+      "eventCallRejected": "Llamada rechazada",
       "operations": "Operaciones",
       "diretoSendUrl": "URL de envío",
       "diretoSendUrlDesc": "Endpoint REST de Direto al que Linktor envía mensajes",

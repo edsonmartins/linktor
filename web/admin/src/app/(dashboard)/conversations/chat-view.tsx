@@ -25,6 +25,10 @@ import {
   Download,
   Trash2,
   MapPin,
+  PhoneIncoming,
+  PhoneMissed,
+  PhoneOff,
+  PhoneCall,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -232,6 +236,64 @@ function MessageAttachmentView({ attachment }: { attachment: MessageAttachment }
 interface MessageBubbleProps {
   message: Message
   isOwn: boolean
+  // Recusar uma chamada que está tocando; só existe para canal com bridge.
+  onRejectCall?: (callId: string) => void
+  rejectingCall?: boolean
+}
+
+type CallState = 'ringing' | 'answered' | 'missed' | 'rejected'
+
+// Canais em que o Linktor é um aparelho conectado ao WhatsApp e pode recusar
+// a chamada que toca (bridge e sessão embutida).
+const LINKED_CALL_CHANNELS = new Set(['whatsapp_remote', 'whatsapp'])
+
+const CALL_STATES: CallState[] = ['ringing', 'answered', 'missed', 'rejected']
+
+const CALL_ICONS: Record<CallState, typeof PhoneIncoming> = {
+  ringing: PhoneIncoming,
+  answered: PhoneCall,
+  missed: PhoneMissed,
+  rejected: PhoneOff,
+}
+
+/**
+ * Chamada registrada na conversa (content_type call). O áudio fica no
+ * aparelho principal do WhatsApp; aqui só o estado, que o backend atualiza
+ * em metadata.call_state e chega ao vivo por message_updated. O bridge é um
+ * aparelho pareado e não vê o fim da conversa, então não há duração.
+ */
+function MessageCallView({ message, onRejectCall, rejectingCall }: Omit<MessageBubbleProps, 'isOwn'>) {
+  const t = useTranslations('conversations.call')
+  const meta = message.metadata ?? {}
+  const state: CallState = CALL_STATES.includes(meta.call_state as CallState)
+    ? (meta.call_state as CallState)
+    : 'missed'
+  const Icon = CALL_ICONS[state]
+  const status = state === 'rejected' && meta.call_rejected_by === 'auto' ? t('rejectedAuto') : t(state)
+  const callId = typeof meta.call_id === 'string' ? meta.call_id : ''
+
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <Icon className={cn('h-4 w-4 mt-0.5 shrink-0', state === 'missed' && 'text-destructive', state === 'ringing' && 'animate-pulse')} />
+      <span>
+        <span className="font-medium">{meta.call_video === 'true' ? t('video') : t('voice')}</span>
+        <span className="block text-xs text-muted-foreground">{status}</span>
+        {state === 'ringing' && onRejectCall && callId && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-1 h-7"
+            disabled={rejectingCall}
+            onClick={() => onRejectCall(callId)}
+          >
+            {rejectingCall ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <PhoneOff className="h-3 w-3 mr-1" />}
+            {t('reject')}
+          </Button>
+        )}
+      </span>
+    </div>
+  )
 }
 
 /**
@@ -262,15 +324,17 @@ function MessageLocationView({ message }: { message: Message }) {
   )
 }
 
-function MessageBubble({ message, isOwn }: MessageBubbleProps) {
+function MessageBubble({ message, isOwn, onRejectCall, rejectingCall }: MessageBubbleProps) {
   const t = useTranslations('conversations')
   const isLocation = message.content_type === 'location' && !!message.metadata?.latitude
+  const isCall = message.content_type === 'call'
   // Nem toda mensagem recebida tem o que mostrar: figurinhas, enquetes,
   // atualizações de status e outros tipos que o conector ainda não traduz
   // chegam sem texto e sem anexo. Sem isto a bolha saía vazia — um retângulo
   // cinza sem explicação, que é como a tela estava.
   const semConteudoVisivel =
     !isLocation &&
+    !isCall &&
     !message.content?.trim() &&
     (!message.attachments || message.attachments.length === 0)
 
@@ -301,7 +365,9 @@ function MessageBubble({ message, isOwn }: MessageBubbleProps) {
               ))}
             </div>
           )}
-          {isLocation ? (
+          {isCall ? (
+            <MessageCallView message={message} onRejectCall={onRejectCall} rejectingCall={rejectingCall} />
+          ) : isLocation ? (
             <MessageLocationView message={message} />
           ) : semConteudoVisivel ? (
             <p className="text-sm italic text-muted-foreground">
@@ -948,6 +1014,7 @@ interface ChatViewProps {
 
 export function ChatView({ conversationId }: ChatViewProps) {
   const t = useTranslations('conversations')
+  const tCall = useTranslations('conversations.call')
   const tCommon = useTranslations('common')
   const queryClient = useQueryClient()
   const user = useUser()
@@ -1042,6 +1109,19 @@ export function ChatView({ conversationId }: ChatViewProps) {
       queryKey: queryKeys.conversations.all,
     })
   }, [conversationId, queryClient])
+
+  // Recusar chamada que toca no aparelho (bridge ou sessão embutida). O
+  // estado novo chega por message_updated; a invalidação só adianta a troca.
+  const rejectCall = useMutation({
+    mutationFn: (callId: string) =>
+      api.post(`/channels/${conversation?.channel_id}/calls/${callId}/reject`),
+    onSuccess: () => {
+      invalidateConversation()
+    },
+    onError: (error: Error) => {
+      toast({ title: tCall('rejectFailed'), description: error.message, variant: 'error' })
+    },
+  })
 
   // Send message mutation
   const sendMessage = useMutation({
@@ -1393,6 +1473,8 @@ export function ChatView({ conversationId }: ChatViewProps) {
                 // importadas do aparelho chegam sem sender_id, e nenhuma
                 // batia.
                 isOwn={message.sender_type !== 'contact'}
+                onRejectCall={LINKED_CALL_CHANNELS.has(conversation?.channel?.type ?? '') ? rejectCall.mutate : undefined}
+                rejectingCall={rejectCall.isPending}
               />
             ))
           ) : (

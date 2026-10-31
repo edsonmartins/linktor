@@ -48,6 +48,7 @@ const (
 	ContentTypeContact     ContentType = "contact"
 	ContentTypeTemplate    ContentType = "template"
 	ContentTypeInteractive ContentType = "interactive"
+	ContentTypeCall        ContentType = "call"
 )
 
 // OutboundMessage represents a message to be sent via a channel adapter

@@ -133,6 +133,12 @@ func (d *Dispatcher) handle(ctx context.Context, event *nats.Event) error {
 		return d.dispatchStatus(ctx, event, TypeMessageFailed)
 	case nats.EventContactCreated:
 		return d.dispatchContact(ctx, event, TypeContactCreated)
+	case nats.EventCallAnswered:
+		return d.dispatchCall(ctx, event, TypeCallAnswered)
+	case nats.EventCallMissed:
+		return d.dispatchCall(ctx, event, TypeCallMissed)
+	case nats.EventCallRejected:
+		return d.dispatchCall(ctx, event, TypeCallRejected)
 	case nats.EventConversationCreated:
 		return d.dispatchConversation(ctx, event, TypeConversationCreated)
 	case nats.EventConversationAssigned:
@@ -337,6 +343,32 @@ func (d *Dispatcher) dispatchStatus(ctx context.Context, event *nats.Event, even
 	}
 
 	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), eventType), data)
+}
+
+// dispatchCall converts a call outcome into an outbound webhook. The call was
+// announced by message.received (contentType "call"); message_id links both.
+func (d *Dispatcher) dispatchCall(ctx context.Context, event *nats.Event, eventType string) error {
+	p := payload(event.Payload)
+
+	channel := d.resolveChannel(ctx, p.str("channel_id"))
+	if channel == nil {
+		return nil
+	}
+
+	data := CallData{
+		MessageID:      p.str("message_id"),
+		CallID:         p.str("call_id"),
+		State:          p.str("state"),
+		From:           p.str("from"),
+		RejectedBy:     p.str("rejected_by"),
+		Timestamp:      d.now().UTC(),
+		ConversationID: p.str("conversation_id"),
+		ContactID:      p.str("contact_id"),
+		ChannelID:      channel.ID,
+		ChannelType:    channelType(channel, p),
+	}
+
+	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("call_id"), eventType), data)
 }
 
 // dispatchContact converts a contact lifecycle event into an outbound webhook.

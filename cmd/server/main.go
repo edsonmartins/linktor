@@ -103,6 +103,7 @@ import (
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/application/usecase"
+	"github.com/msgfy/linktor/internal/callsignal"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/gateway"
 	"github.com/msgfy/linktor/internal/infrastructure/config"
@@ -664,6 +665,12 @@ func main() {
 	gatewayHandler.SetRehost(func(ctx context.Context, msg *nats.InboundMessage) {
 		rehostInboundMedia(ctx, mediaStore, channelRepo, msg)
 	})
+	// Chamadas vistas por aparelho conectado (bridge ou sessão embutida): um
+	// registro só, que guarda o desfecho e a recusa (ver call_signals.go).
+	callTracker := callsignal.NewTracker(channelRepo)
+	callTracker.SetSink(newCallOutcomeSink(messageRepo, conversationRepo, channelRepo, producer, sendMessageUC).Handle)
+	gatewayHandler.SetCallTracker(callTracker)
+	channelService.SetCallTracker(callTracker)
 
 	// Expose bridge health inline on channel List/Get responses so the admin UI
 	// sees online/stale/last_seen without extra calls.
@@ -1637,6 +1644,9 @@ func main() {
 				callingRoutes.POST("/:callId/end", callingHandler.EndCall)
 				callingRoutes.GET("/:callId/quality", callingHandler.GetCallQuality)
 				callingRoutes.GET("/:callId/recording", callingHandler.GetCallRecording)
+				// Recusa de chamada que toca num aparelho conectado (bridge ou
+				// sessão embutida); a API oficial tem fluxo próprio.
+				callingRoutes.POST("/:callId/reject", rejectCallHandler(channelService, callTracker))
 			}
 
 			// CTWA (Click-to-WhatsApp Ads)
