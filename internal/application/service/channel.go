@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/msgfy/linktor/internal/adapters/whatsapp"
+	"github.com/msgfy/linktor/internal/callsignal"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
@@ -104,6 +106,15 @@ type ChannelService struct {
 	// connected, to do what "connected" means for that provider (e.g. register
 	// the Telegram webhook). See SetConnectPreparer.
 	connectPreparers map[entity.ChannelType]ConnectPreparer
+	// calls registra as chamadas que a sessão WhatsApp embutida vê (o mesmo
+	// registro do bridge). Optional; nil ignora chamadas. See SetCallTracker.
+	calls *callsignal.Tracker
+}
+
+// SetCallTracker registra o registro de chamadas. É lido a cada sinal, então
+// vale também para sessões conectadas antes da chamada.
+func (s *ChannelService) SetCallTracker(t *callsignal.Tracker) {
+	s.calls = t
 }
 
 // ConnectPreparer readies a channel with its provider on Connect. It may set
@@ -1045,6 +1056,91 @@ func (s *ChannelService) updateChannelConnectionStatus(channelID string, status 
 	}
 }
 
+// publishWhatsAppInbound publica no NATS uma mensagem (ou chamada) recebida
+// pela sessão WhatsApp embutida.
+func (s *ChannelService) publishWhatsAppInbound(ctx context.Context, channel *entity.Channel, msg *plugin.InboundMessage) error {
+	if s.producer == nil {
+		logger.Warn("No NATS producer configured, skipping message",
+			zap.String("channel_id", channel.ID))
+		return nil // No producer configured, skip
+	}
+
+	var attachments []nats.AttachmentData
+	for _, att := range msg.Attachments {
+		attachments = append(attachments, nats.AttachmentData{
+			Type:     att.Type,
+			URL:      att.URL,
+			Filename: att.Filename,
+			MimeType: att.MimeType,
+			Metadata: att.Metadata,
+		})
+	}
+
+	// Build inbound message for NATS
+	inbound := &nats.InboundMessage{
+		ID:          msg.ID,
+		TenantID:    channel.TenantID,
+		ChannelID:   channel.ID,
+		ChannelType: string(channel.Type),
+		ExternalID:  msg.ExternalID,
+		ContentType: string(msg.ContentType),
+		Content:     msg.Content,
+		Metadata:    msg.Metadata,
+		Attachments: attachments,
+		Timestamp:   msg.Timestamp,
+	}
+
+	// Add sender info to metadata
+	if inbound.Metadata == nil {
+		inbound.Metadata = make(map[string]string)
+	}
+	inbound.Metadata["sender_id"] = msg.SenderID
+	inbound.Metadata["sender_name"] = msg.SenderName
+
+	// Publish to NATS
+	if err := s.producer.PublishInbound(ctx, inbound); err != nil {
+		logger.Error("Failed to publish WhatsApp message to NATS",
+			zap.String("channel_id", channel.ID),
+			zap.String("message_id", msg.ID),
+			zap.Error(err))
+		return err
+	}
+	return nil
+}
+
+// handleWhatsAppCallSignal entrega um sinal de chamada da sessão embutida ao
+// registro de chamadas. A recusa vai pelo whatsmeow, endereçada a quem
+// sinalizou.
+func (s *ChannelService) handleWhatsAppCallSignal(ctx context.Context, adapter *whatsapp.Adapter, channel *entity.Channel, evt whatsapp.CallSignalEvent) {
+	if s.calls == nil {
+		return
+	}
+	if evt.Message == nil {
+		s.calls.Signal(evt.CallID, evt.Signal, evt.At)
+		return
+	}
+	err := s.calls.Offer(ctx, callsignal.Offer{
+		ChannelID: channel.ID,
+		CallID:    evt.CallID,
+		Publish: func(ctx context.Context) error {
+			return s.publishWhatsAppInbound(ctx, channel, evt.Message)
+		},
+		Reject: func(ctx context.Context) error {
+			err := adapter.RejectCallFrom(ctx, evt.SignaledBy, evt.CallID)
+			if stderrors.Is(err, whatsapp.ErrClientNotReady) {
+				return fmt.Errorf("%w: %v", callsignal.ErrDeviceOffline, err)
+			}
+			return err
+		},
+	})
+	if err != nil {
+		logger.Warn("WhatsApp call not recorded",
+			zap.String("channel_id", channel.ID),
+			zap.String("call_id", evt.CallID),
+			zap.Error(err))
+	}
+}
+
 // setupWhatsAppHandlers configures message and status handlers for WhatsApp adapter
 func (s *ChannelService) setupWhatsAppHandlers(adapter *whatsapp.Adapter, channel *entity.Channel) {
 	// Set message handler - called when a message is received from WhatsApp
@@ -1054,55 +1150,13 @@ func (s *ChannelService) setupWhatsAppHandlers(adapter *whatsapp.Adapter, channe
 			zap.String("message_id", msg.ID),
 			zap.String("sender_id", msg.SenderID),
 			zap.String("content_type", string(msg.ContentType)))
+		return s.publishWhatsAppInbound(ctx, channel, msg)
+	})
 
-		if s.producer == nil {
-			logger.Warn("No NATS producer configured, skipping message",
-				zap.String("channel_id", channel.ID))
-			return nil // No producer configured, skip
-		}
-
-		// Convert attachments
-		var attachments []nats.AttachmentData
-		for _, att := range msg.Attachments {
-			attachments = append(attachments, nats.AttachmentData{
-				Type:     att.Type,
-				URL:      att.URL,
-				Filename: att.Filename,
-				MimeType: att.MimeType,
-				Metadata: att.Metadata,
-			})
-		}
-
-		// Build inbound message for NATS
-		inbound := &nats.InboundMessage{
-			ID:          msg.ID,
-			TenantID:    channel.TenantID,
-			ChannelID:   channel.ID,
-			ChannelType: string(channel.Type),
-			ExternalID:  msg.ExternalID,
-			ContentType: string(msg.ContentType),
-			Content:     msg.Content,
-			Metadata:    msg.Metadata,
-			Attachments: attachments,
-			Timestamp:   msg.Timestamp,
-		}
-
-		// Add sender info to metadata
-		if inbound.Metadata == nil {
-			inbound.Metadata = make(map[string]string)
-		}
-		inbound.Metadata["sender_id"] = msg.SenderID
-		inbound.Metadata["sender_name"] = msg.SenderName
-
-		// Publish to NATS
-		if err := s.producer.PublishInbound(ctx, inbound); err != nil {
-			logger.Error("Failed to publish WhatsApp message to NATS",
-				zap.String("channel_id", channel.ID),
-				zap.String("message_id", msg.ID),
-				zap.Error(err))
-			return err
-		}
-		return nil
+	// Chamadas: a oferta vira mensagem pelo mesmo caminho das mensagens e o
+	// registro compartilhado com o bridge guarda o desfecho e a recusa.
+	adapter.SetCallSignalHandler(func(ctx context.Context, evt whatsapp.CallSignalEvent) {
+		s.handleWhatsAppCallSignal(ctx, adapter, channel, evt)
 	})
 
 	// Set status handler - called when message status updates (delivered, read, etc.)

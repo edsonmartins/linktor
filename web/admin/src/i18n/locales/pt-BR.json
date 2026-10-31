@@ -237,6 +237,17 @@
     "attachmentUnavailable": "Anexo indisponível (o arquivo não foi recebido)",
     "unsupportedMessage": "Mensagem sem conteúdo exibível",
     "locationShared": "Localização compartilhada",
+    "call": {
+      "voice": "Chamada de voz",
+      "video": "Chamada de vídeo",
+      "ringing": "Tocando no aparelho",
+      "answered": "Atendida no aparelho",
+      "missed": "Não atendida",
+      "rejected": "Recusada",
+      "rejectedAuto": "Recusada automaticamente pelo canal",
+      "reject": "Recusar",
+      "rejectFailed": "Não foi possível recusar a chamada"
+    },
     "deleteConversation": "Excluir conversa",
     "deleteConversationDescription": "Excluir a conversa com {name}? As mensagens, os anexos e o histórico vão com ela. Esta ação não pode ser desfeita — para tirá-la da fila sem perder o histórico, resolva a conversa.",
     "conversationDeleted": "Conversa excluída",
@@ -364,6 +375,9 @@
     "config": {
       "bridge": {
         "valuesTitle": "Dados para o painel do bridge",
+        "callsTitle": "Chamadas",
+        "callsDesc": "Chamadas de voz e vídeo entram na conversa do contato com o estado (tocando, atendida, não atendida, recusada). O áudio fica no aparelho com o WhatsApp; pelo Linktor dá para recusar.",
+        "rejectCallMsgDesc": "Enviada pela conversa logo após a recusa automática. Vazio não envia nada.",
         "valuesDesc": "Copie e cole os três valores no bloco \"Linktor\" do painel do bridge (http://127.0.0.1:7788 no computador do atendente).",
         "serverLabel": "Servidor",
         "channelIdLabel": "ID do canal",
@@ -418,6 +432,9 @@
       "eventConversationResolved": "Conversa resolvida",
       "eventConversationReopened": "Conversa reaberta",
       "eventConversationEscalated": "Conversa escalada",
+      "eventCallAnswered": "Chamada atendida",
+      "eventCallMissed": "Chamada não atendida",
+      "eventCallRejected": "Chamada recusada",
       "operations": "Operações",
       "diretoSendUrl": "URL de envio",
       "diretoSendUrlDesc": "Endpoint REST do Direto para onde o Linktor envia mensagens",

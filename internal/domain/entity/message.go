@@ -31,6 +31,10 @@ const (
 	ContentTypeSticker     ContentType = "sticker"
 	ContentTypePoll        ContentType = "poll"
 	ContentTypeReaction    ContentType = "reaction"
+	// ContentTypeCall registra uma chamada de voz/vídeo na conversa: o estado
+	// (tocando, atendida, perdida, recusada, encerrada) vai em metadata
+	// call_state; o áudio nunca passa pelo Linktor.
+	ContentTypeCall ContentType = "call"
 )
 
 // SenderType represents who sent the message

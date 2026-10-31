@@ -157,6 +157,8 @@ func (n *MessageNormalizer) normalizeContentType(contentType string) entity.Cont
 		return entity.ContentTypeTemplate
 	case "interactive", "button", "list", "buttons", "list_reply":
 		return entity.ContentTypeInteractive
+	case "call":
+		return entity.ContentTypeCall
 	default:
 		return entity.ContentTypeText
 	}

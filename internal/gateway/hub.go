@@ -21,20 +21,24 @@ import (
 // Frame mirrors the JSON envelope of the Bridge Protocol. Only the fields the
 // server consumes/emits are modeled here; unknown fields are ignored.
 type Frame struct {
-	Type          string          `json:"type"`
-	ChannelID     string          `json:"channel_id"`
-	Platform      string          `json:"platform"`
-	Version       string          `json:"version"`
-	OK            bool            `json:"ok"`
-	Error         string          `json:"error"`
-	Reason        string          `json:"reason"`
-	CorrelationID string          `json:"correlation_id"`
-	To            string          `json:"to"`
-	Text          string          `json:"text"`
-	MessageID     string          `json:"message_id"`
-	Message       json.RawMessage `json:"message"`
-	Status        json.RawMessage `json:"status"`
-	TS            int64           `json:"ts,omitempty"`
+	Type          string `json:"type"`
+	ChannelID     string `json:"channel_id"`
+	Platform      string `json:"platform"`
+	Version       string `json:"version"`
+	OK            bool   `json:"ok"`
+	Error         string `json:"error"`
+	Reason        string `json:"reason"`
+	CorrelationID string `json:"correlation_id"`
+	To            string `json:"to"`
+	Text          string `json:"text"`
+	MessageID     string `json:"message_id"`
+	// From e CallID identificam a chamada num call_command (reject): o bridge
+	// precisa do JID de quem ligou para recusar.
+	From    string          `json:"from,omitempty"`
+	CallID  string          `json:"call_id,omitempty"`
+	Message json.RawMessage `json:"message"`
+	Status  json.RawMessage `json:"status"`
+	TS      int64           `json:"ts,omitempty"`
 	// Media é a mídia de um outbound (imagem, vídeo, áudio, documento). Text
 	// vira a legenda. A URL já vem assinada pelo worker; o bridge a baixa.
 	Media *OutboundMedia `json:"media,omitempty"`
@@ -80,6 +84,8 @@ type Hub struct {
 	// message JSON so a service can publish it into the platform.
 	onInbound func(channelID string, raw json.RawMessage) error
 	onStatus  func(channelID string, raw json.RawMessage) error
+	// onCall recebe a sinalização de chamada (frame call_event) do bridge.
+	onCall func(channelID string, raw json.RawMessage) error
 }
 
 // NewHub creates a Hub.
@@ -99,6 +105,13 @@ func (h *Hub) SetStatusHandler(fn func(channelID string, raw json.RawMessage) er
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.onStatus = fn
+}
+
+// SetCallHandler wires the call signaling sink.
+func (h *Hub) SetCallHandler(fn func(channelID string, raw json.RawMessage) error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.onCall = fn
 }
 
 // Register binds a live bridge to a channel. If the channel already has a
@@ -217,6 +230,34 @@ func (b *Bridge) resolveAck(correlationID string, ack AckResult) {
 // (the bridge generates one) or a caller-persisted ID reused for idempotent
 // retry.
 func (b *Bridge) Send(ctx context.Context, correlationID string, out *plugin.OutboundMessage, messageID string) (AckResult, error) {
+	return b.awaitAck(ctx, Frame{
+		Type:          "outbound",
+		ChannelID:     b.ChannelID,
+		CorrelationID: correlationID,
+		To:            out.RecipientID,
+		Text:          out.Content,
+		MessageID:     messageID,
+		Media:         outboundMedia(out),
+	})
+}
+
+// RejectCall manda o bridge recusar a chamada callID de from (JID de quem
+// ligou) e espera o call_ack.
+func (b *Bridge) RejectCall(ctx context.Context, correlationID, from, callID string) (AckResult, error) {
+	return b.awaitAck(ctx, Frame{
+		Type:          "call_command",
+		ChannelID:     b.ChannelID,
+		CorrelationID: correlationID,
+		Text:          "reject",
+		From:          from,
+		CallID:        callID,
+	})
+}
+
+// awaitAck escreve um frame com correlation_id e espera o ack (ou call_ack)
+// correspondente; outbound e call_command compartilham a mesma espera.
+func (b *Bridge) awaitAck(ctx context.Context, f Frame) (AckResult, error) {
+	correlationID := f.CorrelationID
 	ackCh := make(chan AckResult, 1)
 	b.pendingMu.Lock()
 	b.pending[correlationID] = ackCh
@@ -227,17 +268,8 @@ func (b *Bridge) Send(ctx context.Context, correlationID string, out *plugin.Out
 		b.pendingMu.Unlock()
 	}()
 
-	f := Frame{
-		Type:          "outbound",
-		ChannelID:     b.ChannelID,
-		CorrelationID: correlationID,
-		To:            out.RecipientID,
-		Text:          out.Content,
-		MessageID:     messageID,
-		Media:         outboundMedia(out),
-	}
 	if err := b.write(f); err != nil {
-		return AckResult{}, fmt.Errorf("write outbound to bridge: %w", err)
+		return AckResult{}, fmt.Errorf("write %s to bridge: %w", f.Type, err)
 	}
 
 	select {
@@ -277,12 +309,18 @@ func (b *Bridge) handleFrame(f Frame) {
 		}
 		b.statusMu.Unlock()
 		_ = b.write(Frame{Type: "pong", ChannelID: b.ChannelID, TS: time.Now().Unix()})
-	case "ack":
+	case "ack", "call_ack":
 		b.resolveAck(f.CorrelationID, AckResult{OK: f.OK, MessageID: f.MessageID, Error: f.Error})
 	case "inbound":
 		if b.owner != nil && b.owner.onInbound != nil {
 			if err := b.owner.onInbound(b.ChannelID, f.Message); err != nil {
 				log.Printf("gateway: inbound handler failed for %s: %v", b.ChannelID, err)
+			}
+		}
+	case "call_event":
+		if b.owner != nil && b.owner.onCall != nil {
+			if err := b.owner.onCall(b.ChannelID, f.Message); err != nil {
+				log.Printf("gateway: call handler failed for %s: %v", b.ChannelID, err)
 			}
 		}
 	case "status":
@@ -347,9 +385,23 @@ func (h *Hub) SendToChannel(ctx context.Context, channelID, correlationID string
 	b, ok := h.bridges[channelID]
 	h.mu.RUnlock()
 	if !ok {
-		return AckResult{}, fmt.Errorf("no live bridge for channel %s", channelID)
+		return AckResult{}, fmt.Errorf("%w: %s", ErrNoBridge, channelID)
 	}
 	return b.Send(ctx, correlationID, out, messageID)
+}
+
+// ErrNoBridge diz que o canal não tem bridge ligado agora.
+var ErrNoBridge = errors.New("no live bridge for channel")
+
+// RejectCallOnChannel manda o bridge do canal recusar a chamada.
+func (h *Hub) RejectCallOnChannel(ctx context.Context, channelID, correlationID, from, callID string) (AckResult, error) {
+	h.mu.RLock()
+	b, ok := h.bridges[channelID]
+	h.mu.RUnlock()
+	if !ok {
+		return AckResult{}, fmt.Errorf("%w: %s", ErrNoBridge, channelID)
+	}
+	return b.RejectCall(ctx, correlationID, from, callID)
 }
 
 // outboundMedia extrai a mídia do OutboundMessage no formato do frame. O
