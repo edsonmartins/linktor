@@ -16,6 +16,9 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 - **Opt-in por canal:** o tipo só é entregue a canal que o lista **pelo nome** em `webhook_events`; canal sem lista ou com
   `*` continua recebendo exatamente os tipos de antes. Consumidores existentes (DeskLenz) não veem tipo novo.
 - Pedido do VendaX CRM (VCR-29/VCR-30, §7.4): saber da pausa de template sem consultar.
+- **`template.quality_changed`**, também aditivo e opt-in: `ProcessTemplateQualityWebhook` o publica quando a qualidade
+  muda, com `data` espelhando o do status — `previousQuality` e `quality` (GREEN/YELLOW/RED/UNKNOWN) no lugar de
+  `previousStatus` e `status`. Contrato dos dois em `docs/contracts/linktor-channel-v1-template-events.md`.
 
 ### Bridge de WhatsApp (gateway em device)
 

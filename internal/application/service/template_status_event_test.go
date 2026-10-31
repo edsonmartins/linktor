@@ -82,3 +82,49 @@ func TestProcessTemplateStatusWebhook_SemMudancaSemPublisherEFalha(t *testing.T)
 		t.Errorf("status not persisted on publish failure")
 	}
 }
+
+// A mudança de qualidade vira template.quality_changed com a anterior e a nova; a mesma qualidade não publica.
+func TestProcessTemplateQualityWebhook_PublicaMudanca(t *testing.T) {
+	svc, repo := setupTemplateService()
+	pub := testutil.NewMockProducer()
+	svc.SetEventPublisher(pub)
+	tpl := seedTemplateForStatus(repo, entity.TemplateStatusApproved)
+	tpl.QualityScore = entity.TemplateQualityGreen
+
+	if err := svc.ProcessTemplateQualityWebhook(context.Background(), &TemplateQualityEvent{TemplateID: 987, NewQuality: "YELLOW"}); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if len(pub.Events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(pub.Events))
+	}
+	ev := pub.Events[0]
+	if ev.Type != nats.EventTemplateQualityChanged || ev.TenantID != "tenant-1" {
+		t.Fatalf("unexpected event: %+v", ev)
+	}
+	for k, v := range map[string]string{"template_id": "tpl-1", "external_id": "987", "channel_id": "channel-1", "name": "boas_vindas",
+		"language": "pt_BR", "previous_quality": "GREEN", "quality": "YELLOW"} {
+		if ev.Payload[k] != v {
+			t.Errorf("payload[%s] = %v, want %q", k, ev.Payload[k], v)
+		}
+	}
+	if repo.Templates["tpl-1"].QualityScore != entity.TemplateQualityYellow {
+		t.Errorf("quality not persisted: %s", repo.Templates["tpl-1"].QualityScore)
+	}
+
+	if err := svc.ProcessTemplateQualityWebhook(context.Background(), &TemplateQualityEvent{TemplateID: 987, NewQuality: "YELLOW"}); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if len(pub.Events) != 1 {
+		t.Fatalf("same quality must not publish, got %d", len(pub.Events))
+	}
+
+	falha := testutil.NewMockProducer()
+	falha.ReturnError = errors.New("nats fora")
+	svc.SetEventPublisher(falha)
+	if err := svc.ProcessTemplateQualityWebhook(context.Background(), &TemplateQualityEvent{TemplateID: 987, NewQuality: "RED"}); err != nil {
+		t.Fatalf("publish failure must not fail the webhook: %v", err)
+	}
+	if repo.Templates["tpl-1"].QualityScore != entity.TemplateQualityRed {
+		t.Errorf("quality not persisted on publish failure")
+	}
+}

@@ -853,3 +853,49 @@ func TestDispatcherOptInNaoMudaOsTiposAntigos(t *testing.T) {
 		t.Fatal("\"*\" must keep delivering existing types")
 	}
 }
+
+// template.quality_changed também é opt-in e espelha o payload do status, com a qualidade.
+func TestDispatcherTemplateQualityChangedOptIn(t *testing.T) {
+	evento := &nats.Event{
+		Type:     nats.EventTemplateQualityChanged,
+		TenantID: "tenant-1",
+		Payload: map[string]interface{}{
+			"template_id": "tpl-1", "external_id": "987", "channel_id": "ch-1", "name": "boas_vindas",
+			"language": "pt_BR", "category": "UTILITY", "previous_quality": "GREEN", "quality": "RED",
+		},
+	}
+	for _, tc := range []struct {
+		events string
+		want   int
+	}{{"", 0}, {"*", 0}, {"template.status_changed", 0}, {"template.quality_changed", 1}} {
+		ch := newTestChannel()
+		ch.Config = map[string]string{cfgWebhookEvents: tc.events}
+		pub := &recordingPublisher{}
+		if err := NewDispatcher(pub, &fakeChannels{channel: ch}).handle(context.Background(), evento); err != nil {
+			t.Fatalf("handle: %v", err)
+		}
+		if len(pub.deliveries) != tc.want {
+			t.Fatalf("webhook_events=%q: deliveries = %d, want %d", tc.events, len(pub.deliveries), tc.want)
+		}
+		if tc.want == 0 {
+			continue
+		}
+		var env Envelope
+		if err := json.Unmarshal(pub.deliveries[0].Body, &env); err != nil {
+			t.Fatalf("body not an envelope: %v", err)
+		}
+		if env.Type != TypeTemplateQualityChanged {
+			t.Fatalf("type = %q", env.Type)
+		}
+		data, _ := env.Data.(map[string]interface{})
+		for k, v := range map[string]string{"templateId": "tpl-1", "externalId": "987", "name": "boas_vindas", "language": "pt_BR",
+			"category": "UTILITY", "previousQuality": "GREEN", "quality": "RED", "channelId": "ch-1"} {
+			if data[k] != v {
+				t.Errorf("data[%s] = %v, want %q", k, data[k], v)
+			}
+		}
+		if _, tem := data["status"]; tem {
+			t.Errorf("quality payload must not carry status")
+		}
+	}
+}

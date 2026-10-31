@@ -469,9 +469,39 @@ func (s *TemplateService) ProcessTemplateQualityWebhook(ctx context.Context, eve
 		return nil
 	}
 
+	previous := template.QualityScore
 	quality := mapMetaQualityToEntity(event.NewQuality)
 	template.UpdateQuality(quality)
-	return s.templateRepo.Update(ctx, template)
+	if err := s.templateRepo.Update(ctx, template); err != nil {
+		return err
+	}
+	if previous != quality {
+		s.publishQualityChanged(ctx, template, previous)
+	}
+	return nil
+}
+
+// publishQualityChanged emits template.quality_changed. Best-effort, like
+// publishStatusChanged: the quality is already persisted.
+func (s *TemplateService) publishQualityChanged(ctx context.Context, t *entity.Template, previous entity.TemplateQuality) {
+	if s.producer == nil {
+		return
+	}
+	_ = s.producer.PublishEvent(ctx, &nats.Event{
+		Type:     nats.EventTemplateQualityChanged,
+		TenantID: t.TenantID,
+		Payload: map[string]interface{}{
+			"template_id":      t.ID,
+			"external_id":      t.ExternalID,
+			"channel_id":       t.ChannelID,
+			"name":             t.Name,
+			"language":         t.Language,
+			"category":         string(t.Category),
+			"previous_quality": string(previous),
+			"quality":          string(t.QualityScore),
+		},
+		Timestamp: time.Now(),
+	})
 }
 
 // ProcessTemplateCategoryWebhook processes a template category webhook event
