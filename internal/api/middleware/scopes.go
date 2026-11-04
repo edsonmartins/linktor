@@ -52,6 +52,11 @@ const (
 	ScopeAnalyticsRead = "analytics:read"
 
 	ScopeAiUse = "ai:use"
+
+	// Dono da conversa aberta por (canal, contato) — P5 do acordo CRM ↔ Sales Copilot (VCR-36).
+	// routing:write declara e libera; routing:read (implícito em write) só lê, para auditoria.
+	ScopeRoutingRead  = "routing:read"
+	ScopeRoutingWrite = "routing:write"
 )
 
 // HasScope reports whether the granted scopes satisfy the required scope.
