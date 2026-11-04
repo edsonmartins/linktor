@@ -241,7 +241,7 @@ export function DiretoConfig({ channel, onSuccess, onCancel }: DiretoConfigProps
               </CardTitle>
               <CardDescription>{t('diretoInboundWebhookDesc')}</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="flex items-center gap-2">
                 <code className="flex-1 bg-muted px-3 py-2 rounded text-sm font-mono break-all">
                   {inboundWebhookUrl}
@@ -257,6 +257,39 @@ export function DiretoConfig({ channel, onSuccess, onCancel }: DiretoConfigProps
                   </Button>
                 )}
               </div>
+              {/* O segredo confere a assinatura do que o Direto envia (e assina os
+                  eventos do webhook de saída): é a mesma credencial webhook_secret. */}
+              <FormField
+                control={form.control}
+                name="webhook_secret"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('diretoInboundSecret')}</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          type={showWebhookSecret ? 'text' : 'password'}
+                          className="pl-10 pr-10"
+                          placeholder={isEditing ? '••••••••••••••••' : t('webhookSecretPlaceholder')}
+                          {...field}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full"
+                          onClick={() => setShowWebhookSecret(!showWebhookSecret)}
+                        >
+                          {showWebhookSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </FormControl>
+                    <FormDescription>{t('diretoInboundSecretDesc')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
 
@@ -281,37 +314,6 @@ export function DiretoConfig({ channel, onSuccess, onCancel }: DiretoConfigProps
                       <Input placeholder={t('consumerUrlPlaceholder')} {...field} />
                     </FormControl>
                     <FormDescription>{t('consumerUrlDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="webhook_secret"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('webhookSecretLabel')}</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          type={showWebhookSecret ? 'text' : 'password'}
-                          className="pl-10 pr-10"
-                          placeholder={isEditing ? '••••••••••••••••' : t('webhookSecretPlaceholder')}
-                          {...field}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-0 top-0 h-full"
-                          onClick={() => setShowWebhookSecret(!showWebhookSecret)}
-                        >
-                          {showWebhookSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </FormControl>
-                    <FormDescription>{t('webhookSecretDesc')}</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

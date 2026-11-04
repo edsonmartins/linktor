@@ -10,8 +10,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	appservice "github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
+	"github.com/msgfy/linktor/internal/infrastructure/storage"
 )
 
 // diretoWebhookPayload is the inbound envelope the VendaX Direto runtime POSTs
@@ -23,6 +25,18 @@ type diretoWebhookPayload struct {
 	Messages   []diretoWebhookMessage `json:"messages"`
 	// Eventos EFÊMEROS (typing/presença) — RFC-009. Não são mensagens.
 	Events []diretoWebhookEvent `json:"events,omitempty"`
+	// Recibos de entrega/leitura das mensagens que o Linktor enviou. id é o
+	// que o send do Direto devolveu (o external_id da mensagem no Linktor).
+	Statuses []diretoWebhookStatus `json:"statuses,omitempty"`
+}
+
+// diretoWebhookStatus é um recibo: status="delivered"|"read"; timestamp em
+// segundos unix (zero vale agora).
+type diretoWebhookStatus struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	Recipient string `json:"recipient,omitempty"`
+	Timestamp int64  `json:"timestamp,omitempty"`
 }
 
 // diretoWebhookEvent é um sinal efêmero: type="typing"|"presence"; from=telefone E.164 do cliente;
@@ -34,16 +48,21 @@ type diretoWebhookEvent struct {
 }
 
 type diretoWebhookMessage struct {
-	ID      string `json:"id"`
-	From    string `json:"from"` // phone E.164 of the Direto client
-	Type    string `json:"type"`
-	Text    *struct {
+	ID   string `json:"id"`
+	From string `json:"from"` // phone E.164 of the Direto client
+	Type string `json:"type"`
+	Text *struct {
 		Body string `json:"body"`
 	} `json:"text,omitempty"`
 	Media *struct {
 		Mime string `json:"mime"`
 		Name string `json:"name"`
+		// URL é o endereço que o Linktor baixa (autenticado com o api_token
+		// do canal); Ref é o caminho interno do Tinode, mantido por
+		// compatibilidade com runtimes que ainda não mandam URL.
+		URL  string `json:"url,omitempty"`
 		Ref  string `json:"ref"`
+		Size int64  `json:"size,omitempty"`
 	} `json:"media,omitempty"`
 	Caption string `json:"caption,omitempty"`
 }
@@ -96,6 +115,10 @@ func (h *WebhookHandler) DiretoWebhook(c *gin.Context) {
 		h.processDiretoEvent(c.Request.Context(), channel, ev)
 	}
 
+	for _, st := range payload.Statuses {
+		h.processDiretoStatus(c.Request.Context(), st)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -110,7 +133,7 @@ func (h *WebhookHandler) processDiretoEvent(ctx context.Context, channel *entity
 	if ev.Type != "typing" || ev.From == "" {
 		return
 	}
-	contact, err := h.contactRepo.FindByPhone(ctx, channel.TenantID, ev.From)
+	contact, err := h.contactRepo.FindByPhone(ctx, channel.TenantID, diretoPhone(ev.From))
 	if err != nil || contact == nil {
 		return // cliente desconhecido: nada a mostrar
 	}
@@ -121,24 +144,61 @@ func (h *WebhookHandler) processDiretoEvent(ctx context.Context, channel *entity
 	_ = h.typingSvc.SendTypingIndicatorForTenant(ctx, channel.TenantID, conv.ID, ev.State == "on")
 }
 
+// diretoPhone põe o telefone do cliente no formato canônico do Linktor (sem
+// "+"). O Direto manda E.164 com "+"; o envio direto e os outros canais de
+// telefone guardam sem, e o mesmo cliente viraria dois contatos.
+func diretoPhone(from string) string {
+	return appservice.CanonicalRecipient(string(entity.ChannelTypeDireto), from)
+}
+
+// processDiretoStatus publica o recibo como StatusUpdate; o consumidor de
+// status acha a mensagem pelo external_id e ignora o que não conhece.
+func (h *WebhookHandler) processDiretoStatus(ctx context.Context, st diretoWebhookStatus) {
+	status := map[string]string{"delivered": "delivered", "read": "read"}[st.Status]
+	if st.ID == "" || status == "" {
+		return
+	}
+	ts := time.Now()
+	if st.Timestamp > 0 {
+		ts = time.Unix(st.Timestamp, 0)
+	}
+	_ = h.publishStatusUpdate(ctx, &nats.StatusUpdate{
+		ExternalID:  st.ID,
+		ChannelType: string(entity.ChannelTypeDireto),
+		Status:      status,
+		Timestamp:   ts,
+	})
+}
+
 func (h *WebhookHandler) processDiretoMessage(c *gin.Context, channelID, tenantID string, msg diretoWebhookMessage) error {
 	contentType := "text"
 	content := ""
-	metadata := map[string]string{"phone": msg.From, "sender_id": msg.From}
+	phone := diretoPhone(msg.From)
+	metadata := map[string]string{"phone": phone, "sender_id": phone}
 	var attachments []nats.AttachmentData
 
 	if msg.Media != nil {
-		contentType = msg.Type
-		if contentType == "" {
-			contentType = "document"
+		// O tipo vem do MIME, como no upload do atendente e no bridge: o
+		// Direto manda "file" para documento, que o admin não reconhece.
+		attType := storage.AttachmentTypeFromMime(msg.Media.Mime)
+		if msg.Media.Mime == "" && msg.Type != "" && msg.Type != "file" {
+			attType = msg.Type
 		}
+		contentType = attType
 		content = msg.Caption
+		// A URL é baixada e guardada no media store pelo consumidor de
+		// entrada (rehostInboundMedia), com o api_token do canal.
+		url := msg.Media.URL
+		if url == "" {
+			url = msg.Media.Ref
+		}
 		attachments = append(attachments, nats.AttachmentData{
-			Type:     msg.Type,
-			URL:      msg.Media.Ref, // Tinode ref — fetchable URL resolution is a Direto follow-up
-			Filename: msg.Media.Name,
-			MimeType: msg.Media.Mime,
-			Metadata: map[string]string{"tinode_ref": msg.Media.Ref},
+			Type:      attType,
+			URL:       url,
+			Filename:  msg.Media.Name,
+			MimeType:  msg.Media.Mime,
+			SizeBytes: msg.Media.Size,
+			Metadata:  map[string]string{"tinode_ref": msg.Media.Ref},
 		})
 	} else {
 		contentType = "text"
