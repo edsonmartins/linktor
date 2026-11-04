@@ -1083,7 +1083,9 @@ func main() {
 
 		// WithMessages: a reação reporta o alvo pelo id do provedor; o lookup traduz para o nosso,
 		// que é o único que o consumidor conhece.
-		webhookDispatcher := infrawebhook.NewDispatcher(producer, channelRepo).WithMessages(messageRepo)
+		// P5 (VCR-36): message.received e conversation.* vão ao dono da conversa aberta, quando há regra.
+		webhookDispatcher := infrawebhook.NewDispatcher(producer, channelRepo).WithMessages(messageRepo).
+			WithOwners(conversationOwnerRepo, contactRepo)
 		if err := webhookDispatcher.Start(ctx, consumer); err != nil {
 			logger.Warn("Failed to start outbound webhook dispatcher: " + err.Error())
 		} else {

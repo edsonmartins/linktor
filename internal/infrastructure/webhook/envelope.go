@@ -66,7 +66,11 @@ type Envelope struct {
 	// Additive, backward-compatible field (INV-018): consumers that predate it
 	// keep parsing; absence means production.
 	Environment string      `json:"environment,omitempty"`
-	Data        interface{} `json:"data"`
+	// Routing says how an owner rule (P5, VCR-36) decided the destination.
+	// Additive like Environment (INV-018): absent when no rule applied, which
+	// keeps the envelope of a channel without consumers exactly as before.
+	Routing *Routing    `json:"routing,omitempty"`
+	Data    interface{} `json:"data"`
 }
 
 // InboundData is the `data` payload for `message.received`.

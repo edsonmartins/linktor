@@ -166,8 +166,30 @@ func (c *Consumer) SubscribeWebhooks(ctx context.Context, handler WebhookHandler
 		if err := json.Unmarshal(msg.Data(), &webhook); err != nil {
 			return fmt.Errorf("failed to unmarshal webhook delivery: %w", err)
 		}
-		return handler(ctx, &webhook)
+		hctx := ctx
+		if meta, err := msg.Metadata(); err == nil {
+			hctx = WithDeliveryAttempt(ctx, meta.NumDelivered, uint64(cfg.MaxDeliver))
+		}
+		return handler(hctx, &webhook)
 	})
+}
+
+type deliveryAttemptKey struct{}
+
+type deliveryAttempt struct{ n, max uint64 }
+
+// WithDeliveryAttempt carries the JetStream attempt number (NumDelivered, 1 on
+// the first delivery) and the consumer's MaxDeliver to the handler, so it can
+// act on the last attempt before the item is dead-lettered (P5: the webhook
+// worker switches an owner consumer's delivery to the channel default then).
+func WithDeliveryAttempt(ctx context.Context, n, max uint64) context.Context {
+	return context.WithValue(ctx, deliveryAttemptKey{}, deliveryAttempt{n: n, max: max})
+}
+
+// DeliveryAttemptFrom returns the attempt set by WithDeliveryAttempt.
+func DeliveryAttemptFrom(ctx context.Context) (n, max uint64, ok bool) {
+	a, ok := ctx.Value(deliveryAttemptKey{}).(deliveryAttempt)
+	return a.n, a.max, ok
 }
 
 // subscribe creates a consumer and starts consuming messages
