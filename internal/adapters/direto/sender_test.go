@@ -134,3 +134,29 @@ func TestSendEmptyRecipientPermanent(t *testing.T) {
 		t.Errorf("empty recipient should be permanent, got %v", err)
 	}
 }
+
+// O Linktor guarda o telefone sem "+", e o Direto procura o contato pelo
+// E.164 exato: o destinatário sai sempre com "+". O que não é telefone segue
+// como veio.
+func TestSendRecipientIsE164(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"5544997239232", "+5544997239232"},
+		{"+5544997239232", "+5544997239232"},
+		{"+55 (44) 99723-9232", "+5544997239232"},
+		{"+5511", "+5511"},
+	} {
+		var gotBody sendRequest
+		s, srv := newTestSender(t, func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(b, &gotBody)
+			_, _ = w.Write([]byte(`{"messages":[{"id":"m-1"}]}`))
+		})
+		if _, err := s.Send(context.Background(), &outbound.Message{To: tc.in, Content: outbound.Text{Body: "oi"}}); err != nil {
+			t.Fatalf("send %q: %v", tc.in, err)
+		}
+		srv.Close()
+		if gotBody.To != tc.want {
+			t.Errorf("to %q: got %q, want %q", tc.in, gotBody.To, tc.want)
+		}
+	}
+}

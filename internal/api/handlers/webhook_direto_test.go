@@ -78,3 +78,16 @@ func TestProcessDiretoEventNoopWithoutDeps(t *testing.T) {
 	h.processDiretoEvent(context.Background(), &entity.Channel{TenantID: "t"},
 		diretoWebhookEvent{Type: "typing", From: "+5511999990001", State: "on"})
 }
+
+// O telefone do Direto (E.164 com "+") vira o formato canônico do Linktor, o
+// mesmo do envio direto: sem isso a resposta do cliente abria outro contato.
+func TestDiretoPhoneIsCanonical(t *testing.T) {
+	for in, want := range map[string]string{
+		"+5544997239232": "5544997239232",
+		"5544997239232":  "5544997239232",
+	} {
+		if got := diretoPhone(in); got != want {
+			t.Errorf("diretoPhone(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

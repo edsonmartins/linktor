@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	appservice "github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 )
@@ -34,10 +35,10 @@ type diretoWebhookEvent struct {
 }
 
 type diretoWebhookMessage struct {
-	ID      string `json:"id"`
-	From    string `json:"from"` // phone E.164 of the Direto client
-	Type    string `json:"type"`
-	Text    *struct {
+	ID   string `json:"id"`
+	From string `json:"from"` // phone E.164 of the Direto client
+	Type string `json:"type"`
+	Text *struct {
 		Body string `json:"body"`
 	} `json:"text,omitempty"`
 	Media *struct {
@@ -110,7 +111,7 @@ func (h *WebhookHandler) processDiretoEvent(ctx context.Context, channel *entity
 	if ev.Type != "typing" || ev.From == "" {
 		return
 	}
-	contact, err := h.contactRepo.FindByPhone(ctx, channel.TenantID, ev.From)
+	contact, err := h.contactRepo.FindByPhone(ctx, channel.TenantID, diretoPhone(ev.From))
 	if err != nil || contact == nil {
 		return // cliente desconhecido: nada a mostrar
 	}
@@ -121,10 +122,18 @@ func (h *WebhookHandler) processDiretoEvent(ctx context.Context, channel *entity
 	_ = h.typingSvc.SendTypingIndicatorForTenant(ctx, channel.TenantID, conv.ID, ev.State == "on")
 }
 
+// diretoPhone põe o telefone do cliente no formato canônico do Linktor (sem
+// "+"). O Direto manda E.164 com "+"; o envio direto e os outros canais de
+// telefone guardam sem, e o mesmo cliente viraria dois contatos.
+func diretoPhone(from string) string {
+	return appservice.CanonicalRecipient(string(entity.ChannelTypeDireto), from)
+}
+
 func (h *WebhookHandler) processDiretoMessage(c *gin.Context, channelID, tenantID string, msg diretoWebhookMessage) error {
 	contentType := "text"
 	content := ""
-	metadata := map[string]string{"phone": msg.From, "sender_id": msg.From}
+	phone := diretoPhone(msg.From)
+	metadata := map[string]string{"phone": phone, "sender_id": phone}
 	var attachments []nats.AttachmentData
 
 	if msg.Media != nil {
