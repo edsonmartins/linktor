@@ -52,6 +52,20 @@ type sendRequest struct {
 	Text     string `json:"text,omitempty"`
 	MediaURL string `json:"mediaUrl,omitempty"`
 	Caption  string `json:"caption,omitempty"`
+	// Filename e MimeType deixam o Direto montar o anexo nativo no app (nome
+	// do documento, player certo para o áudio) sem adivinhar pela URL.
+	Filename string `json:"filename,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
+}
+
+// Media é um anexo a enviar. Type segue o contrato do Direto:
+// image|audio|video|file.
+type Media struct {
+	Type     string
+	URL      string
+	Caption  string
+	Filename string
+	MimeType string
 }
 
 // sendResponse mirrors the Direto RFC-009 send response {messages:[{id}]}.
@@ -82,9 +96,9 @@ func (c *Client) SendText(ctx context.Context, to, text string) (string, error) 
 	return c.send(ctx, sendRequest{To: to, Type: "text", Text: text})
 }
 
-// SendMedia sends a media message (image|audio|video|file) by URL; returns the messageId.
-func (c *Client) SendMedia(ctx context.Context, to, mediaType, url, caption string) (string, error) {
-	return c.send(ctx, sendRequest{To: to, Type: mediaType, MediaURL: url, Caption: caption})
+// SendMedia sends a media message by URL; returns the messageId.
+func (c *Client) SendMedia(ctx context.Context, to string, m Media) (string, error) {
+	return c.send(ctx, sendRequest{To: to, Type: m.Type, MediaURL: m.URL, Caption: m.Caption, Filename: m.Filename, MimeType: m.MimeType})
 }
 
 func (c *Client) send(ctx context.Context, body sendRequest) (string, error) {

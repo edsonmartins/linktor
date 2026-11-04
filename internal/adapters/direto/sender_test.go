@@ -96,6 +96,30 @@ func TestSendMedia(t *testing.T) {
 	}
 }
 
+// Documento sai como "file" (contrato do Direto) e leva nome e MIME para o
+// app montar o anexo nativo.
+func TestSendDocumentAsFileWithNameAndMime(t *testing.T) {
+	var gotBody sendRequest
+	s, srv := newTestSender(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		_, _ = w.Write([]byte(`{"messages":[{"id":"m-10"}]}`))
+	})
+	defer srv.Close()
+
+	_, err := s.Send(context.Background(), &outbound.Message{
+		To: "+5511",
+		Content: outbound.Media{Type: outbound.MediaDocument, URL: "https://x/c.pdf",
+			Filename: "contrato.pdf", MimeType: "application/pdf"},
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if gotBody.Type != "file" || gotBody.Filename != "contrato.pdf" || gotBody.MimeType != "application/pdf" {
+		t.Errorf("document body: %+v", gotBody)
+	}
+}
+
 func TestSend4xxIsPermanent(t *testing.T) {
 	s, srv := newTestSender(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)

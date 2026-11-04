@@ -29,6 +29,10 @@ type channelCreds struct {
 	AccountSID string
 	AuthToken  string
 	BotToken   string
+	// Direto: a mídia fica atrás do proxy do runtime, autenticada com o mesmo
+	// Bearer do envio; o token só vai para o host da send_url do canal.
+	APIToken string
+	SendURL  string
 }
 
 // mediaPublicBaseURL is the public origin the backend is reachable at (e.g.
@@ -137,6 +141,9 @@ func rehostRemoteAttachment(ctx context.Context, store storage.Client, msg *nats
 		if creds.AccountSID != "" && creds.AuthToken != "" {
 			req.SetBasicAuth(creds.AccountSID, creds.AuthToken)
 		}
+	}
+	if creds != nil && msg.ChannelType == "direto" && creds.APIToken != "" && sameHost(att.URL, creds.SendURL) {
+		req.Header.Set("Authorization", "Bearer "+creds.APIToken)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
@@ -267,11 +274,12 @@ func alreadyRehosted(u string) bool {
 }
 
 // providerMediaNeedsRehost reports whether a channel's inbound attachment URLs
-// require re-hosting: Twilio (auth-gated) and the Meta/Zenvia CDNs (public but
-// short-lived). Channels that already store a durable URL are excluded.
+// require re-hosting: Twilio and Direto (auth-gated) and the Meta/Zenvia CDNs
+// (public but short-lived). Channels that already store a durable URL are
+// excluded.
 func providerMediaNeedsRehost(channelType string) bool {
 	switch channelType {
-	case "sms", "voice", "facebook", "messenger", "instagram", "rcs":
+	case "sms", "voice", "facebook", "messenger", "instagram", "rcs", "direto":
 		return true
 	default:
 		return false
@@ -297,7 +305,21 @@ func channelCredsFor(ctx context.Context, channelRepo repository.ChannelReposito
 		AccountSID: get("account_sid"),
 		AuthToken:  get("auth_token"),
 		BotToken:   get("bot_token"),
+		APIToken:   get("api_token"),
+		SendURL:    get("send_url"),
 	}
+}
+
+// sameHost diz se a URL da mídia está no mesmo host (e esquema) que base: é a
+// condição para mandar a credencial do canal junto, nunca a um host que veio
+// só do payload.
+func sameHost(mediaURL, base string) bool {
+	m, err1 := url.Parse(mediaURL)
+	b, err2 := url.Parse(base)
+	if err1 != nil || err2 != nil || b.Host == "" {
+		return false
+	}
+	return strings.EqualFold(m.Scheme, b.Scheme) && strings.EqualFold(m.Host, b.Host)
 }
 
 // inboundMediaKey builds a stable object key for a re-hosted inbound attachment.

@@ -58,6 +58,15 @@ func (s *diretoSender) Send(ctx context.Context, msg *outbound.Message) (*outbou
 	return &outbound.Receipt{ProviderMessageID: id}, nil
 }
 
+// diretoMediaType traduz o tipo do Linktor para o do Direto, que chama
+// documento de "file".
+func diretoMediaType(t outbound.MediaType) string {
+	if t == outbound.MediaDocument {
+		return "file"
+	}
+	return string(t)
+}
+
 // recipientE164 põe o destinatário no formato que o Direto procura (E.164 com
 // "+"): o Linktor guarda telefones sem o "+", e o Direto compara o número
 // exato, respondendo 404 channel_unknown_recipient para "5511...".
@@ -80,7 +89,13 @@ func (s *diretoSender) dispatch(ctx context.Context, to string, msg *outbound.Me
 		if c.URL == "" {
 			return "", outbound.Permanentf("direto media requires a URL")
 		}
-		return s.client.SendMedia(ctx, to, string(c.Type), c.URL, c.Caption)
+		return s.client.SendMedia(ctx, to, Media{
+			Type:     diretoMediaType(c.Type),
+			URL:      c.URL,
+			Caption:  c.Caption,
+			Filename: c.Filename,
+			MimeType: c.MimeType,
+		})
 
 	case outbound.Interactive:
 		if c.Body == "" {
