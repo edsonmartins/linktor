@@ -113,6 +113,14 @@ const (
 	EventContactCreated = "contact.created"
 	EventContactUpdated = "contact.updated"
 
+	// EventTemplateStatusChanged is emitted when Meta changes a message template's
+	// review/quality status (approved, rejected, paused, disabled, …). Additive.
+	EventTemplateStatusChanged = "template.status_changed"
+
+	// EventTemplateQualityChanged is emitted when Meta changes a message template's
+	// quality rating (GREEN, YELLOW, RED, UNKNOWN). Additive.
+	EventTemplateQualityChanged = "template.quality_changed"
+
 	EventChannelConnected    = "channel.connected"
 	EventChannelDisconnected = "channel.disconnected"
 	EventChannelError        = "channel.error"

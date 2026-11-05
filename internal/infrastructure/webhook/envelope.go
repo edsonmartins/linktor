@@ -54,6 +54,16 @@ const (
 	TypeConversationReopened  = "conversation.reopened"
 	TypeConversationEscalated = "conversation.escalated"
 	TypeConversationDeleted   = "conversation.deleted"
+
+	// TypeTemplateStatusChanged reports a message template status change from
+	// Meta (including PAUSED). Additive and opt-in: a channel only receives it
+	// when `webhook_events` lists it by name (see subscribedTo), so consumers
+	// that predate it — and channels subscribed to "all" — never see a new type.
+	TypeTemplateStatusChanged = "template.status_changed"
+
+	// TypeTemplateQualityChanged reports a message template quality change from
+	// Meta. Additive and opt-in, like TypeTemplateStatusChanged.
+	TypeTemplateQualityChanged = "template.quality_changed"
 )
 
 // Envelope is the top-level `linktor-channel-v1` event.
@@ -167,6 +177,34 @@ type ConversationData struct {
 	Status         string `json:"status,omitempty"`
 	AssignedUserID string `json:"assignedUserId,omitempty"`
 	ChannelType    string `json:"channelType,omitempty"`
+}
+
+// TemplateStatusData is the `data` payload for `template.status_changed`.
+type TemplateStatusData struct {
+	TemplateID     string `json:"templateId"`
+	ExternalID     string `json:"externalId,omitempty"`
+	Name           string `json:"name"`
+	Language       string `json:"language"`
+	Category       string `json:"category,omitempty"`
+	PreviousStatus string `json:"previousStatus,omitempty"`
+	Status         string `json:"status"`
+	Reason         string `json:"reason,omitempty"`
+	ChannelID      string `json:"channelId"`
+	ChannelType    string `json:"channelType,omitempty"`
+}
+
+// TemplateQualityData is the `data` payload for `template.quality_changed`. It
+// mirrors TemplateStatusData, with the quality rating in place of the status.
+type TemplateQualityData struct {
+	TemplateID      string `json:"templateId"`
+	ExternalID      string `json:"externalId,omitempty"`
+	Name            string `json:"name"`
+	Language        string `json:"language"`
+	Category        string `json:"category,omitempty"`
+	PreviousQuality string `json:"previousQuality,omitempty"`
+	Quality         string `json:"quality"`
+	ChannelID       string `json:"channelId"`
+	ChannelType     string `json:"channelType,omitempty"`
 }
 
 // StatusData is the `data` payload for `message.{sent,delivered,read,failed}`.
