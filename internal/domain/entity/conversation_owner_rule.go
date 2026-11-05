@@ -29,6 +29,26 @@ func (r *ConversationOwnerRule) VigenteEm(t time.Time) bool {
 	return r != nil && (r.ExpiraEm == nil || t.Before(*r.ExpiraEm))
 }
 
+// MetadataSentByAPIKey is the message metadata key recording the id of the API
+// key that sent it (reserved: clients cannot set it). The status of the message
+// goes to the channel consumer bound to that key (P5, VCR-36); a message without
+// it — sent before this existed, or by a human — reports to the default consumer.
+const MetadataSentByAPIKey = "sent_by_api_key"
+
+// ChannelConfigDefaultConsumerName optionally names the channel's default
+// consumer (e.g. "crm"); "default" when unset.
+const ChannelConfigDefaultConsumerName = "webhook_consumer_name"
+
+// DefaultConsumerName is the name of the channel's default consumer.
+func DefaultConsumerName(ch *Channel) string {
+	if ch != nil {
+		if n := strings.TrimSpace(ch.Config[ChannelConfigDefaultConsumerName]); n != "" {
+			return n
+		}
+	}
+	return "default"
+}
+
 // consumerName is the shape of a consumer name in channel configuration keys
 // ("consumers.<name>.webhook_url").
 var consumerName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)

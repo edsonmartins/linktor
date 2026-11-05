@@ -78,6 +78,7 @@ type DirectSendResponse struct {
 // SendMessageRequest has no dedicated reply field. Reserving them would leave
 // no route in the API capable of replying with a quote.
 var reservedMetadataKeys = map[string]bool{
+	entity.MetadataSentByAPIKey:   true, // P5: quem enviou; só o Linktor grava
 	"is_reaction":                 true,
 	"reaction":                    true,
 	"reaction_emoji":              true,
@@ -129,6 +130,22 @@ func persistableSenderID(userID string) string {
 	return userID
 }
 
+// withSenderKey records the sending API key on the message metadata (P5,
+// VCR-36), so the message's status goes back to the consumer bound to that key.
+// Human (JWT) sends carry no key and report to the channel's default consumer.
+func withSenderKey(c *gin.Context, metadata map[string]string) map[string]string {
+	keyID := c.GetString(middleware.APIKeyIDKey)
+	if keyID == "" {
+		return metadata
+	}
+	out := make(map[string]string, len(metadata)+1)
+	for k, v := range metadata {
+		out[k] = v
+	}
+	out[entity.MetadataSentByAPIKey] = keyID
+	return out
+}
+
 // respondReservedMetadata answers a request that tried to set internal fields.
 func respondReservedMetadata(c *gin.Context, offending []string) {
 	RespondValidationError(c, "metadata cannot overwrite Linktor internal fields", map[string]string{
@@ -174,7 +191,7 @@ func (h *MessageHandler) SendDirect(c *gin.Context) {
 		ContentType: req.ContentType,
 		Content:     req.body(),
 		SenderID:    persistableSenderID(c.GetString(middleware.UserIDKey)),
-		Metadata:    req.Metadata,
+		Metadata:    withSenderKey(c, req.Metadata),
 		Attachments: toAttachmentInputs(req.Attachments),
 	})
 	if err != nil {

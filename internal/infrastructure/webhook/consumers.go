@@ -17,7 +17,7 @@ import (
 //
 // Config["webhook_consumer_name"] optionally names the default consumer (for
 // example "crm"): an owner rule naming it goes to the default, with no fallback.
-const cfgDefaultConsumerName = "webhook_consumer_name"
+const cfgDefaultConsumerName = entity.ChannelConfigDefaultConsumerName
 
 // Motivos de fallback ao consumidor padrão (routing.motivo).
 const (
@@ -52,10 +52,7 @@ func consumerSecret(ch *entity.Channel, name string) string {
 
 // defaultConsumerName is how the default consumer is called in routing ("default" when unnamed).
 func defaultConsumerName(ch *entity.Channel) string {
-	if n := strings.TrimSpace(ch.Config[cfgDefaultConsumerName]); n != "" {
-		return n
-	}
-	return "default"
+	return entity.DefaultConsumerName(ch)
 }
 
 // consumerSubscribedTo is subscribedTo for a named consumer's own filter.

@@ -193,3 +193,20 @@ func TestConversationOwner_IdentificadorNaoTelefone(t *testing.T) {
 		assert.Equal(t, "cliente@exemplo.test", r.ContactIdentifier, "todos os tipos de canal (decisão iv)")
 	}
 }
+
+func TestWithSenderKey_GravaAChaveQueEnviou(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	assert.Equal(t, map[string]string{"x": "1"}, withSenderKey(c, map[string]string{"x": "1"}), "humano (JWT): nada gravado")
+
+	c.Set(middleware.APIKeyIDKey, "key-copilot")
+	original := map[string]string{"x": "1"}
+	got := withSenderKey(c, original)
+	assert.Equal(t, "key-copilot", got[entity.MetadataSentByAPIKey])
+	assert.Equal(t, "1", got["x"])
+	assert.NotContains(t, original, entity.MetadataSentByAPIKey, "não altera o mapa do cliente")
+	assert.Equal(t, "key-copilot", withSenderKey(c, nil)[entity.MetadataSentByAPIKey])
+
+	assert.Equal(t, []string{entity.MetadataSentByAPIKey},
+		validateClientMetadata(map[string]string{entity.MetadataSentByAPIKey: "key-falsa"}), "o cliente não forja quem enviou")
+}

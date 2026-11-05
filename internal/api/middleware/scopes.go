@@ -13,6 +13,11 @@ import (
 // by role, not by scope.
 const ScopesKey = "api_scopes"
 
+// APIKeyIDKey holds the id of the API key that authenticated the request (set
+// only for API-key auth). Sends record it on the message (metadata
+// MetadataSentByAPIKey) so its status goes back to whoever sent it (P5, VCR-36).
+const APIKeyIDKey = "api_key_id"
+
 // Scope vocabulary (resource:action). "*" grants everything (the default for
 // keys created before scopes existed, so enforcement is not a breaking change).
 // A "resource:*" grants every action on that resource, and "resource:write"

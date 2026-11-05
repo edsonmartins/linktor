@@ -46,6 +46,12 @@ type ContactIdentityLookup interface {
 	FindIdentitiesByContact(ctx context.Context, contactID string) ([]*entity.ContactIdentity, error)
 }
 
+// MessageByID loads a message by our id, to read who sent it (P5: the status of
+// a sent message goes to the consumer bound to the sending API key).
+type MessageByID interface {
+	FindByID(ctx context.Context, id string) (*entity.Message, error)
+}
+
 // DeliveryPublisher enqueues a webhook for durable delivery. *nats.Producer
 // satisfies it; the durable webhooks stream gives crash-safe retry + DLQ.
 type DeliveryPublisher interface {
@@ -69,15 +75,24 @@ func subscribedTo(channel *entity.Channel, eventType string) bool {
 	return eventsAllow(channel.Config[cfgWebhookEvents], eventType)
 }
 
-// eventsAllow applies a comma-separated event filter ("" or "*" = everything).
+// optInEventTypes are event types added to `linktor-channel-v1` after consumers
+// already existed. They are delivered only when the consumer lists them by name
+// in its event filter — never through the empty/"*" default — so an existing
+// consumer never starts receiving a type it does not know.
+var optInEventTypes = map[string]bool{
+	TypeConversationOwnerChanged: true,
+}
+
+// eventsAllow applies a comma-separated event filter ("" or "*" = everything
+// except the opt-in types, which must be listed by name).
 func eventsAllow(filter, eventType string) bool {
 	raw := strings.TrimSpace(filter)
 	if raw == "" {
-		return true
+		return !optInEventTypes[eventType]
 	}
 	for _, e := range strings.Split(raw, ",") {
 		e = strings.TrimSpace(e)
-		if e == "*" || e == eventType {
+		if e == eventType || (e == "*" && !optInEventTypes[eventType]) {
 			return true
 		}
 	}
@@ -100,6 +115,7 @@ type Dispatcher struct {
 	messages   MessageLookup
 	owners     OwnerLookup
 	identities ContactIdentityLookup
+	sent       MessageByID
 	now        func() time.Time
 	newID      func() string
 }
@@ -131,6 +147,49 @@ func (d *Dispatcher) WithOwners(owners OwnerLookup, identities ContactIdentityLo
 	d.owners = owners
 	d.identities = identities
 	return d
+}
+
+// WithSenders enables delivering the status of a sent message (message.sent,
+// .delivered, .read, .failed) to whoever sent it: the consumer whose
+// Config["consumers.<name>.api_key_id"] is the key recorded on the message. A
+// message without the key (sent before this existed, or by a human) reports to
+// the default consumer, as before.
+func (d *Dispatcher) WithSenders(messages MessageByID) *Dispatcher {
+	d.sent = messages
+	return d
+}
+
+// consumerForAPIKey is the configured consumer bound to the API key ("" = none).
+func consumerForAPIKey(channel *entity.Channel, keyID string) string {
+	for k, v := range channel.Config {
+		if !strings.HasPrefix(k, "consumers.") || !strings.HasSuffix(k, ".api_key_id") || strings.TrimSpace(v) != keyID {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(k, "consumers."), ".api_key_id")
+		if consumerURL(channel, name) != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+// statusRoute sends the status of a sent message to the consumer that sent it.
+func (d *Dispatcher) statusRoute(ctx context.Context, channel *entity.Channel, p eventPayload) *route {
+	if d.sent == nil || p.str("message_id") == "" {
+		return nil
+	}
+	msg, err := d.sent.FindByID(ctx, p.str("message_id"))
+	if err != nil || msg == nil {
+		return nil
+	}
+	key := strings.TrimSpace(msg.Metadata[entity.MetadataSentByAPIKey])
+	if key == "" {
+		return nil
+	}
+	if name := consumerForAPIKey(channel, key); name != "" {
+		return &route{consumer: name, routing: &Routing{Consumer: name}}
+	}
+	return nil
 }
 
 // route is where a contact-bound event goes: consumer "" is the default.
@@ -229,6 +288,8 @@ func (d *Dispatcher) handle(ctx context.Context, event *nats.Event) error {
 		return d.dispatchConversation(ctx, event, TypeConversationEscalated)
 	case nats.EventConversationDeleted:
 		return d.dispatchConversation(ctx, event, TypeConversationDeleted)
+	case nats.EventConversationOwnerChanged:
+		return d.dispatchOwnerChanged(ctx, event)
 	}
 	return nil
 }
@@ -421,7 +482,45 @@ func (d *Dispatcher) dispatchStatus(ctx context.Context, event *nats.Event, even
 		ChannelType: channelType(channel, p),
 	}
 
-	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), eventType), data)
+	return d.deliverRouted(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), eventType), data,
+		d.statusRoute(ctx, channel, p))
+}
+
+// dispatchOwnerChanged delivers conversation.owner_changed to the default
+// consumer and to every named consumer involved (previous and new owner), each
+// through its own (opt-in) event filter. Each delivery gets its own id: the
+// stream dedups by id, and they are distinct deliveries of one change.
+func (d *Dispatcher) dispatchOwnerChanged(ctx context.Context, event *nats.Event) error {
+	p := payload(event.Payload)
+	channel := d.resolveChannel(ctx, p.str("channel_id"))
+	if channel == nil {
+		return nil
+	}
+	data := OwnerChangedData{
+		ChannelID:           channel.ID,
+		ChannelType:         channelType(channel, p),
+		ContactIdentifier:   p.str("contact_identifier"),
+		PreviousConsumer:    p.str("previous_consumer"),
+		Consumer:            p.str("consumer"),
+		ConversaRef:         p.str("conversa_ref"),
+		PreviousConversaRef: p.str("previous_conversa_ref"),
+		Motivo:              p.str("motivo"),
+	}
+	if err := d.deliverRouted(ctx, channel, TypeConversationOwnerChanged, event.TenantID, "", data, nil); err != nil {
+		return err
+	}
+	seen := map[string]bool{defaultConsumerName(channel): true}
+	for _, name := range []string{data.PreviousConsumer, data.Consumer} {
+		if name == "" || seen[name] || consumerURL(channel, name) == "" {
+			continue
+		}
+		seen[name] = true
+		if err := d.deliverRouted(ctx, channel, TypeConversationOwnerChanged, event.TenantID, "", data,
+			&route{consumer: name, routing: &Routing{Consumer: name}}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // dispatchCall converts a call outcome into an outbound webhook. The call was

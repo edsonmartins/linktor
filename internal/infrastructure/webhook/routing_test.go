@@ -290,3 +290,105 @@ func TestRouting_WorkerSemConsumidorComoHoje(t *testing.T) {
 	require.Len(t, padrao.corpos, 1)
 	assert.Equal(t, string(body), string(padrao.corpos[0]))
 }
+
+// ---- etapa 3: status para quem enviou; conversation.owner_changed ----
+
+type fakeSent struct {
+	msgs map[string]*entity.Message
+	err  error
+}
+
+func (f *fakeSent) FindByID(_ context.Context, id string) (*entity.Message, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.msgs[id], nil
+}
+
+func eventoStatus(tipo, messageID string) *nats.Event {
+	return &nats.Event{Type: tipo, TenantID: "tenant-1", Payload: map[string]interface{}{
+		"channel_id": "ch-1", "message_id": messageID, "status": "delivered"}}
+}
+
+func canalComChaves() *entity.Channel {
+	ch := canalComCopilot()
+	ch.Config["consumers.copilot.api_key_id"] = "key-copilot"
+	return ch
+}
+
+func enviadas() *fakeSent {
+	return &fakeSent{msgs: map[string]*entity.Message{
+		"m-copilot": {ID: "m-copilot", Metadata: map[string]string{entity.MetadataSentByAPIKey: "key-copilot"}},
+		"m-crm":     {ID: "m-crm", Metadata: map[string]string{entity.MetadataSentByAPIKey: "key-crm"}},
+		"m-antiga":  {ID: "m-antiga", Metadata: map[string]string{}},
+	}}
+}
+
+func TestStatus_VaiParaQuemEnviou(t *testing.T) {
+	d := novoDispatcher(canalComChaves()).WithSenders(enviadas())
+	for _, tipo := range []string{nats.EventMessageSent, nats.EventMessageDelivered, nats.EventMessageRead, nats.EventMessageFailed} {
+		wh, env := despachar(t, d, eventoStatus(tipo, "m-copilot"))
+		require.NotNil(t, wh, tipo)
+		assert.Equal(t, "copilot", wh.Consumer, tipo)
+		assert.Equal(t, "https://copilot.exemplo.test/webhook", wh.URL)
+		assert.Equal(t, &Routing{Consumer: "copilot"}, roteamento(t, env))
+	}
+	// Chave que não é de nenhum consumidor nomeado (a do CRM, o padrão): vai ao padrão.
+	wh, env := despachar(t, d, eventoStatus(nats.EventMessageDelivered, "m-crm"))
+	assert.Empty(t, wh.Consumer)
+	assert.Nil(t, roteamento(t, env))
+}
+
+func TestStatus_MensagemAntigaSemChaveVaiAoPadraoComoHoje(t *testing.T) {
+	for _, id := range []string{"m-antiga", "m-inexistente"} {
+		antes, _ := despachar(t, novoDispatcher(canalComChaves()), eventoStatus(nats.EventMessageDelivered, id))
+		depois, env := despachar(t, novoDispatcher(canalComChaves()).WithSenders(enviadas()), eventoStatus(nats.EventMessageDelivered, id))
+		require.NotNil(t, depois)
+		assert.Empty(t, depois.Consumer, id)
+		assert.Equal(t, antes.URL, depois.URL)
+		assert.Equal(t, string(antes.Body), string(depois.Body), "%s: o mesmo envelope de hoje", id)
+		assert.Nil(t, roteamento(t, env))
+	}
+	// Falha ao ler a mensagem: o padrão, sem perder o status.
+	wh, _ := despachar(t, novoDispatcher(canalComChaves()).WithSenders(&fakeSent{err: errors.New("banco fora")}),
+		eventoStatus(nats.EventMessageDelivered, "m-copilot"))
+	require.NotNil(t, wh)
+	assert.Empty(t, wh.Consumer)
+}
+
+func eventoOwnerChanged() *nats.Event {
+	return &nats.Event{Type: nats.EventConversationOwnerChanged, TenantID: "tenant-1", Payload: map[string]interface{}{
+		"channel_id": "ch-1", "contact_identifier": "+5511987654321", "previous_consumer": "crm", "consumer": "copilot",
+		"conversa_ref": "conv-1", "motivo": "declarado"}}
+}
+
+func TestOwnerChanged_EntregueAosDoisConsumidoresQueAssinam(t *testing.T) {
+	ch := canalComCopilot()
+	ch.Config[cfgDefaultConsumerName] = "crm"
+	ch.Config[cfgWebhookEvents] = "message.received,conversation.owner_changed"
+	ch.Config["consumers.copilot.webhook_events"] = "conversation.owner_changed"
+	pub := &recordingPublisher{}
+	d := NewDispatcher(pub, &fakeChannels{channel: ch})
+	require.NoError(t, d.handle(context.Background(), eventoOwnerChanged()))
+	require.Len(t, pub.deliveries, 2)
+	assert.Empty(t, pub.deliveries[0].Consumer)
+	assert.Equal(t, "copilot", pub.deliveries[1].Consumer)
+	assert.NotEqual(t, pub.deliveries[0].ID, pub.deliveries[1].ID, "ids distintos: o stream deduplica por id")
+	var env struct {
+		Type string           `json:"type"`
+		Data OwnerChangedData `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(pub.deliveries[1].Body, &env))
+	assert.Equal(t, TypeConversationOwnerChanged, env.Type)
+	assert.Equal(t, OwnerChangedData{ChannelID: "ch-1", ChannelType: string(entity.ChannelTypeWhatsAppOfficial),
+		ContactIdentifier: "+5511987654321", PreviousConsumer: "crm", Consumer: "copilot", ConversaRef: "conv-1",
+		Motivo: "declarado"}, env.Data)
+}
+
+func TestOwnerChanged_OptIn(t *testing.T) {
+	ch := canalComCopilot()
+	ch.Config["consumers.copilot.webhook_events"] = "*"
+	pub := &recordingPublisher{}
+	require.NoError(t, NewDispatcher(pub, &fakeChannels{channel: ch}).handle(context.Background(), eventoOwnerChanged()))
+	assert.Empty(t, pub.deliveries, "filtro vazio ou * não recebe o evento novo: só quem o lista pelo nome")
+}

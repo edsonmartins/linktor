@@ -391,6 +391,10 @@ func main() {
 	auditService := service.NewAuditService(auditLogRepo)
 	sandboxAllowlistService := service.NewSandboxAllowlistService(sandboxAllowlistRepo, channelRepo)
 	conversationOwnerService := service.NewConversationOwnerService(conversationOwnerRepo, channelRepo)
+	if producer != nil {
+		// P5 (VCR-36): conversation.owner_changed quando o dono muda de fato.
+		conversationOwnerService.WithPublisher(producer)
+	}
 	cannedService := service.NewCannedResponseService(cannedRepo)
 	roleService := service.NewRoleService(roleRepo, redisClient)
 	settingsService := service.NewSettingsService(tenantSettingsRepo)
@@ -1085,7 +1089,8 @@ func main() {
 		// que é o único que o consumidor conhece.
 		// P5 (VCR-36): message.received e conversation.* vão ao dono da conversa aberta, quando há regra.
 		webhookDispatcher := infrawebhook.NewDispatcher(producer, channelRepo).WithMessages(messageRepo).
-			WithOwners(conversationOwnerRepo, contactRepo)
+			WithOwners(conversationOwnerRepo, contactRepo).
+			WithSenders(messageRepo)
 		if err := webhookDispatcher.Start(ctx, consumer); err != nil {
 			logger.Warn("Failed to start outbound webhook dispatcher: " + err.Error())
 		} else {

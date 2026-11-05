@@ -6,7 +6,9 @@ import (
 
 	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/domain/repository"
+	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/errors"
+	"github.com/msgfy/linktor/pkg/logger"
 )
 
 // ConversationOwnerService declares, reads and releases the owner of the open
@@ -16,7 +18,15 @@ import (
 type ConversationOwnerService struct {
 	repo        repository.ConversationOwnerRuleRepository
 	channelRepo repository.ChannelRepository
+	publisher   nats.Publisher
 	now         func() time.Time
+}
+
+// WithPublisher enables the conversation.owner_changed event (P5, VCR-36),
+// published only when the effective owner actually changes.
+func (s *ConversationOwnerService) WithPublisher(p nats.Publisher) *ConversationOwnerService {
+	s.publisher = p
+	return s
 }
 
 // NewConversationOwnerService creates the service.
@@ -50,11 +60,15 @@ func (s *ConversationOwnerService) Declare(ctx context.Context, in *DeclareOwner
 	if in.ExpiraEm != nil && !in.ExpiraEm.After(in.Desde) {
 		return false, nil, errors.New(errors.ErrCodeValidation, "expira_em must be after desde")
 	}
-	identifier, err := s.chave(ctx, in.TenantID, in.ChannelID, in.Identifier)
+	channel, identifier, err := s.chave(ctx, in.TenantID, in.ChannelID, in.Identifier)
 	if err != nil {
 		return false, nil, err
 	}
-	return s.repo.Upsert(ctx, &entity.ConversationOwnerRule{
+	previous, err := s.repo.Find(ctx, in.TenantID, in.ChannelID, identifier)
+	if err != nil {
+		return false, nil, err
+	}
+	applied, current, err = s.repo.Upsert(ctx, &entity.ConversationOwnerRule{
 		TenantID:          in.TenantID,
 		ChannelID:         in.ChannelID,
 		ContactIdentifier: identifier,
@@ -63,11 +77,15 @@ func (s *ConversationOwnerService) Declare(ctx context.Context, in *DeclareOwner
 		Desde:             in.Desde.UTC(),
 		ExpiraEm:          utcOrNil(in.ExpiraEm),
 	})
+	if err == nil && applied {
+		s.publishIfChanged(ctx, channel, identifier, previous, current, "declarado")
+	}
+	return applied, current, err
 }
 
 // Get returns the rule in force, or not found when there is none or it expired.
 func (s *ConversationOwnerService) Get(ctx context.Context, tenantID, channelID, rawIdentifier string) (*entity.ConversationOwnerRule, error) {
-	identifier, err := s.chave(ctx, tenantID, channelID, rawIdentifier)
+	_, identifier, err := s.chave(ctx, tenantID, channelID, rawIdentifier)
 	if err != nil {
 		return nil, err
 	}
@@ -88,28 +106,78 @@ func (s *ConversationOwnerService) Release(ctx context.Context, tenantID, channe
 	if conversaRef == "" {
 		return false, errors.New(errors.ErrCodeValidation, "conversa_ref is required")
 	}
-	identifier, err := s.chave(ctx, tenantID, channelID, rawIdentifier)
+	channel, identifier, err := s.chave(ctx, tenantID, channelID, rawIdentifier)
 	if err != nil {
 		return false, err
 	}
-	return s.repo.Release(ctx, tenantID, channelID, identifier, conversaRef)
+	previous, err := s.repo.Find(ctx, tenantID, channelID, identifier)
+	if err != nil {
+		return false, err
+	}
+	released, err = s.repo.Release(ctx, tenantID, channelID, identifier, conversaRef)
+	if err == nil && released {
+		s.publishIfChanged(ctx, channel, identifier, previous, nil, "liberado")
+	}
+	return released, err
+}
+
+// efetivo is the consumer that receives the contact's events under rule: the
+// rule's consumer while in force, the channel's default otherwise.
+func (s *ConversationOwnerService) efetivo(channel *entity.Channel, rule *entity.ConversationOwnerRule) string {
+	if rule.VigenteEm(s.now()) {
+		return rule.Consumer
+	}
+	return entity.DefaultConsumerName(channel)
+}
+
+// publishIfChanged emits conversation.owner_changed only when the effective
+// owner changes: an idempotent PUT, a new conversation of the same owner or a
+// release that leaves the same consumer in charge emit nothing.
+func (s *ConversationOwnerService) publishIfChanged(ctx context.Context, channel *entity.Channel, identifier string,
+	previous, current *entity.ConversationOwnerRule, motivo string) {
+	if s.publisher == nil {
+		return
+	}
+	antes, depois := s.efetivo(channel, previous), s.efetivo(channel, current)
+	if antes == depois {
+		return
+	}
+	payload := map[string]interface{}{
+		"channel_id":         channel.ID,
+		"channel_type":       string(channel.Type),
+		"contact_identifier": identifier,
+		"previous_consumer":  antes,
+		"consumer":           depois,
+		"motivo":             motivo,
+	}
+	if current != nil {
+		payload["conversa_ref"] = current.ConversaRef
+	}
+	if previous != nil {
+		payload["previous_conversa_ref"] = previous.ConversaRef
+	}
+	if err := s.publisher.PublishEvent(ctx, &nats.Event{Type: nats.EventConversationOwnerChanged, TenantID: channel.TenantID,
+		Payload: payload, Timestamp: s.now()}); err != nil {
+		// The rule is already written; a lost notification must not fail the declaration.
+		logger.Warn("routing: failed to publish conversation.owner_changed for channel " + channel.ID + ": " + err.Error())
+	}
 }
 
 // chave checks that the channel belongs to the tenant and normalizes the contact identifier.
-func (s *ConversationOwnerService) chave(ctx context.Context, tenantID, channelID, rawIdentifier string) (string, error) {
+func (s *ConversationOwnerService) chave(ctx context.Context, tenantID, channelID, rawIdentifier string) (*entity.Channel, string, error) {
 	identifier := entity.NormalizeContactIdentifier(rawIdentifier)
 	if identifier == "" {
-		return "", errors.New(errors.ErrCodeValidation, "contact identifier is required")
+		return nil, "", errors.New(errors.ErrCodeValidation, "contact identifier is required")
 	}
 	channel, err := s.channelRepo.FindByID(ctx, channelID)
 	if err != nil && errors.IsAppError(err) && !errors.IsNotFound(err) {
-		return "", err // falha do banco não vira "não encontrado"
+		return nil, "", err // falha do banco não vira "não encontrado"
 	}
 	if err != nil || channel == nil || channel.TenantID != tenantID {
 		// Same shape as ChannelService.GetByTenantAndID: never reveal that the id exists under another tenant.
-		return "", errors.New(errors.ErrCodeChannelNotFound, "channel not found")
+		return nil, "", errors.New(errors.ErrCodeChannelNotFound, "channel not found")
 	}
-	return identifier, nil
+	return channel, identifier, nil
 }
 
 func utcOrNil(t *time.Time) *time.Time {
