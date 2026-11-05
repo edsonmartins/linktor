@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/msgfy/linktor/internal/domain/entity"
 	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/errors"
 	"github.com/msgfy/linktor/pkg/logger"
@@ -55,6 +56,51 @@ func (w *DeliveryWorker) Handle(ctx context.Context, wh *nats.WebhookDelivery) e
 		return nil
 	}
 
+	if wh.Consumer != "" {
+		return w.handleConsumer(ctx, channel, wh)
+	}
+	return w.deliverDefault(ctx, channel, wh, wh.Body)
+}
+
+// handleConsumer delivers to a named consumer (P5, VCR-36). An unknown or
+// unconfigured consumer goes to the default right away; on the LAST JetStream
+// attempt the delivery switches to the default instead of being dead-lettered
+// unseen. Either way the body gains routing {fallback: true}. Nothing is
+// discarded (ADR-025 §6): if the default also fails on the last attempt, the
+// item is dead-lettered as before.
+func (w *DeliveryWorker) handleConsumer(ctx context.Context, channel *entity.Channel, wh *nats.WebhookDelivery) error {
+	url, secret := consumerURL(channel, wh.Consumer), consumerSecret(channel, wh.Consumer)
+	if url == "" || secret == "" {
+		return w.fallbackToDefault(ctx, channel, wh, MotivoConsumidorNaoConfigurado)
+	}
+	if n, max, ok := nats.DeliveryAttemptFrom(ctx); ok && max > 0 && n >= max {
+		return w.fallbackToDefault(ctx, channel, wh, MotivoTentativasEsgotadas)
+	}
+	endpoint := EndpointConfig{URL: url, Headers: SignatureHeaders(wh.Body, secret, w.now()), MaxRetries: 1}
+	if _, err := w.producer.Deliver(ctx, endpoint, wh.EventType, wh.Body); err != nil {
+		logger.Warn("webhook: delivery to consumer " + wh.Consumer + " of channel " + wh.ChannelID + " failed (will retry): " + err.Error())
+		return err
+	}
+	return nil
+}
+
+// fallbackToDefault sends the delivery to the channel's default consumer with
+// routing {consumer: default, dono: <owner>, fallback: true, motivo}.
+func (w *DeliveryWorker) fallbackToDefault(ctx context.Context, channel *entity.Channel, wh *nats.WebhookDelivery, motivo string) error {
+	body, err := withRouting(wh.Body, Routing{Consumer: defaultConsumerName(channel), Dono: wh.Consumer, Fallback: true, Motivo: motivo})
+	if err != nil {
+		// The body was built by the dispatcher as JSON; if it no longer parses, deliver it untouched rather than drop it.
+		logger.Warn("webhook: could not mark fallback routing on delivery " + wh.ID + ": " + err.Error())
+		body = wh.Body
+	}
+	logger.Warn("webhook: delivery " + wh.ID + " of channel " + wh.ChannelID + " falls back from consumer " + wh.Consumer +
+		" to the default (" + motivo + ")")
+	return w.deliverDefault(ctx, channel, wh, body)
+}
+
+// deliverDefault is the delivery to the channel's default consumer — the only
+// path before consumers existed, unchanged.
+func (w *DeliveryWorker) deliverDefault(ctx context.Context, channel *entity.Channel, wh *nats.WebhookDelivery, body []byte) error {
 	secret := channel.Credentials[credWebhookSecret]
 	if secret == "" {
 		// Signing with an empty key produces a forgeable signature. Fail closed:
@@ -65,11 +111,11 @@ func (w *DeliveryWorker) Handle(ctx context.Context, wh *nats.WebhookDelivery) e
 	}
 	endpoint := EndpointConfig{
 		URL:        channel.WebhookURL,
-		Headers:    SignatureHeaders(wh.Body, secret, w.now()),
+		Headers:    SignatureHeaders(body, secret, w.now()),
 		MaxRetries: 1, // single attempt; NATS handles durable retry + DLQ
 	}
 
-	if _, err := w.producer.Deliver(ctx, endpoint, wh.EventType, wh.Body); err != nil {
+	if _, err := w.producer.Deliver(ctx, endpoint, wh.EventType, body); err != nil {
 		logger.Warn("webhook: delivery to " + endpoint.URL + " failed (will retry): " + err.Error())
 		return err
 	}

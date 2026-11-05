@@ -222,6 +222,7 @@ func main() {
 	tenantSettingsRepo := database.NewTenantSettingsRepository(db)
 	campaignRepo := database.NewCampaignRepository(db)
 	sandboxAllowlistRepo := database.NewSandboxAllowlistRepository(db)
+	conversationOwnerRepo := database.NewConversationOwnerRuleRepository(db)
 	messageIdempotencyRepo := database.NewMessageIdempotencyRepository(db)
 
 	// Initialize services
@@ -391,6 +392,11 @@ func main() {
 	slaRepo := database.NewSLARepository(db)
 	auditService := service.NewAuditService(auditLogRepo)
 	sandboxAllowlistService := service.NewSandboxAllowlistService(sandboxAllowlistRepo, channelRepo)
+	conversationOwnerService := service.NewConversationOwnerService(conversationOwnerRepo, channelRepo)
+	if producer != nil {
+		// P5 (VCR-36): conversation.owner_changed quando o dono muda de fato.
+		conversationOwnerService.WithPublisher(producer)
+	}
 	cannedService := service.NewCannedResponseService(cannedRepo)
 	roleService := service.NewRoleService(roleRepo, redisClient)
 	settingsService := service.NewSettingsService(tenantSettingsRepo)
@@ -706,6 +712,7 @@ func main() {
 	// whatomate-inspired handlers
 	auditHandler := handlers.NewAuditHandler(auditService)
 	sandboxAllowlistHandler := handlers.NewSandboxAllowlistHandler(sandboxAllowlistService, auditService)
+	conversationOwnerHandler := handlers.NewConversationOwnerHandler(conversationOwnerService, auditService)
 	cannedHandler := handlers.NewCannedResponseHandler(cannedService, auditService)
 	roleHandler := handlers.NewRoleHandler(roleService, auditService)
 	settingsHandler := handlers.NewSettingsHandler(settingsService, assignmentService, auditService)
@@ -1082,7 +1089,10 @@ func main() {
 
 		// WithMessages: a reação reporta o alvo pelo id do provedor; o lookup traduz para o nosso,
 		// que é o único que o consumidor conhece.
-		webhookDispatcher := infrawebhook.NewDispatcher(producer, channelRepo).WithMessages(messageRepo)
+		// P5 (VCR-36): message.received e conversation.* vão ao dono da conversa aberta, quando há regra.
+		webhookDispatcher := infrawebhook.NewDispatcher(producer, channelRepo).WithMessages(messageRepo).
+			WithOwners(conversationOwnerRepo, contactRepo).
+			WithSenders(messageRepo)
 		if err := webhookDispatcher.Start(ctx, consumer); err != nil {
 			logger.Warn("Failed to start outbound webhook dispatcher: " + err.Error())
 		} else {
@@ -1740,6 +1750,18 @@ func main() {
 			audit.Use(authMiddleware.RequireRole("admin", "owner"))
 			{
 				audit.GET("", auditHandler.List)
+			}
+
+			// Dono da conversa aberta por (canal, contato) — P5 do acordo CRM ↔ Sales Copilot (VCR-36).
+			// Fora do grupo /channels de propósito: quem declara (o CRM) precisa de routing:write, não de
+			// channels:*. A regra é do tenant da credencial; canal de outro tenant responde 404.
+			ownerRoutes := protected.Group("/channels/:id/contacts/:identifier/owner")
+			ownerRoutes.Use(authMiddleware.RequireRole("admin", "owner", middleware.APIKeyRole))
+			ownerRoutes.Use(authMiddleware.RequireScopeByMethod(middleware.ScopeRoutingRead, middleware.ScopeRoutingWrite))
+			{
+				ownerRoutes.GET("", conversationOwnerHandler.Get)
+				ownerRoutes.PUT("", conversationOwnerHandler.Put)
+				ownerRoutes.DELETE("", conversationOwnerHandler.Delete)
 			}
 
 			// Sandbox recipient allowlist (INV-017). Admin only: the allowlist

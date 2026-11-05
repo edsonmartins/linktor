@@ -64,6 +64,9 @@ const (
 	// TypeTemplateQualityChanged reports a message template quality change from
 	// Meta. Additive and opt-in, like TypeTemplateStatusChanged.
 	TypeTemplateQualityChanged = "template.quality_changed"
+
+	// TypeConversationOwnerChanged (P5, VCR-36) is opt-in: see optInEventTypes.
+	TypeConversationOwnerChanged = "conversation.owner_changed"
 )
 
 // Envelope is the top-level `linktor-channel-v1` event.
@@ -75,8 +78,12 @@ type Envelope struct {
 	// Environment is the channel's environment ("production"|"sandbox").
 	// Additive, backward-compatible field (INV-018): consumers that predate it
 	// keep parsing; absence means production.
-	Environment string      `json:"environment,omitempty"`
-	Data        interface{} `json:"data"`
+	Environment string `json:"environment,omitempty"`
+	// Routing says how an owner rule (P5, VCR-36) decided the destination.
+	// Additive like Environment (INV-018): absent when no rule applied, which
+	// keeps the envelope of a channel without consumers exactly as before.
+	Routing *Routing    `json:"routing,omitempty"`
+	Data    interface{} `json:"data"`
 }
 
 // InboundData is the `data` payload for `message.received`.
@@ -301,4 +308,19 @@ func VerifySignature(payload []byte, signature, timestamp, secret string, now ti
 // signed and delivered (sign-what-you-send).
 func MarshalEnvelope(env *Envelope) ([]byte, error) {
 	return json.Marshal(env)
+}
+
+// OwnerChangedData is the `data` payload for `conversation.owner_changed` (P5,
+// VCR-36): the owner of the open conversation with a contact on a channel
+// changed — declared by PUT or released by DELETE of the owner API.
+type OwnerChangedData struct {
+	ChannelID           string `json:"channelId"`
+	ChannelType         string `json:"channelType"`
+	ContactIdentifier   string `json:"contactIdentifier"`
+	PreviousConsumer    string `json:"previousConsumer"`
+	Consumer            string `json:"consumer"`
+	ConversaRef         string `json:"conversaRef,omitempty"`
+	PreviousConversaRef string `json:"previousConversaRef,omitempty"`
+	// Motivo is "declarado" (PUT) or "liberado" (DELETE).
+	Motivo string `json:"motivo"`
 }

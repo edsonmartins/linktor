@@ -98,6 +98,8 @@ func (m *AuthMiddleware) Authenticate() gin.HandlerFunc {
 			// Expose the key's scopes so RequireScope can gate routes. Only set
 			// for API-key auth — JWT requests never carry scopes.
 			c.Set(ScopesKey, key.Scopes)
+			// P5 (VCR-36): which key sent a message decides who receives its status.
+			c.Set(APIKeyIDKey, key.ID)
 			c.Next()
 			return
 		}

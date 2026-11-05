@@ -120,9 +120,14 @@ type Event struct {
 
 // WebhookDelivery represents a webhook to be delivered
 type WebhookDelivery struct {
-	ID        string                 `json:"id"`
-	TenantID  string                 `json:"tenant_id"`
-	ChannelID string                 `json:"channel_id,omitempty"`
+	ID        string `json:"id"`
+	TenantID  string `json:"tenant_id"`
+	ChannelID string `json:"channel_id,omitempty"`
+	// Consumer names the channel consumer this delivery goes to (P5, VCR-36):
+	// empty = the channel's default consumer (WebhookURL/webhook_secret), the
+	// behaviour before consumers existed. Additive: items queued before it was
+	// added decode with "" and go to the default, as they always did.
+	Consumer  string                 `json:"consumer,omitempty"`
 	URL       string                 `json:"url"`
 	EventType string                 `json:"event_type"`
 	Payload   map[string]interface{} `json:"payload,omitempty"`

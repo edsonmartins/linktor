@@ -178,7 +178,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		SenderType:     "user",
 		ContentType:    req.ContentType,
 		Content:        req.Content,
-		Metadata:       req.Metadata,
+		Metadata:       withSenderKey(c, req.Metadata),
 		Attachments:    attachments,
 	}
 

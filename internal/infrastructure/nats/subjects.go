@@ -103,6 +103,8 @@ const (
 	EventConversationReopened  = "conversation.reopened"
 	EventConversationEscalated = "conversation.escalated"
 	EventConversationDeleted   = "conversation.deleted"
+	// P5 (VCR-36): o dono da conversa aberta com um contato num canal mudou.
+	EventConversationOwnerChanged = "conversation.owner_changed"
 
 	// Chamadas registradas na conversa (bridge): a chegada é message.received
 	// com content_type call; estes são os desfechos, um por chamada.

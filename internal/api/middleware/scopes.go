@@ -13,6 +13,11 @@ import (
 // by role, not by scope.
 const ScopesKey = "api_scopes"
 
+// APIKeyIDKey holds the id of the API key that authenticated the request (set
+// only for API-key auth). Sends record it on the message (metadata
+// MetadataSentByAPIKey) so its status goes back to whoever sent it (P5, VCR-36).
+const APIKeyIDKey = "api_key_id"
+
 // Scope vocabulary (resource:action). "*" grants everything (the default for
 // keys created before scopes existed, so enforcement is not a breaking change).
 // A "resource:*" grants every action on that resource, and "resource:write"
@@ -52,6 +57,11 @@ const (
 	ScopeAnalyticsRead = "analytics:read"
 
 	ScopeAiUse = "ai:use"
+
+	// Dono da conversa aberta por (canal, contato) — P5 do acordo CRM ↔ Sales Copilot (VCR-36).
+	// routing:write declara e libera; routing:read (implícito em write) só lê, para auditoria.
+	ScopeRoutingRead  = "routing:read"
+	ScopeRoutingWrite = "routing:write"
 )
 
 // HasScope reports whether the granted scopes satisfy the required scope.

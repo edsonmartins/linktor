@@ -34,6 +34,24 @@ type MessageLookup interface {
 	FindByExternalIDInConversation(ctx context.Context, externalID, conversationID string) (*entity.Message, error)
 }
 
+// OwnerLookup returns the owner rule of the open conversation with a contact on
+// a channel (P5, VCR-36): repository.ConversationOwnerRuleRepository satisfies it.
+type OwnerLookup interface {
+	Find(ctx context.Context, tenantID, channelID, contactIdentifier string) (*entity.ConversationOwnerRule, error)
+}
+
+// ContactIdentityLookup lists a contact's identities, to find its identifier on
+// the event's channel type (conversation events carry only contact_id).
+type ContactIdentityLookup interface {
+	FindIdentitiesByContact(ctx context.Context, contactID string) ([]*entity.ContactIdentity, error)
+}
+
+// MessageByID loads a message by our id, to read who sent it (P5: the status of
+// a sent message goes to the consumer bound to the sending API key).
+type MessageByID interface {
+	FindByID(ctx context.Context, id string) (*entity.Message, error)
+}
+
 // DeliveryPublisher enqueues a webhook for durable delivery. *nats.Producer
 // satisfies it; the durable webhooks stream gives crash-safe retry + DLQ.
 type DeliveryPublisher interface {
@@ -51,19 +69,27 @@ const credWebhookSecret = "webhook_secret"
 const cfgWebhookEvents = "webhook_events"
 
 // optInEventTypes are event types added to `linktor-channel-v1` after
-// consumers already existed. They are delivered only when the channel lists them
-// by name in webhook_events — never through the empty/"*" default — so an
-// existing consumer (e.g. DeskLenz) never starts receiving a type it does not know.
+// consumers already existed. They are delivered only when the consumer lists them
+// by name in its event filter (webhook_events, or consumers.<name>.webhook_events)
+// — never through the empty/"*" default — so an existing consumer (e.g. DeskLenz)
+// never starts receiving a type it does not know.
 var optInEventTypes = map[string]bool{
-	TypeTemplateStatusChanged:  true,
-	TypeTemplateQualityChanged: true,
+	TypeTemplateStatusChanged:    true,
+	TypeTemplateQualityChanged:   true,
+	TypeConversationOwnerChanged: true,
 }
 
 // subscribedTo reports whether the channel's outbound webhook should receive
 // eventType. When webhook_events is empty (or "*" is present) every event is
 // delivered, except the opt-in types; otherwise only the listed types are.
 func subscribedTo(channel *entity.Channel, eventType string) bool {
-	raw := strings.TrimSpace(channel.Config[cfgWebhookEvents])
+	return eventsAllow(channel.Config[cfgWebhookEvents], eventType)
+}
+
+// eventsAllow applies a comma-separated event filter ("" or "*" = everything
+// except the opt-in types, which must be listed by name).
+func eventsAllow(filter, eventType string) bool {
+	raw := strings.TrimSpace(filter)
 	if raw == "" {
 		return !optInEventTypes[eventType]
 	}
@@ -90,6 +116,9 @@ type Dispatcher struct {
 	deliveries DeliveryPublisher
 	channels   ChannelLookup
 	messages   MessageLookup
+	owners     OwnerLookup
+	identities ContactIdentityLookup
+	sent       MessageByID
 	now        func() time.Time
 	newID      func() string
 }
@@ -112,6 +141,108 @@ func NewDispatcher(deliveries DeliveryPublisher, channels ChannelLookup) *Dispat
 func (d *Dispatcher) WithMessages(messages MessageLookup) *Dispatcher {
 	d.messages = messages
 	return d
+}
+
+// WithOwners enables routing by the owner of the open conversation (P5, VCR-36)
+// for contact-bound events (message.received, conversation.*). Optional:
+// without it every event goes to the channel's default consumer, as before.
+func (d *Dispatcher) WithOwners(owners OwnerLookup, identities ContactIdentityLookup) *Dispatcher {
+	d.owners = owners
+	d.identities = identities
+	return d
+}
+
+// WithSenders enables delivering the status of a sent message (message.sent,
+// .delivered, .read, .failed) to whoever sent it: the consumer whose
+// Config["consumers.<name>.api_key_id"] is the key recorded on the message. A
+// message without the key (sent before this existed, or by a human) reports to
+// the default consumer, as before.
+func (d *Dispatcher) WithSenders(messages MessageByID) *Dispatcher {
+	d.sent = messages
+	return d
+}
+
+// consumerForAPIKey is the configured consumer bound to the API key ("" = none).
+func consumerForAPIKey(channel *entity.Channel, keyID string) string {
+	for k, v := range channel.Config {
+		if !strings.HasPrefix(k, "consumers.") || !strings.HasSuffix(k, ".api_key_id") || strings.TrimSpace(v) != keyID {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(k, "consumers."), ".api_key_id")
+		if consumerURL(channel, name) != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+// statusRoute sends the status of a sent message to the consumer that sent it.
+func (d *Dispatcher) statusRoute(ctx context.Context, channel *entity.Channel, p eventPayload) *route {
+	if d.sent == nil || p.str("message_id") == "" {
+		return nil
+	}
+	msg, err := d.sent.FindByID(ctx, p.str("message_id"))
+	if err != nil || msg == nil {
+		return nil
+	}
+	key := strings.TrimSpace(msg.Metadata[entity.MetadataSentByAPIKey])
+	if key == "" {
+		return nil
+	}
+	if name := consumerForAPIKey(channel, key); name != "" {
+		return &route{consumer: name, routing: &Routing{Consumer: name}}
+	}
+	return nil
+}
+
+// route is where a contact-bound event goes: consumer "" is the default.
+type route struct {
+	consumer string
+	routing  *Routing
+}
+
+// contactKey is the contact's identifier on this channel, normalized like the
+// rule key: the identity of the event's channel type, else the inbound sender.
+func (d *Dispatcher) contactKey(ctx context.Context, channel *entity.Channel, p eventPayload) string {
+	if contactID := p.str("contact_id"); contactID != "" && d.identities != nil {
+		if ids, err := d.identities.FindIdentitiesByContact(ctx, contactID); err == nil {
+			for _, id := range ids {
+				if id != nil && id.ChannelType == string(channel.Type) && id.Identifier != "" {
+					return entity.NormalizeContactIdentifier(id.Identifier)
+				}
+			}
+		}
+	}
+	return entity.NormalizeContactIdentifier(p.str("sender_id"))
+}
+
+// routeFor decides the consumer of a contact-bound event from the owner rule.
+// nil = no rule in force: the default consumer, with no routing block.
+func (d *Dispatcher) routeFor(ctx context.Context, channel *entity.Channel, tenantID string, p eventPayload) *route {
+	if d.owners == nil {
+		return nil
+	}
+	key := d.contactKey(ctx, channel, p)
+	if key == "" {
+		return nil
+	}
+	rule, err := d.owners.Find(ctx, tenantID, channel.ID, key)
+	if err != nil {
+		// Fail-closed (I-9): without the rule, the default (the client's owner) receives it, marked.
+		logger.Warn("webhook: owner rule lookup failed for channel " + channel.ID + ": " + err.Error())
+		return &route{routing: &Routing{Consumer: defaultConsumerName(channel), Fallback: true, Motivo: MotivoRegraIndisponivel}}
+	}
+	if !rule.VigenteEm(d.now()) {
+		return nil
+	}
+	if rule.Consumer == defaultConsumerName(channel) {
+		return &route{routing: &Routing{Consumer: rule.Consumer}}
+	}
+	if consumerURL(channel, rule.Consumer) == "" {
+		return &route{routing: &Routing{Consumer: defaultConsumerName(channel), Dono: rule.Consumer, Fallback: true,
+			Motivo: MotivoConsumidorNaoConfigurado}}
+	}
+	return &route{consumer: rule.Consumer, routing: &Routing{Consumer: rule.Consumer}}
 }
 
 // Start subscribes to the events stream and begins dispatching.
@@ -164,6 +295,8 @@ func (d *Dispatcher) handle(ctx context.Context, event *nats.Event) error {
 		return d.dispatchTemplateStatus(ctx, event)
 	case nats.EventTemplateQualityChanged:
 		return d.dispatchTemplateQuality(ctx, event)
+	case nats.EventConversationOwnerChanged:
+		return d.dispatchOwnerChanged(ctx, event)
 	}
 	return nil
 }
@@ -199,7 +332,8 @@ func (d *Dispatcher) dispatchInbound(ctx context.Context, event *nats.Event) err
 		Context:        d.correlationContext(ctx, p),
 	}
 
-	return d.deliver(ctx, channel, TypeMessageReceived, event.TenantID, dedupKey(p.str("message_id"), "received"), data)
+	return d.deliverRouted(ctx, channel, TypeMessageReceived, event.TenantID, dedupKey(p.str("message_id"), "received"), data,
+		d.routeFor(ctx, channel, event.TenantID, p))
 }
 
 // authorship says who wrote the message and which way it travelled.
@@ -355,7 +489,45 @@ func (d *Dispatcher) dispatchStatus(ctx context.Context, event *nats.Event, even
 		ChannelType: channelType(channel, p),
 	}
 
-	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), eventType), data)
+	return d.deliverRouted(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), eventType), data,
+		d.statusRoute(ctx, channel, p))
+}
+
+// dispatchOwnerChanged delivers conversation.owner_changed to the default
+// consumer and to every named consumer involved (previous and new owner), each
+// through its own (opt-in) event filter. Each delivery gets its own id: the
+// stream dedups by id, and they are distinct deliveries of one change.
+func (d *Dispatcher) dispatchOwnerChanged(ctx context.Context, event *nats.Event) error {
+	p := payload(event.Payload)
+	channel := d.resolveChannel(ctx, p.str("channel_id"))
+	if channel == nil {
+		return nil
+	}
+	data := OwnerChangedData{
+		ChannelID:           channel.ID,
+		ChannelType:         channelType(channel, p),
+		ContactIdentifier:   p.str("contact_identifier"),
+		PreviousConsumer:    p.str("previous_consumer"),
+		Consumer:            p.str("consumer"),
+		ConversaRef:         p.str("conversa_ref"),
+		PreviousConversaRef: p.str("previous_conversa_ref"),
+		Motivo:              p.str("motivo"),
+	}
+	if err := d.deliverRouted(ctx, channel, TypeConversationOwnerChanged, event.TenantID, "", data, nil); err != nil {
+		return err
+	}
+	seen := map[string]bool{defaultConsumerName(channel): true}
+	for _, name := range []string{data.PreviousConsumer, data.Consumer} {
+		if name == "" || seen[name] || consumerURL(channel, name) == "" {
+			continue
+		}
+		seen[name] = true
+		if err := d.deliverRouted(ctx, channel, TypeConversationOwnerChanged, event.TenantID, "", data,
+			&route{consumer: name, routing: &Routing{Consumer: name}}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // dispatchCall converts a call outcome into an outbound webhook. The call was
@@ -434,7 +606,7 @@ func (d *Dispatcher) dispatchConversation(ctx context.Context, event *nats.Event
 	if eventType == TypeConversationCreated || eventType == TypeConversationDeleted {
 		dedup = dedupKey(p.str("conversation_id"), eventType)
 	}
-	return d.deliver(ctx, channel, eventType, event.TenantID, dedup, data)
+	return d.deliverRouted(ctx, channel, eventType, event.TenantID, dedup, data, d.routeFor(ctx, channel, event.TenantID, p))
 }
 
 // dispatchTemplateStatus converts a template status change into an outbound
@@ -521,10 +693,23 @@ func (d *Dispatcher) resolveChannel(ctx context.Context, channelID string) *enti
 // can sign with a fresh timestamp at send time (keeping retries inside the
 // anti-replay window) without the signing secret ever touching the stream.
 func (d *Dispatcher) deliver(ctx context.Context, channel *entity.Channel, eventType, tenantID, dedup string, data interface{}) error {
-	// Per-channel event subscription filter: skip (ack) events the channel's
-	// outbound webhook is not subscribed to, so unwanted events never reach the
-	// durable stream.
-	if !subscribedTo(channel, eventType) {
+	return d.deliverRouted(ctx, channel, eventType, tenantID, dedup, data, nil)
+}
+
+// deliverRouted is deliver with the owner route of a contact-bound event: the
+// named consumer's URL and own event filter, and the routing block. A nil route
+// is exactly the default delivery.
+func (d *Dispatcher) deliverRouted(ctx context.Context, channel *entity.Channel, eventType, tenantID, dedup string,
+	data interface{}, rt *route) error {
+	// Per-consumer event subscription filter: skip (ack) events the destination
+	// is not subscribed to, so unwanted events never reach the durable stream.
+	consumer, url := "", channel.WebhookURL
+	if rt != nil && rt.consumer != "" {
+		consumer, url = rt.consumer, consumerURL(channel, rt.consumer)
+		if !consumerSubscribedTo(channel, consumer, eventType) {
+			return nil
+		}
+	} else if !subscribedTo(channel, eventType) {
 		return nil
 	}
 
@@ -543,6 +728,9 @@ func (d *Dispatcher) deliver(ctx context.Context, channel *entity.Channel, event
 		Environment: string(channel.Environment),
 		Data:        data,
 	}
+	if rt != nil {
+		env.Routing = rt.routing
+	}
 
 	body, err := MarshalEnvelope(env)
 	if err != nil {
@@ -555,7 +743,8 @@ func (d *Dispatcher) deliver(ctx context.Context, channel *entity.Channel, event
 		ID:        env.ID,
 		TenantID:  tenantID,
 		ChannelID: channel.ID,
-		URL:       channel.WebhookURL,
+		Consumer:  consumer,
+		URL:       url,
 		EventType: eventType,
 		Body:      body,
 		Timestamp: d.now().UTC(),
