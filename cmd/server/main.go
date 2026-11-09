@@ -671,6 +671,15 @@ func main() {
 	callTracker.SetSink(newCallOutcomeSink(messageRepo, conversationRepo, channelRepo, producer, sendMessageUC).Handle)
 	gatewayHandler.SetCallTracker(callTracker)
 	channelService.SetCallTracker(callTracker)
+	// Ritmo da consulta de foto de contato por canal (padrão 1s). Aceita a
+	// duração do Go: "1s", "500ms", "2s".
+	if v := os.Getenv("LINKTOR_CONTACT_AVATAR_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			channelService.SetContactAvatarInterval(d)
+		} else {
+			logger.Warn("Ignoring invalid LINKTOR_CONTACT_AVATAR_INTERVAL: " + v)
+		}
+	}
 
 	// Expose bridge health inline on channel List/Get responses so the admin UI
 	// sees online/stale/last_seen without extra calls.
@@ -1437,6 +1446,11 @@ func main() {
 				// A agenda do aparelho pareado. Antes das rotas genéricas de
 				// `/:id`, como as demais específicas deste bloco.
 				channels.GET("/:id/contacts", channelHandler.ListDeviceContacts)
+				// A foto de um contato, consultada na sessão do WhatsApp do canal.
+				// Dado de contato: pede contacts:read além do channels:read do grupo.
+				channels.GET("/:id/contacts/:contact/avatar",
+					authMiddleware.RequireScope(middleware.ScopeContactsRead),
+					channelHandler.GetContactAvatar)
 				// A rota de envio a grupo (POST /:id/groups/:groupId/messages) é
 				// registrada fora deste grupo, com messages:send — ver acima.
 				// WhatsApp Coexistence routes

@@ -109,6 +109,9 @@ type ChannelService struct {
 	// calls registra as chamadas que a sessão WhatsApp embutida vê (o mesmo
 	// registro do bridge). Optional; nil ignora chamadas. See SetCallTracker.
 	calls *callsignal.Tracker
+	// avatar guarda o ritmo por canal e o cliente HTTP da foto do contato.
+	// Ver GetContactAvatar.
+	avatar contactAvatarState
 }
 
 // SetCallTracker registra o registro de chamadas. É lido a cada sinal, então

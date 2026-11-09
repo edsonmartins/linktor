@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/msgfy/linktor/internal/outbound"
 	"github.com/msgfy/linktor/pkg/plugin"
@@ -42,6 +43,12 @@ type Frame struct {
 	// Media é a mídia de um outbound (imagem, vídeo, áudio, documento). Text
 	// vira a legenda. A URL já vem assinada pelo worker; o bridge a baixa.
 	Media *OutboundMedia `json:"media,omitempty"`
+	// Foto do contato: no avatar_request, PictureID é o que o Linktor já tem
+	// (para o WhatsApp responder "não mudou"); no avatar_result, é a foto atual,
+	// URL é onde baixá-la e Unchanged diz que o PictureID pedido ainda vale.
+	PictureID string `json:"picture_id,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Unchanged bool   `json:"unchanged,omitempty"`
 }
 
 // OutboundMedia descreve a mídia que o bridge deve baixar e enviar.
@@ -60,6 +67,12 @@ type AckResult struct {
 	OK        bool
 	MessageID string
 	Error     string
+	// Campos do avatar_result. Reason é "not_set" ou "hidden" quando OK=false
+	// porque o contato não tem foto ou a esconde.
+	Reason    string
+	PictureID string
+	URL       string
+	Unchanged bool
 }
 
 // StatusEvent is a sanitized session status received from a bridge.
@@ -73,6 +86,10 @@ type StatusEvent struct {
 const (
 	writeTimeout = 10 * time.Second
 	ackTimeout   = 60 * time.Second
+	// avatarTimeout é mais curto que o ack de envio: a consulta é uma IQ só, e
+	// um bridge antigo que não conhece avatar_request nunca responde — quem
+	// chama a rota não pode ficar um minuto pendurado por isso.
+	avatarTimeout = 15 * time.Second
 )
 
 // Hub tracks connected bridges and routes outbound sends through them.
@@ -254,8 +271,22 @@ func (b *Bridge) RejectCall(ctx context.Context, correlationID, from, callID str
 	})
 }
 
-// awaitAck escreve um frame com correlation_id e espera o ack (ou call_ack)
-// correspondente; outbound e call_command compartilham a mesma espera.
+// RequestAvatar pede ao bridge a foto de perfil de contact (JID ou telefone),
+// passando o PictureID que o Linktor já tem, e espera o avatar_result.
+func (b *Bridge) RequestAvatar(ctx context.Context, correlationID, contact, existingID string) (AckResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, avatarTimeout)
+	defer cancel()
+	return b.awaitAck(ctx, Frame{
+		Type:          "avatar_request",
+		ChannelID:     b.ChannelID,
+		CorrelationID: correlationID,
+		To:            contact,
+		PictureID:     existingID,
+	})
+}
+
+// awaitAck escreve um frame com correlation_id e espera o ack (ou call_ack,
+// ou avatar_result) correspondente; todos compartilham a mesma espera.
 func (b *Bridge) awaitAck(ctx context.Context, f Frame) (AckResult, error) {
 	correlationID := f.CorrelationID
 	ackCh := make(chan AckResult, 1)
@@ -311,6 +342,11 @@ func (b *Bridge) handleFrame(f Frame) {
 		_ = b.write(Frame{Type: "pong", ChannelID: b.ChannelID, TS: time.Now().Unix()})
 	case "ack", "call_ack":
 		b.resolveAck(f.CorrelationID, AckResult{OK: f.OK, MessageID: f.MessageID, Error: f.Error})
+	case "avatar_result":
+		b.resolveAck(f.CorrelationID, AckResult{
+			OK: f.OK, Error: f.Error, Reason: f.Reason,
+			PictureID: f.PictureID, URL: f.URL, Unchanged: f.Unchanged,
+		})
 	case "inbound":
 		if b.owner != nil && b.owner.onInbound != nil {
 			if err := b.owner.onInbound(b.ChannelID, f.Message); err != nil {
@@ -402,6 +438,17 @@ func (h *Hub) RejectCallOnChannel(ctx context.Context, channelID, correlationID,
 		return AckResult{}, fmt.Errorf("%w: %s", ErrNoBridge, channelID)
 	}
 	return b.RejectCall(ctx, correlationID, from, callID)
+}
+
+// RequestAvatarOnChannel pede ao bridge do canal a foto de um contato.
+func (h *Hub) RequestAvatarOnChannel(ctx context.Context, channelID, correlationID, contact, existingID string) (AckResult, error) {
+	h.mu.RLock()
+	b, ok := h.bridges[channelID]
+	h.mu.RUnlock()
+	if !ok {
+		return AckResult{}, fmt.Errorf("%w: %s", ErrNoBridge, channelID)
+	}
+	return b.RequestAvatar(ctx, correlationID, contact, existingID)
 }
 
 // outboundMedia extrai a mídia do OutboundMessage no formato do frame. O
@@ -496,6 +543,7 @@ func NewRemoteAdapter(hub *Hub, channelID string) *RemoteAdapter {
 
 var _ plugin.ChannelAdapter = (*RemoteAdapter)(nil)
 var _ plugin.ReactionSender = (*RemoteAdapter)(nil)
+var _ plugin.ContactAvatarFetcher = (*RemoteAdapter)(nil)
 
 // Initialize implements plugin.ChannelAdapter.
 func (a *RemoteAdapter) Initialize(config map[string]string) error { return nil }
@@ -583,6 +631,42 @@ func (a *RemoteAdapter) UploadMedia(ctx context.Context, media *plugin.Media) (*
 // DownloadMedia implements plugin.ChannelAdapter (not supported yet).
 func (a *RemoteAdapter) DownloadMedia(ctx context.Context, mediaID string) (*plugin.Media, error) {
 	return nil, outbound.Permanentf("media download over bridge is not supported yet")
+}
+
+// GetContactAvatar implements plugin.ContactAvatarFetcher: a sessão vive no
+// aparelho, então quem pergunta ao WhatsApp é o bridge. Ele devolve a URL do CDN
+// e o Linktor baixa os bytes — a imagem não atravessa o WebSocket.
+func (a *RemoteAdapter) GetContactAvatar(ctx context.Context, contact, existingID string) (*plugin.ContactAvatar, error) {
+	res, err := a.hub.RequestAvatarOnChannel(ctx, a.channelID, uuid.NewString(), contact, existingID)
+	if err != nil {
+		// Sem bridge, bridge que não respondeu a tempo (inclusive versão que não
+		// conhece avatar_request) ou escrita falha: não há sessão para perguntar.
+		return nil, fmt.Errorf("%w: %v", plugin.ErrAvatarSessionUnavailable, err)
+	}
+	return contactAvatarFromResult(res)
+}
+
+// contactAvatarFromResult traduz o avatar_result do bridge para o contrato do
+// plugin.
+func contactAvatarFromResult(res AckResult) (*plugin.ContactAvatar, error) {
+	if !res.OK {
+		switch res.Reason {
+		case "not_set":
+			return nil, plugin.ErrAvatarNotSet
+		case "hidden":
+			return nil, plugin.ErrAvatarHidden
+		case "not_connected":
+			return nil, fmt.Errorf("%w: %s", plugin.ErrAvatarSessionUnavailable, res.Error)
+		}
+		return nil, fmt.Errorf("bridge avatar lookup failed: %s", res.Error)
+	}
+	if res.Unchanged {
+		return &plugin.ContactAvatar{PictureID: res.PictureID, Unchanged: true}, nil
+	}
+	if res.URL == "" {
+		return nil, plugin.ErrAvatarNotSet
+	}
+	return &plugin.ContactAvatar{PictureID: res.PictureID, URL: res.URL}, nil
 }
 
 // GetChannelType implements plugin.ChannelAdapter.

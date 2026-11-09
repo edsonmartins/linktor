@@ -7,6 +7,23 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Foto do contato do WhatsApp
+
+- **`GET /api/v1/channels/:id/contacts/:contact/avatar`** — a foto de perfil de
+  um contato (`:contact` = telefone em dígitos, `número@s.whatsapp.net` ou
+  `id@lid`), consultada na sessão do canal e baixada no ato do CDN do WhatsApp.
+  Vale para `whatsapp`, `whatsapp_unofficial` e `whatsapp_remote` (pelo bridge).
+  `200` com os bytes, `X-Picture-Id` e `ETag`; `304` quando o `If-None-Match`
+  ainda é a foto atual; `404` com `reason` `not_set` (sem foto) ou `hidden` (o
+  contato esconde a foto deste número); `409` sem sessão viva; `429` com
+  `Retry-After` pelo ritmo por canal (`LINKTOR_CONTACT_AVATAR_INTERVAL`, padrão
+  1s); `501` para outro tipo de canal; `502` se o CDN recusar.
+- Nada é guardado: nem a URL do CDN nem a imagem. Pede `contacts:read` além do
+  `channels:read` do grupo de canais.
+- Bridge: frames `avatar_request` / `avatar_result` no protocolo; o bridge devolve
+  a URL e o Linktor baixa, só de `https://*.whatsapp.net` e `*.fbcdn.net`. Bridge
+  antigo, que não responde, vira `409` em 15s.
+
 ### Bridge de WhatsApp (gateway em device)
 
 Novo subsistema `internal/gateway` que permite hospedar a sessão WhatsApp
