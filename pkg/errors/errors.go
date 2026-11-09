@@ -43,6 +43,12 @@ const (
 
 	// Timeout errors
 	ErrCodeTimeout ErrorCode = "TIMEOUT"
+
+	// Recurso que o tipo de canal não oferece (ex.: foto do contato num canal
+	// que não é WhatsApp em device).
+	ErrCodeNotImplemented ErrorCode = "NOT_IMPLEMENTED"
+	// O provedor a montante respondeu mal (ex.: CDN do WhatsApp recusou o download).
+	ErrCodeBadGateway ErrorCode = "BAD_GATEWAY"
 )
 
 // AppError represents an application error
@@ -120,6 +126,10 @@ func codeToStatus(code ErrorCode) int {
 		return http.StatusTooManyRequests
 	case ErrCodeQuotaExceeded:
 		return http.StatusPaymentRequired
+	case ErrCodeNotImplemented:
+		return http.StatusNotImplemented
+	case ErrCodeBadGateway:
+		return http.StatusBadGateway
 	default:
 		return http.StatusInternalServerError
 	}
