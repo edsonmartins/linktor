@@ -17,6 +17,12 @@ const RedactedSecret = "__redacted__"
 // API responses (see Channel.MarshalJSON). Non-listed keys (phone_number_id,
 // waba_id, proxy host/port, widget display config, ...) stay plaintext so they
 // remain queryable and readable. Credentials is encrypted/hidden in full.
+//
+// verify_token não está na lista de propósito: é o valor que o operador cola
+// no painel da Meta e só guarda o handshake GET do webhook. Redigido, o
+// formulário de edição mostrava "__redacted__" e quem perdia o valor não tinha
+// como recuperá-lo. Linhas gravadas cifradas continuam legíveis: a leitura
+// decifra pelo prefixo, não pela lista, e o próximo save regrava em claro.
 var SensitiveConfigKeys = map[string]bool{
 	"access_token":          true,
 	"user_access_token":     true,
@@ -31,7 +37,6 @@ var SensitiveConfigKeys = map[string]bool{
 	"account_sid":           true,
 	"messaging_service_sid": true,
 	"webhook_secret":        true,
-	"verify_token":          true,
 	"widget_secret":         true,
 	"smtp_password":         true,
 	"imap_password":         true,
@@ -58,6 +63,8 @@ var SensitiveConfigKeys = map[string]bool{
 var IdentityCredentialKeys = map[string]bool{
 	"smtp_username": true,
 	"imap_username": true,
+	// Canais Meta criados por OAuth guardam o verify_token só em Credentials.
+	"verify_token": true,
 }
 
 // ChannelType represents the type of a channel

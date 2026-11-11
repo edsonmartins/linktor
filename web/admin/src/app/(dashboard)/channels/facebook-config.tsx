@@ -147,7 +147,12 @@ export function FacebookConfig({
       app_secret: '',
       page_id: (channel?.config?.page_id as string) || '',
       page_access_token: '',
-      verify_token: (channel?.config?.verify_token as string) || generateVerifyToken(),
+      // Canal criado por OAuth guarda o token em credentials (public_credentials);
+      // o manual, em config. Só gera um novo quando o canal ainda não existe.
+      verify_token:
+        channel?.public_credentials?.verify_token ||
+        (channel?.config?.verify_token as string) ||
+        generateVerifyToken(),
     },
   })
 
@@ -155,22 +160,24 @@ export function FacebookConfig({
     ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/facebook/${channel.id}`
     : t('webhookPending')
 
+  const montarPayload = (data: FacebookConfigForm) => ({
+    name: data.name,
+    type: 'facebook',
+    config: {
+      app_id: data.app_id,
+      page_id: data.page_id,
+      verify_token: data.verify_token,
+    },
+    credentials: {
+      app_secret: data.app_secret,
+      page_access_token: data.page_access_token,
+    },
+  })
+
   const onSubmit = async (data: FacebookConfigForm) => {
     setIsSubmitting(true)
     try {
-      const payload = {
-        name: data.name,
-        type: 'facebook',
-        config: {
-          app_id: data.app_id,
-          page_id: data.page_id,
-          verify_token: data.verify_token,
-        },
-        credentials: {
-          app_secret: data.app_secret,
-          page_access_token: data.page_access_token,
-        },
-      }
+      const payload = montarPayload(data)
 
       let result: Channel
       if (isEditing) {
@@ -196,36 +203,31 @@ export function FacebookConfig({
   }
   }
 
+  // Ao editar, o token pode ficar em branco: o backend completa com o guardado
+  // quando recebe channel_id, e o teste lê a Página de verdade na Graph.
   const testConnection = async () => {
-    const values = form.getValues()
-    if (!values.page_access_token) {
-      toast({
-        title: t('missingCredentials'),
-        description: t('enterPageAccessTokenFirst'),
-        variant: 'error',
-      })
-      return
-  }
-
+    const { config, credentials } = montarPayload(form.getValues())
     setTestStatus('testing')
     try {
-      await api.post('/channels/test-facebook', {
-        page_access_token: values.page_access_token,
-        page_id: values.page_id,
+      const res = await api.post<{ message?: string }>('/channels/test-facebook', {
+        type: 'facebook',
+        channel_id: channel?.id,
+        config,
+        credentials,
       })
       setTestStatus('success')
       toast({
         title: t('connectionSuccess'),
-        description: t('facebookCredentialsValid'),
+        description: res?.message || t('facebookCredentialsValid'),
       })
-    } catch {
+    } catch (error) {
       setTestStatus('error')
       toast({
         title: t('connectionFailed'),
-        description: t('facebookConnectionError'),
+        description: error instanceof Error ? error.message : t('facebookConnectionError'),
         variant: 'error',
       })
-  }
+    }
   }
 
   const copyToClipboard = async (text: string) => {

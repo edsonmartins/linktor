@@ -112,16 +112,24 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body in
 	}
 
 	if resp.StatusCode >= 400 {
-		var apiErr struct {
-			Error *APIError `json:"error"`
-		}
-		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error != nil {
-			return nil, apiErr.Error
-		}
-		return nil, fmt.Errorf("API error: %s", string(respBody))
+		return nil, erroDaResposta(resp.StatusCode, respBody)
 	}
 
 	return respBody, nil
+}
+
+// erroDaResposta converte o corpo de erro da Graph em *APIError guardando o
+// status HTTP, que a Meta não repete no corpo. Corpo fora do padrão mantém a
+// mensagem bruta.
+func erroDaResposta(status int, corpo []byte) error {
+	var apiErr struct {
+		Error *APIError `json:"error"`
+	}
+	if json.Unmarshal(corpo, &apiErr) == nil && apiErr.Error != nil {
+		apiErr.Error.StatusCode = status
+		return apiErr.Error
+	}
+	return fmt.Errorf("API error: %s", string(corpo))
 }
 
 // doRequestWithQuery executes an HTTP request with query parameters
@@ -164,13 +172,7 @@ func (c *Client) doRequestWithQuery(ctx context.Context, method, endpoint string
 	}
 
 	if resp.StatusCode >= 400 {
-		var apiErr struct {
-			Error *APIError `json:"error"`
-		}
-		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error != nil {
-			return nil, apiErr.Error
-		}
-		return nil, fmt.Errorf("API error: %s", string(respBody))
+		return nil, erroDaResposta(resp.StatusCode, respBody)
 	}
 
 	return respBody, nil
@@ -325,13 +327,7 @@ func (c *Client) doRawGet(ctx context.Context, rawURL string) ([]byte, error) {
 	}
 
 	if resp.StatusCode >= 400 {
-		var apiErr struct {
-			Error *APIError `json:"error"`
-		}
-		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error != nil {
-			return nil, apiErr.Error
-		}
-		return nil, fmt.Errorf("API error: %s", string(respBody))
+		return nil, erroDaResposta(resp.StatusCode, respBody)
 	}
 
 	return respBody, nil

@@ -14,6 +14,7 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/facebook"
 	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/pkg/graphapi"
 	"github.com/msgfy/linktor/pkg/testutil"
 )
 
@@ -360,4 +361,92 @@ func TestWebhookWhatsApp_FailedStatusWithObjectErrorDataKeepsSiblingMessage(t *t
 		}
 	}
 	assert.True(t, failedFound, "failed status must still be published")
+}
+
+// ---------------------------------------------------------------------------
+// Facebook Messenger — nome do contato vem do perfil da Graph
+// ---------------------------------------------------------------------------
+
+// grafoDePerfil responde GET /{psid} com o nome dado (ou o erro da Meta quando
+// o nome é vazio) e conta as chamadas.
+func grafoDePerfil(t *testing.T, nome string, chamadas *int) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*chamadas++
+		w.Header().Set("Content-Type", "application/json")
+		if nome == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"(#100) No profile available for this user.","code":100}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"user-999","name":"` + nome + `"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv(graphapi.EnvVar, srv.URL)
+}
+
+func mensagemDoMessenger() map[string]interface{} {
+	return map[string]interface{}{
+		"object": "page",
+		"entry": []map[string]interface{}{{
+			"id": "page-123", "time": 1,
+			"messaging": []map[string]interface{}{{
+				"sender":    map[string]string{"id": "user-999"},
+				"recipient": map[string]string{"id": "page-123"},
+				"timestamp": int64(1700000000000),
+				"message":   map[string]interface{}{"mid": "m_nome", "text": "oi"},
+			}},
+		}},
+	}
+}
+
+func TestWebhookFacebook_NomeDoPerfil(t *testing.T) {
+	creds := map[string]string{"app_secret": "fb-app-secret", "page_access_token": "tok"}
+
+	t.Run("perfil disponível vira sender_name", func(t *testing.T) {
+		var chamadas int
+		grafoDePerfil(t, "Maria Silva", &chamadas)
+		handler, channelRepo, producer, _ := setupWebhookTest()
+		addChannel(channelRepo, "ch-fb", entity.ChannelTypeFacebook, creds).Config = map[string]string{"page_id": "page-123"}
+
+		w, c := postSignedTo("ch-fb", mensagemDoMessenger(), "fb-app-secret", "")
+		handler.FacebookWebhook(c)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		require.Len(t, producer.InboundMessages, 1)
+		assert.Equal(t, "Maria Silva", producer.InboundMessages[0].Metadata["sender_name"])
+	})
+
+	t.Run("Graph recusa: mensagem segue sem nome", func(t *testing.T) {
+		var chamadas int
+		grafoDePerfil(t, "", &chamadas)
+		handler, channelRepo, producer, _ := setupWebhookTest()
+		addChannel(channelRepo, "ch-fb", entity.ChannelTypeFacebook, creds).Config = map[string]string{"page_id": "page-123"}
+
+		w, c := postSignedTo("ch-fb", mensagemDoMessenger(), "fb-app-secret", "")
+		handler.FacebookWebhook(c)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		require.Len(t, producer.InboundMessages, 1)
+		assert.Empty(t, producer.InboundMessages[0].Metadata["sender_name"])
+	})
+
+	t.Run("contato já com nome não gasta chamada", func(t *testing.T) {
+		var chamadas int
+		grafoDePerfil(t, "Maria Silva", &chamadas)
+		handler, channelRepo, producer, _ := setupWebhookTest()
+		addChannel(channelRepo, "ch-fb", entity.ChannelTypeFacebook, creds).Config = map[string]string{"page_id": "page-123"}
+		contatos := testutil.NewMockContactRepository()
+		contatos.Contacts["c1"] = &entity.Contact{
+			ID: "c1", TenantID: "tenant-1", Name: "Maria Silva",
+			Identities: []*entity.ContactIdentity{{ChannelType: "facebook", Identifier: "user-999"}},
+		}
+		handler.SetTypingDeps(contatos, nil, nil)
+
+		_, c := postSignedTo("ch-fb", mensagemDoMessenger(), "fb-app-secret", "")
+		handler.FacebookWebhook(c)
+
+		require.Len(t, producer.InboundMessages, 1)
+		assert.Equal(t, 0, chamadas)
+	})
 }

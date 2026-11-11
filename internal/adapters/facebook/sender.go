@@ -2,7 +2,7 @@ package facebook
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/msgfy/linktor/internal/adapters/meta"
@@ -20,24 +20,7 @@ func (SenderFactory) ChannelType() string { return "facebook" }
 
 // New builds a Sender from a channel's Facebook page credentials.
 func (SenderFactory) New(creds map[string]string) (outbound.Sender, error) {
-	cfg := &FacebookConfig{
-		AppID:           creds["app_id"],
-		AppSecret:       creds["app_secret"],
-		PageID:          creds["page_id"],
-		PageAccessToken: creds["page_access_token"],
-		UserAccessToken: creds["user_access_token"],
-		VerifyToken:     creds["verify_token"],
-		InstagramID:     creds["instagram_id"],
-	}
-	// Channels created through /oauth/channels store the page token under
-	// access_token; accept it so they can send, not only receive.
-	if cfg.PageAccessToken == "" {
-		cfg.PageAccessToken = creds["access_token"]
-	}
-	if cfg.PageAccessToken == "" {
-		return nil, fmt.Errorf("page_access_token is required")
-	}
-	client, err := NewClient(cfg)
+	client, err := NewClient(ConfigFromMap(creds))
 	if err != nil {
 		return nil, err
 	}
@@ -60,26 +43,27 @@ func (s *fbSender) Send(ctx context.Context, msg *outbound.Message) (*outbound.R
 		if c.Body == "" {
 			return nil, outbound.Permanentf("text body is required")
 		}
-		resp, err := s.client.SendTextMessageAs(ctx, msg.To, c.Body, mt, tag)
-		if err != nil {
-			return nil, err
-		}
-		return &outbound.Receipt{ProviderMessageID: resp.MessageID}, nil
+		return receiptOrErr(s.client.SendTextMessageAs(ctx, msg.To, c.Body, mt, tag))
 
 	case outbound.Template:
 		text := strings.TrimSpace(strings.Join(c.BodyParams, " "))
 		if text == "" {
 			return nil, outbound.Permanentf("empty template payload")
 		}
-		resp, err := s.client.SendTextMessageAs(ctx, msg.To, text, mt, tag)
-		if err != nil {
-			return nil, err
-		}
-		return &outbound.Receipt{ProviderMessageID: resp.MessageID}, nil
+		return receiptOrErr(s.client.SendTextMessageAs(ctx, msg.To, text, mt, tag))
 
 	case outbound.Media:
 		if c.URL == "" {
 			return nil, outbound.Permanentf("media requires a URL")
+		}
+		// O Messenger não aceita texto no mesmo envio do anexo: a legenda vai
+		// antes, como mensagem própria, e o recibo devolvido é o do anexo. Se o
+		// anexo falhar de forma passageira, a nova tentativa repete a legenda;
+		// melhor isso do que perdê-la, que era o que acontecia.
+		if c.Caption != "" {
+			if _, err := receiptOrErr(s.client.SendTextMessageAs(ctx, msg.To, c.Caption, mt, tag)); err != nil {
+				return nil, err
+			}
 		}
 		return receiptOrErr(s.client.SendAttachmentAs(ctx, msg.To, fbAttachmentType(c.Type), c.URL, mt, tag))
 
@@ -116,7 +100,23 @@ func fbAttachmentType(t outbound.MediaType) string {
 
 func receiptOrErr(resp *meta.SendMessageResponse, err error) (*outbound.Receipt, error) {
 	if err != nil {
-		return nil, err
+		return nil, classificarErro(err)
 	}
 	return &outbound.Receipt{ProviderMessageID: resp.MessageID}, nil
+}
+
+// classificarErro separa o que vale repetir do que não vale. Recusa da Graph
+// que não é limite de taxa nem 5xx (token inválido, destinatário fora da
+// janela, PSID errado) é permanente: repetir só deixava a mensagem "pendente"
+// até a fila desistir, sem nunca virar "falhou". Rede e erro desconhecido
+// seguem transitórios; o que já veio marcado permanente passa intacto.
+func classificarErro(err error) error {
+	if outbound.IsPermanent(err) {
+		return err
+	}
+	var apiErr *meta.APIError
+	if errors.As(err, &apiErr) && !apiErr.Transient() {
+		return outbound.Permanent(err)
+	}
+	return err
 }

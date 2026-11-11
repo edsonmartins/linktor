@@ -748,6 +748,11 @@ func main() {
 	channelService.SetConnectPreparer(entity.ChannelTypeTelegram, func(ctx context.Context, ch *entity.Channel) error {
 		return prepareTelegramChannel(ctx, telegramWebhooks, ch)
 	})
+	// Messenger: Conectar valida o token e assina a Página no app. Era um passo
+	// manual no painel da Meta; sem ele nenhuma mensagem chegava.
+	channelService.SetConnectPreparer(entity.ChannelTypeFacebook, func(ctx context.Context, ch *entity.Channel) error {
+		return prepareFacebookChannel(ctx, facebook.Conectar, ch)
+	})
 	unregisterTelegram := func(ch *entity.Channel) {
 		if ch.Type != entity.ChannelTypeTelegram || ch.Credentials["bot_token"] == "" {
 			return
