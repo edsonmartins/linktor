@@ -123,9 +123,11 @@ func TestChannel_MarshalJSON_RedactsSecrets(t *testing.T) {
 	ch.Config["access_token"] = "EAAG-super-secret"
 	ch.Config["app_secret"] = "app-secret-value"
 	ch.Config["widget_secret"] = "widget-secret-value"
-	ch.Config["phone_number_id"] = "123456" // non-secret, must stay
-	ch.Config["empty_secret_token"] = ""    // empty sensitive-ish key stays as-is
+	ch.Config["phone_number_id"] = "123456"  // non-secret, must stay
+	ch.Config["empty_secret_token"] = ""     // empty sensitive-ish key stays as-is
+	ch.Config["verify_token"] = "meu-verify" // o operador cola na Meta: tem de ser legível
 	ch.Credentials["api_key"] = "must-not-leak"
+	ch.Credentials["verify_token"] = "verify-do-oauth" // canal de OAuth guarda só aqui
 
 	raw, err := json.Marshal(ch)
 	assert.NoError(t, err)
@@ -139,6 +141,10 @@ func TestChannel_MarshalJSON_RedactsSecrets(t *testing.T) {
 	// Non-secret config is preserved and credentials never serialize.
 	assert.Contains(t, s, "123456")
 	assert.NotContains(t, s, "must-not-leak")
+	// O verify token não é segredo: aparece em config e, para canais de OAuth,
+	// em public_credentials.
+	assert.Contains(t, s, "meu-verify")
+	assert.Contains(t, s, `"verify_token":"verify-do-oauth"`)
 
 	// The in-memory struct is untouched (redaction happens on a copy).
 	assert.Equal(t, "EAAG-super-secret", ch.Config["access_token"])

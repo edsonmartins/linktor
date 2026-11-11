@@ -1,6 +1,9 @@
 package meta
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // API Constants
 const (
@@ -204,11 +207,32 @@ type APIError struct {
 	Code         int    `json:"code"`
 	ErrorSubcode int    `json:"error_subcode,omitempty"`
 	FBTraceID    string `json:"fbtrace_id,omitempty"`
+	// StatusCode é o status HTTP da resposta. A Meta não o repete no corpo, e é
+	// ele que separa limite de taxa e indisponibilidade (vale repetir) de
+	// recusa (não vale).
+	StatusCode int `json:"-"`
 }
 
-// Error implements the error interface
+// Error implements the error interface. Leva o código da Meta junto da
+// mensagem: é por ele que se procura na documentação, e é o que o operador
+// precisa ver na linha do tempo quando o envio falha.
 func (e *APIError) Error() string {
-	return e.Message
+	if e.Code == 0 {
+		return e.Message
+	}
+	return fmt.Sprintf("(#%d) %s", e.Code, e.Message)
+}
+
+// codigosTransitorios são os códigos da Graph que indicam limite de taxa ou
+// falha passageira do lado da Meta: 1 e 2 (API unknown/service), 4, 17, 32
+// (limites de app, usuário e página) e 613 (limite de chamadas).
+var codigosTransitorios = map[int]bool{1: true, 2: true, 4: true, 17: true, 32: true, 613: true}
+
+// Transient diz se vale repetir a chamada. Tudo que não é limite de taxa nem
+// 5xx é recusa definitiva (token inválido, destinatário fora da janela, PSID
+// errado): repetir só adiaria o "falhou".
+func (e *APIError) Transient() bool {
+	return e.StatusCode == 429 || e.StatusCode >= 500 || codigosTransitorios[e.Code]
 }
 
 // UserProfile represents user profile data

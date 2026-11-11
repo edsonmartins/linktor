@@ -564,6 +564,9 @@ func (h *OAuthHandler) CreateChannel(c *gin.Context) {
 	if req.PageID != "" {
 		config["page_id"] = req.PageID
 	}
+	// Também em config, que é de onde o formulário de edição lê para mostrar
+	// ao operador (o webhook aceita os dois lugares).
+	config["verify_token"] = verifyToken
 	if req.InstagramID != "" {
 		config["instagram_id"] = req.InstagramID
 	}

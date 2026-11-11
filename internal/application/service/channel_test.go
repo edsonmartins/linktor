@@ -765,6 +765,24 @@ func TestChannelService_Update_PreservesRedactedSecret(t *testing.T) {
 	assert.Equal(t, "rotated-token", updated2.Config["access_token"])
 }
 
+// Uma aba do admin aberta antes de verify_token deixar de ser secreto ainda
+// ecoa o marcador; gravá-lo literalmente apagaria o valor que a Meta confere.
+func TestChannelService_Update_RedactedEmChaveComumMantemGuardado(t *testing.T) {
+	svc, _, _ := newChannelService()
+
+	created, err := svc.Create(context.Background(), &CreateChannelInput{
+		TenantID: "tenant1", Type: "facebook", Name: "FB",
+		Config: map[string]string{"page_id": "P", "verify_token": "meu-verify"},
+	})
+	require.NoError(t, err)
+
+	updated, err := svc.Update(context.Background(), created.ID, &UpdateChannelInput{
+		Config: map[string]string{"page_id": "P", "verify_token": entity.RedactedSecret},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "meu-verify", updated.Config["verify_token"])
+}
+
 func TestChannelService_Connect_RunsPreparerAndPersistsWhatItSets(t *testing.T) {
 	svc, repo, _ := newChannelService()
 	created, err := svc.Create(context.Background(), &CreateChannelInput{

@@ -242,3 +242,26 @@ func TestOAuthHandler_RefreshToken_InvalidBody(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp["error"])
 }
+
+// O formulário de edição lê o verify token de config; o canal criado por OAuth
+// precisa gravá-lo lá também, não só em credentials.
+func TestOAuthHandler_CreateChannel_GravaVerifyTokenEmConfig(t *testing.T) {
+	handler, repo := setupOAuthTest(t)
+
+	// Sem page_id: evita a assinatura do webhook, que falaria com a Graph.
+	body := map[string]string{
+		"name": "Página", "type": "facebook",
+		"access_token": "tok", "app_id": "APP", "app_secret": "segredo",
+	}
+	w, c := newTestContext(http.MethodPost, "/oauth/channels", body)
+	c.Set("tenant_id", "tenant-1")
+
+	handler.CreateChannel(c)
+
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+	require.Len(t, repo.Channels, 1)
+	for _, ch := range repo.Channels {
+		assert.NotEmpty(t, ch.Config["verify_token"])
+		assert.Equal(t, ch.Credentials["verify_token"], ch.Config["verify_token"])
+	}
+}

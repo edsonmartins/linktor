@@ -365,6 +365,13 @@ func liveChannelCheck(ctx context.Context, channelType string, config map[string
 		return fmt.Sprintf("connected to Mattermost (bot %q)", username), true, nil
 	case "email":
 		return liveEmailCheck(ctx, config)
+	case "facebook":
+		// Só leitura: assinar a Página é papel do Conectar, não de um teste.
+		nome, e := facebook.Verificar(ctx, facebook.ConfigFromMap(config))
+		if e != nil {
+			return "", true, e
+		}
+		return fmt.Sprintf("connected to Page %q", nome), true, nil
 	default:
 		return "", false, nil
 	}
@@ -1050,11 +1057,7 @@ func validateChannelTestConfig(channelType string, config map[string]string) err
 	case "sms", "twilio":
 		return sms.NewAdapter().Initialize(config)
 	case "facebook":
-		cfg := &facebook.FacebookConfig{
-			PageID:          config["page_id"],
-			PageAccessToken: config["page_access_token"],
-		}
-		return cfg.Validate()
+		return facebook.ConfigFromMap(config).Validate()
 	case "instagram":
 		cfg := &instagram.InstagramConfig{
 			InstagramID:     config["instagram_id"],

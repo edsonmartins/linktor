@@ -101,6 +101,9 @@ func TestClient_SendMessage(t *testing.T) {
 		_, err := c.SendMessage(context.Background(), "page-1", &OutboundMessage{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Invalid recipient")
+		var apiErr *APIError
+		require.ErrorAs(t, err, &apiErr)
+		assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode, "o status HTTP é o que separa transitório de permanente")
 	})
 }
 
@@ -545,7 +548,30 @@ func TestAPIError(t *testing.T) {
 		Type:    "OAuthException",
 		Code:    190,
 	}
-	assert.Equal(t, "Invalid token", err.Error())
+	assert.Equal(t, "(#190) Invalid token", err.Error(), "o código da Meta vai junto: é o que o operador vê na linha do tempo")
+	assert.Equal(t, "sem código", (&APIError{Message: "sem código"}).Error())
+}
+
+func TestAPIError_Transient(t *testing.T) {
+	casos := []struct {
+		nome        string
+		status      int
+		code        int
+		transitorio bool
+	}{
+		{"429 limite de taxa", 429, 0, true},
+		{"5xx da Meta", 503, 0, true},
+		{"400 com código de limite (#4)", 400, 4, true},
+		{"400 com #613", 400, 613, true},
+		{"400 token inválido (#190)", 400, 190, false},
+		{"400 parâmetro inválido (#100)", 400, 100, false},
+		{"400 fora da janela (#10)", 400, 10, false},
+	}
+	for _, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			assert.Equal(t, c.transitorio, (&APIError{StatusCode: c.status, Code: c.code}).Transient())
+		})
+	}
 }
 
 func TestBuildURL(t *testing.T) {

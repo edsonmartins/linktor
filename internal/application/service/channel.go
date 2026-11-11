@@ -371,6 +371,14 @@ func (s *ChannelService) Update(ctx context.Context, id string, input *UpdateCha
 		// means "keep the stored one" rather than wipe it.
 		merged := make(map[string]string, len(input.Config))
 		for k, v := range input.Config {
+			// Um formulário aberto antes de uma chave deixar de ser secreta
+			// ainda ecoa o marcador; gravá-lo literalmente apagaria o valor.
+			if v == entity.RedactedSecret {
+				if existing, ok := channel.Config[k]; ok {
+					merged[k] = existing
+				}
+				continue
+			}
 			merged[k] = v
 		}
 		for k := range entity.SensitiveConfigKeys {

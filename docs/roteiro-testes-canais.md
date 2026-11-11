@@ -111,17 +111,23 @@ Webhook: `/api/v1/webhooks/facebook/{channelId}`.
 
 Preparação:
 
-1. Ter App ID, App Secret, Page ID e Page Access Token com `pages_messaging`.
-2. Criar o canal pela aba Manual.
-3. Conectar pelo menu do card, cadastrar o webhook na Meta e assinar `messages`, `messaging_postbacks` e `message_deliveries`.
+1. Ter App ID, App Secret, Page ID e Page Access Token com `pages_messaging` (gerar o token em Messenger → Configurações da API, que é de longa duração; o do Graph Explorer expira em horas).
+2. Criar o canal pela aba Manual. O verify token fica legível na edição do canal; não é preciso anotar antes de salvar.
+3. Conectar pelo menu do card: valida o token lendo a Página e assina a Página em `messages`, `messaging_postbacks`, `message_deliveries` e `message_reads` (token errado não conecta). Depois cadastrar na Meta a URL do webhook e o verify token mostrados na aba Webhook.
+4. Canal criado pelo fluxo OAuth nasce conectado sem passar pelo Conectar: clicar em Conectar uma vez para assinar a Página.
 
 Testes específicos:
 
 - Verificação GET da Meta devolve o challenge.
-- Receber texto, imagem, vídeo, áudio, arquivo e localização pelo Messenger.
+- Testar Conexão é real: com o token guardado (campo em branco ao editar) mostra o nome da Página; com token errado mostra o erro da Meta com o código, ex. `(#190)`.
+- Receber texto, imagem, vídeo, áudio e arquivo pelo Messenger. Localização chega sem coordenadas (limitação conhecida).
+- Contato nasce com o nome do perfil do Messenger. Em modo de desenvolvimento a Meta só devolve o perfil de quem tem papel no app; fora disso fica sem nome.
 - Postback: tocar em um botão do menu da Página; chega como texto com o payload.
 - Enviar texto e mídia; status vai até Entregue (Lido não é registrado).
+- Enviar mídia com texto: chega como duas mensagens, o texto e depois o anexo (o Messenger não aceita legenda no anexo).
+- Enviar com token revogado: a mensagem vai a Falhou com o código da Meta, em vez de ficar Pendente.
 - Enviar várias mídias de uma vez: só a primeira deve aparecer.
+- Respostas dadas pela caixa de entrada da Página (Business Suite) não aparecem no painel: o echo é descartado.
 - Fluxo OAuth da aba Connect: escolher a Página, criar o canal e responder uma mensagem.
 
 ### Instagram

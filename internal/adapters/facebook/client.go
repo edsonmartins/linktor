@@ -167,17 +167,7 @@ func (c *Client) MarkSeen(ctx context.Context, recipientID string) error {
 
 // SubscribeToWebhooks subscribes the page to webhook events
 func (c *Client) SubscribeToWebhooks(ctx context.Context) error {
-	fields := []string{
-		"messages",
-		"messaging_postbacks",
-		"messaging_optins",
-		"messaging_optouts",
-		"message_deliveries",
-		"message_reads",
-		"messaging_handovers",
-		"standby",
-	}
-	return c.api.SubscribeToWebhook(ctx, c.config.PageID, fields)
+	return c.api.SubscribeToWebhook(ctx, c.config.PageID, camposDoWebhook)
 }
 
 // UnsubscribeFromWebhooks unsubscribes the page from webhook events

@@ -1733,6 +1733,9 @@ func (h *WebhookHandler) processFacebookMessage(ctx context.Context, channel *en
 		"sender_id": msg.SenderID,
 		"page_id":   msg.PageID,
 	}
+	if nome := h.nomeDoRemetenteFacebook(ctx, channel, msg.SenderID); nome != "" {
+		metadata["sender_name"] = nome
+	}
 
 	if msg.QuickReply != "" {
 		metadata["quick_reply"] = msg.QuickReply
@@ -1759,6 +1762,17 @@ func (h *WebhookHandler) processFacebookMessage(ctx context.Context, channel *en
 // HTTP-level webhook dedup middleware guards against Meta retries, so no stable
 // external id is needed.
 func (h *WebhookHandler) processFacebookPostback(ctx context.Context, channel *entity.Channel, pb *facebook.Postback) error {
+	metadata := map[string]string{
+		"sender_id":        pb.SenderID,
+		"page_id":          pb.PageID,
+		"recipient_id":     pb.RecipientID,
+		"event_type":       "postback",
+		"postback_payload": pb.Payload,
+		"postback_title":   pb.Title,
+	}
+	if nome := h.nomeDoRemetenteFacebook(ctx, channel, pb.SenderID); nome != "" {
+		metadata["sender_name"] = nome
+	}
 	inbound := &nats.InboundMessage{
 		ID:          uuid.New().String(),
 		TenantID:    channel.TenantID,
@@ -1766,17 +1780,42 @@ func (h *WebhookHandler) processFacebookPostback(ctx context.Context, channel *e
 		ChannelType: "facebook",
 		ContentType: "text",
 		Content:     pb.Payload,
-		Metadata: map[string]string{
-			"sender_id":        pb.SenderID,
-			"page_id":          pb.PageID,
-			"recipient_id":     pb.RecipientID,
-			"event_type":       "postback",
-			"postback_payload": pb.Payload,
-			"postback_title":   pb.Title,
-		},
-		Timestamp: pb.Timestamp,
+		Metadata:    metadata,
+		Timestamp:   pb.Timestamp,
 	}
 	return h.publishInbound(ctx, inbound)
+}
+
+// nomeDoRemetenteFacebook busca na Graph o nome do PSID, para o contato não
+// nascer "Contato Desconhecido": o Messenger só manda o id. Consulta apenas
+// quando o contato ainda não existe ou está sem nome, para não gastar uma
+// chamada por mensagem. Melhor esforço, como rehostWhatsAppMedia: em modo de
+// desenvolvimento a Graph só devolve o perfil de quem tem papel no app, e sem
+// nome a mensagem segue normalmente.
+func (h *WebhookHandler) nomeDoRemetenteFacebook(ctx context.Context, channel *entity.Channel, psid string) string {
+	if psid == "" {
+		return ""
+	}
+	if h.contactRepo != nil {
+		contato, err := h.contactRepo.FindByIdentity(ctx, channel.TenantID, string(channel.Type), psid)
+		if err == nil && contato != nil && contato.Name != "" && contato.Name != "Unknown" {
+			return ""
+		}
+	}
+	client, err := facebook.NewClient(facebook.ConfigFromMap(channel.Config, channel.Credentials))
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	perfil, err := client.GetUserProfile(ctx, psid)
+	if err != nil || perfil == nil {
+		return ""
+	}
+	if nome := strings.TrimSpace(perfil.Name); nome != "" {
+		return nome
+	}
+	return strings.TrimSpace(perfil.FirstName + " " + perfil.LastName)
 }
 
 func (h *WebhookHandler) processFacebookDeliveryStatus(ctx context.Context, channel *entity.Channel, status *facebook.DeliveryStatus) {
