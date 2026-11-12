@@ -1793,14 +1793,8 @@ func (h *WebhookHandler) processFacebookPostback(ctx context.Context, channel *e
 // desenvolvimento a Graph só devolve o perfil de quem tem papel no app, e sem
 // nome a mensagem segue normalmente.
 func (h *WebhookHandler) nomeDoRemetenteFacebook(ctx context.Context, channel *entity.Channel, psid string) string {
-	if psid == "" {
+	if psid == "" || h.contatoJaTemNome(ctx, channel, psid) {
 		return ""
-	}
-	if h.contactRepo != nil {
-		contato, err := h.contactRepo.FindByIdentity(ctx, channel.TenantID, string(channel.Type), psid)
-		if err == nil && contato != nil && contato.Name != "" && contato.Name != "Unknown" {
-			return ""
-		}
 	}
 	client, err := facebook.NewClient(facebook.ConfigFromMap(channel.Config, channel.Credentials))
 	if err != nil {
@@ -1816,6 +1810,36 @@ func (h *WebhookHandler) nomeDoRemetenteFacebook(ctx context.Context, channel *e
 		return nome
 	}
 	return strings.TrimSpace(perfil.FirstName + " " + perfil.LastName)
+}
+
+// nomeDoRemetenteInstagram é o mesmo melhor esforço de nomeDoRemetenteFacebook
+// para o IGSID: consulta a Graph só quando o contato ainda não tem nome, e um
+// perfil indisponível não atrasa a mensagem.
+func (h *WebhookHandler) nomeDoRemetenteInstagram(ctx context.Context, channel *entity.Channel, igsid string) string {
+	if igsid == "" || h.contatoJaTemNome(ctx, channel, igsid) {
+		return ""
+	}
+	client, err := instagram.NewClient(instagram.ConfigFromMap(channel.Config, channel.Credentials))
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	nome, err := client.NomeDoPerfil(ctx, igsid)
+	if err != nil {
+		return ""
+	}
+	return nome
+}
+
+// contatoJaTemNome diz se o identificador já pertence a um contato com nome
+// real; nesse caso não vale gastar uma chamada ao provedor.
+func (h *WebhookHandler) contatoJaTemNome(ctx context.Context, channel *entity.Channel, identificador string) bool {
+	if h.contactRepo == nil {
+		return false
+	}
+	contato, err := h.contactRepo.FindByIdentity(ctx, channel.TenantID, string(channel.Type), identificador)
+	return err == nil && contato != nil && contato.Name != "" && contato.Name != "Unknown"
 }
 
 func (h *WebhookHandler) processFacebookDeliveryStatus(ctx context.Context, channel *entity.Channel, status *facebook.DeliveryStatus) {
@@ -1853,6 +1877,9 @@ func (h *WebhookHandler) processInstagramMessage(ctx context.Context, channel *e
 	metadata := map[string]string{
 		"sender_id":    msg.SenderID,
 		"instagram_id": msg.InstagramID,
+	}
+	if nome := h.nomeDoRemetenteInstagram(ctx, channel, msg.SenderID); nome != "" {
+		metadata["sender_name"] = nome
 	}
 
 	inbound := &nats.InboundMessage{

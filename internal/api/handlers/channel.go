@@ -372,6 +372,12 @@ func liveChannelCheck(ctx context.Context, channelType string, config map[string
 			return "", true, e
 		}
 		return fmt.Sprintf("connected to Page %q", nome), true, nil
+	case "instagram":
+		usuario, e := instagram.Verificar(ctx, instagram.ConfigFromMap(config))
+		if e != nil {
+			return "", true, e
+		}
+		return fmt.Sprintf("connected to Instagram @%s", usuario), true, nil
 	default:
 		return "", false, nil
 	}
@@ -1059,12 +1065,7 @@ func validateChannelTestConfig(channelType string, config map[string]string) err
 	case "facebook":
 		return facebook.ConfigFromMap(config).Validate()
 	case "instagram":
-		cfg := &instagram.InstagramConfig{
-			InstagramID:     config["instagram_id"],
-			AccessToken:     config["access_token"],
-			PageAccessToken: config["page_access_token"],
-		}
-		return cfg.Validate()
+		return instagram.ConfigFromMap(config).Validate()
 	case "rcs":
 		cfg := &rcs.Config{
 			Provider: rcs.Provider(config["provider"]),

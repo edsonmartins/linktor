@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/msgfy/linktor/pkg/graphapi"
@@ -45,6 +46,22 @@ func NewInstagramClient(accessToken, appSecret string) *Client {
 	return c
 }
 
+// prefixoTokenInstagram marca os tokens do "Login do Instagram", os únicos que
+// graph.instagram.com aceita.
+const prefixoTokenInstagram = "IGAA"
+
+// NewClientParaToken escolhe o host pelo token, não pela chave em que ele foi
+// gravado: "IGAA…" (Login do Instagram) vai para graph.instagram.com; qualquer
+// outro (token de Página ou do login unificado, "EAA…") vai para
+// graph.facebook.com. Decidir pela chave fazia todo canal cadastrado pela tela
+// falhar com #190 em apps novos, que só emitem "EAA…".
+func NewClientParaToken(accessToken, appSecret string) *Client {
+	if strings.HasPrefix(accessToken, prefixoTokenInstagram) {
+		return NewInstagramClient(accessToken, appSecret)
+	}
+	return NewClient(accessToken, appSecret)
+}
+
 // SetAPIVersion changes the API version
 func (c *Client) SetAPIVersion(version string) {
 	c.apiVersion = version
@@ -54,6 +71,10 @@ func (c *Client) SetAPIVersion(version string) {
 func (c *Client) SetAccessToken(token string) {
 	c.accessToken = token
 }
+
+// BaseURL devolve o host da Graph em uso (graph.facebook.com ou
+// graph.instagram.com).
+func (c *Client) BaseURL() string { return c.baseURL }
 
 // SetBaseURL overrides the Graph API base URL (used to target a sandbox or a
 // test server).

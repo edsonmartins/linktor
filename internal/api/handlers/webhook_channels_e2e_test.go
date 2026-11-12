@@ -450,3 +450,61 @@ func TestWebhookFacebook_NomeDoPerfil(t *testing.T) {
 		assert.Equal(t, 0, chamadas)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Instagram — nome do contato vem do perfil da Graph, com os campos que o
+// Instagram aceita
+// ---------------------------------------------------------------------------
+
+func dmDoInstagram() map[string]interface{} {
+	return map[string]interface{}{
+		"object": "instagram",
+		"entry": []map[string]interface{}{{
+			"id": "ig-account-1", "time": 1,
+			"messaging": []map[string]interface{}{{
+				"sender":    map[string]string{"id": "ig-user-1"},
+				"recipient": map[string]string{"id": "ig-account-1"},
+				"timestamp": int64(1700000000000),
+				"message":   map[string]interface{}{"mid": "ig_mid_nome", "text": "oi"},
+			}},
+		}},
+	}
+}
+
+func TestWebhookInstagram_NomeDoPerfil(t *testing.T) {
+	creds := map[string]string{"app_secret": "ig-app-secret", "access_token": "EAAtok"}
+
+	t.Run("perfil disponível vira sender_name com os campos do Instagram", func(t *testing.T) {
+		var campos string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			campos = r.URL.Query().Get("fields")
+			_, _ = w.Write([]byte(`{"id":"ig-user-1","name":"Maria","username":"maria_ig"}`))
+		}))
+		defer srv.Close()
+		t.Setenv(graphapi.EnvVar, srv.URL)
+		handler, channelRepo, producer, _ := setupWebhookTest()
+		addChannel(channelRepo, "ch-ig", entity.ChannelTypeInstagram, creds).Config = map[string]string{"instagram_id": "ig-account-1"}
+
+		w, c := postSignedTo("ch-ig", dmDoInstagram(), "ig-app-secret", "")
+		handler.InstagramWebhook(c)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		require.Len(t, producer.InboundMessages, 1)
+		assert.Equal(t, "Maria", producer.InboundMessages[0].Metadata["sender_name"])
+		assert.Equal(t, "name,username,profile_pic", campos)
+	})
+
+	t.Run("Graph recusa: mensagem segue sem nome", func(t *testing.T) {
+		var chamadas int
+		grafoDePerfil(t, "", &chamadas)
+		handler, channelRepo, producer, _ := setupWebhookTest()
+		addChannel(channelRepo, "ch-ig", entity.ChannelTypeInstagram, creds).Config = map[string]string{"instagram_id": "ig-account-1"}
+
+		w, c := postSignedTo("ch-ig", dmDoInstagram(), "ig-app-secret", "")
+		handler.InstagramWebhook(c)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		require.Len(t, producer.InboundMessages, 1)
+		assert.Empty(t, producer.InboundMessages[0].Metadata["sender_name"])
+	})
+}

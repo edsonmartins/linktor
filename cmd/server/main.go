@@ -753,6 +753,9 @@ func main() {
 	channelService.SetConnectPreparer(entity.ChannelTypeFacebook, func(ctx context.Context, ch *entity.Channel) error {
 		return prepareFacebookChannel(ctx, facebook.Conectar, ch)
 	})
+	channelService.SetConnectPreparer(entity.ChannelTypeInstagram, func(ctx context.Context, ch *entity.Channel) error {
+		return prepareInstagramChannel(ctx, instagram.Conectar, ch)
+	})
 	unregisterTelegram := func(ch *entity.Channel) {
 		if ch.Type != entity.ChannelTypeTelegram || ch.Credentials["bot_token"] == "" {
 			return
