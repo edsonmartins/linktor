@@ -7,6 +7,18 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Custo do WhatsApp oficial no status da mensagem
+
+- **`data.pricing` em `message.sent` / `message.delivered` / `message.read`** do
+  canal `whatsapp_official`: o objeto `pricing` que a Meta manda no status da
+  Cloud API (`billable`, `pricingModel`, `category`, valores dela sem tradução).
+  Antes ele era lido e descartado no webhook. Sem `pricing` da Meta, o campo não
+  vem — nem `null`, nem objeto vazio.
+- O status com `pricing` tem id de entrega próprio: o `message.sent` que o
+  Linktor anuncia no ack do envio e o `sent` da Meta com o pricing deixam de
+  colidir na deduplicação do stream (que descartava o segundo).
+- SDKs TypeScript e Python: `pricing` opcional no evento de status.
+
 ### Foto do contato do WhatsApp
 
 - **`GET /api/v1/channels/:id/contacts/:contact/avatar`** — a foto de perfil de

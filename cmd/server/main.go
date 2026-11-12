@@ -2217,17 +2217,31 @@ func notifyMessageStatusChange(ctx context.Context, messageRepo *database.Messag
 		return
 	}
 	_ = producer.PublishEvent(ctx, &nats.Event{
-		Type:     eventType,
-		TenantID: conversation.TenantID,
-		Payload: map[string]interface{}{
-			"message_id":  messageID,
-			"channel_id":  conversation.ChannelID,
-			"external_id": status.ExternalID,
-			"status":      status.Status,
-			"error":       status.ErrorMessage,
-		},
+		Type:      eventType,
+		TenantID:  conversation.TenantID,
+		Payload:   statusEventPayload(messageID, conversation.ChannelID, status),
 		Timestamp: time.Now(),
 	})
+}
+
+// statusEventPayload monta o payload do evento message.<status>. O pricing só
+// entra quando o provedor o mandou: ausente é "não sei", nunca "grátis".
+func statusEventPayload(messageID, channelID string, status *nats.StatusUpdate) map[string]interface{} {
+	payload := map[string]interface{}{
+		"message_id":  messageID,
+		"channel_id":  channelID,
+		"external_id": status.ExternalID,
+		"status":      status.Status,
+		"error":       status.ErrorMessage,
+	}
+	if status.Pricing != nil {
+		payload["pricing"] = map[string]interface{}{
+			"billable":      status.Pricing.Billable,
+			"pricing_model": status.Pricing.PricingModel,
+			"category":      status.Pricing.Category,
+		}
+	}
+	return payload
 }
 
 // buildMediaStore constructs the optional inbound-media store from the

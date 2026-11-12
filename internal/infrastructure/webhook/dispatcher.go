@@ -340,9 +340,18 @@ func (d *Dispatcher) dispatchStatus(ctx context.Context, event *nats.Event, even
 		// exactly like the inbound ones instead of guessing.
 		ChannelID:   channel.ID,
 		ChannelType: channelType(channel, p),
+		Pricing:     p.pricing(),
 	}
 
-	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), eventType), data)
+	// O "sent" que o Linktor anuncia no ack do envio e o "sent" que a Meta manda
+	// depois, já com o pricing, teriam a mesma chave — e o segundo morreria na
+	// deduplicação do stream, levando o pricing junto. O status com pricing tem
+	// chave própria; a reentrega dele continua deduplicada.
+	kind := eventType
+	if data.Pricing != nil {
+		kind += "_pricing"
+	}
+	return d.deliver(ctx, channel, eventType, event.TenantID, dedupKey(p.str("message_id"), kind), data)
 }
 
 // dispatchCall converts a call outcome into an outbound webhook. The call was
@@ -581,6 +590,19 @@ func payload(m map[string]interface{}) eventPayload {
 		return eventPayload{}
 	}
 	return eventPayload(m)
+}
+
+// pricing lê o objeto pricing do status; nil quando o evento não o traz.
+func (p eventPayload) pricing() *StatusPricing {
+	raw, ok := p["pricing"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	pricing := &StatusPricing{}
+	pricing.Billable, _ = raw["billable"].(bool)
+	pricing.PricingModel, _ = raw["pricing_model"].(string)
+	pricing.Category, _ = raw["category"].(string)
+	return pricing
 }
 
 func (p eventPayload) str(key string) string {

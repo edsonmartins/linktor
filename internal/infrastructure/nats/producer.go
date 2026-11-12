@@ -90,8 +90,19 @@ type StatusUpdate struct {
 	// opposed to a provider rejection. Persisted into the message so the console
 	// can tell a local block from a remote failure without parsing the error
 	// text (INV-014: no client-side inference). Empty for provider failures.
-	BlockedReason string    `json:"blocked_reason,omitempty"`
-	Timestamp     time.Time `json:"timestamp"`
+	BlockedReason string `json:"blocked_reason,omitempty"`
+	// Pricing é o que a Meta diz, no status da Cloud API, sobre a cobrança da
+	// mensagem. nil quando o provedor não mandou — "não sei", não "grátis".
+	Pricing   *StatusPricing `json:"pricing,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
+}
+
+// StatusPricing é o objeto `pricing` do status da Meta, com os valores dela
+// sem tradução (category: marketing, utility, authentication, service, …).
+type StatusPricing struct {
+	Billable     bool   `json:"billable"`
+	PricingModel string `json:"pricing_model,omitempty"`
+	Category     string `json:"category,omitempty"`
 }
 
 // AttachmentData represents attachment information
