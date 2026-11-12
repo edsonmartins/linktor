@@ -136,18 +136,21 @@ Webhook: `/api/v1/webhooks/instagram/{channelId}`.
 
 Preparação:
 
-1. Conta profissional ligada a uma Página; ter Instagram ID, token, App ID e App Secret.
-2. Criar pela aba Manual preenchendo o App Secret (a tela o trata como opcional, mas sem ele todo POST é recusado).
-3. Conectar pelo menu do card e assinar o webhook do Instagram na Meta manualmente.
+1. Conta profissional do Instagram; no app Meta, produto Instagram → "API setup with Unified login" → adicionar a conta e gerar o token. Apps novos só emitem token `EAA…` (login unificado); o `IGAA…` (Login do Instagram) também é aceito. O host da Graph é escolhido pelo token.
+2. Criar pela aba Manual com Instagram ID, App ID, token e App Secret (a tela o trata como opcional, mas sem ele todo POST é recusado).
+3. Conectar pelo menu do card: valida o token lendo a conta e assina a conta em `messages`, `messaging_seen` e `message_reactions` (token errado não conecta). Cadastrar na Meta a URL do webhook e o verify token mostrados na aba Webhook.
+4. Quem manda as DMs precisa ser Testador do Instagram do app (convite aceito no Instagram), e não pode ser a própria conta do canal.
 
 Testes específicos:
 
 - Verificação GET da Meta devolve o challenge.
-- Receber DM de texto, imagem, vídeo e áudio.
-- Responder a um story e mencionar a conta em um story: chegam como `[story reply]` e `[mentioned you in a story]`.
-- Reagir a uma mensagem: verificar se a reação aparece ou some.
-- Enviar texto e mídia; o status para em Enviado.
-- Fluxo OAuth da aba Connect.
+- Testar Conexão é real: com o token guardado (campo em branco ao editar) mostra `@usuario`; com token errado mostra o erro da Meta com o código, ex. `(#190)`.
+- Receber DM de texto, imagem, vídeo e áudio. Contato nasce com o nome do perfil (ou `@usuario`).
+- Responder a um story e mencionar a conta em um story: chegam como `[story reply]` e `[mentioned you in a story]`, sem o contexto do story.
+- Reagir a uma mensagem: a reação é descartada como duplicada (limitação conhecida).
+- Enviar texto e mídia; mídia com texto chega como duas mensagens; o status para em Enviado (o Instagram não manda entregue, e o lido não está ligado).
+- Enviar com token revogado: a mensagem vai a Falhou com o código da Meta, em vez de ficar Pendente.
+- Fluxo OAuth da aba Connect (não testado nesta rodada).
 
 ### Telegram
 

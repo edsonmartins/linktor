@@ -239,6 +239,7 @@ func (e *APIError) Transient() bool {
 type UserProfile struct {
 	ID         string `json:"id"`
 	Name       string `json:"name,omitempty"`
+	Username   string `json:"username,omitempty"` // só Instagram
 	FirstName  string `json:"first_name,omitempty"`
 	LastName   string `json:"last_name,omitempty"`
 	ProfilePic string `json:"profile_pic,omitempty"`

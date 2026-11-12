@@ -21,20 +21,8 @@ func NewClient(config *InstagramConfig) (*Client, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
-
-	// Route to the correct Graph host by token type. A Page access token (the
-	// IG-via-Facebook-Page flow) must call graph.facebook.com; an Instagram user
-	// token (direct Instagram login) calls graph.instagram.com. Using the wrong
-	// host makes every API call fail with an auth error.
-	var api *meta.Client
-	if config.AccessToken == "" && config.PageAccessToken != "" {
-		api = meta.NewClient(config.PageAccessToken, config.AppSecret)
-	} else {
-		api = meta.NewInstagramClient(config.GetEffectiveAccessToken(), config.AppSecret)
-	}
-
 	return &Client{
-		api:    api,
+		api:    meta.NewClientParaToken(config.GetEffectiveAccessToken(), config.AppSecret),
 		config: config,
 	}, nil
 }
@@ -48,8 +36,8 @@ func (c *Client) GetAccountInfo(ctx context.Context) (*meta.InstagramAccount, er
 
 	return &meta.InstagramAccount{
 		ID:       profile.ID,
-		Username: profile.Name, // Instagram returns username in name field for business accounts
-		Name:     profile.FirstName,
+		Username: profile.Username,
+		Name:     profile.Name,
 	}, nil
 }
 
@@ -129,12 +117,7 @@ func (c *Client) SendFile(ctx context.Context, recipientID, fileURL string) (*me
 
 // SubscribeToWebhooks subscribes the account to webhook events
 func (c *Client) SubscribeToWebhooks(ctx context.Context) error {
-	fields := []string{
-		"messages",
-		"message_reactions",
-		"messaging_seen",
-	}
-	return c.api.SubscribeToWebhook(ctx, c.config.InstagramID, fields)
+	return c.api.SubscribeToWebhook(ctx, c.config.InstagramID, camposDoWebhook)
 }
 
 // UnsubscribeFromWebhooks unsubscribes from webhook events

@@ -140,7 +140,12 @@ export function InstagramConfig({
       access_token: '',
       app_id: (channel?.config?.app_id as string) || '',
       app_secret: '',
-      verify_token: (channel?.config?.verify_token as string) || generateVerifyToken(),
+      // Canal criado por OAuth guarda o token em credentials (public_credentials);
+      // o manual, em config. Só gera um novo quando o canal ainda não existe.
+      verify_token:
+        channel?.public_credentials?.verify_token ||
+        (channel?.config?.verify_token as string) ||
+        generateVerifyToken(),
     },
   })
 
@@ -148,22 +153,24 @@ export function InstagramConfig({
     ? `${WEBHOOK_BASE_URL}/api/v1/webhooks/instagram/${channel.id}`
     : t('webhookPending')
 
+  const montarPayload = (data: InstagramConfigForm) => ({
+    name: data.name,
+    type: 'instagram',
+    config: {
+      instagram_id: data.instagram_id,
+      app_id: data.app_id,
+      verify_token: data.verify_token,
+    },
+    credentials: {
+      access_token: data.access_token,
+      app_secret: data.app_secret,
+    },
+  })
+
   const onSubmit = async (data: InstagramConfigForm) => {
     setIsSubmitting(true)
     try {
-      const payload = {
-        name: data.name,
-        type: 'instagram',
-        config: {
-          instagram_id: data.instagram_id,
-          app_id: data.app_id,
-          verify_token: data.verify_token,
-        },
-        credentials: {
-          access_token: data.access_token,
-          app_secret: data.app_secret,
-        },
-      }
+      const payload = montarPayload(data)
 
       let result: Channel
       if (isEditing) {
@@ -189,36 +196,31 @@ export function InstagramConfig({
   }
   }
 
+  // Ao editar, o token pode ficar em branco: o backend completa com o guardado
+  // quando recebe channel_id, e o teste lê a conta de verdade na Graph.
   const testConnection = async () => {
-    const values = form.getValues()
-    if (!values.access_token) {
-      toast({
-        title: t('missingCredentials'),
-        description: t('enterAccessTokenFirst'),
-        variant: 'error',
-      })
-      return
-  }
-
+    const { config, credentials } = montarPayload(form.getValues())
     setTestStatus('testing')
     try {
-      await api.post('/channels/test-instagram', {
-        access_token: values.access_token,
-        instagram_id: values.instagram_id,
+      const res = await api.post<{ message?: string }>('/channels/test-instagram', {
+        type: 'instagram',
+        channel_id: channel?.id,
+        config,
+        credentials,
       })
       setTestStatus('success')
       toast({
         title: t('connectionSuccess'),
-        description: t('instagramCredentialsValid'),
+        description: res?.message || t('instagramCredentialsValid'),
       })
-    } catch {
+    } catch (error) {
       setTestStatus('error')
       toast({
         title: t('connectionFailed'),
-        description: t('instagramConnectionError'),
+        description: error instanceof Error ? error.message : t('instagramConnectionError'),
         variant: 'error',
       })
-  }
+    }
   }
 
   const copyToClipboard = async (text: string) => {
