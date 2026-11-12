@@ -1081,6 +1081,12 @@ func (h *WebhookHandler) processWhatsAppStatus(ctx context.Context, channel *ent
 		ErrorMessage: errorMessage,
 		Timestamp:    time.Now(),
 	}
+	// O pricing segue como a Meta mandou, e só no oficial: é ele que diz o custo
+	// da mensagem a quem cobra o tenant.
+	if status.Pricing != nil && channel.Type == entity.ChannelTypeWhatsAppOfficial {
+		pricing := *status.Pricing
+		update.Pricing = &pricing
+	}
 
 	h.publishStatusUpdate(ctx, update)
 }
@@ -2345,7 +2351,9 @@ type WhatsAppStatus struct {
 	RecipientID string `json:"recipient_id"`
 	Status      string `json:"status"`
 	Timestamp   string `json:"timestamp"`
-	Errors      []struct {
+	// Pricing vem da Cloud API: se a mensagem foi cobrada e em qual categoria.
+	Pricing *nats.StatusPricing `json:"pricing,omitempty"`
+	Errors  []struct {
 		Code    int    `json:"code"`
 		Title   string `json:"title"`
 		Message string `json:"message"`

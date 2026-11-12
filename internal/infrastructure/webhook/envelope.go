@@ -184,6 +184,18 @@ type StatusData struct {
 	Error       string    `json:"error,omitempty"`
 	ChannelID   string    `json:"channelId"`
 	ChannelType string    `json:"channelType,omitempty"`
+	// Pricing é o que a Meta disse sobre a cobrança da mensagem (só
+	// whatsapp_official). Ausente quando ela não disse — "não sei", não "grátis".
+	// Pode vir em mais de um status da mesma mensagem; contar uma vez é de quem consome.
+	Pricing *StatusPricing `json:"pricing,omitempty"`
+}
+
+// StatusPricing repete o objeto `pricing` da Meta, com os valores dela sem
+// tradução (category: marketing, utility, authentication, service, …).
+type StatusPricing struct {
+	Billable     bool   `json:"billable"`
+	PricingModel string `json:"pricingModel,omitempty"`
+	Category     string `json:"category,omitempty"`
 }
 
 // CallData is the payload of call.* events: the single outcome of a call that

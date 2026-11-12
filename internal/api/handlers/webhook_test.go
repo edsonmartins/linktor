@@ -18,6 +18,7 @@ import (
 
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
+	"github.com/msgfy/linktor/internal/infrastructure/nats"
 	"github.com/msgfy/linktor/pkg/testutil"
 )
 
@@ -1447,4 +1448,82 @@ func TestMetaVerifyTokenMatches(t *testing.T) {
 
 	// A channel without a token must not accept an empty hub.verify_token.
 	assert.False(t, metaVerifyTokenMatches(&entity.Channel{}, ""))
+}
+
+// O status da Cloud API traz o pricing da Meta; ele segue no StatusUpdate como
+// veio. Status sem pricing segue sem — nil, não um objeto vazio.
+func TestWebhookWhatsAppPost_StatusCarriesMetaPricing(t *testing.T) {
+	handler, _, producer, _ := setupWebhookTest()
+
+	// Corpo no formato que a Meta manda (Cloud API, PMP).
+	body := []byte(`{
+	  "object": "whatsapp_business_account",
+	  "entry": [{
+	    "id": "102290129340398",
+	    "changes": [{
+	      "field": "messages",
+	      "value": {
+	        "messaging_product": "whatsapp",
+	        "metadata": {"display_phone_number": "15550783881", "phone_number_id": "106540352242922"},
+	        "statuses": [
+	          {
+	            "id": "wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBJDQjZCMzlEQUE4OTJBMTE4RTUA",
+	            "status": "delivered",
+	            "timestamp": "1750263773",
+	            "recipient_id": "16505551234",
+	            "conversation": {"id": "6ceb9d929c1a0a7a2e2f6e8d7c3b4a1f", "origin": {"type": "utility"}},
+	            "pricing": {"billable": true, "pricing_model": "PMP", "category": "utility"}
+	          },
+	          {
+	            "id": "wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBJDQjZCMzlEQUE4OTJBMTE4RTUA",
+	            "status": "read",
+	            "timestamp": "1750263900",
+	            "recipient_id": "16505551234"
+	          },
+	          {
+	            "id": "wamid.service",
+	            "status": "sent",
+	            "timestamp": "1750263990",
+	            "recipient_id": "16505551234",
+	            "pricing": {"billable": false, "pricing_model": "PMP", "category": "service"}
+	          }
+	        ]
+	      }
+	    }]
+	  }]
+	}`)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &payload))
+	postWhatsAppJSON(c, payload, "test-secret")
+	handler.WhatsAppWebhook(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, producer.StatusUpdates, 3)
+
+	assert.Equal(t, &nats.StatusPricing{Billable: true, PricingModel: "PMP", Category: "utility"},
+		producer.StatusUpdates[0].Pricing)
+	assert.Nil(t, producer.StatusUpdates[1].Pricing, "status sem pricing segue sem pricing")
+	assert.Equal(t, &nats.StatusPricing{Billable: false, PricingModel: "PMP", Category: "service"},
+		producer.StatusUpdates[2].Pricing, "billable=false segue explícito")
+}
+
+// Só o oficial leva pricing adiante.
+func TestWebhookWhatsAppPost_PricingOnlyOnOfficial(t *testing.T) {
+	handler, channelRepo, producer, _ := setupWebhookTest()
+	channelRepo.Channels["ch-1"].Type = entity.ChannelTypeWhatsApp
+
+	payload := buildWhatsAppPayload(nil, nil, []WhatsAppStatus{{
+		ID: "wamid.x", RecipientID: "5511999990000", Status: "delivered", Timestamp: "1700000002",
+		Pricing: &nats.StatusPricing{Billable: true, PricingModel: "PMP", Category: "utility"},
+	}})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	postWhatsAppJSON(c, payload, "test-secret")
+	handler.WhatsAppWebhook(c)
+
+	require.Len(t, producer.StatusUpdates, 1)
+	assert.Nil(t, producer.StatusUpdates[0].Pricing)
 }

@@ -58,6 +58,17 @@ class MessageReceivedEventData(BaseModel):
         populate_by_name = True
 
 
+class MessagePricing(BaseModel):
+    """What Meta said about billing a message (whatsapp_official only), untranslated."""
+
+    billable: bool
+    pricing_model: Optional[str] = Field(None, alias="pricingModel")
+    category: Optional[str] = None
+
+    class Config:
+        populate_by_name = True
+
+
 class MessageStatusEventData(BaseModel):
     """Message status event data.
 
@@ -74,6 +85,9 @@ class MessageStatusEventData(BaseModel):
     channel_id: Optional[str] = Field(None, alias="channelId")
     channel_type: Optional[ChannelType] = Field(None, alias="channelType")
     conversation_id: Optional[str] = Field(None, alias="conversationId")
+    # Absent when Meta did not say: "unknown", never "free". May repeat across
+    # statuses of the same message; count once per message.
+    pricing: Optional[MessagePricing] = None
 
     class Config:
         populate_by_name = True
@@ -197,6 +211,7 @@ __all__ = [
     "WebhookEvent",
     "MessageReceivedEventData",
     "MessageStatusEventData",
+    "MessagePricing",
     "ConversationEventData",
     "ContactEventData",
     "ChannelEventData",

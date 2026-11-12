@@ -52,6 +52,20 @@ export interface MessageStatusEvent {
   direction: MessageDirection;
   timestamp: string;
   error?: string;
+  /**
+   * What Meta said about billing this message (whatsapp_official only), with
+   * Meta's values untranslated. Absent when Meta did not say — read it as
+   * "unknown", never as "free". It may come on more than one status of the
+   * same message; count it once per message.
+   */
+  pricing?: MessagePricing;
+}
+
+export interface MessagePricing {
+  billable: boolean;
+  pricingModel?: string;
+  /** marketing | utility | authentication | service | whatever Meta adds */
+  category?: string;
 }
 
 export interface ConversationEvent {
