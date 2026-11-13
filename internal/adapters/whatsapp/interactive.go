@@ -16,8 +16,8 @@ import (
 
 // Interactive (native-flow) messaging over the unofficial multi-device
 // protocol. WhatsApp mobile renders these as real tappable quick-reply buttons
-// and single-select lists — a capability the Cloud API exposes but the
-// unofficial channel does not advertise out of the box. The trick is the
+// — a capability the Cloud API exposes but the unofficial channel does not
+// advertise out of the box. Lists do not render (see sendInteractive). The trick is the
 // InteractiveMessage payload wrapped in a ViewOnce envelope plus a `<biz>`
 // AdditionalNode advertising native_flow support on the outgoing stanza.
 
@@ -121,7 +121,9 @@ func (c *Client) SendInteractiveButtons(ctx context.Context, to, body, footer st
 }
 
 // SendInteractiveList sends an InteractiveMessage with a native single-select
-// list. Mobile WhatsApp renders it as a tappable list under buttonText.
+// list. It is NOT used by the send path: as of 2026-11-13 mobile WhatsApp
+// accepts it and shows nothing (see sendInteractive). Kept as the probe the
+// e2e test uses to re-check whether that changes.
 func (c *Client) SendInteractiveList(ctx context.Context, to, body, footer, buttonText string, sections []InteractiveListSection) (*SendMessageResponse, error) {
 	c.mu.RLock()
 	client := c.client
@@ -207,9 +209,20 @@ func (c *Client) sendNativeFlow(ctx context.Context, client *whatsmeow.Client, j
 	return &SendMessageResponse{MessageID: resp.ID, Timestamp: resp.Timestamp}, nil
 }
 
+// maxNativeButtons is how many quick-reply buttons go out as native controls.
+// Three is what the real-device test covered (and the Cloud API's own cap).
+const maxNativeButtons = 3
+
 // sendInteractive parses the interactive payload from an outbound message and
-// dispatches it, falling back to a plain-text rendering when the native-flow
-// send fails (e.g. the recipient's client cannot render buttons).
+// dispatches it.
+//
+// Only quick-reply buttons go out as native controls. Tested against a real
+// device on 2026-11-13 (interactive_e2e_test.go): buttons rendered and the tap
+// came back with its id; the single_select list was accepted by the server,
+// reported as delivered and never shown — and five other list encodings were
+// either refused (479) or dropped the same way. A send that "succeeds" and
+// shows nothing cannot be caught by an error fallback, so lists, and button
+// sets too large for native buttons, always go as numbered text.
 func sendInteractive(ctx context.Context, client *Client, recipientID, content string) (*SendMessageResponse, error) {
 	var payload InteractivePayload
 	if err := json.Unmarshal([]byte(content), &payload); err != nil {
@@ -218,12 +231,11 @@ func sendInteractive(ctx context.Context, client *Client, recipientID, content s
 
 	switch payload.Variant {
 	case "list":
-		resp, err := client.SendInteractiveList(ctx, recipientID, payload.Body, payload.Footer, payload.ButtonText, payload.Sections)
-		if err != nil {
-			return client.SendTextMessage(ctx, recipientID, interactiveListFallbackText(payload))
-		}
-		return resp, nil
+		return client.SendTextMessage(ctx, recipientID, interactiveListFallbackText(payload))
 	case "buttons", "":
+		if len(payload.Buttons) > maxNativeButtons {
+			return client.SendTextMessage(ctx, recipientID, interactiveButtonsFallbackText(payload))
+		}
 		resp, err := client.SendInteractiveButtons(ctx, recipientID, payload.Body, payload.Footer, payload.Buttons)
 		if err != nil {
 			return client.SendTextMessage(ctx, recipientID, interactiveButtonsFallbackText(payload))

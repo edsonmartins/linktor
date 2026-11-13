@@ -7,6 +7,17 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Botões no WhatsApp não-oficial
+
+- **Opções de resposta chegam ao cliente** nos canais `whatsapp` /
+  `whatsapp_unofficial`: até 3 opções saem como botões nativos, e o toque volta
+  com o id da opção (`selected_id`). Antes o envio mandava só o texto da
+  pergunta, sem nenhuma das respostas.
+- **4 opções ou mais saem como texto numerado** (`[ 1 ] Vendas`…). A lista
+  nativa foi testada em aparelho real em 2026-11-13: o WhatsApp aceita, marca
+  como entregue e não mostra nada — então ela não é mais usada no envio.
+- **O fluxo aceita o número como resposta**: "2" escolhe a segunda opção do nó.
+
 ### Custo do WhatsApp oficial no status da mensagem
 
 - **`data.pricing` em `message.sent` / `message.delivered` / `message.read`** do

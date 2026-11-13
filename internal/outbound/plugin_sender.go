@@ -81,7 +81,26 @@ func (s *pluginSender) Send(ctx context.Context, msg *Message) (*Receipt, error)
 		return &Receipt{}, nil
 	}
 
-	res, err := adapter.SendMessage(ctx, toPluginMessage(msg))
+	var res *plugin.SendResult
+	interactive, isInteractive := msg.Content.(Interactive)
+	if interactiveSender, ok := adapter.(plugin.InteractiveSender); isInteractive && ok {
+		// The adapter offers the options itself. Flattening to the body here (the
+		// fallback below) delivered the question without any of its answers.
+		options := make([]plugin.InteractiveOption, 0, len(interactive.Buttons))
+		for _, b := range interactive.Buttons {
+			options = append(options, plugin.InteractiveOption{ID: b.ID, Title: b.Title})
+		}
+		res, err = interactiveSender.SendInteractive(ctx, &plugin.OutboundInteractive{
+			ID:             msg.ID,
+			ConversationID: msg.ConversationID,
+			RecipientID:    msg.To,
+			Body:           interactive.Body,
+			Options:        options,
+			Metadata:       msg.Metadata,
+		})
+	} else {
+		res, err = adapter.SendMessage(ctx, toPluginMessage(msg))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -143,8 +162,8 @@ func toPluginMessage(msg *Message) *plugin.OutboundMessage {
 			}}
 		}
 	case Interactive:
-		// Plugin adapters have no interactive controls: fall back to the body
-		// text so the message is not delivered empty.
+		// Only reached for adapters without plugin.InteractiveSender: fall back to
+		// the body text so the message is not delivered empty.
 		out.ContentType = plugin.ContentTypeText
 		out.Content = c.Body
 	default:
