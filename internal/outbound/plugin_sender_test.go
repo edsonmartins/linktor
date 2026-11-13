@@ -232,3 +232,72 @@ func TestToPluginMessageMediaCarriesMimeType(t *testing.T) {
 		t.Fatalf("e à metadata, para quem lê por ela: %+v", out.Metadata)
 	}
 }
+
+// interactiveAdapter also implements the optional plugin.InteractiveSender capability.
+type interactiveAdapter struct {
+	*fakeAdapter
+	lastInteractive *plugin.OutboundInteractive
+}
+
+func (i *interactiveAdapter) SendInteractive(_ context.Context, msg *plugin.OutboundInteractive) (*plugin.SendResult, error) {
+	i.lastInteractive = msg
+	return &plugin.SendResult{Success: true, ExternalID: "WA-INT-1"}, nil
+}
+
+func interactiveMessage() *Message {
+	return &Message{
+		ID:        "m-1",
+		ChannelID: "ch-1",
+		To:        "5511999999999",
+		Content: Interactive{Body: "Como podemos ajudar?", Buttons: []InteractiveButton{
+			{ID: "vendas", Title: "Vendas"}, {ID: "suporte", Title: "Suporte"},
+		}},
+	}
+}
+
+// The options must reach an adapter that can offer them. Flattened to the body, the customer got the
+// question with none of its answers.
+func TestPluginSenderDeliversInteractiveOptions(t *testing.T) {
+	adapter := &interactiveAdapter{fakeAdapter: newFakeAdapter(&plugin.SendResult{Success: true})}
+	s := &pluginSender{
+		channelType: "whatsapp",
+		registry:    &fakeRegistry{byID: map[string]plugin.ChannelAdapter{"ch-1": adapter}},
+	}
+
+	receipt, err := s.Send(context.Background(), interactiveMessage())
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if receipt.ProviderMessageID != "WA-INT-1" {
+		t.Errorf("provider id = %q, want WA-INT-1", receipt.ProviderMessageID)
+	}
+	got := adapter.lastInteractive
+	if got == nil {
+		t.Fatal("SendInteractive not called — options never reach the adapter")
+	}
+	if got.RecipientID != "5511999999999" || got.Body != "Como podemos ajudar?" {
+		t.Errorf("recipient/body wrong: %+v", got)
+	}
+	if len(got.Options) != 2 || got.Options[0].ID != "vendas" || got.Options[1].Title != "Suporte" {
+		t.Errorf("options wrong: %+v", got.Options)
+	}
+	if adapter.lastMsg != nil {
+		t.Error("interactive must not also go out as a plain message")
+	}
+}
+
+// An adapter without the capability still gets the body as text, so nothing is dropped.
+func TestPluginSenderInteractiveFallsBackToBodyWhenUnsupported(t *testing.T) {
+	adapter := newFakeAdapter(&plugin.SendResult{Success: true})
+	s := &pluginSender{
+		channelType: "webchat",
+		registry:    &fakeRegistry{byID: map[string]plugin.ChannelAdapter{"ch-1": adapter}},
+	}
+
+	if _, err := s.Send(context.Background(), interactiveMessage()); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if adapter.lastMsg == nil || adapter.lastMsg.ContentType != plugin.ContentTypeText || adapter.lastMsg.Content != "Como podemos ajudar?" {
+		t.Fatalf("fallback wrong: %+v", adapter.lastMsg)
+	}
+}

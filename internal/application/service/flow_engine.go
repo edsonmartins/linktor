@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -266,6 +267,16 @@ func (s *FlowEngineService) executeNode(ctx context.Context, flow *entity.Flow, 
 	return result, nil
 }
 
+// quickReplyByNumber returns the option the customer picked by its position
+// (1-based), or nil when the input is not a number in range.
+func quickReplyByNumber(options []entity.QuickReply, input string) *entity.QuickReply {
+	n, err := strconv.Atoi(input)
+	if err != nil || n < 1 || n > len(options) {
+		return nil
+	}
+	return &options[n-1]
+}
+
 // ProcessTransition determines the next node based on user input
 func (s *FlowEngineService) ProcessTransition(node *entity.FlowNode, userInput string) string {
 	if len(node.Transitions) == 0 {
@@ -274,6 +285,10 @@ func (s *FlowEngineService) ProcessTransition(node *entity.FlowNode, userInput s
 
 	lowerInput := strings.ToLower(strings.TrimSpace(userInput))
 	var defaultTransition *entity.FlowTransition
+
+	// Channels that cannot show the options as buttons send them as a numbered
+	// text ("[ 1 ] Vendas"), and the customer answers with the number.
+	numbered := quickReplyByNumber(node.QuickReplies, lowerInput)
 
 	// Sort by priority (higher first) would be ideal, but for now just iterate
 	for i := range node.Transitions {
@@ -296,6 +311,9 @@ func (s *FlowEngineService) ProcessTransition(node *entity.FlowNode, userInput s
 						return transition.ToNodeID
 					}
 				}
+			}
+			if numbered != nil && (strings.EqualFold(numbered.ID, transition.Value) || strings.EqualFold(numbered.Title, transition.Value)) {
+				return transition.ToNodeID
 			}
 
 		case entity.TransitionConditionContains:

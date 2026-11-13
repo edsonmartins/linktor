@@ -529,6 +529,28 @@ func TestFlowEngine_ProcessTransition_QuickReplyID(t *testing.T) {
 	assert.Equal(t, "n-1", svc.ProcessTransition(node, "Option One"))
 }
 
+// Channels without native buttons show the options as numbered text; the
+// customer answers "2" and that must pick the second option.
+func TestFlowEngine_ProcessTransition_QuickReplyNumber(t *testing.T) {
+	svc, _, _ := newFlowEngine()
+	node := &entity.FlowNode{
+		ID: "q-1",
+		QuickReplies: []entity.QuickReply{
+			{ID: "opt_1", Title: "Option One"},
+			{ID: "opt_2", Title: "Option Two"},
+		},
+		Transitions: []entity.FlowTransition{
+			{ToNodeID: "n-1", Condition: entity.TransitionConditionReplyEquals, Value: "opt_1"},
+			{ToNodeID: "n-2", Condition: entity.TransitionConditionReplyEquals, Value: "opt_2"},
+			{ToNodeID: "n-default", Condition: entity.TransitionConditionDefault},
+		},
+	}
+
+	assert.Equal(t, "n-2", svc.ProcessTransition(node, " 2 "))
+	assert.Equal(t, "n-default", svc.ProcessTransition(node, "3"), "out of range is not an option")
+	assert.Equal(t, "n-default", svc.ProcessTransition(node, "0"))
+}
+
 func TestFlowEngine_ProcessTransition_NoTransitions(t *testing.T) {
 	svc, _, _ := newFlowEngine()
 	node := &entity.FlowNode{ID: "q-1"}

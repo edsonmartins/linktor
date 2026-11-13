@@ -658,6 +658,31 @@ func (a *Adapter) SendReaction(ctx context.Context, reaction *plugin.OutboundRea
 	return client.SendReaction(ctx, reaction.RecipientID, reaction.TargetMessageID, reaction.Emoji)
 }
 
+// SendInteractive implements plugin.InteractiveSender: the options go out as
+// native quick-reply buttons when they fit, as numbered text otherwise. It
+// rides SendMessage so the sent-id registry and status handling stay the same.
+func (a *Adapter) SendInteractive(ctx context.Context, msg *plugin.OutboundInteractive) (*plugin.SendResult, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("interactive message is required")
+	}
+	payload := InteractivePayload{Variant: "buttons", Body: msg.Body}
+	for _, o := range msg.Options {
+		payload.Buttons = append(payload.Buttons, InteractiveButton{ID: o.ID, Title: o.Title})
+	}
+	content, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("interactive: %w", err)
+	}
+	return a.SendMessage(ctx, &plugin.OutboundMessage{
+		ID:             msg.ID,
+		ConversationID: msg.ConversationID,
+		RecipientID:    msg.RecipientID,
+		ContentType:    plugin.ContentTypeInteractive,
+		Content:        string(content),
+		Metadata:       msg.Metadata,
+	})
+}
+
 // SendReadReceipt marks messages as read
 func (a *Adapter) SendReadReceipt(ctx context.Context, receipt *plugin.ReadReceipt) error {
 	a.mu.RLock()

@@ -214,3 +214,26 @@ type OutboundReaction struct {
 type ReactionSender interface {
 	SendReaction(ctx context.Context, reaction *OutboundReaction) error
 }
+
+// InteractiveOption is one quick-reply option offered to the customer.
+type InteractiveOption struct {
+	ID    string
+	Title string
+}
+
+// OutboundInteractive is a body text plus the options the customer can pick from.
+type OutboundInteractive struct {
+	ID             string
+	ConversationID string
+	RecipientID    string
+	Body           string
+	Options        []InteractiveOption
+	Metadata       map[string]string
+}
+
+// InteractiveSender is an OPTIONAL adapter capability, same reasoning as ReactionSender. An adapter
+// implements it when it can offer the options itself — as native controls, or as a rendering of its
+// own that still shows every option. Without it the outbound sender delivers only the body text.
+type InteractiveSender interface {
+	SendInteractive(ctx context.Context, msg *OutboundInteractive) (*SendResult, error)
+}
