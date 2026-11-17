@@ -841,6 +841,10 @@ func main() {
 	// Reconectar canal é melhor-esforço e não pode ser pré-requisito para o
 	// processo atender. O timeout limita o desperdício quando trava; quem
 	// garante o boot é a goroutine.
+	// WhatsApp Web build monitor: checks web.whatsapp.com now and every few
+	// hours, adopts a newer build and records 405 refusals for the admin.
+	whatsapp.StartVersionMonitor(context.Background())
+
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
@@ -1560,6 +1564,8 @@ func main() {
 				observability.GET("/queue/:stream", observabilityHandler.GetStreamInfo)
 				observability.POST("/queue/reset-consumer", observabilityHandler.ResetConsumer)
 				observability.GET("/stats", observabilityHandler.GetSystemStats)
+				observability.GET("/whatsapp-version", handlers.GetWhatsAppClientVersion)
+				observability.POST("/whatsapp-version/check", handlers.CheckWhatsAppClientVersion)
 			}
 
 			// Flows (Conversational Decision Trees)

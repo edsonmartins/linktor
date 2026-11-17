@@ -246,6 +246,8 @@ export const queryKeys = {
       [...queryKeys.observability.all, 'queue', streamName] as const,
     stats: (period: string) =>
       [...queryKeys.observability.all, 'stats', period] as const,
+    whatsappVersion: () =>
+      [...queryKeys.observability.all, 'whatsapp-version'] as const,
   },
 
   // Campaigns

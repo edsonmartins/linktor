@@ -847,6 +847,22 @@ export interface StreamInfo {
   created: string
 }
 
+// WhatsApp Web client version health (unofficial channels / whatsmeow)
+export interface WhatsAppVersionStatus {
+  status: 'ok' | 'behind' | 'outdated' | 'unknown'
+  builtin: string
+  current: string
+  latest?: string
+  auto_update: boolean
+  last_check_at?: string
+  last_check_error?: string
+  last_outdated_at?: string
+  outdated_count: number
+  last_login_at?: string
+  last_updated_from?: string
+  last_updated_at?: string
+}
+
 export interface QueueStats {
   streams: StreamInfo[]
   total_messages: number
