@@ -1311,17 +1311,20 @@ function OperationsState({
   return <>{children}</>
 }
 
-function formatMinorCurrency(amount?: number, currency = 'BRL') {
+function formatMinorCurrency(amount?: number, currency?: string) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
-    currency,
+    currency: currency || 'BRL',
   }).format((amount ?? 0) / 100)
 }
 
-function formatCurrency(amount?: number, currency = 'BRL') {
+// A API devolve currency "" quando o canal ainda não tem conversão registrada;
+// o valor padrão do parâmetro só cobre undefined, e o Intl lança RangeError
+// para código vazio — o que derrubava a tela de edição inteira.
+function formatCurrency(amount?: number, currency?: string) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
-    currency,
+    currency: currency || 'BRL',
   }).format(amount ?? 0)
 }
 
