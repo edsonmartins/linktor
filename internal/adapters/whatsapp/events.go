@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -31,6 +32,7 @@ func (c *Client) handleEvent(evt any) {
 
 	switch v := evt.(type) {
 	case *events.Connected:
+		versionMon.recordLogin()
 		c.mu.Lock()
 		c.state = DeviceStateConnected
 		c.mu.Unlock()
@@ -41,6 +43,17 @@ func (c *Client) handleEvent(evt any) {
 		c.state = DeviceStateDisconnected
 		c.mu.Unlock()
 		c.dispatch(eventCh, ConnectionEvent{State: DeviceStateDisconnected, Time: time.Now()}, "disconnected")
+
+	case *events.ClientOutdated:
+		// WhatsApp refused the build we announced (405). whatsmeow does not
+		// reconnect on its own here, so the channel would stay down until the
+		// next manual "Conectar".
+		refused := store.GetWAVersion()
+		c.mu.Lock()
+		c.state = DeviceStateDisconnected
+		c.mu.Unlock()
+		c.dispatch(eventCh, ConnectionEvent{State: DeviceStateDisconnected, Reason: ReasonClientOutdated, Time: time.Now()}, "client_outdated")
+		go c.reconnectAfterVersionBump(refused)
 
 	case *events.LoggedOut:
 		c.mu.Lock()

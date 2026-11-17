@@ -87,6 +87,10 @@ func NewClient(config *Config) (*Client, error) {
 
 // Connect connects to WhatsApp
 func (c *Client) Connect(ctx context.Context) error {
+	// Announce the build WhatsApp currently accepts (checked at most every few
+	// hours; a failed check falls back to the build compiled into whatsmeow).
+	versionMon.ensureFresh(ctx)
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

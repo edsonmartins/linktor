@@ -1899,7 +1899,27 @@
     "messagesByChannel": "Mensajes por Canal",
     "errorsBySource": "Errores por Origen (Últimas 24h)",
     "noDataAvailable": "Sin datos disponibles",
-    "inTheLast": "en los últimos"
+    "inTheLast": "en los últimos",
+    "whatsappVersion": {
+      "title": "Versión del cliente WhatsApp (canales no oficiales)",
+      "statusOk": "Al día",
+      "statusBehind": "Desactualizada",
+      "statusOutdated": "Rechazada por WhatsApp",
+      "statusUnknown": "No verificada",
+      "current": "En uso",
+      "latest": "Actual en WhatsApp",
+      "builtin": "Incluida en el build",
+      "lastCheck": "Última verificación",
+      "never": "nunca",
+      "checkNow": "Verificar ahora",
+      "checked": "Versión verificada",
+      "outdatedTitle": "WhatsApp está rechazando la versión del cliente (error 405)",
+      "outdatedBody": "Los canales WhatsApp no oficiales no pueden conectar ni enviar mensajes. No hace falta volver a vincular: Linktor busca la versión nueva y se reconecta solo. Si la alerta sigue después de \"Verificar ahora\", hay que actualizar Linktor. Rechazos: {count}, el último el {at}.",
+      "behindTitle": "Hay una versión más nueva de WhatsApp Web",
+      "behindBody": "La actualización automática está desactivada (WHATSAPP_VERSION_AUTO_UPDATE=false). Los canales pueden ser rechazados en cualquier momento.",
+      "checkError": "Error al consultar web.whatsapp.com: {error}",
+      "updatedFrom": "Actualizada automáticamente de {from} el {at}"
+    }
   },
   "users": {
     "title": "Equipo",

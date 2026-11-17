@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChannelLogsViewer } from './components/channel-logs-viewer'
 import { MessageQueueMonitor } from './components/message-queue-monitor'
 import { SystemStatistics } from './components/system-statistics'
+import { WhatsAppVersionStatusCard } from './components/whatsapp-version-status'
 
 export default function ObservabilityPage() {
   const t = useTranslations('observability')
@@ -18,6 +19,8 @@ export default function ObservabilityPage() {
       <Header title={t('title')} />
 
       <div className="p-6 space-y-6 overflow-auto">
+        <WhatsAppVersionStatusCard />
+
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList>

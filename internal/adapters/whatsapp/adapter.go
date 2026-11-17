@@ -876,7 +876,11 @@ func (a *Adapter) eventLoop() {
 
 				// Notify connection handler
 				if connHandler != nil {
-					if err := connHandler(ctx, connected, string(v.State)); err != nil {
+					reason := string(v.State)
+					if v.Reason != "" {
+						reason = v.Reason
+					}
+					if err := connHandler(ctx, connected, reason); err != nil {
 						// Log error but continue
 					}
 				}

@@ -600,6 +600,14 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 					logger.Warn("could not reconnect the stored WhatsApp session; falling back to pairing",
 						zap.String("channel_id", channel.ID))
 					s.updateChannelConnectionStatus(channel.ID, entity.ConnectionStatusDisconnected)
+				} else if !waAdapter.WaitAuthenticated(ctx, whatsappAuthTimeout) {
+					// Socket opened but WhatsApp did not accept the session (e.g. 405
+					// client outdated). A new pairing would not help while the device
+					// is still paired, so report the failure instead of "connected".
+					if waAdapter.IsLoggedIn() {
+						return nil, s.whatsappAuthFailed(ctx, channel)
+					}
+					s.updateChannelConnectionStatus(channel.ID, entity.ConnectionStatusDisconnected)
 				} else {
 					logger.Info("WhatsApp session reconnected without a new pairing",
 						zap.String("channel_id", channel.ID))
@@ -648,17 +656,21 @@ func (s *ChannelService) connectWhatsAppUnofficial(ctx context.Context, channel 
 		zap.Bool("is_logged_in", isLoggedIn))
 
 	if isLoggedIn {
+		// Store adapter in registry for future use — also when authentication
+		// fails below, so automatic reconnects (and the status handler) keep it.
+		if s.registry != nil {
+			s.registry.RegisterChannelAdapter(channel.ID, adapter)
+		}
+		if !adapter.WaitAuthenticated(ctx, whatsappAuthTimeout) {
+			return nil, s.whatsappAuthFailed(ctx, channel)
+		}
+
 		logger.Info("WhatsApp channel reconnected with stored session",
 			zap.String("channel_id", channel.ID))
 		s.logLifecycle(ctx, entity.LogLevelInfo, channel.TenantID, channel.ID, "Canal WhatsApp reconectado com sessão armazenada")
 		channel.ConnectionStatus = entity.ConnectionStatusConnected
 		channel.UpdatedAt = time.Now()
 		s.repo.UpdateConnectionStatus(ctx, channel.ID, entity.ConnectionStatusConnected)
-
-		// Store adapter in registry for future use
-		if s.registry != nil {
-			s.registry.RegisterChannelAdapter(channel.ID, adapter)
-		}
 
 		s.notifyChannelConnected(ctx, channel)
 		return &ConnectResult{
@@ -935,6 +947,29 @@ func (s *ChannelService) monitorWhatsAppLoginStatus(channelID string, adapter *w
 
 // markChannelConnected persists the connected status, notifies listeners and returns the result
 // shared by the "already live" and "reconnected" paths of connectWhatsAppUnofficial.
+// whatsappAuthTimeout bounds how long a connect waits for WhatsApp to accept a
+// stored session before reporting failure.
+const whatsappAuthTimeout = 15 * time.Second
+
+// whatsappAuthFailed marks a paired channel whose session WhatsApp did not
+// accept as disconnected, records why in the channel log and returns the error
+// for the caller. When the WhatsApp Web client version was refused (405) the
+// message says so — that is the case the admin cannot fix by re-pairing.
+func (s *ChannelService) whatsappAuthFailed(ctx context.Context, channel *entity.Channel) error {
+	msg := "O WhatsApp não confirmou a sessão em 15s — o canal segue tentando reconectar"
+	if v := whatsapp.GetVersionStatus(); v.Status == whatsapp.VersionStatusOutdated {
+		msg = "O WhatsApp recusou a versão do cliente (" + v.Current + ", erro 405). Não é preciso parear de novo: o Linktor busca a versão nova e reconecta sozinho; se persistir, é preciso atualizar o Linktor. Veja Observabilidade."
+	}
+	logger.Warn("WhatsApp session not authenticated",
+		zap.String("channel_id", channel.ID),
+		zap.String("detail", msg))
+	s.logLifecycle(ctx, entity.LogLevelError, channel.TenantID, channel.ID, msg)
+	channel.ConnectionStatus = entity.ConnectionStatusDisconnected
+	channel.UpdatedAt = time.Now()
+	s.updateChannelConnectionStatus(channel.ID, entity.ConnectionStatusDisconnected)
+	return errors.New(errors.ErrCodeChannelDisconnected, msg)
+}
+
 func (s *ChannelService) markChannelConnected(ctx context.Context, channel *entity.Channel) *ConnectResult {
 	channel.ConnectionStatus = entity.ConnectionStatusConnected
 	channel.UpdatedAt = time.Now()
@@ -1218,7 +1253,12 @@ func (s *ChannelService) setupWhatsAppHandlers(adapter *whatsapp.Adapter, channe
 			logger.Warn("WhatsApp channel disconnected",
 				zap.String("channel_id", channel.ID),
 				zap.String("reason", reason))
-			s.logLifecycle(ctx, entity.LogLevelWarn, channel.TenantID, channel.ID, "Canal WhatsApp desconectado"+reasonSuffix(reason))
+			if reason == whatsapp.ReasonClientOutdated {
+				s.logLifecycle(ctx, entity.LogLevelError, channel.TenantID, channel.ID,
+					"Canal WhatsApp desconectado: o WhatsApp recusou a versão do cliente ("+whatsapp.GetVersionStatus().Current+", erro 405)")
+			} else {
+				s.logLifecycle(ctx, entity.LogLevelWarn, channel.TenantID, channel.ID, "Canal WhatsApp desconectado"+reasonSuffix(reason))
+			}
 		}
 
 		// Update channel connection status in database
@@ -1517,17 +1557,23 @@ func (s *ChannelService) reconnectWhatsAppChannel(ctx context.Context, channel *
 		return nil
 	}
 
+	// Register adapter in registry (also when authentication fails below:
+	// automatic reconnects keep running and the status handler flips the
+	// channel to connected once WhatsApp accepts the session).
+	if s.registry != nil {
+		s.registry.RegisterChannelAdapter(channel.ID, adapter)
+	}
+	if !adapter.WaitAuthenticated(ctx, whatsappAuthTimeout) {
+		_ = s.whatsappAuthFailed(ctx, channel)
+		return nil
+	}
+
 	// Session is valid, mark as connected
 	logger.Info("WhatsApp channel reconnected successfully with stored session",
 		zap.String("channel_id", channel.ID))
 	channel.ConnectionStatus = entity.ConnectionStatusConnected
 	channel.UpdatedAt = time.Now()
 	s.repo.UpdateConnectionStatus(ctx, channel.ID, entity.ConnectionStatusConnected)
-
-	// Register adapter in registry
-	if s.registry != nil {
-		s.registry.RegisterChannelAdapter(channel.ID, adapter)
-	}
 
 	s.notifyChannelConnected(ctx, channel)
 	return nil
