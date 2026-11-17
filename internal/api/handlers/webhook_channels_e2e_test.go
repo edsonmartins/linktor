@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -507,4 +508,60 @@ func TestWebhookInstagram_NomeDoPerfil(t *testing.T) {
 		require.Len(t, producer.InboundMessages, 1)
 		assert.Empty(t, producer.InboundMessages[0].Metadata["sender_name"])
 	})
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp Oficial — mídia que não pôde ser baixada deixa aviso no log do canal
+// ---------------------------------------------------------------------------
+
+type logDeCanalFalso struct{ avisos []string }
+
+func (l *logDeCanalFalso) Warn(_ context.Context, _, _, message string, _ map[string]string) {
+	l.avisos = append(l.avisos, message)
+}
+
+// Com o token vencido a Meta recusa o download: a mensagem entra com o anexo
+// quebrado, e antes ninguém ficava sabendo o motivo.
+func TestWebhookWhatsApp_MidiaComTokenVencidoAvisaNoLogDoCanal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"Authentication Error","code":190}}`))
+	}))
+	defer srv.Close()
+	t.Setenv(graphapi.EnvVar, srv.URL)
+
+	handler, channelRepo, producer, _ := setupWebhookTest()
+	handler.mediaStore = &memMediaStore{objects: map[string][]byte{}}
+	avisos := &logDeCanalFalso{}
+	handler.SetChannelLogger(avisos)
+	addChannel(channelRepo, "ch-wa", entity.ChannelTypeWhatsAppOfficial, map[string]string{
+		"access_token": "tok-vencido", "webhook_secret": "wa-secret",
+	})
+
+	payload := map[string]interface{}{
+		"object": "whatsapp_business_account",
+		"entry": []map[string]interface{}{{
+			"id": "WABA",
+			"changes": []map[string]interface{}{{
+				"field": "messages",
+				"value": map[string]interface{}{
+					"messaging_product": "whatsapp",
+					"metadata":          map[string]string{"phone_number_id": "PHONE"},
+					"contacts":          []map[string]interface{}{{"wa_id": "554497239232", "profile": map[string]string{"name": "Ale"}}},
+					"messages": []map[string]interface{}{{
+						"from": "554497239232", "id": "wamid.audio", "timestamp": "1794919877", "type": "audio",
+						"audio": map[string]interface{}{"id": "MEDIA1", "mime_type": "audio/ogg"},
+					}},
+				},
+			}},
+		}},
+	}
+
+	w, c := postSignedTo("ch-wa", payload, "wa-secret", "")
+	handler.WhatsAppWebhook(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, producer.InboundMessages, 1, "a mensagem segue mesmo sem a mídia")
+	require.Len(t, avisos.avisos, 1)
+	assert.Contains(t, avisos.avisos[0], "code 190")
 }

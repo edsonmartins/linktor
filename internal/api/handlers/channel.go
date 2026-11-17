@@ -17,6 +17,7 @@ import (
 	"github.com/msgfy/linktor/internal/adapters/sms"
 	"github.com/msgfy/linktor/internal/adapters/teams"
 	"github.com/msgfy/linktor/internal/adapters/telegram"
+	whatsappofficial "github.com/msgfy/linktor/internal/adapters/whatsapp_official"
 	"github.com/msgfy/linktor/internal/api/middleware"
 	"github.com/msgfy/linktor/internal/application/service"
 	"github.com/msgfy/linktor/internal/domain/entity"
@@ -378,6 +379,12 @@ func liveChannelCheck(ctx context.Context, channelType string, config map[string
 			return "", true, e
 		}
 		return fmt.Sprintf("connected to Instagram @%s", usuario), true, nil
+	case "whatsapp_official":
+		info, e := whatsappofficial.Verificar(ctx, whatsappofficial.ConfigFromMap(config))
+		if e != nil {
+			return "", true, e
+		}
+		return fmt.Sprintf("connected to WhatsApp %s (%s)", info.DisplayPhoneNumber, info.VerifiedName), true, nil
 	default:
 		return "", false, nil
 	}
@@ -1051,13 +1058,7 @@ func stringFromMap(values map[string]interface{}, key string) string {
 func validateChannelTestConfig(channelType string, config map[string]string) error {
 	switch channelType {
 	case "whatsapp", "whatsapp_official":
-		if strings.TrimSpace(config["access_token"]) == "" {
-			return fmt.Errorf("access_token is required")
-		}
-		if strings.TrimSpace(config["phone_number_id"]) == "" {
-			return fmt.Errorf("phone_number_id is required")
-		}
-		return nil
+		return whatsappofficial.ConfigFromMap(config).Validate()
 	case "telegram":
 		return telegram.NewAdapter().Initialize(config)
 	case "sms", "twilio":

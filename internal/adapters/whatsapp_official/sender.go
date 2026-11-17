@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"github.com/msgfy/linktor/internal/outbound"
 )
@@ -23,19 +22,9 @@ func (SenderFactory) ChannelType() string { return "whatsapp_official" }
 // New builds a Sender from a channel's credentials. Returns an error if the
 // mandatory Cloud API credentials are absent.
 func (SenderFactory) New(creds map[string]string) (outbound.Sender, error) {
-	cfg := &Config{
-		AccessToken:   creds["access_token"],
-		PhoneNumberID: creds["phone_number_id"],
-		BusinessID:    creds["business_id"],
-		VerifyToken:   creds["verify_token"],
-		WebhookSecret: creds["webhook_secret"],
-		APIVersion:    getOrDefault(creds, "api_version", DefaultAPIVersion),
-	}
-	if cfg.AccessToken == "" {
-		return nil, fmt.Errorf("access_token is required")
-	}
-	if cfg.PhoneNumberID == "" {
-		return nil, fmt.Errorf("phone_number_id is required")
+	cfg := ConfigFromMap(creds)
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
 	client := NewClient(cfg)
@@ -59,7 +48,11 @@ func (s *cloudSender) Send(ctx context.Context, msg *outbound.Message) (*outboun
 		return nil, outbound.Permanentf("recipient address is required")
 	}
 
-	resp, err := s.dispatch(ctx, msg)
+	// Cópia rasa: o destino normalizado vale só para esta chamada.
+	envio := *msg
+	envio.To = destinoBR(msg.To)
+
+	resp, err := s.dispatch(ctx, &envio)
 	if err != nil {
 		return nil, classifyError(err)
 	}

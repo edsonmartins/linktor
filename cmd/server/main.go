@@ -617,6 +617,7 @@ func main() {
 	// Typing inbound (VendaX Direto, RFC-009): resolve phone→contact→conversation e mostra o
 	// "digitando" do cliente na UI do agente. Opcional (no-op sem estas deps).
 	webhookHandler.SetTypingDeps(contactRepo, conversationRepo, messageService)
+	webhookHandler.SetChannelLogger(channelActivityLogger{svc: observabilityService, source: entity.LogSourceWebhook})
 	messageHandler := handlers.NewMessageHandler(messageService)
 	attachmentHandler := handlers.NewAttachmentHandler(mediaStore)
 	mediaAccess := handlers.MediaAccess{
@@ -755,6 +756,9 @@ func main() {
 	})
 	channelService.SetConnectPreparer(entity.ChannelTypeInstagram, func(ctx context.Context, ch *entity.Channel) error {
 		return prepareInstagramChannel(ctx, instagram.Conectar, ch)
+	})
+	channelService.SetConnectPreparer(entity.ChannelTypeWhatsAppOfficial, func(ctx context.Context, ch *entity.Channel) error {
+		return prepareWhatsAppOfficialChannel(ctx, whatsappofficial.Conectar, ch)
 	})
 	unregisterTelegram := func(ch *entity.Channel) {
 		if ch.Type != entity.ChannelTypeTelegram || ch.Credentials["bot_token"] == "" {

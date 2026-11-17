@@ -82,10 +82,13 @@ import type { Channel } from '@/types'
 /**
  * WhatsApp Official Configuration Schema
  */
-const whatsappConfigSchema = z
+// O token só é obrigatório ao criar: a API nunca devolve o guardado, então ao
+// editar o campo abre vazio e em branco significa "manter" (o backend preserva
+// o valor). Exigi-lo impedia salvar qualquer alteração sem redigitar o token.
+const criarWhatsappConfigSchema = (isEditing: boolean) => z
   .object({
     name: z.string().min(1, 'Channel name is required'),
-    access_token: z.string().min(1, 'Access token is required'),
+    access_token: isEditing ? z.string().optional() : z.string().min(1, 'Access token is required'),
     phone_number_id: z.string().min(1, 'Phone number ID is required'),
     business_id: z.string().optional(), // Optional - not used in embedded signup flow
     verify_token: z.string().min(1, 'Verify token is required'),
@@ -117,7 +120,7 @@ const whatsappConfigSchema = z
     }
   })
 
-type WhatsAppConfigForm = z.infer<typeof whatsappConfigSchema>
+type WhatsAppConfigForm = z.infer<ReturnType<typeof criarWhatsappConfigSchema>>
 
 interface WhatsAppConfigProps {
   channel?: Channel
@@ -216,7 +219,7 @@ export function WhatsAppConfig({
   const isEditing = !!channel
 
   const form = useForm<WhatsAppConfigForm>({
-    resolver: zodResolver(whatsappConfigSchema),
+    resolver: zodResolver(criarWhatsappConfigSchema(isEditing)),
     defaultValues: {
       name: channel?.name || '',
       access_token: '',
@@ -358,30 +361,32 @@ export function WhatsAppConfig({
     },
   })
 
+  const montarPayload = (data: WhatsAppConfigForm) => ({
+    name: data.name,
+    type: 'whatsapp_official',
+    // environment só na criação: imutável após criado (INV-016), o campo
+    // nem é submetido no update.
+    ...(isEditing ? {} : { environment: data.environment }),
+    config: {
+      phone_number_id: data.phone_number_id,
+      business_id: data.business_id,
+      verify_token: data.verify_token,
+      api_version: data.api_version,
+      ...(isSandbox && data.sandbox_test_phone_number_ids
+        ? { sandbox_test_phone_number_ids: data.sandbox_test_phone_number_ids }
+        : {}),
+    },
+    credentials: {
+      access_token: data.access_token,
+      webhook_secret: data.webhook_secret,
+      ...(isSandbox ? { credential_environment: 'sandbox' } : {}),
+    },
+  })
+
   const onSubmit = async (data: WhatsAppConfigForm) => {
     setIsSubmitting(true)
     try {
-      const payload = {
-        name: data.name,
-        type: 'whatsapp_official',
-        // environment só na criação: imutável após criado (INV-016), o campo
-        // nem é submetido no update.
-        ...(isEditing ? {} : { environment: data.environment }),
-        config: {
-          phone_number_id: data.phone_number_id,
-          business_id: data.business_id,
-          verify_token: data.verify_token,
-          api_version: data.api_version,
-          ...(isSandbox && data.sandbox_test_phone_number_ids
-            ? { sandbox_test_phone_number_ids: data.sandbox_test_phone_number_ids }
-            : {}),
-        },
-        credentials: {
-          access_token: data.access_token,
-          webhook_secret: data.webhook_secret,
-          ...(isSandbox ? { credential_environment: 'sandbox' } : {}),
-        },
-      }
+      const payload = montarPayload(data)
 
       let result: Channel
       if (isEditing) {
@@ -409,34 +414,28 @@ export function WhatsAppConfig({
     }
   }
 
+  // Ao editar, o token pode ficar em branco: o backend completa com o guardado
+  // quando recebe channel_id, e o teste lê o número de verdade na Meta.
   const testConnection = async () => {
-    const values = form.getValues()
-    if (!values.access_token || !values.phone_number_id) {
-      toast({
-        title: t('missingCredentials'),
-        description: t('enterCredentialsFirst'),
-        variant: 'error',
-      })
-      return
-    }
-
+    const { config, credentials } = montarPayload(form.getValues())
     setTestStatus('testing')
     try {
-      await api.post('/channels/test-whatsapp', {
-        access_token: values.access_token,
-        phone_number_id: values.phone_number_id,
-        api_version: values.api_version,
+      const res = await api.post<{ message?: string }>('/channels/test-whatsapp', {
+        type: 'whatsapp_official',
+        channel_id: channel?.id,
+        config,
+        credentials,
       })
       setTestStatus('success')
       toast({
         title: t('connectionSuccess'),
-        description: t('credentialsValid'),
+        description: res?.message || t('credentialsValid'),
       })
-    } catch {
+    } catch (error) {
       setTestStatus('error')
       toast({
         title: t('connectionFailed'),
-        description: t('checkCredentials'),
+        description: error instanceof Error ? error.message : t('checkCredentials'),
         variant: 'error',
       })
     }
@@ -1312,17 +1311,20 @@ function OperationsState({
   return <>{children}</>
 }
 
-function formatMinorCurrency(amount?: number, currency = 'BRL') {
+function formatMinorCurrency(amount?: number, currency?: string) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
-    currency,
+    currency: currency || 'BRL',
   }).format((amount ?? 0) / 100)
 }
 
-function formatCurrency(amount?: number, currency = 'BRL') {
+// A API devolve currency "" quando o canal ainda não tem conversão registrada;
+// o valor padrão do parâmetro só cobre undefined, e o Intl lança RangeError
+// para código vazio — o que derrubava a tela de edição inteira.
+function formatCurrency(amount?: number, currency?: string) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
-    currency,
+    currency: currency || 'BRL',
   }).format(amount ?? 0)
 }
 
