@@ -82,7 +82,8 @@ Preparação:
 
 1. No app da Meta, anotar token de acesso, Phone Number ID, WABA ID e App Secret.
 2. Criar o canal pela aba Manual Setup. No campo Business ID, colocar o WABA ID (é dele que os templates dependem). Em Webhook Secret, colocar o App Secret.
-3. Conectar pelo menu do card e cadastrar na Meta o webhook e o verify token mostrados na aba Webhook, assinando o campo `messages`.
+3. Conectar pelo menu do card: valida o token lendo o número e liga o app à conta do WhatsApp (`subscribed_apps`, usando o WABA ID do campo Business ID); token errado não conecta. Sem o Business ID o canal só é validado, e a ligação tem de ser feita à mão. Depois cadastrar na Meta o webhook e o verify token mostrados na aba Webhook, assinando o campo `messages`.
+4. Com o número de teste da Meta: cadastrar o celular na lista de destinatários da tela "Configuração da API". O token dessa tela é temporário; quando vence, envios falham com o código 190 e a mídia recebida não é baixada (fica um aviso no log do canal).
 
 Testes específicos:
 
@@ -91,6 +92,10 @@ Testes específicos:
 - Enviar: texto com link, imagem, vídeo, áudio e documento.
 - Botões e lista: por API, enviar até 3 respostas rápidas (viram botões) e mais de 3 (viram lista); tocar em uma opção e ver a resposta chegar com o título.
 - Status: a mensagem enviada passa por Enviado, Entregue e Lido; número inválido termina em Falhou com o código da Meta.
+- Testar Conexão é real: com o token guardado (campo em branco ao editar) mostra o número e o nome verificado; com token errado mostra o erro da Meta com o código.
+- Editar o canal sem redigitar o token: salvar só o nome deve funcionar.
+- Celular brasileiro: a Meta entrega o número sem o nono dígito; a resposta sai com ele. Responder a um contato gravado com 12 dígitos não pode voltar com o erro 131030.
+- Conta de teste nova pode estar impedida de enviar para o Brasil (erro 130497, "restricted from messaging users in this country"): é restrição da Meta, não do Linktor.
 - Janela de 24 h: com `LINKTOR_WA_WINDOW_ENFORCEMENT=enforce`, responder a um contato parado há mais de 24 h deve falhar; template deve passar.
 - Sandbox: canal criado como sandbox só entrega para números da lista em `/sandbox-allowlist`.
 - Embedded Signup: completar o fluxo da aba Embedded Signup (exige `WHATSAPP_EMBEDDED_SIGNUP_APP_SECRET` no servidor) e conferir que o canal nasce Conectado.

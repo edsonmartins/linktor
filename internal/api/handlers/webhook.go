@@ -55,7 +55,21 @@ type WebhookHandler struct {
 	contactRepo      repository.ContactRepository
 	conversationRepo repository.ConversationRepository
 	typingSvc        *appservice.MessageService
+
+	// channelLog registra falhas que o operador precisa ver (ex.: mídia que não
+	// pôde ser baixada porque o token venceu). Opcional.
+	channelLog ChannelLogger
 }
+
+// ChannelLogger grava um aviso no log do canal, o que o operador vê em
+// Observabilidade.
+type ChannelLogger interface {
+	Warn(ctx context.Context, tenantID, channelID, message string, metadata map[string]string)
+}
+
+// SetChannelLogger liga o log do canal. Opcional: sem ele os avisos não são
+// gravados.
+func (h *WebhookHandler) SetChannelLogger(l ChannelLogger) { h.channelLog = l }
 
 // SetTypingDeps wires the repos/service needed to resolve an inbound typing
 // signal (phone → contact → open conversation) and broadcast it to the agent UI.
@@ -1463,10 +1477,12 @@ func (h *WebhookHandler) rehostWhatsAppMedia(ctx context.Context, channel *entit
 	client := whatsappofficial.NewClient(&whatsappofficial.Config{AccessToken: token})
 	info, err := client.GetMediaInfo(dlCtx, mediaID)
 	if err != nil || info == nil || info.URL == "" {
+		h.avisarMidiaPerdida(ctx, channel, err)
 		return "", false
 	}
 	data, ctype, err := client.DownloadMedia(dlCtx, info.URL)
 	if err != nil {
+		h.avisarMidiaPerdida(ctx, channel, err)
 		return "", false
 	}
 	if ctype == "" {
@@ -1481,6 +1497,21 @@ func (h *WebhookHandler) rehostWhatsAppMedia(ctx context.Context, channel *entit
 		return "", false
 	}
 	return url, true
+}
+
+// avisarMidiaPerdida registra no log do canal que uma mídia recebida não pôde
+// ser baixada da Meta. O caso comum é token vencido: a mensagem entra no chat
+// com o anexo quebrado e, sem este aviso, ninguém sabe por quê — e a Meta só
+// guarda o arquivo por um tempo.
+func (h *WebhookHandler) avisarMidiaPerdida(ctx context.Context, channel *entity.Channel, err error) {
+	if h.channelLog == nil {
+		return
+	}
+	motivo := "a Meta não devolveu o endereço do arquivo"
+	if err != nil {
+		motivo = err.Error()
+	}
+	h.channelLog.Warn(ctx, channel.TenantID, channel.ID, "Mídia recebida não pôde ser baixada da Meta: "+motivo, nil)
 }
 
 // teamsAttachmentType maps a Bot Framework attachment content type to the
