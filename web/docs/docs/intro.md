@@ -68,5 +68,13 @@ A comparação do que cada canal suporta está em [Canais → Visão geral](cana
 - **[Implantar](implantar/arquitetura.md)** — arquitetura, instalação, produção, configuração,
   monitoramento, backup e segurança.
 
+## Usar com LLMs
+
+A documentação inteira também existe em texto puro, gerada a cada publicação a partir destas mesmas
+páginas — para colar num assistente de IA ou indexar num agente:
+
+- [`llms.txt`](pathname:///llms.txt) — índice, com uma linha e um link por página.
+- [`llms-full.txt`](pathname:///llms-full.txt) — todas as páginas em um arquivo só.
+
 > **Nota de precisão:** esta documentação é escrita a partir do código. Onde uma capacidade é parcial
 > ou depende de configuração, a página diz isso explicitamente.

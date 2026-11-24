@@ -1,6 +1,11 @@
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import llmsTxt from './src/plugins/llms-txt';
+
+// Os arquivos para LLMs saem na raiz de cada idioma (/llms.txt e /es/llms.txt).
+const locale = process.env.DOCUSAURUS_CURRENT_LOCALE;
+const llmsBase = locale && locale !== 'undefined' && locale !== 'pt-BR' ? `/${locale}` : '';
 
 const config: Config = {
   title: 'Linktor',
@@ -59,6 +64,8 @@ const config: Config = {
   // The Scalar plugin is temporarily disabled until an OpenAPI spec is published
   // under static/openapi.json or another stable URL.
   plugins: [
+    // Gera /llms.txt e /llms-full.txt no build, a partir das páginas-fonte.
+    llmsTxt,
     // [
     //   '@scalar/docusaurus',
     //   {
@@ -152,6 +159,14 @@ const config: Config = {
           items: [
             {label: 'Instalação', to: '/implantar/instalacao'},
             {label: 'GitHub', href: 'https://github.com/edsonmartins/linktor'},
+          ],
+        },
+        {
+          // `pathname://` marca um arquivo estático: fica fora da checagem de links.
+          title: 'Para LLMs',
+          items: [
+            {label: 'llms.txt (índice)', href: `pathname://${llmsBase}/llms.txt`},
+            {label: 'llms-full.txt (tudo em um arquivo)', href: `pathname://${llmsBase}/llms-full.txt`},
           ],
         },
       ],
