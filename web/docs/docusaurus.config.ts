@@ -11,7 +11,9 @@ const config: Config = {
     v4: true,
   },
 
-  url: 'https://docs.linktor.io',
+  // DOCS_URL vem do build da imagem (web/docs/Dockerfile): o endereço em que o
+  // site é publicado.
+  url: process.env.DOCS_URL || 'https://docs.linktor.io',
   baseUrl: '/',
 
   organizationName: 'linktor',
