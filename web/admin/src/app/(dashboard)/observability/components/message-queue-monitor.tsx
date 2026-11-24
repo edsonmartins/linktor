@@ -115,10 +115,10 @@ function StreamCard({ stream, t, tCommon }: { stream: StreamInfo; t: (key: strin
                     <p className="text-sm font-mono">{consumer.name}</p>
                     <div className="flex gap-3 text-xs text-muted-foreground">
                       <span>
-                        {t('pending')}: <strong className={cn(consumer.pending > 100 && 'text-yellow-500')}>{consumer.pending}</strong>
+                        {t('pending')}: <strong className={cn(consumer.pending > 100 && 'text-yellow-600 dark:text-yellow-400')}>{consumer.pending}</strong>
                       </span>
                       <span>
-                        {t('ackPending')}: <strong className={cn(consumer.ack_pending > 50 && 'text-orange-500')}>{consumer.ack_pending}</strong>
+                        {t('ackPending')}: <strong className={cn(consumer.ack_pending > 50 && 'text-orange-600 dark:text-orange-400')}>{consumer.ack_pending}</strong>
                       </span>
                       <span>
                         {t('redelivered')}: <strong className={cn(consumer.redelivered > 10 && 'text-red-500')}>{consumer.redelivered}</strong>
@@ -196,7 +196,7 @@ export function MessageQueueMonitor() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-yellow-500" />
+            <Clock className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
             <div>
               <p className="text-sm text-muted-foreground">{t('totalPending')}</p>
               <p className="text-xl font-bold">

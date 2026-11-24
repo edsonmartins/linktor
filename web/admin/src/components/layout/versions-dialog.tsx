@@ -85,7 +85,7 @@ export function VersionsDialog({
           {conhecidas && (
             <div
               className={`flex items-start gap-2 rounded-md border p-3 text-sm ${
-                combinam ? 'text-muted-foreground' : 'border-yellow-500/40 text-yellow-500'
+                combinam ? 'text-muted-foreground' : 'border-yellow-500/40 text-yellow-600 dark:text-yellow-400'
               }`}
             >
               {combinam ? (

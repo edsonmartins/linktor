@@ -37,9 +37,9 @@ export const ActionNode = memo(function ActionNode({ data }: ActionNodeProps) {
   return (
     <div
       className={cn(
-        'rounded-lg border-2 bg-white p-4 shadow-sm transition-shadow min-w-[200px] max-w-[280px]',
-        isSelected ? 'border-emerald-500 shadow-md' : 'border-emerald-200',
-        isStart && 'ring-2 ring-green-500 ring-offset-2'
+        'rounded-lg border-2 bg-card text-card-foreground p-4 shadow-sm transition-shadow min-w-[200px] max-w-[280px]',
+        isSelected ? 'border-emerald-500 shadow-md' : 'border-emerald-500/30',
+        isStart && 'ring-2 ring-green-500 ring-offset-2 ring-offset-background'
       )}
     >
       <Handle
@@ -49,17 +49,17 @@ export const ActionNode = memo(function ActionNode({ data }: ActionNodeProps) {
       />
 
       <div className="flex items-center gap-2 mb-2">
-        <div className="rounded-md bg-emerald-100 p-1.5">
-          <Zap className="h-4 w-4 text-emerald-600" />
+        <div className="rounded-md bg-emerald-500/15 p-1.5">
+          <Zap className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
         </div>
-        <span className="text-sm font-medium text-emerald-700">Action</span>
+        <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Action</span>
         {isStart && (
-          <Star className="h-3 w-3 text-green-500 fill-green-500 ml-auto" />
+          <Star className="h-3 w-3 text-green-600 dark:text-green-400 fill-green-500 ml-auto" />
         )}
       </div>
 
       {content && (
-        <p className="text-sm text-gray-600 line-clamp-2 mb-2">
+        <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
           {content}
         </p>
       )}
@@ -70,7 +70,7 @@ export const ActionNode = memo(function ActionNode({ data }: ActionNodeProps) {
           {actions.map((action, index) => (
             <span
               key={index}
-              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200"
+              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded-full border border-emerald-500/30"
             >
               {actionIcons[action.type]}
               {actionLabels[action.type]}

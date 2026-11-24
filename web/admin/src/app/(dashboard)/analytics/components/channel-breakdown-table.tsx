@@ -17,16 +17,16 @@ interface ChannelBreakdownTableProps {
 }
 
 const CHANNEL_ICONS: Record<string, React.ReactNode> = {
-  whatsapp: <MessageCircle className="h-4 w-4 text-green-600" />,
-  whatsapp_official: <MessageCircle className="h-4 w-4 text-green-600" />,
+  whatsapp: <MessageCircle className="h-4 w-4 text-green-600 dark:text-green-400" />,
+  whatsapp_official: <MessageCircle className="h-4 w-4 text-green-600 dark:text-green-400" />,
   telegram: <MessageSquare className="h-4 w-4 text-blue-500" />,
-  webchat: <Globe className="h-4 w-4 text-purple-600" />,
-  sms: <Phone className="h-4 w-4 text-gray-600" />,
-  instagram: <Instagram className="h-4 w-4 text-pink-600" />,
-  facebook: <Facebook className="h-4 w-4 text-blue-600" />,
-  teams: <MessageSquare className="h-4 w-4 text-blue-700" />,
+  webchat: <Globe className="h-4 w-4 text-purple-600 dark:text-purple-400" />,
+  sms: <Phone className="h-4 w-4 text-muted-foreground" />,
+  instagram: <Instagram className="h-4 w-4 text-pink-600 dark:text-pink-400" />,
+  facebook: <Facebook className="h-4 w-4 text-blue-600 dark:text-blue-400" />,
+  teams: <MessageSquare className="h-4 w-4 text-blue-700 dark:text-blue-300" />,
   slack: <MessageSquare className="h-4 w-4 text-violet-500" />,
-  mattermost: <MessageSquare className="h-4 w-4 text-sky-600" />,
+  mattermost: <MessageSquare className="h-4 w-4 text-sky-600 dark:text-sky-400" />,
 }
 
 export function ChannelBreakdownTable({ data }: ChannelBreakdownTableProps) {
@@ -59,7 +59,7 @@ export function ChannelBreakdownTable({ data }: ChannelBreakdownTableProps) {
                   <td className="py-3">
                     <div className="flex items-center gap-2">
                       {CHANNEL_ICONS[channel.channel_type] || (
-                        <MessageSquare className="h-4 w-4 text-gray-500" />
+                        <MessageSquare className="h-4 w-4 text-muted-foreground" />
                       )}
                       <span className="font-medium">{channel.channel_name}</span>
                     </div>
@@ -71,10 +71,10 @@ export function ChannelBreakdownTable({ data }: ChannelBreakdownTableProps) {
                       className={cn(
                         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
                         channel.resolution_rate >= 80
-                          ? 'bg-emerald-100 text-emerald-700'
+                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
                           : channel.resolution_rate >= 50
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-red-100 text-red-700'
+                          ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                          : 'bg-red-500/15 text-red-700 dark:text-red-300'
                       )}
                     >
                       {channel.resolution_rate.toFixed(0)}%

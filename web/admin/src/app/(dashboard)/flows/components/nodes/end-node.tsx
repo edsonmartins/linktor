@@ -17,8 +17,8 @@ export const EndNode = memo(function EndNode({ data }: EndNodeProps) {
   return (
     <div
       className={cn(
-        'rounded-lg border-2 bg-white p-4 shadow-sm transition-shadow min-w-[120px]',
-        isSelected ? 'border-red-500 shadow-md' : 'border-red-200'
+        'rounded-lg border-2 bg-card text-card-foreground p-4 shadow-sm transition-shadow min-w-[120px]',
+        isSelected ? 'border-red-500 shadow-md' : 'border-red-500/30'
       )}
     >
       <Handle
@@ -28,10 +28,10 @@ export const EndNode = memo(function EndNode({ data }: EndNodeProps) {
       />
 
       <div className="flex items-center justify-center gap-2">
-        <div className="rounded-md bg-red-100 p-1.5">
-          <CircleStop className="h-4 w-4 text-red-600" />
+        <div className="rounded-md bg-red-500/15 p-1.5">
+          <CircleStop className="h-4 w-4 text-red-600 dark:text-red-400" />
         </div>
-        <span className="text-sm font-medium text-red-700">End</span>
+        <span className="text-sm font-medium text-red-700 dark:text-red-300">End</span>
       </div>
     </div>
   )

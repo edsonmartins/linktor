@@ -74,7 +74,7 @@ const botTypeIcons: Record<BotType, { icon: React.ReactNode; color: string; bgCo
   },
   sales: {
     icon: <Zap className="h-5 w-5" />,
-    color: 'text-green-500',
+    color: 'text-green-600 dark:text-green-400',
     bgColor: 'bg-green-500/10',
   },
   faq: {
@@ -84,7 +84,7 @@ const botTypeIcons: Record<BotType, { icon: React.ReactNode; color: string; bgCo
   },
   custom: {
     icon: <BotIcon className="h-5 w-5" />,
-    color: 'text-amber-500',
+    color: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-500/10',
   },
 }

@@ -313,7 +313,7 @@ export function WhatsAppBridgeConfig({ channel, onSuccess, onCancel }: WhatsAppB
                             {copied === 'token' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                           </Button>
                         </div>
-                        <p className="text-xs text-amber-600">{tb('tokenShownOnce')}</p>
+                        <p className="text-xs text-amber-600 dark:text-amber-400">{tb('tokenShownOnce')}</p>
                       </>
                     ) : (
                       <p className="text-xs text-muted-foreground">{tb('tokenPending')}</p>

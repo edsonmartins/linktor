@@ -685,7 +685,7 @@ export function RCSConfig({ channelId, initialConfig, onSave }: RCSConfigProps) 
             {connectionStatus === "connected" && (
               <>
                 <div className="h-3 w-3 rounded-full bg-green-500" />
-                <span className="text-green-600">{t('connected')}</span>
+                <span className="text-green-600 dark:text-green-400">{t('connected')}</span>
                 <Badge variant="outline" className="ml-2">
                   {providerInfo[selectedProvider].name}
                 </Badge>

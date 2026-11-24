@@ -39,9 +39,9 @@ export const VRENode = memo(function VRENode({ data }: VRENodeProps) {
   return (
     <div
       className={cn(
-        'rounded-lg border-2 bg-white p-4 shadow-sm transition-shadow min-w-[200px] max-w-[280px]',
-        isSelected ? 'border-purple-500 shadow-md' : 'border-purple-200',
-        isStart && 'ring-2 ring-green-500 ring-offset-2'
+        'rounded-lg border-2 bg-card text-card-foreground p-4 shadow-sm transition-shadow min-w-[200px] max-w-[280px]',
+        isSelected ? 'border-purple-500 shadow-md' : 'border-purple-500/30',
+        isStart && 'ring-2 ring-green-500 ring-offset-2 ring-offset-background'
       )}
     >
       <Handle
@@ -51,20 +51,20 @@ export const VRENode = memo(function VRENode({ data }: VRENodeProps) {
       />
 
       <div className="flex items-center gap-2 mb-2">
-        <div className="rounded-md bg-purple-100 p-1.5">
-          <ImageIcon className="h-4 w-4 text-purple-600" />
+        <div className="rounded-md bg-purple-500/15 p-1.5">
+          <ImageIcon className="h-4 w-4 text-purple-600 dark:text-purple-400" />
         </div>
-        <span className="text-sm font-medium text-purple-700">VRE Visual</span>
+        <span className="text-sm font-medium text-purple-700 dark:text-purple-300">VRE Visual</span>
         {isStart && (
-          <Star className="h-3 w-3 text-green-500 fill-green-500 ml-auto" />
+          <Star className="h-3 w-3 text-green-600 dark:text-green-400 fill-green-500 ml-auto" />
         )}
       </div>
 
-      <div className="text-xs text-purple-600 font-medium mb-1">
+      <div className="text-xs text-purple-600 dark:text-purple-400 font-medium mb-1">
         {templateLabel}
       </div>
 
-      <p className="text-sm text-gray-600 line-clamp-2">
+      <p className="text-sm text-muted-foreground line-clamp-2">
         {content || 'Visual response image'}
       </p>
 

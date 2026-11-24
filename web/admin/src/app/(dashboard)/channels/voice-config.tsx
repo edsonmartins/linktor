@@ -319,7 +319,7 @@ export function VoiceConfig({ channel, onSuccess, onCancel }: VoiceConfigProps) 
                 </>
               ) : testStatus === 'success' ? (
                 <>
-                  <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />
                   {t('connectionSuccess')}
                 </>
               ) : testStatus === 'error' ? (
@@ -400,27 +400,27 @@ export function VoiceConfig({ channel, onSuccess, onCancel }: VoiceConfigProps) 
             <CardContent>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <span>{t('tts')}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <span>{t('stt')}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <span>{t('dtmfInput')}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <span>{t('callTransfer')}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <span>{t('callQueue')}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <span>{t('conference')}</span>
                 </div>
               </div>

@@ -80,7 +80,7 @@ export function CoexistenceStatusWidget({
       case 'active':
         return {
           icon: CheckCircle2,
-          color: 'text-green-500',
+          color: 'text-green-600 dark:text-green-400',
           bgColor: 'bg-green-500/10',
           borderColor: 'border-green-500/20',
           label: 'Active',
@@ -91,7 +91,7 @@ export function CoexistenceStatusWidget({
       case 'warning':
         return {
           icon: AlertTriangle,
-          color: 'text-yellow-500',
+          color: 'text-yellow-600 dark:text-yellow-400',
           bgColor: 'bg-yellow-500/10',
           borderColor: 'border-yellow-500/20',
           label: 'Warning',
@@ -240,9 +240,9 @@ export function CoexistenceStatusBadge({
   const getStatusStyle = () => {
     switch (status.status) {
       case 'active':
-        return 'bg-green-500/10 text-green-500 border-green-500/20'
+        return 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'
       case 'warning':
-        return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+        return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20'
       case 'disconnected':
         return 'bg-red-500/10 text-red-500 border-red-500/20'
       default:

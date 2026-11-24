@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toastError } from '@/hooks/use-toast'
 import { LocaleSwitcher } from '@/components/locale-switcher'
+import { ThemeSwitcher } from '@/components/theme-switcher'
 import { Lock, Mail } from 'lucide-react'
 
 export default function LoginPage() {
@@ -45,17 +46,18 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       {/* Terminal-style background grid */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(34,197,94,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(34,197,94,0.03)_1px,transparent_1px)] bg-[size:50px_50px]" />
+      <div className="absolute inset-0 bg-[linear-gradient(hsl(var(--primary)/0.06)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--primary)/0.06)_1px,transparent_1px)] bg-[size:50px_50px]" />
 
       {/* Language Switcher */}
-      <div className="absolute top-4 right-4 z-10">
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-1">
+        <ThemeSwitcher />
         <LocaleSwitcher />
       </div>
 
       <Card variant="glow" className="relative w-full max-w-md">
         <CardHeader className="text-center">
           {/* Logo */}
-          <div className="mx-auto mb-4">
+          <div className="mx-auto mb-4 w-fit rounded-lg dark:bg-foreground dark:px-3 dark:py-1.5">
             <Image
               src="/images/logo_linktor_texto.png"
               alt="Linktor"

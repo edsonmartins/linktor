@@ -41,6 +41,7 @@ import { useAuthStore, useUser } from '@/stores/auth-store'
 import { useUIStore, useSidebarCollapsed, useUnreadCount } from '@/stores/ui-store'
 import { VersionsDialog } from './versions-dialog'
 import { LocaleSwitcher } from '@/components/locale-switcher'
+import { ThemeSwitcher } from '@/components/theme-switcher'
 import { isAdmin } from '@/lib/rbac'
 
 /**
@@ -188,13 +189,16 @@ export function Sidebar() {
         )}
       >
         {!collapsed && (
-          <Link href="/dashboard" className="flex items-center">
+          <Link
+            href="/dashboard"
+            className="flex items-center rounded-lg dark:bg-foreground dark:px-2 dark:py-1"
+          >
             <Image
               src="/images/logo_linktor_texto.png"
               alt="Linktor"
               width={888}
               height={386}
-              className="h-10 w-auto"
+              className="h-10 w-auto dark:h-8"
               priority
             />
           </Link>
@@ -323,9 +327,15 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* Language Switcher */}
-        <div className={cn('mt-2', collapsed ? 'flex justify-center' : '')}>
+        {/* Language and theme */}
+        <div
+          className={cn(
+            'mt-2 flex',
+            collapsed ? 'flex-col items-center' : 'items-center justify-between'
+          )}
+        >
           <LocaleSwitcher collapsed={collapsed} />
+          <ThemeSwitcher collapsed={collapsed} />
         </div>
 
         {/* Versões no ar — responde "subiu ou não" sem entrar na VPS */}

@@ -265,19 +265,19 @@ export function WhatsAppEmbeddedSignup({
               <h4 className="font-medium text-sm">{tSignup('benefitsTitle')}</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   {tSignup('benefitKeepUsing')}
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   {tSignup('benefitKeepNumber')}
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   {tSignup('benefitSync')}
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   {tSignup('benefitNoMigration')}
                 </li>
               </ul>
@@ -380,7 +380,7 @@ export function WhatsAppEmbeddedSignup({
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
               {tSignup('whatsappConnected')}
             </CardTitle>
             <CardDescription>

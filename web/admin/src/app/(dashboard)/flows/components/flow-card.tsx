@@ -51,7 +51,7 @@ export function FlowCard({
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className={`rounded-lg p-2 ${flow.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+            <div className={`rounded-lg p-2 ${flow.is_active ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-muted text-muted-foreground'}`}>
               <GitBranch className="h-5 w-5" />
             </div>
             <div>

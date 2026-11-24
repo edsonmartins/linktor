@@ -346,7 +346,7 @@ export function WebchatConfig({ channel, onSuccess, onCancel }: WebchatConfigPro
                 {/* Live widget preview — reflects the configured color, title,
                     welcome message and input placeholder. */}
                 <div
-                  className={`absolute bottom-4 flex w-[280px] max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-xl bg-white shadow-xl ${
+                  className={`absolute bottom-4 flex w-[280px] max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-xl bg-white text-foreground shadow-xl light ${
                     position === 'bottom-right' ? 'right-4' : 'left-4'
                   }`}
                   style={{ height: '272px' }}

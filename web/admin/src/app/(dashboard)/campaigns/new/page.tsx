@@ -168,7 +168,7 @@ export default function NewCampaignPage() {
               />
               <p className="text-xs text-muted-foreground">{t('recipientsHelp')}</p>
               {invalidCount > 0 && (
-                <p className="text-xs text-amber-600">
+                <p className="text-xs text-amber-600 dark:text-amber-400">
                   {invalidCount} {t('invalidLines')}
                 </p>
               )}
