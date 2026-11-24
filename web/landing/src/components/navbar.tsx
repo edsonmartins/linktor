@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Menu, X } from 'lucide-react'
+import { ThemeToggle } from './theme-toggle'
 
 const navLinks = [
   { href: '#features', label: 'Features' },
@@ -27,7 +28,15 @@ export function Navbar() {
               alt="Linktor"
               width={180}
               height={50}
-              className="h-12 w-auto"
+              className="hidden h-12 w-auto dark:block"
+              priority
+            />
+            <Image
+              src="/images/logo_fundo_claro.png"
+              alt="Linktor"
+              width={180}
+              height={50}
+              className="h-12 w-auto dark:hidden"
               priority
             />
           </Link>
@@ -49,6 +58,7 @@ export function Navbar() {
 
           {/* CTA Buttons */}
           <div className="hidden md:flex items-center gap-4">
+            <ThemeToggle />
             <Link
               href="https://app.linktor.io/login"
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
@@ -90,6 +100,9 @@ export function Navbar() {
                 </Link>
               ))}
               <div className="flex flex-col gap-2 pt-4 border-t border-border">
+                <div className="-ml-2">
+                  <ThemeToggle showLabel />
+                </div>
                 <Link
                   href="https://app.linktor.io/login"
                   className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"

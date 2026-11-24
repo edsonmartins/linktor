@@ -103,7 +103,7 @@ export function Docs() {
 
               {/* Right: Terminal Preview */}
               <div className="relative">
-                <div className="terminal-card overflow-hidden">
+                <div className="dark terminal-card overflow-hidden text-foreground">
                   {/* Terminal Header */}
                   <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card/50">
                     <div className="flex gap-1.5">

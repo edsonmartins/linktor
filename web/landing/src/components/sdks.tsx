@@ -42,7 +42,7 @@ client.messages.send(
     name: 'Go',
     package: 'linktor-go',
     install: 'go get github.com/linktor/linktor-go',
-    color: 'text-[#00ADD8]',
+    color: 'text-[#007D9C] dark:text-[#00ADD8]',
     code: `package main
 
 import "github.com/linktor/linktor-go"
@@ -62,7 +62,7 @@ func main() {
     name: 'Java',
     package: 'io.linktor:linktor-sdk',
     install: 'maven: io.linktor:linktor-sdk:1.0.0',
-    color: 'text-[#ED8B00]',
+    color: 'text-[#B36200] dark:text-[#ED8B00]',
     code: `import io.linktor.Linktor;
 import io.linktor.models.Message;
 
@@ -81,7 +81,7 @@ client.messages().send(
     name: 'Rust',
     package: 'linktor',
     install: 'cargo add linktor',
-    color: 'text-[#DEA584]',
+    color: 'text-[#A8481B] dark:text-[#DEA584]',
     code: `use linktor::Client;
 
 #[tokio::main]
@@ -162,7 +162,7 @@ export function SDKs() {
         </div>
 
         {/* SDK Selector & Code */}
-        <div className="terminal-card rounded-xl overflow-hidden glow-primary">
+        <div className="dark terminal-card rounded-xl overflow-hidden glow-primary text-foreground">
           {/* SDK Tabs */}
           <div className="flex flex-wrap border-b border-border bg-card/50">
             {sdks.map((sdk, index) => (

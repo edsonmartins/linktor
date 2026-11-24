@@ -17,7 +17,7 @@ const channels = [
     name: 'WhatsApp',
     description: 'Official Business API',
     icon: MessageCircle,
-    color: 'text-[#25D366]',
+    color: 'text-[#128C7E] dark:text-[#25D366]',
     bgColor: 'bg-[#25D366]/10',
     borderColor: 'border-[#25D366]/30',
   },

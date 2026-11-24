@@ -92,7 +92,7 @@ export function Hero() {
 
           {/* Right: Terminal Animation */}
           <div className="opacity-0 animate-slide-up delay-200">
-            <div className="terminal-card rounded-xl overflow-hidden glow-primary">
+            <div className="dark terminal-card rounded-xl overflow-hidden glow-primary text-foreground">
               {/* Terminal Header */}
               <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border">
                 <div className="flex gap-2">
