@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
@@ -95,7 +96,7 @@ export default function CannedResponsesPage() {
           <Skeleton className="h-64 w-full" />
         ) : !items || items.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-            <MessageSquareText className="mb-3 h-10 w-10 text-muted-foreground" />
+            <EmptyArt icon={MessageSquareText} className="mb-6" />
             <p className="text-sm text-muted-foreground">{t('empty')}</p>
           </div>
         ) : (

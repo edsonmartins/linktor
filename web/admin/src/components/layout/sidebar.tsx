@@ -5,159 +5,19 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
-import {
-  LayoutDashboard,
-  MessageSquare,
-  Users,
-  UsersRound,
-  Radio,
-  BookOpen,
-  GitBranch,
-  BarChart3,
-  Settings,
-  LogOut,
-  Info,
-  ChevronLeft,
-  ChevronRight,
-  Bell,
-  Bot,
-  Activity,
-  FileText,
-  Sparkles,
-  Megaphone,
-  MessageSquareText,
-  ShieldCheck,
-  SlidersHorizontal,
-  ScrollText,
-  FlaskConical,
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { Avatar } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
+import { ChevronLeft, ChevronRight, Info, LogOut } from 'lucide-react'
+import { cn, getInitials } from '@/lib/utils'
 import { SimpleTooltip } from '@/components/ui/tooltip'
-import { Separator } from '@/components/ui/separator'
 import { useAuthStore, useUser } from '@/stores/auth-store'
 import { useUIStore, useSidebarCollapsed, useUnreadCount } from '@/stores/ui-store'
 import { VersionsDialog } from './versions-dialog'
-import { LocaleSwitcher } from '@/components/locale-switcher'
-import { ThemeSwitcher } from '@/components/theme-switcher'
 import { isAdmin } from '@/lib/rbac'
+import { navGroups, settingsItem, type NavItem } from './nav-config'
 
 /**
- * Navigation items - Plugin Pattern
- * Each item is a "plugin" that can be enabled/disabled
- */
-const navItems = [
-  {
-    labelKey: 'dashboard',
-    href: '/dashboard',
-    icon: LayoutDashboard,
-  },
-  {
-    labelKey: 'conversations',
-    href: '/conversations',
-    icon: MessageSquare,
-    badge: true, // Shows unread count
-  },
-  {
-    labelKey: 'contacts',
-    href: '/contacts',
-    icon: Users,
-  },
-  {
-    labelKey: 'channels',
-    href: '/channels',
-    icon: Radio,
-  },
-  {
-    labelKey: 'bots',
-    href: '/bots',
-    icon: Bot,
-  },
-  {
-    labelKey: 'knowledgeBase',
-    href: '/knowledge-base',
-    icon: BookOpen,
-  },
-  {
-    labelKey: 'templates',
-    href: '/templates',
-    icon: FileText,
-  },
-  {
-    labelKey: 'campaigns',
-    href: '/campaigns',
-    icon: Megaphone,
-  },
-  {
-    labelKey: 'cannedResponses',
-    href: '/canned-responses',
-    icon: MessageSquareText,
-  },
-  {
-    labelKey: 'vre',
-    href: '/vre',
-    icon: Sparkles,
-  },
-  {
-    labelKey: 'flows',
-    href: '/flows',
-    icon: GitBranch,
-  },
-  {
-    labelKey: 'analytics',
-    href: '/analytics',
-    icon: BarChart3,
-  },
-  {
-    labelKey: 'observability',
-    href: '/observability',
-    icon: Activity,
-    adminOnly: true,
-  },
-  {
-    labelKey: 'team',
-    href: '/users',
-    icon: UsersRound,
-    adminOnly: true,
-  },
-  {
-    labelKey: 'roles',
-    href: '/roles',
-    icon: ShieldCheck,
-    adminOnly: true,
-  },
-  {
-    labelKey: 'operations',
-    href: '/operations',
-    icon: SlidersHorizontal,
-  },
-  {
-    labelKey: 'audit',
-    href: '/audit-logs',
-    icon: ScrollText,
-    adminOnly: true,
-  },
-  {
-    labelKey: 'sandboxAllowlist',
-    href: '/sandbox-allowlist',
-    icon: FlaskConical,
-    adminOnly: true,
-  },
-]
-
-const bottomNavItems = [
-  {
-    labelKey: 'settings',
-    href: '/settings',
-    icon: Settings,
-  },
-]
-
-/**
- * Sidebar Component - Plugin Pattern
- * Collapsible sidebar with navigation
+ * Sidebar: the brand's own panel (deep green in both themes), so navigation
+ * does not blend into the content. The look lives in globals.css
+ * (`.lk-sidebar*`, `.lk-nav-*`, `--sb-*` tokens); the map in nav-config.ts.
  */
 export function Sidebar() {
   const [versoesAbertas, setVersoesAbertas] = useState(false)
@@ -172,234 +32,137 @@ export function Sidebar() {
 
   // Hide admin-only entries from non-admin roles (the API enforces this too).
   const userIsAdmin = isAdmin(user?.role)
-  const visibleNavItems = navItems.filter((item) => !item.adminOnly || userIsAdmin)
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.adminOnly || userIsAdmin),
+    }))
+    .filter((group) => group.items.length > 0)
+
+  const renderItem = (item: NavItem) => {
+    const isActive = pathname.startsWith(item.href)
+    const Icon = item.icon
+    const label = t(item.labelKey)
+    const showBadge = item.badge && unreadCount > 0
+
+    const link = (
+      <Link
+        href={item.href}
+        className="lk-nav-item"
+        data-active={isActive || undefined}
+        aria-current={isActive ? 'page' : undefined}
+        aria-label={collapsed ? label : undefined}
+      >
+        <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.8} />
+        {!collapsed && <span className="lk-nav-label">{label}</span>}
+        {showBadge &&
+          (collapsed ? (
+            <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-red-400" />
+          ) : (
+            <span className="lk-nav-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
+          ))}
+      </Link>
+    )
+
+    return collapsed ? (
+      <SimpleTooltip key={item.href} content={label} side="right">
+        {link}
+      </SimpleTooltip>
+    ) : (
+      <div key={item.href}>{link}</div>
+    )
+  }
+
+  const footerButton = (
+    label: string,
+    icon: React.ReactNode,
+    onClick: () => void,
+    className?: string
+  ) => (
+    <SimpleTooltip content={label} side={collapsed ? 'right' : 'top'}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        className={cn('lk-sidebar-action', className)}
+      >
+        {icon}
+      </button>
+    </SimpleTooltip>
+  )
 
   return (
     <aside
       className={cn(
-        'relative flex h-screen flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300',
-        collapsed ? 'w-16' : 'w-64'
+        'lk-sidebar relative flex h-screen shrink-0 flex-col transition-[width] duration-300',
+        collapsed ? 'w-[68px]' : 'w-60'
       )}
+      data-collapsed={collapsed || undefined}
     >
-      {/* Header */}
-      <div
-        className={cn(
-          'flex h-16 items-center justify-between',
-          collapsed ? 'px-0' : 'px-4'
-        )}
-      >
-        {!collapsed && (
-          <Link
-            href="/dashboard"
-            className="flex items-center rounded-lg dark:bg-foreground dark:px-2 dark:py-1"
-          >
-            <Image
-              src="/images/logo_linktor_texto.png"
-              alt="Linktor"
-              width={888}
-              height={386}
-              className="h-10 w-auto dark:h-8"
-              priority
-            />
-          </Link>
-        )}
-        {collapsed && (
-          <Link href="/dashboard" className="mx-auto">
-            <Image
-              src="/images/logo_linktor_single.png"
-              alt="Linktor"
-              width={1024}
-              height={1024}
-              className="h-16 w-16"
-              priority
-            />
-          </Link>
-        )}
-      </div>
-
-      <Separator />
+      {/* Brand */}
+      <Link href="/dashboard" className="lk-sidebar-brand" aria-label="Linktor">
+        {/* The mark has wide transparent margins, hence the oversized box. */}
+        <Image
+          src="/images/logo_linktor_single.png"
+          alt=""
+          width={1024}
+          height={1024}
+          className="-mx-5 h-[76px] w-[76px] max-w-none shrink-0"
+          priority
+        />
+        {!collapsed && <span className="lk-sidebar-wordmark">Linktor</span>}
+      </Link>
 
       {/* Navigation */}
-      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-        {visibleNavItems.map((item) => {
-          const isActive = pathname.startsWith(item.href)
-          const Icon = item.icon
-          const label = t(item.labelKey)
-
-          const linkContent = (
-            <Link
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 rounded-full px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                collapsed && 'justify-center px-2'
-              )}
-            >
-              <Icon className="h-5 w-5 shrink-0" />
-              {!collapsed && (
-                <>
-                  <span>{label}</span>
-                  {item.badge && unreadCount > 0 && (
-                    <Badge variant="error" className="ml-auto">
-                      {unreadCount > 99 ? '99+' : unreadCount}
-                    </Badge>
-                  )}
-                </>
-              )}
-              {collapsed && item.badge && unreadCount > 0 && (
-                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-destructive" />
-              )}
-            </Link>
-          )
-
-          if (collapsed) {
-            return (
-              <SimpleTooltip key={item.href} content={label} side="right">
-                <div className="relative">{linkContent}</div>
-              </SimpleTooltip>
-            )
-          }
-
-          return <div key={item.href}>{linkContent}</div>
-        })}
+      <nav className="lk-sidebar-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2.5 pb-2">
+        {visibleGroups.map((group, index) => (
+          <div key={group.key}>
+            {collapsed ? (
+              index > 0 && <div className="lk-sidebar-sep" aria-hidden />
+            ) : (
+              <div className="lk-sidebar-group">{t(`groups.${group.key}`)}</div>
+            )}
+            {group.items.map(renderItem)}
+          </div>
+        ))}
       </nav>
 
-      {/* Bottom Navigation */}
-      <div className="space-y-1 p-2">
-        {bottomNavItems.map((item) => {
-          const isActive = pathname.startsWith(item.href)
-          const Icon = item.icon
-          const label = t(item.labelKey)
+      <div className="border-t border-[var(--sb-divider)] px-2.5 pt-2">{renderItem(settingsItem)}</div>
 
-          const linkContent = (
-            <Link
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 rounded-full px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                collapsed && 'justify-center px-2'
-              )}
-            >
-              <Icon className="h-5 w-5 shrink-0" />
-              {!collapsed && <span>{label}</span>}
-            </Link>
-          )
-
-          if (collapsed) {
-            return (
-              <SimpleTooltip key={item.href} content={label} side="right">
-                {linkContent}
-              </SimpleTooltip>
-            )
-          }
-
-          return <div key={item.href}>{linkContent}</div>
-        })}
-      </div>
-
-      <Separator />
-
-      {/* User section */}
-      <div className="p-2">
-        <div
-          className={cn(
-            'flex items-center gap-3 rounded-md p-2',
-            collapsed && 'justify-center'
-          )}
-        >
-          <Avatar
-            src={user?.avatar_url}
-            fallback={user?.name || 'U'}
-            size="sm"
-            status="online"
-          />
-          {!collapsed && (
-            <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium">{user?.name}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {user?.email}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Language and theme */}
-        <div
-          className={cn(
-            'mt-2 flex',
-            collapsed ? 'flex-col items-center' : 'items-center justify-between'
-          )}
-        >
-          <LocaleSwitcher collapsed={collapsed} />
-          <ThemeSwitcher collapsed={collapsed} />
-        </div>
-
+      {/* Who is signed in, versions and logout */}
+      <div className="lk-sidebar-user" data-collapsed={collapsed || undefined}>
+        {!collapsed && (
+          <>
+            <span className="lk-sidebar-avatar" aria-hidden>
+              {getInitials(user?.name || 'U')}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-xs font-semibold text-white">{user?.name}</span>
+              <span className="truncate text-[11px] text-[var(--sb-text-dim)]">{user?.email}</span>
+            </span>
+          </>
+        )}
         {/* Versões no ar — responde "subiu ou não" sem entrar na VPS */}
-        <div className={cn('mt-1', collapsed ? 'flex justify-center' : '')}>
-          {collapsed ? (
-            <SimpleTooltip content={tVersoes('title')} side="right">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="w-full"
-                onClick={() => setVersoesAbertas(true)}
-                aria-label={tVersoes('title')}
-              >
-                <Info className="h-5 w-5" />
-              </Button>
-            </SimpleTooltip>
-          ) : (
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-3 text-muted-foreground"
-              onClick={() => setVersoesAbertas(true)}
-            >
-              <Info className="h-5 w-5" />
-              {tVersoes('title')}
-            </Button>
-          )}
-        </div>
-
-        <VersionsDialog open={versoesAbertas} onOpenChange={setVersoesAbertas} />
-
-        {/* Logout button */}
-        {collapsed ? (
-          <SimpleTooltip content={t('logout')} side="right">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="mt-1 w-full"
-              onClick={logout}
-            >
-              <LogOut className="h-5 w-5" />
-            </Button>
-          </SimpleTooltip>
-        ) : (
-          <Button
-            variant="ghost"
-            className="mt-1 w-full justify-start gap-3 text-muted-foreground"
-            onClick={logout}
-          >
-            <LogOut className="h-5 w-5" />
-            {t('logout')}
-          </Button>
+        {footerButton(tVersoes('title'), <Info className="h-[17px] w-[17px]" />, () =>
+          setVersoesAbertas(true)
+        )}
+        {footerButton(
+          t('logout'),
+          <LogOut className="h-[17px] w-[17px]" />,
+          logout,
+          'hover:!bg-red-400/15 hover:!text-red-300'
         )}
       </div>
+
+      <VersionsDialog open={versoesAbertas} onOpenChange={setVersoesAbertas} />
 
       {/* Collapse toggle */}
       <button
+        type="button"
         onClick={toggleSidebar}
-        className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground"
+        className="absolute -right-3 top-[52px] z-20 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm hover:text-foreground"
       >
-        {collapsed ? (
-          <ChevronRight className="h-4 w-4" />
-        ) : (
-          <ChevronLeft className="h-4 w-4" />
-        )}
+        {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </button>
     </aside>
   )

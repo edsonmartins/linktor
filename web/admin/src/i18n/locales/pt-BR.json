@@ -140,6 +140,12 @@
     "password": "Senha"
   },
   "nav": {
+    "groups": {
+      "service": "Atendimento",
+      "automation": "Canais e automação",
+      "insights": "Análise",
+      "admin": "Administração"
+    },
     "dashboard": "Dashboard",
     "conversations": "Conversas",
     "contacts": "Contatos",
@@ -172,7 +178,22 @@
     "authenticating": "Autenticando...",
     "loginFailed": "Falha no login",
     "invalidCredentials": "Credenciais inválidas",
-    "demoCredentials": "Credenciais de demonstração:"
+    "demoCredentials": "Credenciais de demonstração:",
+    "footer": "© {year} Linktor · Plataforma omnichannel",
+    "banner": {
+      "eyebrow": "plataforma omnichannel",
+      "titleStart": "Todos os canais.",
+      "titleEnd": "Uma só conversa.",
+      "subtitle": "WhatsApp, Telegram, Instagram, e-mail, SMS, webchat e voz chegam à mesma caixa de entrada, com bots de IA e fluxos trabalhando junto com a sua equipe.",
+      "diagramLabel": "Diagrama: mensagens de todos os canais passam pelo Linktor e chegam ao atendimento, aos bots, aos fluxos e aos relatórios",
+      "email": "E-mail",
+      "voice": "Voz",
+      "inbox": "Atendimento",
+      "bots": "Bots com IA",
+      "flows": "Fluxos",
+      "analytics": "Analytics",
+      "footnote": "Código aberto · Auto-hospedável · API e SDKs em 7 linguagens"
+    }
   },
   "dashboard": {
     "title": "Dashboard",

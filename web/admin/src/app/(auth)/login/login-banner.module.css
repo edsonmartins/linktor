@@ -1,0 +1,102 @@
+/* Motion for the login banner diagram (login-banner.tsx). */
+
+.flow {
+  stroke-dasharray: 2 7;
+  animation: flow 1.4s linear infinite;
+}
+
+.packet {
+  offset-rotate: 0deg;
+  opacity: 0;
+  animation: travel var(--duration, 3.4s) linear infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+.node {
+  opacity: 0;
+  animation: appear 0.6s ease-out forwards;
+  animation-delay: var(--delay, 0s);
+}
+
+.ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ring 3.2s ease-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+.glow {
+  animation: breathe 5s ease-in-out infinite;
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -9;
+  }
+}
+
+@keyframes travel {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Still picture for people who asked for less motion: the diagram stays,
+   the travelling messages and pulses go. */
+@media (prefers-reduced-motion: reduce) {
+  .flow,
+  .glow {
+    animation: none;
+  }
+
+  .node {
+    animation: none;
+    opacity: 1;
+  }
+
+  .packet,
+  .ring {
+    display: none;
+  }
+}

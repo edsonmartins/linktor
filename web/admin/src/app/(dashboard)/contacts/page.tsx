@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
+import { StatCard } from '@/components/ui/stat-card'
 import { Search, Plus, Filter, Users, Mail, Phone, MoreVertical, RefreshCw } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Input } from '@/components/ui/input'
@@ -355,40 +356,19 @@ export default function ContactsPage() {
 
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t('totalContacts')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{contacts.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t('withPhone')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {contacts.filter((c) => c.phone).length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {t('withEmail')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {contacts.filter((c) => c.email).length}
-              </div>
-            </CardContent>
-          </Card>
+          <StatCard label={t('totalContacts')} value={contacts.length} icon={Users} accent="lime" />
+          <StatCard
+            label={t('withPhone')}
+            value={contacts.filter((c) => c.phone).length}
+            icon={Phone}
+            accent="teal"
+          />
+          <StatCard
+            label={t('withEmail')}
+            value={contacts.filter((c) => c.email).length}
+            icon={Mail}
+            accent="amber"
+          />
         </div>
 
         {/* Contacts Grid */}

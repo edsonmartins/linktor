@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { useLocale } from 'next-intl'
@@ -672,7 +673,7 @@ function ApiKeysSettings({ t }: { t: ReturnType<typeof useTranslations<'settings
       ) : (
         <Card className="border-dashed">
           <CardContent className="py-8 text-center">
-            <Key className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
+            <EmptyArt icon={Key} className="mx-auto mb-5" />
             <p className="mt-4 text-sm font-medium">{t('noApiKeys')}</p>
             <p className="text-xs text-muted-foreground">{t('generateKeyHint')}</p>
           </CardContent>

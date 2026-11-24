@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
@@ -199,7 +200,7 @@ export default function FlowsPage() {
           </div>
         ) : flows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <GitBranch className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
+            <EmptyArt icon={GitBranch} className="mx-auto mb-6" />
             <h3 className="mb-2 text-lg font-medium">{t('noFlows')}</h3>
             <p className="mb-4 text-sm text-muted-foreground">
               {t('noFlowsDesc')}

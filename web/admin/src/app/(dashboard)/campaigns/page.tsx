@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
@@ -67,7 +68,7 @@ export default function CampaignsPage() {
           </div>
         ) : !campaigns || campaigns.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-            <Megaphone className="mb-3 h-10 w-10 text-muted-foreground" />
+            <EmptyArt icon={Megaphone} className="mb-6" />
             <p className="mb-4 text-sm text-muted-foreground">{t('empty')}</p>
             <Link href="/campaigns/new">
               <Button size="sm">

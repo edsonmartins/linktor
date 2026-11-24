@@ -8,11 +8,11 @@ import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toastError } from '@/hooks/use-toast'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import { ThemeSwitcher } from '@/components/theme-switcher'
 import { Lock, Mail } from 'lucide-react'
+import { LoginBanner } from './login-banner'
 
 export default function LoginPage() {
   const t = useTranslations('auth')
@@ -44,94 +44,99 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      {/* Terminal-style background grid */}
-      <div className="absolute inset-0 bg-[linear-gradient(hsl(var(--primary)/0.06)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--primary)/0.06)_1px,transparent_1px)] bg-[size:50px_50px]" />
+    <div className="grid min-h-screen bg-background lg:grid-cols-[minmax(0,7fr)_minmax(380px,3fr)]">
+      {/* Banner: 70% of the width on desktop, dropped on small screens */}
+      <aside className="hidden lg:block">
+        <LoginBanner />
+      </aside>
 
-      {/* Language Switcher */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-1">
-        <ThemeSwitcher />
-        <LocaleSwitcher />
-      </div>
+      <main className="lk-main relative flex min-h-screen flex-col">
+        {/* Small screens have no banner, so they keep the terminal grid */}
+        <div className="absolute inset-0 bg-[linear-gradient(hsl(var(--primary)/0.06)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--primary)/0.06)_1px,transparent_1px)] bg-[size:50px_50px] lg:hidden" />
 
-      <Card variant="glow" className="relative w-full max-w-md">
-        <CardHeader className="text-center">
-          {/* Logo */}
-          <div className="mx-auto mb-4 w-fit rounded-lg dark:bg-foreground dark:px-3 dark:py-1.5">
-            <Image
-              src="/images/logo_linktor_texto.png"
-              alt="Linktor"
-              width={888}
-              height={386}
-              className="h-12 w-auto"
-              priority
-            />
+        <div className="relative z-10 flex items-center justify-end gap-1 p-4">
+          <ThemeSwitcher />
+          <LocaleSwitcher />
+        </div>
+
+        <div className="relative z-10 flex flex-1 items-center justify-center px-6 pb-10 sm:px-10">
+          <div className="w-full max-w-sm">
+            <div className="mb-8 w-fit rounded-lg dark:bg-foreground dark:px-3 dark:py-1.5">
+              <Image
+                src="/images/logo_linktor_texto.png"
+                alt="Linktor"
+                width={888}
+                height={386}
+                className="h-12 w-auto"
+                priority
+              />
+            </div>
+
+            <h1 className="text-2xl font-bold tracking-tight">{t('adminPanel')}</h1>
+            <p className="mb-8 mt-1 text-sm text-muted-foreground">
+              <span className="terminal-prompt">{t('signIn')}</span>
+            </p>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">{t('email')}</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  variant="terminal"
+                  leftIcon={<Mail className="h-4 w-4" />}
+                  required
+                  autoComplete="email"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">{t('password')}</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="********"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  variant="terminal"
+                  leftIcon={<Lock className="h-4 w-4" />}
+                  required
+                  autoComplete="current-password"
+                />
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full"
+                loading={isLoading}
+              >
+                {isLoading ? t('authenticating') : t('login')}
+              </Button>
+            </form>
+
+            {/* Demo credentials hint — only rendered when explicitly enabled */}
+            {process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === 'true' && (
+              <div className="mt-6 rounded-md border border-border bg-secondary/50 p-3">
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-semibold text-primary">{t('demoCredentials')}</span>
+                </p>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  Email: admin@demo.com
+                  <br />
+                  Password: admin123
+                </p>
+              </div>
+            )}
           </div>
+        </div>
 
-          <CardTitle className="text-xl font-bold tracking-tight">
-            {t('adminPanel')}
-          </CardTitle>
-          <CardDescription>
-            <span className="terminal-prompt">{t('signIn')}</span>
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">{t('email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                variant="terminal"
-                leftIcon={<Mail className="h-4 w-4" />}
-                required
-                autoComplete="email"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">{t('password')}</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="********"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                variant="terminal"
-                leftIcon={<Lock className="h-4 w-4" />}
-                required
-                autoComplete="current-password"
-              />
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full"
-              loading={isLoading}
-            >
-              {isLoading ? t('authenticating') : t('login')}
-            </Button>
-          </form>
-
-          {/* Demo credentials hint — only rendered when explicitly enabled */}
-          {process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === 'true' && (
-            <div className="mt-6 rounded-md border border-border bg-secondary/50 p-3">
-              <p className="text-xs text-muted-foreground">
-                <span className="font-semibold text-primary">{t('demoCredentials')}</span>
-              </p>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">
-                Email: admin@demo.com
-                <br />
-                Password: admin123
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        <p className="relative z-10 px-6 pb-6 text-center text-xs text-muted-foreground">
+          {t('footer', { year: new Date().getFullYear() })}
+        </p>
+      </main>
     </div>
   )
 }

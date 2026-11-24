@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
+import type { Accent } from '@/components/layout/nav-config'
 import {
   MessageSquare,
   Users,
@@ -30,6 +31,7 @@ import type { Conversation, Channel, Bot as BotType, OverviewAnalytics, Paginate
  * Stats Card Component
  */
 interface StatCardProps {
+  accent?: Accent
   title: string
   value: string | number
   description?: string
@@ -40,39 +42,37 @@ interface StatCardProps {
   }
 }
 
-function StatCard({ title, value, description, icon, trend }: StatCardProps) {
+function StatCard({ title, value, description, icon, trend, accent = 'lime' }: StatCardProps) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
-        <div className="text-primary">{icon}</div>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {(description || trend) && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {trend && (
-              <span
-                className={cn(
-                  'flex items-center',
-                  trend.isPositive ? 'text-terminal-green' : 'text-terminal-coral'
-                )}
-              >
-                {trend.isPositive ? (
-                  <TrendingUp className="mr-1 h-3 w-3" />
-                ) : (
-                  <TrendingDown className="mr-1 h-3 w-3" />
-                )}
-                {Math.abs(trend.value)}%
-              </span>
-            )}
-            {description && <span>{description}</span>}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <div className="lk-stat" data-accent={accent}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="lk-stat-label">{title}</p>
+        <span className="lk-stat-icon" aria-hidden>
+          {icon}
+        </span>
+      </div>
+      <div className="lk-stat-value">{value}</div>
+      {(description || trend) && (
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+          {trend && (
+            <span
+              className={cn(
+                'flex items-center',
+                trend.isPositive ? 'text-terminal-green' : 'text-terminal-coral'
+              )}
+            >
+              {trend.isPositive ? (
+                <TrendingUp className="mr-1 h-3 w-3" />
+              ) : (
+                <TrendingDown className="mr-1 h-3 w-3" />
+              )}
+              {Math.abs(trend.value)}%
+            </span>
+          )}
+          {description && <span>{description}</span>}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -200,7 +200,7 @@ export default function DashboardPage() {
   })
 
   const channels = channelsData || []
-  const activeBots = botsData?.pagination.total || botsData?.data?.length || 0
+  const activeBots = botsData?.pagination?.total || botsData?.data?.length || 0
   const totalContacts = contactsData?.meta?.total_items || contactsData?.data?.length || 0
 
   const statsLoading = analyticsLoading
@@ -233,7 +233,8 @@ export default function DashboardPage() {
                   title={t('totalConversations')}
                   value={analytics?.total_conversations || 0}
                   description={t('thisPeriod')}
-                  icon={<MessageSquare className="h-5 w-5" />}
+                  icon={<MessageSquare className="h-[17px] w-[17px]" />}
+                  accent="lime"
                   trend={analytics?.conversations_trend ? {
                     value: Math.abs(analytics.conversations_trend),
                     isPositive: analytics.conversations_trend >= 0
@@ -243,7 +244,8 @@ export default function DashboardPage() {
                   title={t('resolutionRate')}
                   value={`${((analytics?.resolution_rate || 0) * 100).toFixed(1)}%`}
                   description={t('byBot')}
-                  icon={<Bot className="h-5 w-5" />}
+                  icon={<Bot className="h-[17px] w-[17px]" />}
+                  accent="teal"
                   trend={analytics?.resolution_trend ? {
                     value: Math.abs(analytics.resolution_trend),
                     isPositive: analytics.resolution_trend >= 0
@@ -253,13 +255,15 @@ export default function DashboardPage() {
                   title={t('totalContacts')}
                   value={totalContacts.toLocaleString()}
                   description={t('inDatabase')}
-                  icon={<Users className="h-5 w-5" />}
+                  icon={<Users className="h-[17px] w-[17px]" />}
+                  accent="violet"
                 />
                 <StatCard
                   title={t('avgResponseTime')}
                   value={formatDuration(analytics?.avg_first_response_ms || 0)}
                   description={t('firstResponse')}
-                  icon={<Clock className="h-5 w-5" />}
+                  icon={<Clock className="h-[17px] w-[17px]" />}
+                  accent="amber"
                 />
               </>
             )}

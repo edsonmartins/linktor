@@ -8,9 +8,9 @@ import { cn } from '@/lib/utils'
 const cardVariants = cva('rounded-xl border bg-card text-card-foreground', {
   variants: {
     variant: {
-      default: 'border-border shadow-sm',
+      default: 'border-border lk-surface',
       terminal: 'terminal-card',
-      elevated: 'border-border shadow-lg',
+      elevated: 'border-border lk-surface shadow-lg',
       ghost: 'border-transparent bg-transparent',
       glow: 'border-primary/30 glow-primary',
     },

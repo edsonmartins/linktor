@@ -1,8 +1,10 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
+import { StatCard } from '@/components/ui/stat-card'
 import {
   Plus,
   MoreVertical,
@@ -21,6 +23,8 @@ import {
   EyeOff,
   Check,
   X,
+  UsersRound,
+  Headset,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { toastError, toastSuccess } from '@/hooks/use-toast'
@@ -648,30 +652,10 @@ export default function UsersPage() {
       <div className="p-6 space-y-6 overflow-auto">
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-2xl font-bold">{stats.total}</div>
-              <p className="text-xs text-muted-foreground">{t('totalMembers')}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.active}</div>
-              <p className="text-xs text-muted-foreground">{tCommon('active')}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-red-500">{stats.admins}</div>
-              <p className="text-xs text-muted-foreground">{t('administrators')}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-blue-500">{stats.agents}</div>
-              <p className="text-xs text-muted-foreground">{t('agents')}</p>
-            </CardContent>
-          </Card>
+          <StatCard label={t('totalMembers')} value={stats.total} icon={UsersRound} accent="lime" />
+          <StatCard label={tCommon('active')} value={stats.active} icon={UserCheck} accent="teal" />
+          <StatCard label={t('administrators')} value={stats.admins} icon={ShieldCheck} accent="rose" />
+          <StatCard label={t('agents')} value={stats.agents} icon={Headset} accent="blue" />
         </div>
 
         {/* Header with search and create */}
@@ -753,7 +737,7 @@ export default function UsersPage() {
         ) : (
           <Card className="border-dashed">
             <CardContent className="py-12 text-center">
-              <UserPlus className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
+              <EmptyArt icon={UserPlus} className="mx-auto mb-5" />
               <p className="mt-4 text-lg font-medium">{t('noTeamMembers')}</p>
               <p className="text-sm text-muted-foreground">
                 {t('addFirstMember')}
