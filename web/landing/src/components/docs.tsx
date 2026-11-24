@@ -7,22 +7,22 @@ const docSections = [
   {
     title: 'Getting Started',
     description: 'Quick start guides and installation instructions',
-    href: docsUrl('/getting-started/installation'),
+    href: docsUrl('/guias/primeiros-passos'),
   },
   {
     title: 'API Reference',
     description: 'Complete REST API documentation with examples',
-    href: docsUrl('/api/overview'),
+    href: docsUrl('/api/visao-geral'),
   },
   {
     title: 'SDKs',
     description: 'Client libraries for 7 programming languages',
-    href: docsUrl('/sdks/overview'),
+    href: docsUrl('/sdks/visao-geral'),
   },
   {
     title: 'Self-Hosting',
     description: 'Deploy with Docker or Kubernetes',
-    href: docsUrl('/self-hosting/docker'),
+    href: docsUrl('/implantar/instalacao'),
   },
 ]
 
@@ -93,7 +93,7 @@ export function Docs() {
                     Try Playground
                   </a>
                   <a
-                    href={docsUrl('/mcp/overview')}
+                    href={docsUrl('/mcp/visao-geral')}
                     className="inline-flex items-center gap-2 px-6 py-3 border border-border rounded-lg font-semibold hover:bg-accent/10 transition-colors"
                   >
                     <BookOpen className="h-4 w-4" />

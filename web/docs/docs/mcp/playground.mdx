@@ -1,129 +1,143 @@
 ---
-title: MCP Playground
-description: Test Linktor MCP tools directly in your browser
 sidebar_position: 2
+title: Playground MCP
+description: Teste as tools, resources e prompts do servidor MCP do Linktor direto no navegador.
 ---
 
 import McpPlayground from '@site/src/components/McpPlayground';
 
-# MCP Playground
+# Playground MCP
 
-Explore and test Linktor's MCP (Model Context Protocol) tools, resources, and prompts interactively.
+O playground conecta o seu navegador a um servidor MCP do Linktor em modo HTTP, lista o que ele expõe e
+deixa você executar cada tool com um formulário gerado a partir do schema. Ele não usa um servidor
+público: você sobe o seu, apontando para a sua instalação.
 
-## Available Capabilities
+## Antes de conectar
 
-### Tools
+1. Compile e suba o servidor MCP em modo HTTP, com as credenciais da sua instalação:
 
-| Category | Tools | Description |
-|----------|-------|-------------|
-| **Conversations** | 6 | List, get, create, update, close, and assign conversations |
-| **Messages** | 3 | Send messages and retrieve message history |
-| **Contacts** | 5 | Manage contact information and identities |
-| **Channels** | 4 | List and manage communication channels |
-| **Bots** | 4 | AI bot management and testing |
-| **Analytics** | 4 | Access metrics, reports, and performance data |
-| **Knowledge** | 4 | Search and manage knowledge base articles |
-| **VRE** | 8 | Render and send visual response templates |
+   ```bash
+   cd mcp/linktor-mcp-server
+   npm install
+   npm run build
 
-### Resources
+   LINKTOR_API_URL=https://linktor.suaempresa.com/api/v1 \
+   LINKTOR_API_KEY=lk_sua_chave \
+   npm run start:http
+   ```
 
-The MCP server exposes the following resources:
+   Por padrão ele escuta em `http://127.0.0.1:3001`. Para outra porta: `MCP_HTTP_PORT=4000`.
 
-- `linktor://conversations` - Active conversations
-- `linktor://contacts` - Contact list
-- `linktor://channels` - Configured channels
-- `linktor://bots` - AI bots
-- `linktor://analytics/summary` - Analytics summary (last 30 days)
-- `linktor://users` - Team members/agents
+2. Libere a origem desta página. O servidor só aceita, por padrão, páginas servidas de `localhost` ou
+   `127.0.0.1`. Se você está lendo esta documentação em outro endereço, inclua-o:
 
-### Prompts
+   ```bash
+   MCP_HTTP_ALLOWED_ORIGINS=https://docs.suaempresa.com npm run start:http
+   ```
 
-Pre-built prompt templates for common use cases:
+   Use a origem exata que aparece na barra de endereço (esquema, host e porta), sem barra no final.
+   Rodando a documentação localmente (`npm start` em `web/docs`), não é preciso configurar nada.
 
-- **customer_support** - Customer support assistant prompt
-- **conversation_summary** - Summarize a conversation
-- **draft_response** - Draft a response to a customer message
-- **analyze_sentiment** - Analyze sentiment of text
+3. Opcional, recomendado: proteja o endpoint com `MCP_HTTP_AUTH_TOKEN=um-token-longo-e-aleatorio`.
 
-## Try It Out
+:::warning O campo de chave do playground não é a chave de API do Linktor
+O valor digitado no campo **API Key (optional)** é enviado ao **servidor MCP** como
+`Authorization: Bearer …` e precisa ser igual a `MCP_HTTP_AUTH_TOKEN`. Se você não definiu essa
+variável, deixe o campo vazio. A chave de API do Linktor (`lk_…`) nunca é digitada aqui: ela fica só no
+ambiente do servidor MCP, em `LINKTOR_API_KEY`.
+:::
 
-Connect to a Linktor MCP server to explore available tools and test them interactively.
+## Experimente
+
+Confira a URL do servidor (campo **Server URL**), preencha **API Key (optional)** com o token se configurou um, e conecte.
 
 <McpPlayground
   serverUrl="http://localhost:3001/mcp"
-  serverName="Linktor MCP Server"
+  serverName="Servidor MCP do Linktor"
   showConfig={true}
 />
 
-## Running Your Own Server
+:::warning As tools executam de verdade
+O playground chama a API da instalação configurada em `LINKTOR_API_URL`. `send_message` envia a
+mensagem ao cliente, `delete_contact` apaga o contato, `delete_channel` remove o canal. Para explorar
+sem risco, use uma chave de API só com scopes de leitura ou um tenant de testes — veja
+[Sandbox](../painel/sandbox.md).
+:::
 
-To run the MCP HTTP server locally:
+## O que aparece no playground
 
-```bash
-# Navigate to the MCP server directory
-cd mcp/linktor-mcp-server
+### Tools
 
-# Install dependencies
-npm install
+O servidor expõe **51 tools**:
 
-# Build the server
-npm run build
+| Categoria | Tools | O que cobre |
+|---|---|---|
+| **Conversas** | 8 | Listar, obter, criar, atribuir, desatribuir, resolver, reabrir e fechar |
+| **Mensagens** | 5 | Listar, obter, enviar em uma conversa, enviar por canal e ler o que chegou em um canal |
+| **Contatos** | 5 | Listar, obter, criar, atualizar e remover |
+| **Canais** | 13 | CRUD, conectar e desconectar, habilitar, pareamento do WhatsApp, teste de credenciais e coexistência |
+| **Bots** | 5 | Listar, obter, ativar, desativar e testar |
+| **Analytics** | 2 | Resumo do período e estatísticas de conversas |
+| **Base de conhecimento** | 3 | Buscar, listar e obter itens |
+| **VRE** | 10 | Renderizar e enviar respostas visuais (menu, cartão de produto, status de pedido, lista, confirmação, Pix) |
 
-# Start the HTTP server (default port: 3001)
-npm run start:http
+:::warning Oito tools falham contra a API atual
+`unassign_conversation`, `close_conversation`, `get_message`, `list_bots`, `search_knowledge`,
+`list_knowledge_documents`, `get_knowledge_document` e `get_analytics_summary` aparecem na lista, mas
+devolvem erro ao executar: chamam rotas que não existem mais ou esperam outro formato de resposta. As
+10 tools de VRE dependem de o VRE estar habilitado na instalação. A tabela completa, tool a tool, com a
+rota chamada e a situação, está em [Servidor MCP](visao-geral.md).
+:::
 
-# Or with a custom port
-MCP_HTTP_PORT=4000 npm run start:http
-```
+### Resources
 
-The server exposes:
-- **POST /mcp** - MCP JSON-RPC endpoint
-- **GET /health** - Health check endpoint
+Seis resources são listados:
 
-## Authentication
+| URI | Conteúdo |
+|---|---|
+| `linktor://conversations` | Conversas abertas |
+| `linktor://contacts` | Contatos |
+| `linktor://channels` | Canais configurados |
+| `linktor://bots` | Bots |
+| `linktor://analytics/summary` | Resumo de analytics dos últimos 30 dias |
+| `linktor://users` | Usuários do tenant |
 
-For production use, the MCP server supports API key authentication:
+Com a API atual, `linktor://bots` e `linktor://analytics/summary` falham na leitura, e `linktor://users`
+responde `403` quando o servidor MCP usa chave de API (a rota é restrita a administradores).
 
-```bash
-# Set your API key in the environment
-export LINKTOR_API_KEY=your-api-key
+### Prompts
 
-# The server will use this to authenticate with the Linktor API
-npm run start:http
-```
+| Prompt | Para quê |
+|---|---|
+| `customer_support` | Instruções de atendente de suporte (argumentos `company_name`, `tone`) |
+| `conversation_summary` | Resumir uma conversa (`conversation_id`) |
+| `draft_response` | Rascunhar a resposta a uma mensagem (`message`, `context`) |
+| `analyze_sentiment` | Analisar o sentimento de um texto (`text`) |
 
-In the playground, enter your API key in the configuration panel before connecting.
+## Solução de problemas
 
-## Integration Examples
+| Sintoma | Causa | O que fazer |
+|---|---|---|
+| `Failed to fetch` ao conectar | Servidor MCP parado, URL errada ou origem bloqueada por CORS | Confira `GET /health` no servidor e a variável `MCP_HTTP_ALLOWED_ORIGINS` |
+| `Failed to fetch` com a documentação em HTTPS e o servidor em `http://` | O navegador bloqueia conteúdo misto | Sirva o MCP por HTTPS (proxy reverso) ou rode a documentação localmente |
+| `HTTP 401: Unauthorized` | Token diferente de `MCP_HTTP_AUTH_TOKEN` | Corrija o campo **API Key (optional)** |
+| Conecta, mas toda tool devolve `UNAUTHORIZED` | `LINKTOR_API_KEY` ausente ou inválida no ambiente do servidor MCP | Reinicie o servidor com a chave correta |
+| Tool devolve `FORBIDDEN` | A chave de API não tem o scope da rota | Ajuste os scopes — veja [Autenticação](../api/autenticacao.md) |
+| A sessão para de responder depois de meia hora | Sessões HTTP expiram 30 minutos após criadas | Reconecte |
 
-### Using from Claude Desktop
+## Usar fora do playground
 
-Add to your `claude_desktop_config.json`:
+- Em Claude Desktop, Claude Code e outros clientes, use o transporte stdio — a configuração está em
+  [Servidor MCP](visao-geral.md).
+- Para embutir o servidor HTTP em um processo Node.js seu, importe-o a partir do diretório compilado:
 
-```json
-{
-  "mcpServers": {
-    "linktor": {
-      "command": "npx",
-      "args": ["-y", "@linktor/mcp-server"],
-      "env": {
-        "LINKTOR_API_KEY": "your-api-key",
-        "LINKTOR_API_URL": "https://api.linktor.io/api/v1"
-      }
-    }
-  }
-}
-```
+  ```typescript
+  import { createHttpServer, startHttpServer } from './mcp/linktor-mcp-server/dist/index.js';
 
-### Using Programmatically
+  // Sobe com as variáveis de ambiente LINKTOR_* do processo
+  startHttpServer(3001, '127.0.0.1');
 
-```typescript
-import { createHttpServer, startHttpServer } from '@linktor/mcp-server';
-
-// Start with default settings
-startHttpServer(3001);
-
-// Or create a custom Express app
-const app = createHttpServer();
-app.listen(4000);
-```
+  // Ou obtenha o app Express para montar em outro servidor
+  const app = createHttpServer();
+  app.listen(4000, '127.0.0.1');
+  ```

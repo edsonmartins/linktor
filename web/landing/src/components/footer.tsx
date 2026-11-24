@@ -19,7 +19,7 @@ const footerLinks = {
     title: 'Developers',
     links: [
       { label: 'Documentation', href: docsUrl() },
-      { label: 'API Reference', href: docsUrl('/api') },
+      { label: 'API Reference', href: docsUrl('/api/visao-geral') },
       { label: 'SDKs', href: '#sdks' },
       { label: 'GitHub', href: 'https://github.com/linktor/linktor' },
     ],
@@ -28,7 +28,7 @@ const footerLinks = {
     title: 'Resources',
     links: [
       { label: 'Blog', href: '/blog' },
-      { label: 'Guides', href: docsUrl('/guides') },
+      { label: 'Guides', href: docsUrl('/guias/primeiros-passos') },
       { label: 'Examples', href: 'https://github.com/linktor/examples' },
       { label: 'Community', href: 'https://discord.gg/linktor' },
     ],

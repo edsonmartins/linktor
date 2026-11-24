@@ -1,0 +1,34 @@
+{
+  "title": {
+    "message": "Linktor",
+    "description": "The title in the navbar"
+  },
+  "logo.alt": {
+    "message": "Linktor",
+    "description": "The alt text of navbar logo"
+  },
+  "item.label.Usar": {
+    "message": "Usar",
+    "description": "Navbar item with label Usar"
+  },
+  "item.label.Canais": {
+    "message": "Canales",
+    "description": "Navbar item with label Canais"
+  },
+  "item.label.Desenvolver": {
+    "message": "Desarrollar",
+    "description": "Navbar item with label Desenvolver"
+  },
+  "item.label.SDKs": {
+    "message": "SDKs",
+    "description": "Navbar item with label SDKs"
+  },
+  "item.label.Implantar": {
+    "message": "Implantar",
+    "description": "Navbar item with label Implantar"
+  },
+  "item.label.GitHub": {
+    "message": "GitHub",
+    "description": "Navbar item with label GitHub"
+  }
+}

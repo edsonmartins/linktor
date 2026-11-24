@@ -1,0 +1,30 @@
+{
+  "version.label": {
+    "message": "Actual",
+    "description": "The label for version current"
+  },
+  "sidebar.usar.category.Comece aqui": {
+    "message": "Empieza aquí",
+    "description": "The label for category 'Comece aqui' in sidebar 'usar'"
+  },
+  "sidebar.usar.category.Conceitos": {
+    "message": "Conceptos",
+    "description": "The label for category 'Conceitos' in sidebar 'usar'"
+  },
+  "sidebar.usar.category.Painel": {
+    "message": "Panel",
+    "description": "The label for category 'Painel' in sidebar 'usar'"
+  },
+  "sidebar.desenvolver.category.API": {
+    "message": "API",
+    "description": "The label for category 'API' in sidebar 'desenvolver'"
+  },
+  "sidebar.desenvolver.category.MCP": {
+    "message": "MCP",
+    "description": "The label for category 'MCP' in sidebar 'desenvolver'"
+  },
+  "sidebar.desenvolver.category.Contribuir com a documentação": {
+    "message": "Contribuir con la documentación",
+    "description": "The label for category 'Contribuir com a documentação' in sidebar 'desenvolver'"
+  }
+}
