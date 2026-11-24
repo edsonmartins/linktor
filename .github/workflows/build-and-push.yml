@@ -45,6 +45,12 @@ jobs:
             context: web/landing
             dockerfile: web/landing/Dockerfile
             image: linktor-landing
+          - name: docs
+            context: web/docs
+            dockerfile: web/docs/Dockerfile
+            image: linktor-docs
+            build_args: |
+              DOCS_URL=https://docs.linktor.dev
 
     steps:
       - uses: actions/checkout@v4
