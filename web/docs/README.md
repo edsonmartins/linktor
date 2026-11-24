@@ -1,41 +1,21 @@
-# Website
+# Documentação do Linktor
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
-
-## Installation
-
-```bash
-yarn
-```
-
-## Local Development
+Site de documentação (Docusaurus 3, pt-BR), organizado por público: **Usar**, **Canais**,
+**Desenvolver**, **SDKs** e **Implantar**.
 
 ```bash
-yarn start
+npm install
+npm start        # http://localhost:3000
+npm run build    # valida links e âncoras (falha se algum quebrar)
+npm run serve    # serve o build local
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+| Caminho | Conteúdo |
+|---|---|
+| `docs/` | Páginas |
+| `sidebars.ts` | Navegação por público |
+| `src/theme/MDXComponents.tsx` | Componentes globais (`Tabs`, `TabItem`) |
+| `src/components/McpPlayground.jsx` | Playground do servidor MCP |
 
-## Build
-
-```bash
-yarn build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
-
-## Deployment
-
-Using SSH:
-
-```bash
-USE_SSH=true yarn deploy
-```
-
-Not using SSH:
-
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+Convenções de escrita, molde das páginas de canal e formato dos exemplos multi-linguagem:
+[`docs/contribuir/escrever-paginas.md`](docs/contribuir/escrever-paginas.md).
