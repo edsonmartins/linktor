@@ -1,5 +1,6 @@
 'use client'
 
+import { docsUrl } from '@/lib/links'
 import Link from 'next/link'
 import { ArrowRight, Github, Book, MessageCircle } from 'lucide-react'
 
@@ -36,7 +37,7 @@ export function CTA() {
                 <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </Link>
               <Link
-                href="https://docs.linktor.io"
+                href={docsUrl()}
                 className="inline-flex items-center justify-center gap-2 px-8 py-4 border border-border bg-card text-foreground rounded-lg font-medium text-lg hover:bg-secondary transition-colors"
               >
                 <Book className="h-5 w-5" />
@@ -56,7 +57,7 @@ export function CTA() {
                 <span>GitHub</span>
               </Link>
               <Link
-                href="https://docs.linktor.io"
+                href={docsUrl()}
                 className="flex items-center gap-2 hover:text-foreground transition-colors"
               >
                 <Book className="h-5 w-5" />

@@ -1,8 +1,9 @@
 'use client'
 
+import { docsUrl } from '@/lib/links'
 import { useState } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
+import { Logo } from './logo'
 import { Menu, X } from 'lucide-react'
 import { ThemeToggle } from './theme-toggle'
 
@@ -11,7 +12,7 @@ const navLinks = [
   { href: '#channels', label: 'Channels' },
   { href: '#sdks', label: 'SDKs' },
   { href: '/pricing', label: 'Pricing' },
-  { href: 'https://docs.linktor.io', label: 'Docs', external: true },
+  { href: docsUrl(), label: 'Docs', external: true },
 ]
 
 export function Navbar() {
@@ -22,23 +23,8 @@ export function Navbar() {
       <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center group">
-            <Image
-              src="/images/logo_fundo_escuro.png"
-              alt="Linktor"
-              width={180}
-              height={50}
-              className="hidden h-12 w-auto dark:block"
-              priority
-            />
-            <Image
-              src="/images/logo_fundo_claro.png"
-              alt="Linktor"
-              width={180}
-              height={50}
-              className="h-12 w-auto dark:hidden"
-              priority
-            />
+          <Link href="/" className="flex items-center group" aria-label="Linktor">
+            <Logo />
           </Link>
 
           {/* Desktop Navigation */}

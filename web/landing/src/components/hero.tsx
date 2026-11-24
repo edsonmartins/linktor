@@ -1,5 +1,6 @@
 'use client'
 
+import { docsUrl } from '@/lib/links'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Play } from 'lucide-react'
@@ -65,7 +66,7 @@ export function Hero() {
                 <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
               </Link>
               <Link
-                href="https://docs.linktor.io"
+                href={docsUrl()}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 border border-border bg-card text-foreground rounded-lg font-medium hover:bg-secondary transition-colors"
               >
                 <Play className="h-4 w-4" />

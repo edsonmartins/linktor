@@ -1,7 +1,8 @@
 'use client'
 
+import { docsUrl } from '@/lib/links'
 import Link from 'next/link'
-import Image from 'next/image'
+import { Logo } from './logo'
 import { Github, Twitter, Linkedin, MessageCircle } from 'lucide-react'
 
 const footerLinks = {
@@ -17,8 +18,8 @@ const footerLinks = {
   developers: {
     title: 'Developers',
     links: [
-      { label: 'Documentation', href: 'https://docs.linktor.io' },
-      { label: 'API Reference', href: 'https://docs.linktor.io/api' },
+      { label: 'Documentation', href: docsUrl() },
+      { label: 'API Reference', href: docsUrl('/api') },
       { label: 'SDKs', href: '#sdks' },
       { label: 'GitHub', href: 'https://github.com/linktor/linktor' },
     ],
@@ -27,7 +28,7 @@ const footerLinks = {
     title: 'Resources',
     links: [
       { label: 'Blog', href: '/blog' },
-      { label: 'Guides', href: 'https://docs.linktor.io/guides' },
+      { label: 'Guides', href: docsUrl('/guides') },
       { label: 'Examples', href: 'https://github.com/linktor/examples' },
       { label: 'Community', href: 'https://discord.gg/linktor' },
     ],
@@ -58,21 +59,8 @@ export function Footer() {
         <div className="py-12 grid grid-cols-2 md:grid-cols-6 gap-8">
           {/* Brand */}
           <div className="col-span-2">
-            <Link href="/" className="inline-block">
-              <Image
-                src="/images/logo_fundo_escuro.png"
-                alt="Linktor"
-                width={180}
-                height={50}
-                className="hidden h-12 w-auto dark:block"
-              />
-              <Image
-                src="/images/logo_fundo_claro.png"
-                alt="Linktor"
-                width={180}
-                height={50}
-                className="h-12 w-auto dark:hidden"
-              />
+            <Link href="/" className="inline-block" aria-label="Linktor">
+            <Logo />
             </Link>
             <p className="mt-4 text-sm text-muted-foreground max-w-xs">
               Open source omnichannel conversation platform powered by AI.
