@@ -140,6 +140,12 @@
     "password": "Password"
   },
   "nav": {
+    "groups": {
+      "service": "Service",
+      "automation": "Channels & automation",
+      "insights": "Insights",
+      "admin": "Administration"
+    },
     "dashboard": "Dashboard",
     "conversations": "Conversations",
     "contacts": "Contacts",

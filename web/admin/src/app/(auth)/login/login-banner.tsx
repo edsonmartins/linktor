@@ -105,7 +105,7 @@ function NodeBox({
         width={width}
         height={NODE.height}
         rx={NODE.radius}
-        className="fill-card stroke-border"
+        className="fill-white/[0.07] stroke-white/15"
       />
       <Icon x={x + 14} y={y - 10} width={20} height={20} className={node.tone} />
       <text x={x + 46} y={y + 5} className="fill-foreground text-[15px] font-medium">
@@ -120,13 +120,14 @@ export function LoginBanner() {
   const labelOf = (node: DiagramNode) => (node.translate ? t(node.label) : node.label)
 
   return (
-    // `dark` pins the banner to the dark palette in both themes: it is the
-    // brand's stage, next to a form that follows the user's theme.
-    <div className="dark relative flex h-full flex-col overflow-hidden bg-background text-foreground">
+    // The brand's stage: the sidebar's deep green, with `dark` pinning the
+    // tokens inside it in both themes. The form beside it follows the user's
+    // theme.
+    <div className="dark relative flex h-full flex-col overflow-hidden text-foreground" style={{ background: 'var(--sb-bg)' }}>
       {/* Backdrop: grid plus two soft lime glows */}
       <div className="absolute inset-0 bg-[linear-gradient(hsl(var(--primary)/0.07)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--primary)/0.07)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_center,black_35%,transparent_85%)]" />
-      <div className={`${styles.glow} absolute -left-32 top-1/4 h-[28rem] w-[28rem] rounded-full bg-primary/15 blur-3xl`} />
-      <div className={`${styles.glow} absolute -right-24 bottom-0 h-96 w-96 rounded-full bg-chart-3/15 blur-3xl`} style={{ animationDelay: '2.5s' }} />
+      <div className={`${styles.glow} absolute -left-32 top-1/4 h-[28rem] w-[28rem] rounded-full bg-lime-400/25 blur-3xl`} />
+      <div className={`${styles.glow} absolute -right-24 bottom-0 h-96 w-96 rounded-full bg-teal-400/20 blur-3xl`} style={{ animationDelay: '2.5s' }} />
 
       <div className="relative z-10 px-12 pt-12 xl:px-16 xl:pt-16">
         <p className="terminal-prompt text-sm">{t('eyebrow')}</p>
@@ -210,7 +211,7 @@ export function LoginBanner() {
           <g className={styles.node} style={delay(0.5)}>
             <circle cx={HUB.x} cy={HUB.y} r={HUB.radius} className={`${styles.ring} fill-none stroke-primary`} strokeWidth={1.5} />
             <circle cx={HUB.x} cy={HUB.y} r={HUB.radius} className={`${styles.ring} fill-none stroke-primary`} strokeWidth={1.5} style={delay(1.6)} />
-            <circle cx={HUB.x} cy={HUB.y} r={HUB.radius} className="fill-card stroke-primary" strokeWidth={2} />
+            <circle cx={HUB.x} cy={HUB.y} r={HUB.radius} className="fill-[#0c2619] stroke-primary" strokeWidth={2} />
             <image
               href="/images/logo_linktor_single.png"
               x={HUB.x - 105}

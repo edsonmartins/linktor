@@ -139,6 +139,12 @@
     "password": "Contraseña"
   },
   "nav": {
+    "groups": {
+      "service": "Atención",
+      "automation": "Canales y automatización",
+      "insights": "Análisis",
+      "admin": "Administración"
+    },
     "dashboard": "Panel",
     "conversations": "Conversaciones",
     "contacts": "Contactos",

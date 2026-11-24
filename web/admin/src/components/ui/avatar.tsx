@@ -27,7 +27,7 @@ const avatarVariants = cva(
 )
 
 const avatarFallbackVariants = cva(
-  'flex h-full w-full items-center justify-center rounded-full bg-muted font-medium',
+  'flex h-full w-full items-center justify-center rounded-full font-semibold',
   {
     variants: {
       size: {
@@ -43,6 +43,23 @@ const avatarFallbackVariants = cva(
     },
   }
 )
+
+/** Soft tint + readable ink per person, stable for the same name. */
+const avatarTones = [
+  'bg-lime-500/20 text-lime-700 dark:text-lime-300',
+  'bg-teal-500/20 text-teal-700 dark:text-teal-300',
+  'bg-sky-500/20 text-sky-700 dark:text-sky-300',
+  'bg-violet-500/20 text-violet-700 dark:text-violet-300',
+  'bg-amber-500/20 text-amber-700 dark:text-amber-300',
+  'bg-rose-500/20 text-rose-700 dark:text-rose-300',
+]
+
+function avatarTone(name?: string) {
+  if (!name) return 'bg-muted text-muted-foreground'
+  let hash = 0
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  return avatarTones[hash % avatarTones.length]
+}
 
 export interface AvatarProps
   extends React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Root>,
@@ -75,7 +92,7 @@ const Avatar = React.forwardRef<
         className="aspect-square h-full w-full object-cover"
       />
       <AvatarPrimitive.Fallback
-        className={cn(avatarFallbackVariants({ size }))}
+        className={cn(avatarFallbackVariants({ size }), avatarTone(fallback || alt))}
       >
         {fallback ? getInitials(fallback) : alt ? getInitials(alt) : '?'}
       </AvatarPrimitive.Fallback>

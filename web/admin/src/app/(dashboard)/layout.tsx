@@ -15,7 +15,7 @@ export default function DashboardLayout({
       <WebSocketProvider>
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
-          <main className="flex-1 overflow-auto bg-background">
+          <main className="lk-main flex-1 overflow-auto">
             <RoleGuard>{children}</RoleGuard>
           </main>
         </div>

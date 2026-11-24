@@ -50,7 +50,7 @@ export default function LoginPage() {
         <LoginBanner />
       </aside>
 
-      <main className="relative flex min-h-screen flex-col border-border bg-card lg:border-l">
+      <main className="lk-main relative flex min-h-screen flex-col">
         {/* Small screens have no banner, so they keep the terminal grid */}
         <div className="absolute inset-0 bg-[linear-gradient(hsl(var(--primary)/0.06)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--primary)/0.06)_1px,transparent_1px)] bg-[size:50px_50px] lg:hidden" />
 

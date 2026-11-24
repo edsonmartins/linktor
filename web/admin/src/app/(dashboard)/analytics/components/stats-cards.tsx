@@ -1,7 +1,9 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { TrendingUp, TrendingDown, MessageSquare, Bot, Users, Clock } from 'lucide-react'
+import { TrendingUp, TrendingDown, MessageSquare, Bot, Users, Clock, type LucideIcon } from 'lucide-react'
+import { StatCard } from '@/components/ui/stat-card'
+import type { Accent } from '@/components/layout/nav-config'
 import { cn } from '@/lib/utils'
 import type { OverviewAnalytics } from '@/types'
 
@@ -12,59 +14,46 @@ interface StatsCardsProps {
 export function StatsCards({ overview }: StatsCardsProps) {
   const t = useTranslations('analytics')
 
-  const stats = [
+  const stats: { label: string; value: string | number; trend?: number; icon: LucideIcon; accent: Accent }[] = [
     {
       label: t('totalConversations'),
       value: overview?.total_conversations ?? 0,
       trend: overview?.conversations_trend ?? 0,
       icon: MessageSquare,
-      color: 'text-blue-600 dark:text-blue-400',
-      bgColor: 'bg-blue-500/15',
+      accent: 'blue',
     },
     {
       label: t('resolutionRate'),
       value: `${(overview?.resolution_rate ?? 0).toFixed(1)}%`,
       trend: overview?.resolution_trend ?? 0,
       icon: Bot,
-      color: 'text-emerald-600 dark:text-emerald-400',
-      bgColor: 'bg-emerald-500/15',
+      accent: 'teal',
     },
     {
       label: t('avgResponseTime'),
       value: formatDuration(overview?.avg_first_response_ms ?? 0),
       icon: Clock,
-      color: 'text-amber-600 dark:text-amber-400',
-      bgColor: 'bg-amber-500/15',
+      accent: 'amber',
     },
     {
       label: t('avgConfidence'),
       value: (overview?.avg_confidence ?? 0).toFixed(2),
       icon: Users,
-      color: 'text-purple-600 dark:text-purple-400',
-      bgColor: 'bg-purple-500/15',
+      accent: 'violet',
     },
   ]
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       {stats.map((stat) => (
-        <div
+        <StatCard
           key={stat.label}
-          className="rounded-lg border bg-card p-4 shadow-sm"
-        >
-          <div className="flex items-center justify-between">
-            <div className={cn('rounded-md p-2', stat.bgColor)}>
-              <stat.icon className={cn('h-5 w-5', stat.color)} />
-            </div>
-            {stat.trend !== undefined && (
-              <TrendIndicator value={stat.trend} />
-            )}
-          </div>
-          <div className="mt-3">
-            <p className="text-2xl font-semibold">{stat.value}</p>
-            <p className="text-sm text-muted-foreground">{stat.label}</p>
-          </div>
-        </div>
+          label={stat.label}
+          value={stat.value}
+          icon={stat.icon}
+          accent={stat.accent}
+          footer={stat.trend !== undefined ? <TrendIndicator value={stat.trend} /> : undefined}
+        />
       ))}
     </div>
   )
