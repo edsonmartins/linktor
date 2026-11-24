@@ -1406,7 +1406,7 @@ export function ChatView({ conversationId }: ChatViewProps) {
           className={cn(
             'flex items-center justify-center gap-2 py-1 text-xs',
             connectionState === 'connecting' || connectionState === 'reconnecting'
-              ? 'bg-yellow-500/10 text-yellow-500'
+              ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
               : 'bg-destructive/10 text-destructive'
           )}
         >

@@ -304,7 +304,7 @@ export function TelegramConfig({
                   </>
                 ) : testStatus === 'success' ? (
                   <>
-                    <CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />
+                    <CheckCircle2 className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />
                     {t('connectionValid')}
                   </>
                 ) : testStatus === 'error' ? (

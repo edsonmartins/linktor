@@ -167,10 +167,10 @@ export default function CampaignDetailPage({
 
   const stats: { label: string; value: number; tone: string }[] = [
     { label: t('total'), value: campaign.total_recipients, tone: 'text-foreground' },
-    { label: t('sent'), value: campaign.sent_count, tone: 'text-blue-600' },
-    { label: t('delivered'), value: campaign.delivered_count, tone: 'text-emerald-600' },
-    { label: t('read'), value: campaign.read_count, tone: 'text-violet-600' },
-    { label: t('failed'), value: campaign.failed_count, tone: 'text-red-600' },
+    { label: t('sent'), value: campaign.sent_count, tone: 'text-blue-600 dark:text-blue-400' },
+    { label: t('delivered'), value: campaign.delivered_count, tone: 'text-emerald-600 dark:text-emerald-400' },
+    { label: t('read'), value: campaign.read_count, tone: 'text-violet-600 dark:text-violet-400' },
+    { label: t('failed'), value: campaign.failed_count, tone: 'text-red-600 dark:text-red-400' },
   ]
 
   return (
@@ -279,7 +279,7 @@ export default function CampaignDetailPage({
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {r.attempts}
                     </TableCell>
-                    <TableCell className="max-w-[280px] truncate text-xs text-red-600">
+                    <TableCell className="max-w-[280px] truncate text-xs text-red-600 dark:text-red-400">
                       {r.error_reason}
                     </TableCell>
                   </TableRow>

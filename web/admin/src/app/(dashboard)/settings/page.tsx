@@ -29,6 +29,9 @@ import { useToast } from '@/hooks/use-toast'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { locales, type Locale } from '@/i18n/config'
+import { useTheme } from '@/components/theme-provider'
+import { themeIcons } from '@/components/theme-switcher'
+import { themes, type Theme } from '@/lib/theme'
 
 type APIKeyRecord = {
   id: string
@@ -409,7 +412,15 @@ function SecuritySettings({ t, tCommon }: { t: ReturnType<typeof useTranslations
 /**
  * Appearance Settings Section
  */
+const themeDescriptions = {
+  light: 'themeLightDesc',
+  dark: 'themeDarkDesc',
+  system: 'themeSystemDesc',
+} as const satisfies Record<Theme, string>
+
 function AppearanceSettings({ t }: { t: ReturnType<typeof useTranslations<'settings'>> }) {
+  const { theme, setTheme } = useTheme()
+
   return (
     <div className="space-y-6">
       <div>
@@ -425,22 +436,28 @@ function AppearanceSettings({ t }: { t: ReturnType<typeof useTranslations<'setti
           <CardDescription>{t('selectTheme')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 grid-cols-3">
-            <button className="p-4 rounded-lg border-2 border-primary bg-[hsl(180,3%,10%)] text-left">
-              <div className="h-2 w-2 rounded-full bg-primary mb-2" />
-              <p className="text-sm font-medium text-white">{t('terminal')}</p>
-              <p className="text-xs text-gray-400">{t('defaultDarkTheme')}</p>
-            </button>
-            <button className="p-4 rounded-lg border border-border bg-gray-900 text-left opacity-50 cursor-not-allowed">
-              <div className="h-2 w-2 rounded-full bg-blue-500 mb-2" />
-              <p className="text-sm font-medium text-white">{t('ocean')}</p>
-              <p className="text-xs text-gray-400">{t('comingSoon')}</p>
-            </button>
-            <button className="p-4 rounded-lg border border-border bg-white text-left opacity-50 cursor-not-allowed">
-              <div className="h-2 w-2 rounded-full bg-gray-900 mb-2" />
-              <p className="text-sm font-medium text-gray-900">{t('light')}</p>
-              <p className="text-xs text-gray-500">{t('comingSoon')}</p>
-            </button>
+          <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label={t('theme')}>
+            {themes.map((option) => {
+              const Icon = themeIcons[option]
+              const selected = theme === option
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setTheme(option)}
+                  className={cn(
+                    'rounded-lg border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                    selected ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent'
+                  )}
+                >
+                  <Icon className={cn('mb-2 h-4 w-4', selected ? 'text-primary' : 'text-muted-foreground')} />
+                  <p className="text-sm font-medium">{t(option)}</p>
+                  <p className="text-xs text-muted-foreground">{t(themeDescriptions[option])}</p>
+                </button>
+              )
+            })}
           </div>
         </CardContent>
       </Card>

@@ -19,6 +19,7 @@ import {
 import '@xyflow/react/dist/style.css'
 
 import type { FlowNode } from '@/types'
+import { useTheme } from '@/components/theme-provider'
 import { MessageNode } from './nodes/message-node'
 import { QuestionNode } from './nodes/question-node'
 import { ConditionNode } from './nodes/condition-node'
@@ -220,6 +221,9 @@ export function FlowCanvas({
     onNodeSelect(null)
   }, [onNodeSelect])
 
+  const { resolvedTheme } = useTheme()
+  const isDark = resolvedTheme === 'dark'
+
   return (
     <div className="h-full w-full">
       <ReactFlow
@@ -237,6 +241,7 @@ export function FlowCanvas({
         defaultEdgeOptions={{
           type: 'smoothstep',
         }}
+        colorMode={resolvedTheme}
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={15} size={1} />
@@ -248,9 +253,9 @@ export function FlowCanvas({
             return '#64748b'
           }}
           nodeColor={(n) => {
-            if (n.data?.isStart) return '#dcfce7'
-            if (n.type === 'end') return '#fee2e2'
-            return '#f1f5f9'
+            if (n.data?.isStart) return isDark ? '#14532d' : '#dcfce7'
+            if (n.type === 'end') return isDark ? '#7f1d1d' : '#fee2e2'
+            return isDark ? '#334155' : '#f1f5f9'
           }}
           nodeBorderRadius={8}
         />

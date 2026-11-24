@@ -274,7 +274,7 @@ function TemplatePreview({ components }: { components: TemplateComponent[] }) {
   const buttonRow = components.find((c) => c.type === 'BUTTONS')
 
   return (
-    <div className="rounded-lg bg-[#e5ddd5] p-4">
+    <div className="light rounded-lg bg-[#e5ddd5] p-4 text-foreground">
       <div className="mx-auto max-w-md space-y-3 rounded-lg bg-white p-4 shadow-sm">
         {header && (
           <div className="text-sm font-semibold">

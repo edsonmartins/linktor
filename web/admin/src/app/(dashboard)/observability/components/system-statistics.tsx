@@ -78,7 +78,7 @@ function StatCard({ title, value, icon, description, trend, trendValue }: StatCa
         {trend && trendValue && (
           <div className={cn(
             'flex items-center gap-1 mt-2 text-xs',
-            trend === 'up' && 'text-green-500',
+            trend === 'up' && 'text-green-600 dark:text-green-400',
             trend === 'down' && 'text-red-500',
             trend === 'neutral' && 'text-muted-foreground'
           )}>
@@ -199,7 +199,7 @@ export function SystemStatistics() {
           <div className="grid gap-4 md:grid-cols-3">
             <Card className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-full bg-green-100 text-green-600">
+                <div className="p-2 rounded-full bg-green-500/15 text-green-600 dark:text-green-400">
                   <Users className="h-5 w-5" />
                 </div>
                 <div>
@@ -210,7 +210,7 @@ export function SystemStatistics() {
             </Card>
             <Card className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-full bg-blue-100 text-blue-600">
+                <div className="p-2 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400">
                   <Users className="h-5 w-5" />
                 </div>
                 <div>
@@ -221,7 +221,7 @@ export function SystemStatistics() {
             </Card>
             <Card className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-full bg-yellow-100 text-yellow-600">
+                <div className="p-2 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-400">
                   <Users className="h-5 w-5" />
                 </div>
                 <div>

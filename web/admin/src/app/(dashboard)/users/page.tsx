@@ -174,9 +174,9 @@ function PasswordStrengthIndicator({ password, t }: { password: string; t: (key:
         </div>
         <span className={cn('text-xs font-medium', {
           'text-red-500': level === 'weak',
-          'text-yellow-500': level === 'medium',
-          'text-green-500': level === 'strong',
-          'text-emerald-500': level === 'veryStrong',
+          'text-yellow-600 dark:text-yellow-400': level === 'medium',
+          'text-green-600 dark:text-green-400': level === 'strong',
+          'text-emerald-600 dark:text-emerald-400': level === 'veryStrong',
         })}>
           {t(`passwordStrength.${level}`)}
         </span>
@@ -186,7 +186,7 @@ function PasswordStrengthIndicator({ password, t }: { password: string; t: (key:
         <p className="text-muted-foreground font-medium">{t('passwordRequirements.title')}</p>
         <div className="grid grid-cols-2 gap-1">
           {Object.entries(checks).map(([key, passed]) => (
-            <div key={key} className={cn('flex items-center gap-1', passed ? 'text-green-500' : 'text-muted-foreground')}>
+            <div key={key} className={cn('flex items-center gap-1', passed ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>
               {passed ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
               <span>{t(`passwordRequirements.${key}`)}</span>
             </div>
@@ -208,7 +208,7 @@ function RoleBadge({ role, t }: { role: UserRole; t: (key: string) => string }) 
     },
     supervisor: {
       icon: <ShieldAlert className="h-4 w-4" />,
-      color: 'text-amber-500',
+      color: 'text-amber-600 dark:text-amber-400',
     },
     agent: {
       icon: <Shield className="h-4 w-4" />,
@@ -424,7 +424,7 @@ function UserFormDialog({
       labelKey: 'roles.supervisor',
       descKey: 'roles.supervisorDesc',
       icon: <ShieldAlert className="h-4 w-4" />,
-      color: 'text-amber-500',
+      color: 'text-amber-600 dark:text-amber-400',
     },
     agent: {
       labelKey: 'roles.agent',
@@ -656,7 +656,7 @@ export default function UsersPage() {
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-green-500">{stats.active}</div>
+              <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.active}</div>
               <p className="text-xs text-muted-foreground">{tCommon('active')}</p>
             </CardContent>
           </Card>

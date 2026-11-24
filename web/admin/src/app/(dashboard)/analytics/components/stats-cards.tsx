@@ -18,30 +18,30 @@ export function StatsCards({ overview }: StatsCardsProps) {
       value: overview?.total_conversations ?? 0,
       trend: overview?.conversations_trend ?? 0,
       icon: MessageSquare,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-100',
+      color: 'text-blue-600 dark:text-blue-400',
+      bgColor: 'bg-blue-500/15',
     },
     {
       label: t('resolutionRate'),
       value: `${(overview?.resolution_rate ?? 0).toFixed(1)}%`,
       trend: overview?.resolution_trend ?? 0,
       icon: Bot,
-      color: 'text-emerald-600',
-      bgColor: 'bg-emerald-100',
+      color: 'text-emerald-600 dark:text-emerald-400',
+      bgColor: 'bg-emerald-500/15',
     },
     {
       label: t('avgResponseTime'),
       value: formatDuration(overview?.avg_first_response_ms ?? 0),
       icon: Clock,
-      color: 'text-amber-600',
-      bgColor: 'bg-amber-100',
+      color: 'text-amber-600 dark:text-amber-400',
+      bgColor: 'bg-amber-500/15',
     },
     {
       label: t('avgConfidence'),
       value: (overview?.avg_confidence ?? 0).toFixed(2),
       icon: Users,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100',
+      color: 'text-purple-600 dark:text-purple-400',
+      bgColor: 'bg-purple-500/15',
     },
   ]
 
@@ -80,7 +80,7 @@ function TrendIndicator({ value }: { value: number }) {
     <div
       className={cn(
         'flex items-center gap-1 text-sm font-medium',
-        isPositive ? 'text-emerald-600' : 'text-red-600'
+        isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
       )}
     >
       <Icon className="h-4 w-4" />

@@ -114,18 +114,18 @@ function ChannelConnectionStatusBadge({ connectionStatus }: { connectionStatus: 
  */
 const channelTypeConfig: Record<string, { color: string; bgColor: string }> = {
   webchat: { color: 'text-primary', bgColor: 'bg-primary/10' },
-  whatsapp: { color: 'text-green-500', bgColor: 'bg-green-500/10' },
-  whatsapp_official: { color: 'text-green-600', bgColor: 'bg-green-600/10' },
+  whatsapp: { color: 'text-green-600 dark:text-green-400', bgColor: 'bg-green-500/10' },
+  whatsapp_official: { color: 'text-green-600 dark:text-green-400', bgColor: 'bg-green-600/10' },
   telegram: { color: 'text-blue-500', bgColor: 'bg-blue-500/10' },
   sms: { color: 'text-purple-500', bgColor: 'bg-purple-500/10' },
   instagram: { color: 'text-pink-500', bgColor: 'bg-pink-500/10' },
-  facebook: { color: 'text-blue-600', bgColor: 'bg-blue-600/10' },
-  email: { color: 'text-amber-500', bgColor: 'bg-amber-500/10' },
-  rcs: { color: 'text-orange-500', bgColor: 'bg-orange-500/10' },
-  voice: { color: 'text-cyan-500', bgColor: 'bg-cyan-500/10' },
-  teams: { color: 'text-blue-700', bgColor: 'bg-blue-700/10' },
+  facebook: { color: 'text-blue-600 dark:text-blue-400', bgColor: 'bg-blue-600/10' },
+  email: { color: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-500/10' },
+  rcs: { color: 'text-orange-600 dark:text-orange-400', bgColor: 'bg-orange-500/10' },
+  voice: { color: 'text-cyan-600 dark:text-cyan-400', bgColor: 'bg-cyan-500/10' },
+  teams: { color: 'text-blue-700 dark:text-blue-300', bgColor: 'bg-blue-700/10' },
   slack: { color: 'text-violet-500', bgColor: 'bg-violet-500/10' },
-  mattermost: { color: 'text-sky-600', bgColor: 'bg-sky-600/10' },
+  mattermost: { color: 'text-sky-600 dark:text-sky-400', bgColor: 'bg-sky-600/10' },
 }
 
 function ConversationItem({ conversation }: { conversation: Conversation }) {

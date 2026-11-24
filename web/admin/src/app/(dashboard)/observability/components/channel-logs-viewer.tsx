@@ -42,7 +42,7 @@ const levelIcons = {
 
 const levelColors = {
   info: 'text-blue-500',
-  warn: 'text-yellow-500',
+  warn: 'text-yellow-600 dark:text-yellow-400',
   error: 'text-red-500',
 }
 
