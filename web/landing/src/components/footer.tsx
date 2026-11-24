@@ -64,7 +64,14 @@ export function Footer() {
                 alt="Linktor"
                 width={180}
                 height={50}
-                className="h-12 w-auto"
+                className="hidden h-12 w-auto dark:block"
+              />
+              <Image
+                src="/images/logo_fundo_claro.png"
+                alt="Linktor"
+                width={180}
+                height={50}
+                className="h-12 w-auto dark:hidden"
               />
             </Link>
             <p className="mt-4 text-sm text-muted-foreground max-w-xs">

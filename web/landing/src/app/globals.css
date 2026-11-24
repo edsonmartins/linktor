@@ -5,7 +5,45 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light theme. `.dark` is put on <html> by the script in lib/theme.ts; it is
+     also set on terminal windows and code samples, which stay dark on the
+     light page. */
   :root {
+    color-scheme: light;
+
+    --background: 0 0% 100%;
+    --foreground: 180 8% 10%;
+
+    --card: 180 12% 98%;
+    --card-foreground: 180 8% 10%;
+
+    /* Terminal green, deepened so it reads as text and as a button on white */
+    --primary: 152 75% 28%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 180 10% 94%;
+    --secondary-foreground: 180 8% 15%;
+
+    --muted: 180 8% 90%;
+    --muted-foreground: 180 5% 38%;
+
+    --accent: 186 85% 28%;
+    --accent-foreground: 0 0% 100%;
+
+    --border: 180 8% 87%;
+
+    --terminal-green: 152 75% 28%;
+    --terminal-cyan: 186 85% 28%;
+    --terminal-yellow: 36 90% 34%;
+    --terminal-coral: 5 70% 46%;
+    --terminal-purple: 275 55% 48%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    color-scheme: dark;
+
     /* Terminal Dark Theme */
     --background: 180 3% 6%;
     --foreground: 180 5% 90%;
@@ -28,7 +66,11 @@
 
     --border: 180 3% 18%;
 
-    --radius: 0.5rem;
+    --terminal-green: 150 70% 55%;
+    --terminal-cyan: 180 70% 55%;
+    --terminal-yellow: 45 90% 60%;
+    --terminal-coral: 5 80% 65%;
+    --terminal-purple: 280 70% 65%;
   }
 }
 
@@ -56,11 +98,11 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-muted rounded-full;
+    @apply bg-muted-foreground/30 rounded-full;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground/50;
+    @apply bg-muted-foreground/60;
   }
 
   /* Selection color */

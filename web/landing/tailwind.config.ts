@@ -32,11 +32,12 @@ const config: Config = {
         },
         border: 'hsl(var(--border))',
         terminal: {
-          green: 'hsl(150, 70%, 55%)',
-          cyan: 'hsl(180, 70%, 55%)',
-          yellow: 'hsl(45, 90%, 60%)',
-          coral: 'hsl(5, 80%, 65%)',
-          purple: 'hsl(280, 70%, 65%)',
+          // Themed in app/globals.css
+          green: 'hsl(var(--terminal-green) / <alpha-value>)',
+          cyan: 'hsl(var(--terminal-cyan) / <alpha-value>)',
+          yellow: 'hsl(var(--terminal-yellow) / <alpha-value>)',
+          coral: 'hsl(var(--terminal-coral) / <alpha-value>)',
+          purple: 'hsl(var(--terminal-purple) / <alpha-value>)',
         },
       },
       borderRadius: {
