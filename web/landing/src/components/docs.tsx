@@ -1,27 +1,28 @@
 'use client'
 
+import { docsUrl } from '@/lib/links'
 import { BookOpen, Play, Terminal, Sparkles, ArrowRight } from 'lucide-react'
 
 const docSections = [
   {
     title: 'Getting Started',
     description: 'Quick start guides and installation instructions',
-    href: 'https://docs.linktor.io/getting-started/installation',
+    href: docsUrl('/getting-started/installation'),
   },
   {
     title: 'API Reference',
     description: 'Complete REST API documentation with examples',
-    href: 'https://docs.linktor.io/api/overview',
+    href: docsUrl('/api/overview'),
   },
   {
     title: 'SDKs',
     description: 'Client libraries for 7 programming languages',
-    href: 'https://docs.linktor.io/sdks/overview',
+    href: docsUrl('/sdks/overview'),
   },
   {
     title: 'Self-Hosting',
     description: 'Deploy with Docker or Kubernetes',
-    href: 'https://docs.linktor.io/self-hosting/docker',
+    href: docsUrl('/self-hosting/docker'),
   },
 ]
 
@@ -85,14 +86,14 @@ export function Docs() {
 
                 <div className="flex flex-wrap gap-4">
                   <a
-                    href="https://docs.linktor.io/mcp/playground"
+                    href={docsUrl('/mcp/playground')}
                     className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 transition-colors"
                   >
                     <Play className="h-4 w-4" />
                     Try Playground
                   </a>
                   <a
-                    href="https://docs.linktor.io/mcp/overview"
+                    href={docsUrl('/mcp/overview')}
                     className="inline-flex items-center gap-2 px-6 py-3 border border-border rounded-lg font-semibold hover:bg-accent/10 transition-colors"
                   >
                     <BookOpen className="h-4 w-4" />
