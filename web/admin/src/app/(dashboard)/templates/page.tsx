@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -336,7 +337,7 @@ function EmptyState({ hasWhatsAppChannel, onRefresh }: EmptyStateProps) {
 
   return (
     <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-      <FileText className="mb-4 h-12 w-12 text-muted-foreground" />
+      <EmptyArt icon={FileText} className="mb-6" />
       <h3 className="text-lg font-medium">{t('empty.title')}</h3>
       <p className="mt-1 max-w-sm text-sm text-muted-foreground">
         {hasWhatsAppChannel ? t('empty.description') : t('empty.noChannel')}

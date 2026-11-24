@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
@@ -183,7 +184,7 @@ export default function KnowledgeBasePage() {
             </div>
           ) : knowledgeBases.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <BookOpen className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
+              <EmptyArt icon={BookOpen} className="mx-auto mb-6" />
               <h3 className="mb-2 text-lg font-medium">{t('noKnowledgeBases')}</h3>
               <p className="mb-4 text-sm text-muted-foreground">
                 {t('noKnowledgeBasesDesc')}

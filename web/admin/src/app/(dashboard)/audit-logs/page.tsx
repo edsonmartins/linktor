@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
@@ -134,7 +135,7 @@ export default function AuditLogsPage() {
           <Skeleton className="h-64 w-full" />
         ) : logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-            <ScrollText className="mb-3 h-10 w-10 text-muted-foreground" />
+            <EmptyArt icon={ScrollText} className="mb-6" />
             <p className="text-sm text-muted-foreground">{t('empty')}</p>
           </div>
         ) : (

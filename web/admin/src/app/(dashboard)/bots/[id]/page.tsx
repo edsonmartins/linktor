@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import { useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -266,7 +267,7 @@ export default function BotDetailPage() {
         <div className="p-6">
           <Card>
             <CardContent className="py-12 text-center">
-              <BotIcon className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
+              <EmptyArt icon={BotIcon} className="mx-auto mb-5" />
               <p className="mt-4 text-lg font-medium">{t('notFoundDesc')}</p>
               <Button className="mt-4" onClick={() => router.push('/bots')}>
                 <ArrowLeft className="h-4 w-4 mr-2" />

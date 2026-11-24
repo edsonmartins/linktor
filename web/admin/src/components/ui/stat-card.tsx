@@ -11,6 +11,7 @@ export interface StatCardProps extends React.HTMLAttributes<HTMLDivElement> {
   label: React.ReactNode
   value: React.ReactNode
   icon?: LucideIcon
+  /** Defaults to the colour of the section the card is in. */
   accent?: Accent
   /** Small line under the value: a trend, a description. */
   footer?: React.ReactNode
@@ -20,7 +21,7 @@ export function StatCard({
   label,
   value,
   icon: Icon,
-  accent = 'lime',
+  accent,
   footer,
   className,
   ...props

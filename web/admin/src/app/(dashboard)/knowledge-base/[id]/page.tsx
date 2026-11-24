@@ -1,5 +1,7 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
+import { StatCard } from '@/components/ui/stat-card'
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -11,6 +13,8 @@ import {
   Search,
   Settings,
   RefreshCw,
+  Sparkles,
+  Clock,
   BookOpen,
   FileText,
   Globe,
@@ -131,7 +135,7 @@ export default function KnowledgeBaseDetailPage() {
         <Header title="Knowledge Base" />
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
-            <AlertCircle className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+            <EmptyArt icon={AlertCircle} className="mx-auto mb-6" />
             <h2 className="mb-2 text-lg font-medium">Knowledge base not found</h2>
             <p className="mb-4 text-sm text-muted-foreground">
               The knowledge base you&apos;re looking for doesn&apos;t exist.
@@ -202,37 +206,32 @@ export default function KnowledgeBaseDetailPage() {
 
         {/* Stats */}
         <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Total Items</p>
-              <p className="text-2xl font-bold">{kb.item_count}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">With Embeddings</p>
-              <p className="text-2xl font-bold flex items-center gap-2">
+          <StatCard label="Total Items" value={kb.item_count} icon={FileText} accent="teal" />
+          <StatCard
+            label="With Embeddings"
+            value={
+              <span className="flex items-center gap-2">
                 {itemsWithEmbedding}
                 {itemsWithEmbedding === items.length && items.length > 0 && (
                   <CheckCircle className="h-5 w-5 text-success" />
                 )}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Last Synced</p>
-              <p className="text-2xl font-bold">
-                {kb.last_sync_at ? formatDistanceToNow(kb.last_sync_at) : 'Never'}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Created</p>
-              <p className="text-2xl font-bold">{formatDistanceToNow(kb.created_at)}</p>
-            </CardContent>
-          </Card>
+              </span>
+            }
+            icon={Sparkles}
+            accent="violet"
+          />
+          <StatCard
+            label="Last Synced"
+            value={kb.last_sync_at ? formatDistanceToNow(kb.last_sync_at) : 'Never'}
+            icon={RefreshCw}
+            accent="lime"
+          />
+          <StatCard
+            label="Created"
+            value={formatDistanceToNow(kb.created_at)}
+            icon={Clock}
+            accent="amber"
+          />
         </div>
 
         {/* Actions Toolbar */}

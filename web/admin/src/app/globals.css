@@ -515,3 +515,39 @@
     color: #fff;
   }
 }
+
+@layer components {
+  /* Empty state: gradient disc + two dashed rings */
+  .lk-empty-art {
+    @apply relative flex h-20 w-20 shrink-0 items-center justify-center;
+    margin-top: 12px;
+  }
+
+  .lk-empty-art::before,
+  .lk-empty-art::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    border: 1.5px dashed color-mix(in srgb, var(--accent-ink) 30%, transparent);
+  }
+
+  .lk-empty-art::before {
+    inset: 0;
+  }
+
+  .lk-empty-art::after {
+    inset: -12px;
+    opacity: 0.5;
+  }
+
+  .lk-empty-icon {
+    @apply flex h-[60%] w-[60%] items-center justify-center rounded-full text-white;
+    background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
+    box-shadow: 0 8px 20px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  .lk-empty-icon svg {
+    width: 46%;
+    height: 46%;
+  }
+}

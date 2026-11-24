@@ -61,19 +61,18 @@ interface StatCardProps {
 
 function StatCard({ title, value, icon, description, trend, trendValue }: StatCardProps) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
+    <div className="lk-stat">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
+            <p className="lk-stat-label">{title}</p>
+            <p className="lk-stat-value">{value}</p>
             {description && (
               <p className="text-xs text-muted-foreground mt-1">{description}</p>
             )}
           </div>
-          <div className="p-2 rounded-lg bg-primary/10 text-primary">
+          <span className="lk-stat-icon" aria-hidden>
             {icon}
-          </div>
+          </span>
         </div>
         {trend && trendValue && (
           <div className={cn(
@@ -86,8 +85,7 @@ function StatCard({ title, value, icon, description, trend, trendValue }: StatCa
             <span>{trendValue}</span>
           </div>
         )}
-      </CardContent>
-    </Card>
+    </div>
   )
 }
 

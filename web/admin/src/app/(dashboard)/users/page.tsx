@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyArt } from '@/components/ui/empty-art'
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
@@ -736,7 +737,7 @@ export default function UsersPage() {
         ) : (
           <Card className="border-dashed">
             <CardContent className="py-12 text-center">
-              <UserPlus className="mx-auto h-12 w-12 text-muted-foreground opacity-50" />
+              <EmptyArt icon={UserPlus} className="mx-auto mb-5" />
               <p className="mt-4 text-lg font-medium">{t('noTeamMembers')}</p>
               <p className="text-sm text-muted-foreground">
                 {t('addFirstMember')}
