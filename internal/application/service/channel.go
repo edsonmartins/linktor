@@ -911,9 +911,23 @@ func (s *ChannelService) monitorWhatsAppLoginStatus(channelID string, adapter *w
 				if adapter.IsLoggedIn() {
 					logger.Info("WhatsApp login successful",
 						zap.String("channel_id", channelID))
+					// A pairing that completed is the newest fact about the channel, whichever
+					// attempt it came from (an older QR, or a pair code requested on the adapter
+					// registered at the time). Claim the epoch so every attempt still pending
+					// becomes superseded — otherwise the last QR shown, never scanned, expires a
+					// couple of minutes later and demotes the live session to disconnected.
+					s.claimLoginEpoch(channelID)
+					// Route sends/reconnects through the session that actually paired, not the
+					// unpaired adapter of a later attempt.
+					if s.registry != nil {
+						s.registry.RegisterChannelAdapter(channelID, adapter)
+					}
 					// The number is only known after the scan — persist it now.
 					s.recordPairedNumber(channelID, adapter)
 					s.updateChannelConnectionStatus(channelID, entity.ConnectionStatusConnected)
+				} else if s.liveSessionElsewhere(channelID, adapter) {
+					logger.Info("WhatsApp login attempt ended, but another session of the channel is live; leaving channel status untouched",
+						zap.String("channel_id", channelID))
 				} else if s.isCurrentLoginEpoch(channelID, epoch) {
 					logger.Warn("WhatsApp login failed or timed out",
 						zap.String("channel_id", channelID))
@@ -936,7 +950,7 @@ func (s *ChannelService) monitorWhatsAppLoginStatus(channelID string, adapter *w
 			}
 			logger.Warn("WhatsApp login monitoring timed out",
 				zap.String("channel_id", channelID))
-			if !adapter.IsLoggedIn() {
+			if !adapter.IsLoggedIn() && !s.liveSessionElsewhere(channelID, adapter) {
 				s.updateChannelConnectionStatus(channelID, entity.ConnectionStatusDisconnected)
 				adapter.Disconnect(context.Background())
 			}
@@ -1022,6 +1036,29 @@ func (s *ChannelService) nextLoginEpoch(channelID string) uint64 {
 	}
 	s.loginEpochs[channelID]++
 	return s.loginEpochs[channelID]
+}
+
+// claimLoginEpoch records a completed pairing as the newest login event for the channel, making
+// every attempt started before it superseded.
+func (s *ChannelService) claimLoginEpoch(channelID string) {
+	s.nextLoginEpoch(channelID)
+}
+
+// liveSessionElsewhere reports whether the channel has a paired, connected WhatsApp session in an
+// adapter other than the one whose login attempt just ended. A failed attempt must not demote it.
+func (s *ChannelService) liveSessionElsewhere(channelID string, attempt *whatsapp.Adapter) bool {
+	if s.registry == nil {
+		return false
+	}
+	registered, err := s.registry.GetAdapterByChannelID(channelID)
+	if err != nil || registered == nil {
+		return false
+	}
+	live, ok := registered.(*whatsapp.Adapter)
+	if !ok || live == attempt {
+		return false
+	}
+	return live.IsLoggedIn() && live.IsConnected()
 }
 
 // isCurrentLoginEpoch reports whether epoch is still the newest login attempt for the channel.
